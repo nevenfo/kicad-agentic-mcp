@@ -474,65 +474,11 @@ fn extract_symbol_block(content: &str, symbol_name: &str) -> Option<String> {
 }
 
 /// Find directories where KiCAD symbol libraries are stored.
+///
+/// Delegates to [`crate::kicad_paths`] so symbol lookup, footprint lookup and
+/// 3D-model lookup can never again disagree about where KiCad is installed.
 pub fn find_symbol_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    if let Ok(dir) = std::env::var("KICAD10_SYMBOL_DIR") {
-        let p = PathBuf::from(&dir);
-        if p.is_dir() {
-            dirs.push(p);
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let candidates = [
-            r"C:\KiCad\10.0\share\kicad\symbols",
-            r"C:\Program Files\KiCad\10.0\share\kicad\symbols",
-            r"C:\KiCad\9.0\share\kicad\symbols",
-            r"C:\Program Files\KiCad\9.0\share\kicad\symbols",
-        ];
-        for c in &candidates {
-            let p = PathBuf::from(c);
-            if p.is_dir() && !dirs.contains(&p) {
-                dirs.push(p);
-            }
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        // KiCad on macOS ships its libraries inside the app bundle.
-        let mut candidates = vec![
-            PathBuf::from("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
-            PathBuf::from("/usr/local/share/kicad/symbols"),
-        ];
-        if let Ok(home) = std::env::var("HOME") {
-            // Per-user install (KiCad.app dragged into ~/Applications)
-            candidates.push(
-                PathBuf::from(home)
-                    .join("Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
-            );
-        }
-        for p in candidates {
-            if p.is_dir() && !dirs.contains(&p) {
-                dirs.push(p);
-            }
-        }
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let candidates = ["/usr/share/kicad/symbols", "/usr/local/share/kicad/symbols"];
-        for c in &candidates {
-            let p = PathBuf::from(c);
-            if p.is_dir() && !dirs.contains(&p) {
-                dirs.push(p);
-            }
-        }
-    }
-
-    dirs
+    crate::kicad_paths::library_dirs("symbols")
 }
 
 #[cfg(test)]

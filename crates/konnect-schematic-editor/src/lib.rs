@@ -1,4 +1,5 @@
 pub mod error;
+pub mod kicad_paths;
 pub mod library;
 pub mod schematic;
 pub mod sexp;

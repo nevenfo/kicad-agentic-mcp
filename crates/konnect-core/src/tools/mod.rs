@@ -809,72 +809,6 @@ pub fn ensure_lib_symbol_in_schematic(content: &mut String, lib_id: &str) -> boo
     true
 }
 
-/// Roots under which KiCAD ships its bundled libraries — the directory that
-/// directly contains `symbols/`, `footprints/` and `3dmodels/`.
-fn kicad_share_roots() -> Vec<std::path::PathBuf> {
-    let mut roots: Vec<std::path::PathBuf> = Vec::new();
-
-    #[cfg(target_os = "windows")]
-    {
-        // Keep these majors in step with the ones find_kicad_library_dirs
-        // reads environment variables for. A major listed there but missing
-        // here is invisible on any machine where KiCad did not export its
-        // variable — which is every machine where Konnect was not launched
-        // by KiCad.
-        for c in [
-            r"C:\KiCad\10.0\share\kicad",
-            r"C:\Program Files\KiCad\10.0\share\kicad",
-            r"C:\KiCad\9.0\share\kicad",
-            r"C:\Program Files\KiCad\9.0\share\kicad",
-            r"C:\KiCad\8.0\share\kicad",
-            r"C:\Program Files\KiCad\8.0\share\kicad",
-        ] {
-            roots.push(std::path::PathBuf::from(c));
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        // KiCad on macOS ships its libraries inside the app bundle.
-        roots.push(std::path::PathBuf::from(
-            "/Applications/KiCad/KiCad.app/Contents/SharedSupport",
-        ));
-        roots.push(std::path::PathBuf::from("/usr/local/share/kicad"));
-        // Homebrew (Apple Silicon prefix)
-        roots.push(std::path::PathBuf::from("/opt/homebrew/share/kicad"));
-        if let Ok(home) = std::env::var("HOME") {
-            // Per-user install (KiCad.app dragged into ~/Applications)
-            roots.push(
-                std::path::PathBuf::from(home)
-                    .join("Applications/KiCad/KiCad.app/Contents/SharedSupport"),
-            );
-        }
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        roots.push(std::path::PathBuf::from("/usr/share/kicad"));
-        roots.push(std::path::PathBuf::from("/usr/local/share/kicad"));
-        roots.push(std::path::PathBuf::from("/opt/kicad/share/kicad"));
-        // Flatpak: system-wide and per-user installs
-        roots.push(std::path::PathBuf::from(
-            "/var/lib/flatpak/app/org.kicad.KiCad/current/active/files/share/kicad",
-        ));
-        if let Ok(home) = std::env::var("HOME") {
-            roots.push(
-                std::path::PathBuf::from(&home).join(
-                    ".local/share/flatpak/app/org.kicad.KiCad/current/active/files/share/kicad",
-                ),
-            );
-        }
-        // Snap
-        roots.push(std::path::PathBuf::from(
-            "/snap/kicad/current/usr/share/kicad",
-        ));
-    }
-
-    roots.retain(|p| p.is_dir());
-    roots
-}
-
 /// Find directories holding a bundled KiCAD library kind — `"symbols"`,
 /// `"footprints"` or `"3dmodels"`.
 ///
@@ -889,39 +823,7 @@ fn kicad_share_roots() -> Vec<std::path::PathBuf> {
 /// | `footprints`  | `KICAD<major>_FOOTPRINT_DIR` |
 /// | `3dmodels`    | `KICAD<major>_3DMODEL_DIR`   |
 pub(crate) fn find_kicad_library_dirs(kind: &str) -> Vec<std::path::PathBuf> {
-    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
-    let mut push = |p: std::path::PathBuf| {
-        if p.is_dir() && !dirs.contains(&p) {
-            dirs.push(p);
-        }
-    };
-
-    if let Some(suffix) = kicad_env_suffix(kind) {
-        for major in ["10", "9", "8"] {
-            // var_os, not var: a directory whose name is not valid Unicode is
-            // still a directory KiCad may have pointed us at, and `var` reports
-            // those as absent — silently falling back to the install roots, or
-            // to nothing, on exactly the machines where the variable was the
-            // only correct answer.
-            if let Some(dir) = std::env::var_os(format!("KICAD{major}_{suffix}")) {
-                push(std::path::PathBuf::from(dir));
-            }
-        }
-    }
-    for root in kicad_share_roots() {
-        push(root.join(kind));
-    }
-    dirs
-}
-
-/// The `KICAD<major>_…` environment-variable suffix naming a library kind.
-fn kicad_env_suffix(kind: &str) -> Option<&'static str> {
-    match kind {
-        "symbols" => Some("SYMBOL_DIR"),
-        "footprints" => Some("FOOTPRINT_DIR"),
-        "3dmodels" => Some("3DMODEL_DIR"),
-        _ => None,
-    }
+    konnect_schematic_editor::kicad_paths::library_dirs(kind)
 }
 
 /// Find directories where KiCAD symbol libraries are stored.
