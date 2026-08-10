@@ -83,6 +83,10 @@ pub struct ToolContext {
     pub observer: crate::observability::CallObserver,
     /// In-memory TTL cache for repeated JLCPCB parts-database queries.
     pub jlcpcb_cache: QueryCache,
+    /// Results of batches that carried an `operation_id`, so a client retrying
+    /// after a timeout gets the first outcome back instead of applying it
+    /// twice. Shared for the life of the server, like the observer.
+    pub idempotency: Arc<kam_state::IdempotencyLedger<serde_json::Value>>,
 }
 
 impl ToolContext {
@@ -94,6 +98,7 @@ impl ToolContext {
             router,
             observer: crate::observability::CallObserver::new(None),
             jlcpcb_cache: QueryCache::default(),
+            idempotency: Arc::default(),
         }
     }
 
@@ -109,6 +114,7 @@ impl ToolContext {
             router,
             observer,
             jlcpcb_cache: QueryCache::default(),
+            idempotency: Arc::default(),
         }
     }
 }

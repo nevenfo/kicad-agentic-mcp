@@ -19,11 +19,17 @@
 //! extracts `kind` from structured errors so the JSONL log uses a stable
 //! vocabulary regardless of which handler produced the error.
 //!
+//! Every error also carries a `transient` class, which answers the only
+//! question a recovery loop actually has: *is retrying this the same call worth
+//! anything?* A bare `retryable: bool` cannot express the interesting case —
+//! `state` means the world moved, so reconcile first and retry blind never
+//! works, while `lock` means wait and try the identical call again.
+//!
 //! ## Adding a new kind
 //!
 //! 1. Add a variant to `ToolErrorKind`. Keep field names `snake_case` — they
 //!    serialize directly.
-//! 2. Add a match arm in `short_code()`.
+//! 2. Add a match arm in `short_code()` and in `transient_class()`.
 //! 3. Use `CallToolResult::error_kind(ToolErrorKind::Foo {...}, "message")` in
 //!    the handler that produces it.
 //! 4. Prefer structured errors for anything the LLM might want to react to
@@ -32,6 +38,42 @@
 
 use super::protocol::{CallToolResult, ToolContent};
 use serde::Serialize;
+
+/// Whether retrying the *same* call can succeed, and what has to happen first.
+///
+/// Deliberately not a boolean. The two cases a boolean collapses are the two a
+/// caller most needs apart: `Lock` says "the identical call will work shortly",
+/// `State` says "the identical call will fail forever until you re-read the
+/// world". Conflating them produces retry storms on one and give-ups on the
+/// other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransientClass {
+    /// Deterministic. The same call fails the same way; fix the request.
+    None,
+    /// The network or an external service refused; the same call may work.
+    Network,
+    /// Something took too long. The call may have partially applied — check
+    /// before replaying, or replay with an `operation_id`.
+    Timeout,
+    /// A resource is held (KiCAD busy, document locked). Wait, retry as is.
+    Lock,
+    /// The world changed underneath the call. Re-read state and recompute;
+    /// a blind retry is useless.
+    State,
+}
+
+impl TransientClass {
+    /// Suggested wait before a retry, for the classes where waiting helps.
+    #[must_use]
+    pub fn retry_after_ms(self) -> Option<u64> {
+        match self {
+            Self::Lock => Some(250),
+            Self::Network | Self::Timeout => Some(1_000),
+            Self::None | Self::State => None,
+        }
+    }
+}
 
 /// Structured error for tool call failures.
 ///
@@ -49,6 +91,23 @@ pub enum ToolErrorKind {
     InvalidArgument { field: String, reason: String },
     /// A referenced file doesn't exist or can't be read.
     FileNotFound { path: String },
+    /// A document is not at the revision the caller's plan was built against.
+    /// Re-read it, recompute, retry — never overwrite.
+    StaleRevision {
+        path: String,
+        expected: String,
+        actual: String,
+    },
+    /// The same `operation_id` is already executing. Retrying now risks a
+    /// double-apply; wait for the first call to answer.
+    OperationInFlight { operation_id: String },
+    /// A filesystem failure, with a stable code independent of the OS locale.
+    ///
+    /// `detail` keeps the operating system's own message — useful to a human,
+    /// useless to match on: the same failure reads "The system cannot find the
+    /// file specified" or "Le fichier spécifié est introuvable" depending on
+    /// the machine. `code` is what a recovery loop branches on.
+    Io { code: &'static str, detail: String },
     /// Catch-all for handler `anyhow::Error` that hasn't been migrated yet.
     /// Eventually each variant above subsumes a subset of these.
     HandlerError { reason: String },
@@ -64,8 +123,87 @@ impl ToolErrorKind {
             Self::UnknownTool { .. } => "unknown_tool",
             Self::InvalidArgument { .. } => "invalid_argument",
             Self::FileNotFound { .. } => "file_not_found",
+            Self::StaleRevision { .. } => "stale_revision",
+            Self::OperationInFlight { .. } => "operation_in_flight",
+            Self::Io { .. } => "io",
             Self::HandlerError { .. } => "handler_error",
         }
+    }
+
+    /// Whether retrying this exact call can help.
+    pub fn transient_class(&self) -> TransientClass {
+        match self {
+            // The tool exists and the fix is mechanical, but it is a *different*
+            // call (load_toolset) that has to happen first — the world, not the
+            // request, is wrong.
+            Self::ToolsetNotLoaded { .. } | Self::StaleRevision { .. } => TransientClass::State,
+            Self::OperationInFlight { .. } => TransientClass::Lock,
+            Self::UnknownTool { .. } | Self::InvalidArgument { .. } | Self::FileNotFound { .. } => {
+                TransientClass::None
+            }
+            Self::Io { code, .. } => match *code {
+                "would_block" | "interrupted" | "resource_busy" => TransientClass::Lock,
+                "timed_out" => TransientClass::Timeout,
+                "connection_refused"
+                | "connection_reset"
+                | "connection_aborted"
+                | "host_unreachable"
+                | "network_unreachable"
+                | "not_connected" => TransientClass::Network,
+                _ => TransientClass::None,
+            },
+            // Unclassified by construction. Claiming a class for an error we
+            // have not looked at is worse than admitting we do not know.
+            Self::HandlerError { .. } => TransientClass::None,
+        }
+    }
+
+    /// Classify a handler's `anyhow::Error`.
+    ///
+    /// Walks the source chain for a `std::io::Error` so the agent-facing result
+    /// carries a stable `io` code instead of only the OS's localized prose
+    /// (progress.md E9). Anything unrecognised stays `HandlerError` rather than
+    /// being given a class it has not earned.
+    pub fn from_anyhow(err: &anyhow::Error) -> Self {
+        for cause in err.chain() {
+            if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+                return Self::Io {
+                    code: io_code(io.kind()),
+                    detail: io.to_string(),
+                };
+            }
+        }
+        Self::HandlerError {
+            reason: err.to_string(),
+        }
+    }
+}
+
+/// Stable, locale-independent name for a `std::io::ErrorKind`.
+///
+/// `ErrorKind` is `#[non_exhaustive]` and its `Debug` text is not a stability
+/// promise, so the mapping is explicit for the kinds that actually occur here
+/// and falls back to `other` rather than to a string that could change.
+fn io_code(kind: std::io::ErrorKind) -> &'static str {
+    use std::io::ErrorKind as K;
+    match kind {
+        K::NotFound => "not_found",
+        K::PermissionDenied => "permission_denied",
+        K::AlreadyExists => "already_exists",
+        K::WouldBlock => "would_block",
+        K::Interrupted => "interrupted",
+        K::TimedOut => "timed_out",
+        K::InvalidData => "invalid_data",
+        K::InvalidInput => "invalid_input",
+        K::UnexpectedEof => "unexpected_eof",
+        K::WriteZero => "write_zero",
+        K::ConnectionRefused => "connection_refused",
+        K::ConnectionReset => "connection_reset",
+        K::ConnectionAborted => "connection_aborted",
+        K::NotConnected => "not_connected",
+        K::BrokenPipe => "broken_pipe",
+        K::OutOfMemory => "out_of_memory",
+        _ => "other",
     }
 }
 
@@ -74,9 +212,22 @@ impl CallToolResult {
     /// Preferred over `CallToolResult::error(text)` whenever the error has a
     /// stable kind the client / LLM might want to branch on.
     pub fn error_kind(kind: ToolErrorKind, message: impl Into<String>) -> Self {
+        let transient = kind.transient_class();
+        let mut error = serde_json::to_value(&kind)
+            .unwrap_or_else(|_| serde_json::json!({ "kind": kind.short_code() }));
+        // `transient` and `retry_after_ms` live beside `kind` rather than in a
+        // nested object: a recovery loop reads all three together, and errors
+        // are the one payload where a byte spent on structure is a byte the
+        // model does not spend on the message.
+        if let Some(map) = error.as_object_mut() {
+            map.insert("transient".to_string(), serde_json::json!(transient));
+            if let Some(ms) = transient.retry_after_ms() {
+                map.insert("retry_after_ms".to_string(), serde_json::json!(ms));
+            }
+        }
         let body = serde_json::json!({
             "message": message.into(),
-            "error": kind,
+            "error": error,
         });
         CallToolResult {
             content: vec![ToolContent::Text {
@@ -160,6 +311,18 @@ mod tests {
                 reason: "r".into(),
             },
             ToolErrorKind::FileNotFound { path: "p".into() },
+            ToolErrorKind::StaleRevision {
+                path: "p".into(),
+                expected: "a".into(),
+                actual: "b".into(),
+            },
+            ToolErrorKind::OperationInFlight {
+                operation_id: "op_1".into(),
+            },
+            ToolErrorKind::Io {
+                code: "not_found",
+                detail: "d".into(),
+            },
             ToolErrorKind::HandlerError { reason: "r".into() },
         ];
         for kind in kinds {
@@ -168,5 +331,95 @@ mod tests {
             let serialized_kind = json.get("kind").and_then(|v| v.as_str()).unwrap();
             assert_eq!(code, serialized_kind, "drift for {:?}", kind);
         }
+    }
+
+    #[test]
+    fn errors_carry_a_transient_class_and_a_retry_hint_where_waiting_helps() {
+        let stale = CallToolResult::error_kind(
+            ToolErrorKind::StaleRevision {
+                path: "a.kicad_sch".into(),
+                expected: "aaaa-10".into(),
+                actual: "bbbb-12".into(),
+            },
+            "Document changed.",
+        );
+        let body = error_body(&stale);
+        assert_eq!(body["error"]["transient"], "state");
+        assert!(
+            body["error"].get("retry_after_ms").is_none(),
+            "a blind retry never fixes a stale revision, so do not invite one"
+        );
+
+        let busy = CallToolResult::error_kind(
+            ToolErrorKind::OperationInFlight {
+                operation_id: "op_9".into(),
+            },
+            "Already running.",
+        );
+        let body = error_body(&busy);
+        assert_eq!(body["error"]["transient"], "lock");
+        assert_eq!(body["error"]["retry_after_ms"], 250);
+    }
+
+    #[test]
+    fn structured_fields_survive_the_transient_annotation() {
+        // The annotation is injected into the serialized kind; it must not
+        // displace the fields a caller reads to recover.
+        let r = CallToolResult::error_kind(
+            ToolErrorKind::StaleRevision {
+                path: "a.kicad_sch".into(),
+                expected: "aaaa-10".into(),
+                actual: "bbbb-12".into(),
+            },
+            "Document changed.",
+        );
+        let body = error_body(&r);
+        assert_eq!(body["error"]["kind"], "stale_revision");
+        assert_eq!(body["error"]["path"], "a.kicad_sch");
+        assert_eq!(body["error"]["expected"], "aaaa-10");
+        assert_eq!(extract_error_kind(&r).as_deref(), Some("stale_revision"));
+    }
+
+    #[test]
+    fn io_failures_get_a_stable_code_and_keep_the_localized_text_as_detail() {
+        // progress.md E9: the OS message is French on this machine and English
+        // on CI. Matching on it is a bug; matching on `code` is not.
+        let io = std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Le fichier spécifié est introuvable. (os error 2)",
+        );
+        let err = anyhow::Error::new(io).context("Failed to read schematic");
+        let kind = ToolErrorKind::from_anyhow(&err);
+        match &kind {
+            ToolErrorKind::Io { code, detail } => {
+                assert_eq!(*code, "not_found");
+                assert!(detail.contains("introuvable"));
+            }
+            other => panic!("expected an io kind, got {other:?}"),
+        }
+        assert_eq!(kind.transient_class(), TransientClass::None);
+    }
+
+    #[test]
+    fn a_non_io_handler_error_is_not_given_a_class_it_has_not_earned() {
+        let err = anyhow::anyhow!("symbol library 'Device' not found");
+        let kind = ToolErrorKind::from_anyhow(&err);
+        assert_eq!(kind.short_code(), "handler_error");
+        assert_eq!(kind.transient_class(), TransientClass::None);
+    }
+
+    #[test]
+    fn a_locked_file_is_classified_as_worth_retrying() {
+        let io = std::io::Error::new(std::io::ErrorKind::WouldBlock, "locked");
+        let kind = ToolErrorKind::from_anyhow(&anyhow::Error::new(io));
+        assert_eq!(kind.transient_class(), TransientClass::Lock);
+        assert_eq!(kind.transient_class().retry_after_ms(), Some(250));
+    }
+
+    fn error_body(result: &CallToolResult) -> serde_json::Value {
+        let ToolContent::Text { text } = &result.content[0] else {
+            panic!("structured errors are text content")
+        };
+        serde_json::from_str(text).expect("structured error body is JSON")
     }
 }

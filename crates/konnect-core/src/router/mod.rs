@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod capability_search;
 pub mod meta_tools;
 pub mod registry;

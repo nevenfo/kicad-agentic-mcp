@@ -100,8 +100,10 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
             description: "Call one or more KiCAD tools by name, in order, whether or not they \
                  are loaded. Nothing is added to tools/list, so no catalogue refresh is \
                  triggered and the batch costs only its own result. Use kicad_describe() for \
-                 the argument schemas. Execution stops at the first failure unless \
-                 stop_on_error is false."
+                 the argument schemas. Execution stops at the first failure, and every KiCAD \
+                 file it touched is restored. The reply returns each changed file's new \
+                 revision; pass those back as base_revisions so a batch built against a \
+                 document the user has since edited is refused instead of applied."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -118,7 +120,28 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                             "required": ["tool"]
                         }
                     },
-                    "stop_on_error": { "type": "boolean", "default": true }
+                    "stop_on_error": { "type": "boolean", "default": true },
+                    "atomic": {
+                        "type": "boolean",
+                        "description": "Undo the whole batch if any call fails. Defaults to stop_on_error."
+                    },
+                    "operation_id": {
+                        "type": "string",
+                        "description": "Idempotency key: a replay returns the first result, it does not apply twice."
+                    },
+                    "base_revisions": {
+                        "type": "object",
+                        "description": "path -> revision (or 'absent') from a previous reply. A mismatch aborts with stale_revision, having run nothing."
+                    },
+                    "base_revisions_root": {
+                        "type": "string",
+                        "description": "Root for relative base_revisions keys: pass back the revisions_root you were given."
+                    },
+                    "documents": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Extra files/dirs to protect when no path appears in the calls."
+                    }
                 },
                 "required": ["calls"]
             }),
@@ -320,6 +343,26 @@ async fn handle_kicad_describe(args: &Value, ctx: &std::sync::Arc<ToolContext>) 
 /// name, so `get_recent_calls` / `server_stats` / the JSONL log see exactly what
 /// they would have seen had the caller made the calls itself. Batching must not
 /// become a way to mutate a design without an audit record.
+///
+/// ## What makes it a transaction rather than a loop
+///
+/// A batch that stops halfway used to leave the project in a state nobody
+/// asked for and nobody could describe. Three guarantees fix that, in the order
+/// they are applied:
+///
+/// 1. **`base_revisions`** — checked before anything runs. A plan compiled
+///    against a document the user has since edited in KiCAD is refused, not
+///    applied on top.
+/// 2. **`operation_id`** — a batch that timed out in transit and is retried
+///    returns its first result instead of adding the same parts again.
+/// 3. **`atomic`** (defaults to `stop_on_error`) — every KiCAD document under
+///    the batch's directories is captured first and written back if any call
+///    fails.
+///
+/// The rollback is a file-level restore, not KiCAD's undo stack: the tools here
+/// edit S-expression documents on disk, so putting the bytes back *is* the
+/// undo. What it cannot reach is a KiCAD GUI holding the same file open — that
+/// is why `base_revisions` exists as the detection half of the pair.
 async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> CallToolResult {
     let Some(calls) = args["calls"].as_array() else {
         let kind = ToolErrorKind::InvalidArgument {
@@ -332,6 +375,47 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         );
     };
     let stop_on_error = args["stop_on_error"].as_bool().unwrap_or(true);
+    // A batch that stops at the first failure is being treated as one unit of
+    // work, so it rolls back as one. A caller who passed `stop_on_error: false`
+    // has said the opposite — the calls are independent and the survivors are
+    // wanted — and undoing them would be the opposite of what was asked. Hence
+    // the default follows `stop_on_error`; `atomic` set explicitly still wins
+    // either way.
+    let atomic = args["atomic"].as_bool().unwrap_or(stop_on_error);
+
+    // Preconditions first, and before the idempotency key is claimed: a batch
+    // rejected for staleness never ran, so its key must stay usable for the
+    // recomputed batch that replaces it.
+    if let Some(rejection) = check_base_revisions(args) {
+        return rejection;
+    }
+
+    let operation_id = args["operation_id"].as_str().map(str::to_string);
+    if let Some(id) = &operation_id {
+        match ctx.idempotency.claim(id) {
+            kam_state::Claim::Replay(mut body) => {
+                if let Some(map) = body.as_object_mut() {
+                    map.insert("replayed".to_string(), json!(true));
+                }
+                return CallToolResult::json(&body);
+            }
+            kam_state::Claim::InFlight => {
+                let kind = ToolErrorKind::OperationInFlight {
+                    operation_id: id.clone(),
+                };
+                return CallToolResult::error_kind(
+                    kind,
+                    format!(
+                        "Operation '{id}' is already running. Wait for it rather than \
+                         retrying — a second run would apply the same edits again."
+                    ),
+                );
+            }
+            kam_state::Claim::Fresh => {}
+        }
+    }
+
+    let guard = BatchGuard::capture(calls, args.get("documents"), atomic);
 
     let mut results = Vec::with_capacity(calls.len());
     let mut ok_count = 0usize;
@@ -394,19 +478,20 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
                     (entry, status, error_kind, bytes)
                 }
                 Err(e) => {
+                    // Classified, not stringified: an io failure keeps a stable
+                    // code the caller can branch on even though the message it
+                    // carries is in the operating system's language (E9).
+                    let kind = ToolErrorKind::from_anyhow(&e);
+                    let short = kind.short_code();
                     let entry = json!({
                         "index": index,
                         "tool": name,
                         "ok": false,
-                        "error_kind": "handler_error",
+                        "error_kind": short,
+                        "transient": kind.transient_class(),
                         "error": e.to_string(),
                     });
-                    (
-                        entry,
-                        CallStatus::Error,
-                        Some("handler_error".to_string()),
-                        0,
-                    )
+                    (entry, CallStatus::Error, Some(short.to_string()), 0)
                 }
             };
 
@@ -449,10 +534,210 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         }
     }
 
+    guard.finish(failed_at.is_some(), &mut body);
+
+    if let Some(id) = &operation_id {
+        ctx.idempotency.complete(id, body.clone());
+    }
+
     // The envelope itself succeeded even when an inner call did not: the caller
     // needs the per-call detail to decide what to retry, and an `is_error`
     // envelope invites clients to discard the body.
     CallToolResult::json(&body)
+}
+
+/// At most this many revisions are reported. A batch that rewrites forty sheets
+/// has already told the caller what it did; forty revision tokens on top of
+/// that is the sort of payload the gateway exists to avoid.
+const MAX_REPORTED_REVISIONS: usize = 20;
+
+/// Longest directory prefix shared by every path, if there is one.
+fn common_dir<'a>(paths: impl Iterator<Item = &'a std::path::Path>) -> Option<std::path::PathBuf> {
+    let mut shared: Option<std::path::PathBuf> = None;
+    for path in paths {
+        let dir = path.parent()?;
+        shared = Some(match shared {
+            None => dir.to_path_buf(),
+            Some(current) => {
+                let mut common = std::path::PathBuf::new();
+                for (a, b) in current.components().zip(dir.components()) {
+                    if a != b {
+                        break;
+                    }
+                    common.push(a);
+                }
+                common
+            }
+        });
+    }
+    shared.filter(|p| !p.as_os_str().is_empty())
+}
+
+/// Reject the batch if any named document has moved since the plan was built.
+///
+/// Keys may be absolute, or relative to `base_revisions_root` — the mirror of
+/// the `revisions_root` the previous batch returned, so a caller can hand back
+/// exactly what it was given.
+fn check_base_revisions(args: &Value) -> Option<CallToolResult> {
+    let expected = args.get("base_revisions")?.as_object()?;
+    let root = args
+        .get("base_revisions_root")
+        .and_then(Value::as_str)
+        .map(std::path::PathBuf::from);
+    for (path, want) in expected {
+        let resolved = match &root {
+            Some(root) => root.join(path),
+            None => std::path::PathBuf::from(path),
+        };
+        let Some(want) = want.as_str() else {
+            let kind = ToolErrorKind::InvalidArgument {
+                field: "base_revisions".to_string(),
+                reason: format!("revision for '{path}' must be a string"),
+            };
+            return Some(CallToolResult::error_kind(
+                kind,
+                "base_revisions maps a path to a revision string, or to 'absent'",
+            ));
+        };
+        let actual = match kam_state::DocState::read(&resolved) {
+            Ok(state) => state.token(),
+            Err(e) => {
+                let kind = ToolErrorKind::Io {
+                    code: "read_failed",
+                    detail: e.to_string(),
+                };
+                return Some(CallToolResult::error_kind(
+                    kind,
+                    format!("Could not read '{path}' to check its revision"),
+                ));
+            }
+        };
+        if actual != want {
+            let kind = ToolErrorKind::StaleRevision {
+                path: path.clone(),
+                expected: want.to_string(),
+                actual: actual.clone(),
+            };
+            return Some(CallToolResult::error_kind(
+                kind,
+                format!(
+                    "'{path}' is at revision {actual}, not {want}. Nothing was applied. \
+                     Re-read the document and rebuild the batch — it changed underneath you."
+                ),
+            ));
+        }
+    }
+    None
+}
+
+/// The before-image a batch can be rolled back to, plus the reason there isn't
+/// one when that is the case.
+struct BatchGuard {
+    snapshot: Option<kam_state::Snapshot>,
+    /// Set when `atomic` was requested but no snapshot could be taken. The
+    /// caller is told, because "I have a net" and "I appear to have a net" are
+    /// the two states this must never confuse.
+    unprotected: Option<String>,
+}
+
+impl BatchGuard {
+    fn capture(calls: &[Value], documents: Option<&Value>, atomic: bool) -> Self {
+        if !atomic {
+            return Self {
+                snapshot: None,
+                unprotected: None,
+            };
+        }
+        let roots = crate::router::batch::discover_roots(calls, documents);
+        if roots.is_empty() {
+            // Nothing recognisable to protect. A read-only batch lands here and
+            // needs no warning; so does a mutating batch whose paths we failed
+            // to see, which does — hence saying it rather than staying silent.
+            return Self {
+                snapshot: None,
+                unprotected: Some("no_project_path_found".to_string()),
+            };
+        }
+        match kam_state::Snapshot::capture(&roots, kam_state::SnapshotLimits::default()) {
+            Ok(snapshot) => Self {
+                snapshot: Some(snapshot),
+                unprotected: None,
+            },
+            Err(e) => Self {
+                snapshot: None,
+                unprotected: Some(e.code().to_string()),
+            },
+        }
+    }
+
+    /// Roll back on failure, then report what changed.
+    fn finish(self, failed: bool, body: &mut Value) {
+        if let Some(reason) = self.unprotected {
+            body["unprotected"] = json!(reason);
+        }
+        let Some(snapshot) = self.snapshot else {
+            return;
+        };
+
+        if failed {
+            let report = snapshot.restore();
+            if report.is_empty() {
+                // Nothing had been written yet — the failure was clean.
+                return;
+            }
+            let mut rolled_back = json!({
+                "restored": report.restored.len(),
+                "deleted": report.deleted.len(),
+            });
+            if !report.failed.is_empty() {
+                // A partial rollback is the worst state to be silent about:
+                // the project is now neither before nor after.
+                rolled_back["failed"] = json!(report
+                    .failed
+                    .iter()
+                    .map(|(path, reason)| json!({
+                        "path": path.to_string_lossy(),
+                        "reason": reason,
+                    }))
+                    .collect::<Vec<_>>());
+            }
+            body["rolled_back"] = rolled_back;
+            return;
+        }
+
+        let changed = snapshot.changed();
+        if changed.is_empty() {
+            return;
+        }
+        // Project paths are long and identical up to the filename. Factoring
+        // the directory out turns four absolute Windows paths into one plus
+        // four basenames — the same information for a third of the tokens.
+        let reported: Vec<_> = changed.iter().take(MAX_REPORTED_REVISIONS).collect();
+        let root = if reported.len() > 1 {
+            common_dir(reported.iter().map(|(p, _)| p.as_path()))
+        } else {
+            None
+        };
+        let mut revisions = serde_json::Map::new();
+        for (path, state) in &reported {
+            let key = match &root {
+                Some(root) => path
+                    .strip_prefix(root)
+                    .unwrap_or(path.as_path())
+                    .to_string_lossy()
+                    .into_owned(),
+                None => path.to_string_lossy().into_owned(),
+            };
+            revisions.insert(key, json!(state.token()));
+        }
+        if let Some(root) = root {
+            body["revisions_root"] = json!(root.to_string_lossy());
+        }
+        body["revisions"] = Value::Object(revisions);
+        if changed.len() > MAX_REPORTED_REVISIONS {
+            body["revisions_omitted"] = json!(changed.len() - MAX_REPORTED_REVISIONS);
+        }
+    }
 }
 
 /// Concatenate a result's text content. Image content carries no text and is

@@ -49,6 +49,14 @@ if ($Bench) {
             --label "fork-$(git rev-parse --short HEAD)-tools" --repeat $Repeat `
             --load-mode tools --out "bench\results\latest-tools.json"
     }
+    # The headline mode. It is where the transaction guarantees (rollback,
+    # base_revisions, operation_id) are actually exercised, so a regression here
+    # is a correctness regression, not only a token one.
+    Step "benchmark (gateway)" {
+        python bench\runner.py --server ".\target\release\konnect.exe" `
+            --label "fork-$(git rev-parse --short HEAD)-gateway" --repeat $Repeat `
+            --load-mode gateway --out "bench\results\latest-gateway.json"
+    }
     Step "retrieval" {
         python bench\runner.py --server ".\target\release\konnect.exe" `
             --label "fork-$(git rev-parse --short HEAD)-search" --repeat 1 `

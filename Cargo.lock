@@ -1078,6 +1078,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.23.0",
+ "kam-state",
  "konnect-ipc",
  "konnect-schematic-editor",
  "konnect-sexp",

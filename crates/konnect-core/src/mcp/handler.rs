@@ -256,13 +256,15 @@ impl McpHandler {
                 }
                 Err(e) => {
                     warn!(tool = %name, error = %e, "tool handler returned anyhow::Error");
-                    let kind = ToolErrorKind::HandlerError {
-                        reason: e.to_string(),
-                    };
+                    // Classified rather than stringified: an io failure keeps a
+                    // stable `code` the caller can match on, instead of only the
+                    // OS's localized prose (progress.md E9).
+                    let kind = ToolErrorKind::from_anyhow(&e);
+                    let short = kind.short_code().to_string();
                     (
                         CallToolResult::error_kind(kind, format!("Tool error: {}", e)),
                         CallStatus::Error,
-                        Some("handler_error".to_string()),
+                        Some(short),
                     )
                 }
             };

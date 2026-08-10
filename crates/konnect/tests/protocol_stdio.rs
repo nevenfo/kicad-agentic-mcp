@@ -534,3 +534,244 @@ fn kicad_describe_returns_schemas_without_loading_anything() {
         "kicad_describe must not admit the tool into tools/list"
     );
 }
+
+// ─── Phase D: the gateway as a transaction ───────────────────────────────────
+
+/// A scratch project directory unique to one test, cleaned up on drop.
+struct Scratch {
+    dir: std::path::PathBuf,
+}
+
+impl Scratch {
+    fn new(tag: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!(
+            "konnect-txn-{}-{tag}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        Self { dir }
+    }
+
+    fn path(&self) -> &str {
+        self.dir.to_str().unwrap()
+    }
+
+    fn sch(&self, name: &str) -> std::path::PathBuf {
+        self.dir.join(format!("{name}.kicad_sch"))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// A batch that fails halfway leaves nothing behind. Before Phase D the label
+/// added by the first call survived the failure of the second, so the project
+/// ended in a state the caller neither asked for nor was told about.
+#[test]
+fn kicad_invoke_rolls_back_a_batch_that_fails_halfway() {
+    let scratch = Scratch::new("rollback");
+    let mut p = McpProcess::spawn();
+
+    let created = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "rb"}}
+        ]}),
+    ));
+    assert_eq!(created["ok"].as_u64(), Some(1), "{created:#?}");
+    assert!(
+        created["revisions"].is_object(),
+        "a mutating batch must report the revision of what it wrote: {created:#?}"
+    );
+
+    let sch = scratch.sch("rb");
+    let before = std::fs::read_to_string(&sch).unwrap();
+
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "add_schematic_net_label",
+             "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}},
+            {"tool": "get_symbol_info", "args": {}}
+        ]}),
+    ));
+
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+    assert_eq!(body["failed_at"].as_u64(), Some(1));
+    assert_eq!(
+        body["rolled_back"]["restored"].as_u64(),
+        Some(1),
+        "the successful first call must have been undone: {body:#?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&sch).unwrap(),
+        before,
+        "the schematic must be byte-identical to before the batch"
+    );
+    assert!(
+        body["revisions"].is_null(),
+        "a rolled-back batch produced no new revision: {body:#?}"
+    );
+}
+
+/// `atomic: false` is the opt-out for a caller that wants whatever succeeded.
+#[test]
+fn kicad_invoke_keeps_partial_work_when_atomic_is_off() {
+    let scratch = Scratch::new("nonatomic");
+    let mut p = McpProcess::spawn();
+    p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "na"}}
+        ]}),
+    );
+
+    let sch = scratch.sch("na");
+    let before = std::fs::read_to_string(&sch).unwrap();
+
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"atomic": false, "calls": [
+            {"tool": "add_schematic_net_label",
+             "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}},
+            {"tool": "get_symbol_info", "args": {}}
+        ]}),
+    ));
+
+    assert_eq!(body["failed_at"].as_u64(), Some(1), "{body:#?}");
+    assert!(body["rolled_back"].is_null());
+    assert_ne!(
+        std::fs::read_to_string(&sch).unwrap(),
+        before,
+        "atomic: false means the caller keeps what succeeded"
+    );
+}
+
+/// A plan compiled against a document the user has since edited is refused,
+/// not applied on top. This is the half of the pair a file-level rollback
+/// cannot provide: detection.
+#[test]
+fn kicad_invoke_refuses_a_stale_base_revision_without_applying_anything() {
+    let scratch = Scratch::new("stale");
+    let mut p = McpProcess::spawn();
+    let created = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "st"}}
+        ]}),
+    ));
+
+    let sch = scratch.sch("st");
+    let root = created["revisions_root"].as_str().map(String::from);
+    let key = match &root {
+        Some(_) => "st.kicad_sch".to_string(),
+        None => sch.to_string_lossy().into_owned(),
+    };
+    let revision = created["revisions"][&key]
+        .as_str()
+        .unwrap_or_else(|| panic!("no revision for {key}: {created:#?}"))
+        .to_string();
+
+    // The batch built against that revision applies.
+    let mut ok_args = json!({
+        "base_revisions": {key.clone(): revision.clone()},
+        "calls": [{"tool": "add_schematic_net_label",
+                   "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}}]
+    });
+    if let Some(root) = &root {
+        ok_args["base_revisions_root"] = json!(root);
+    }
+    let applied = McpProcess::tool_body(&p.call_tool("kicad_invoke", ok_args.clone()));
+    assert_eq!(applied["ok"].as_u64(), Some(1), "{applied:#?}");
+
+    // The same batch replayed against the now-old revision is refused.
+    let after = std::fs::read_to_string(&sch).unwrap();
+    let stale = p.call_tool("kicad_invoke", ok_args);
+    let body = McpProcess::tool_body(&stale);
+    assert_eq!(stale["isError"], json!(true), "{body:#?}");
+    assert_eq!(body["error"]["kind"], "stale_revision");
+    assert_eq!(body["error"]["transient"], "state");
+    assert_eq!(body["error"]["expected"], revision);
+    assert_eq!(
+        std::fs::read_to_string(&sch).unwrap(),
+        after,
+        "a refused batch must not have run a single call"
+    );
+}
+
+/// A client that times out and retries must not get its parts added twice.
+#[test]
+fn kicad_invoke_replays_an_operation_id_instead_of_applying_it_twice() {
+    let scratch = Scratch::new("idem");
+    let mut p = McpProcess::spawn();
+    p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "id"}}
+        ]}),
+    );
+
+    let sch = scratch.sch("id");
+    let batch = json!({
+        "operation_id": "op_test_1",
+        "calls": [{"tool": "add_schematic_net_label",
+                   "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}}]
+    });
+
+    let first = McpProcess::tool_body(&p.call_tool("kicad_invoke", batch.clone()));
+    assert_eq!(first["ok"].as_u64(), Some(1), "{first:#?}");
+    let after_first = std::fs::read_to_string(&sch).unwrap();
+
+    let second = McpProcess::tool_body(&p.call_tool("kicad_invoke", batch));
+    assert_eq!(second["replayed"], json!(true), "{second:#?}");
+    assert_eq!(second["ok"].as_u64(), Some(1));
+    assert_eq!(
+        std::fs::read_to_string(&sch).unwrap(),
+        after_first,
+        "the replay must not have added a second label"
+    );
+}
+
+/// `stop_on_error: false` says the calls are independent and the survivors are
+/// wanted. Rolling them back would be the opposite of the request, so atomic
+/// follows stop_on_error unless it is set explicitly. Found by the benchmark:
+/// the recovery task deliberately fails five calls mid-batch and still expects
+/// the design built by the rest, and an unconditional rollback scored it 0/3.
+#[test]
+fn a_continue_on_error_batch_is_not_rolled_back_by_default() {
+    let scratch = Scratch::new("continue");
+    let mut p = McpProcess::spawn();
+    p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "co"}}
+        ]}),
+    );
+
+    let sch = scratch.sch("co");
+    let before = std::fs::read_to_string(&sch).unwrap();
+
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"stop_on_error": false, "calls": [
+            {"tool": "get_symbol_info", "args": {}},
+            {"tool": "add_schematic_net_label",
+             "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}}
+        ]}),
+    ));
+
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+    assert!(body["rolled_back"].is_null(), "{body:#?}");
+    assert_ne!(
+        std::fs::read_to_string(&sch).unwrap(),
+        before,
+        "the call that succeeded after the failure must survive"
+    );
+}
