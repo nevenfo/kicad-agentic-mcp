@@ -208,7 +208,9 @@ Crate plan (new crates are clean-room, no upstream-derived code):
 
 ```
 crates/konnect-*         existing, AGPL, refactored in place
-crates/kam-state         Task State Manager           (new)
+crates/kam-state         revisions, idempotency, rollback snapshots  (SHIPPED,
+                         MIT OR Apache-2.0, no konnect-* dependency)
+                         Task State Manager lands here next          (new)
 crates/kam-context       Context + Attention Manager  (new)
 crates/kam-plan          Plan IR + compiler + executor contract (new)
 crates/kam-llm           local provider abstraction + router (new)
@@ -226,7 +228,7 @@ crates/kam-bench         benchmark runner + metrics schema (new)
 | **B** Cartography | map transport / registry / IPC / sexp / validation / errors | **DONE** |
 | **C** Baseline benchmark | golden projects + metrics, measured before any refactor | **DONE** — `docs/benchmark.md` |
 | **F** Compact MCP surface | capability index, tool-granular loading, schema compression, gateway | **DONE** — −83.9 % external tokens, 4 MCP calls/task |
-| **D** Domain stabilisation | stable IDs, revisions, snapshots, idempotency, error catalog | TODO |
+| **D** Domain stabilisation | stable IDs, revisions, snapshots, idempotency, error catalog | **PARTIAL** — revisions, idempotency, atomic batches and the error catalog shipped (`kam-state`, `kicad_invoke`); stable IDs and snapshot handles remain |
 | **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | TODO |
 | **G** Plan IR + deterministic executor | batching, preconditions, postconditions, rollback | TODO |
 | **H** Local AI runtime | provider abstraction, hardware probe, model bench, router | TODO |
@@ -288,16 +290,24 @@ Anything not achieved gets written down as not achieved. No benchmark rigging.
 
 See `docs/benchmark.md` for method and full tables.
 
-| | baseline | now (`gateway`) | target |
-|---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | **1 995** | ≤ 2 000 ✓ |
-| SUCCESS_RATE | 18/18 | 18/18 | ≥ baseline ✓ |
-| MCP_CALLS median/task | 11 | **4** | ≤ 5 ✓ |
-| CATALOG_TOKENS/task | 8 389 | **0** | — |
-| `tools/list` at startup | 1 680 | 1 725 | ≤ ~1 000 ✗ |
-| full catalogue | 22 329 | 22 461 | — |
-| retrieval recall @8 | — | 100 % | ≥ 98 % ✓ |
-| retrieval precision @8 | — | 22.4 % | ≥ 60 % ✗ |
+| | baseline | Phase F (`gateway`) | now, Phase D | target |
+|---|---|---|---|---|
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | **2 033** | ≤ 2 000 ✗ (by 33) |
+| SUCCESS_RATE | 18/18 | 18/18 | **18/18** | ≥ baseline ✓ |
+| MCP_CALLS median/task | 11 | 4 | **4** | ≤ 5 ✓ |
+| CATALOG_TOKENS/task | 8 389 | 0 | **0** | — |
+| `tools/list` at startup | 1 680 | 1 725 | 1 912 | ≤ ~1 000 ✗ |
+| full catalogue | 22 329 | 22 461 | 22 648 | — |
+| silent stale-state write | possible | possible | **refused** | 0 ✓ |
+| partial batch left on failure | yes | yes | **rolled back** | 0 ✓ |
+| retrieval recall @8 | — | 100 % | 100 % | ≥ 98 % ✓ |
+| retrieval precision @8 | — | 22.4 % | 22.4 % | ≥ 60 % ✗ |
+
+The token target is missed by 33 and that is a deliberate trade: the 38 tokens
+Phase D added per task are the revisions a caller sends back to get a stale-write
+refusal, which is itself a V1 success criterion ("silent stale-state write: 0").
+Buying a correctness guarantee for 1.9 % is the right side of that trade, but
+the target is marked failed rather than moved.
 
 Startup missed its target and the gateway is why: 10 always-visible meta-tools
 cost 1 725 tokens. It is now a **once-per-session** cost rather than a per-task

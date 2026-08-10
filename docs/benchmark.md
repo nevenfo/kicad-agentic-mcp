@@ -79,8 +79,10 @@ between them are loading mechanics, never search quality.
 |---|---|---|
 | baseline `tools/list` at startup — Konnect v0.2.2 | 19 | 1 680 |
 | baseline `tools/list` at startup — fork, step 1 | 21 | 1 958 |
-| baseline `tools/list` at startup — fork, now | 16 | **1 454** |
-| full catalogue, all 18 toolsets loaded | 193 / 195 | 22 329 / **22 190** |
+| baseline `tools/list` at startup — fork, step 2 | 16 | **1 454** |
+| baseline `tools/list` at startup — fork, gateway | 18 | 1 725 |
+| baseline `tools/list` at startup — fork, Phase D | 18 | 1 912 |
+| full catalogue, all 18 toolsets loaded | 193 / 195 / 197 | 22 329 / 22 190 / 22 648 |
 
 Step 1 made the startup surface **278 tokens larger** — the price of the two new
 meta-tools (`find_capabilities`, `load_tools`) — and that regression is what
@@ -145,6 +147,10 @@ unchanged and MCP calls down from 11 to 4.**
 Both V1 surface targets are met in the `gateway` column: `EXTERNAL_TOKENS/task`
 ≤ 2 000 and median `MCP_CALLS` ≤ 5.
 
+That column is the Phase F measurement, kept as the reference point for the
+surface work. Phase D then added the transaction guarantees and moved it to
+2 033 — 33 tokens over the target, for reasons and numbers in "Phase D" below.
+
 ### The gateway — where the last 1 200 tokens went
 
 `kicad_describe` + `kicad_invoke` (`crates/konnect-core/src/router/meta_tools.rs`)
@@ -195,6 +201,45 @@ ms) and no code on that path changed. It is recorded rather than smoothed.
 
 P95 is dominated by `run_erc`, which spawns `kicad-cli` (1 086 ms mean). Nothing
 in this work touched that, and nothing should: it is KiCad doing real work.
+
+### Phase D — what the transaction guarantees cost
+
+`kicad_invoke` became a transaction: `base_revisions` preconditions,
+`operation_id` idempotency, and a directory snapshot restored when a batch
+fails. Measured on the same 18 runs, `gateway` mode:
+
+| Metric | Phase F gateway | Phase D gateway | Δ |
+|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | = |
+| EXTERNAL_TOKENS/task | 1 995 | **2 033** | +38 (+1.9 %) |
+| CATALOG_TOKENS/task | 0 | 0 | = |
+| MCP_CALLS median/task | 4 | 4 | = |
+| WALL_CLOCK_P50 (ms) | 72 | 67 | −5 |
+| WALL_CLOCK_P95 (ms) | 916 | 911 | ≈ |
+| `tools/list` at startup | 1 725 | 1 912 | +187, once/session |
+| tests | 487 | **525** | +38 |
+
+The +38 tokens per task are the `revisions` map the reply now returns for each
+changed document — the input a caller needs to send back as `base_revisions`.
+Paths are reported once as `revisions_root` plus basenames rather than as full
+absolute paths, which is what keeps it at 38 rather than roughly 110.
+
+The +187 startup tokens are `kicad_invoke`'s schema growing from 210 to 337
+tokens for five new properties. That is a once-per-session cost and it moves the
+startup number **away** from its ≤ ~1 000 target, which was already missed; it
+is recorded as a regression rather than folded into the per-task headline.
+
+Snapshot capture costs nothing measurable here: P50 went down, not up, because
+the golden projects are 3–5 files of a few kilobytes each and the read is
+dwarfed by the tool work it protects.
+
+**One behavioural finding, from the benchmark rather than from review.** With
+`atomic` defaulting to `true`, the `recovery` task scored **0/3**: it
+deliberately fails five calls mid-batch with `stop_on_error: false` and then
+asserts the design the remaining calls build, and an unconditional rollback
+threw that away. `atomic` now defaults to `stop_on_error` — a caller who says
+the calls are independent has said the survivors are wanted. A stdio test pins
+the coupling so it cannot regress silently.
 
 ### Where the baseline's tokens went
 

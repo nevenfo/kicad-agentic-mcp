@@ -14,22 +14,32 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 ## CURRENT PHASE
 
-**F** — compact MCP surface. Phases A (bootstrap), B (cartography) and C
-(baseline benchmark) are done; D/E/G/H not started.
+**D** — domain stabilisation. A (bootstrap), B (cartography), C (baseline
+benchmark) and F (compact surface) are done. The first three Phase D items —
+revisions, idempotency, transactional batches — and the error catalog are in;
+stable IDs, snapshots as a first-class handle and semantic diff are not.
 
 ## CURRENT TASK
 
-Phase F is done on its own terms. Four measured reductions
-(`docs/benchmark.md`): `load_toolset` stopped echoing descriptions,
-tool-granular loading, schema compression + a smaller starter kit, and the
-gateway (`kicad_describe` + `kicad_invoke`).
+`kicad_invoke` is now a transaction rather than a loop
+(`crates/konnect-core/src/router/meta_tools.rs`, `crates/kam-state`):
 
-**1 995 external tokens/task, −83.9 % vs baseline, 4 MCP calls, 18/18.** Both V1
-surface targets (≤ 2 000 tokens, ≤ 5 calls) are met.
+* `base_revisions` — a batch built against a document the user has since edited
+  is refused before any call runs.
+* `operation_id` — a retried batch returns its first result instead of applying
+  twice.
+* `atomic` — every KiCAD file under the batch's directories is captured first
+  and written back if any call fails.
+* error catalog — `TransientClass` on every structured error, plus stable `io`
+  codes so the OS locale stops leaking into matchable text (E9).
 
-Next is Phase D/G: the gateway is the seam the Plan IR plugs into — `kicad_invoke`
-already takes a list of operations, so giving it preconditions, a base revision
-and rollback is the natural continuation rather than a new subsystem.
+**2 033 external tokens/task (+1.9 % vs Phase F), 4 MCP calls, 18/18, 525
+tests.** Startup surface 1 725 → 1 912, once per session.
+
+Next is Phase E/G: `kicad_invoke` now has preconditions, atomicity and an
+identity, which is what a Plan IR needs underneath it. Semantic diff comes
+first — the snapshot already knows exactly which documents changed, and turning
+that into "U4 moved, C17 added" is what evidence packs are built from.
 
 ---
 
@@ -49,8 +59,11 @@ and rollback is the natural continuation rather than a new subsystem.
 [x] Compress heavy tool schemas + shrink the starter kit    -> 3 698 -> 3 197 tk/task, startup 1 958 -> 1 454
 [x] Compact gateway (kicad_describe + kicad_invoke)         -> 1 995 tk/task, 4 calls, CATALOG_TOKENS = 0
 [ ] Map the scope gaps (capability matrix)
-[ ] Stable IDs / revisions / snapshots / optimistic concurrency
-[ ] Transactions / rollback / idempotency at the MCP layer
+[x] Revisions + optimistic concurrency (base_revisions)     -> content-addressed, kam-state
+[x] Transactions / rollback / idempotency at the MCP layer  -> kicad_invoke, 2 033 tk/task, 18/18
+[x] Error catalog (TransientClass, stable io codes)         -> E9 closed, E11 stays fixed
+[ ] Stable IDs (UUID-addressed items, not path+coordinates)
+[ ] Snapshots as first-class handles (kicad://snapshot/N)
 [ ] Semantic diff
 [ ] ProjectGraph / World Model
 [ ] Task State Manager
@@ -170,22 +183,56 @@ Both loading paths stay (D5 still holds): `load_toolset` and `load_tools` are
 what every shipped skill and existing client uses, and removing them would break
 them for a saving already obtained by adding a third path.
 
+### D10 — `atomic` defaults to `stop_on_error`, not to `true` (2026-08-10)
+
+The first Phase D build rolled back any batch containing a failure. The
+benchmark scored the `recovery` task **0/3**: it deliberately fails five calls
+mid-batch with `stop_on_error: false`, and the design built by the remaining
+calls — which the assertions check — was being thrown away.
+
+A caller who passes `stop_on_error: false` has declared the calls independent
+and the survivors wanted; undoing them is the opposite of the request. So
+`atomic` follows `stop_on_error` unless set explicitly. Found by measurement,
+not by review, which is the argument for running the suite before believing a
+safety feature is safe.
+
+### D11 — `kam-state` is MIT OR Apache-2.0 inside an AGPL fork (2026-08-10)
+
+Plan.md's licence mitigation said generic subsystems must stay re-licensable.
+`kam-state` is the first one, so it carries its own permissive licence and
+depends on no `konnect-*` type — the rule is now enforced by the crate's
+manifest rather than by intention. It knows nothing about KiCAD beyond a list of
+file suffixes.
+
+### D12 — Rollback is file-level, not KiCad's undo stack (2026-08-10)
+
+The snapshot restores bytes on disk. That is a complete undo for the
+S-expression tools, and **not** an undo for anything applied over IPC to a
+running KiCAD, nor for a GUI holding the same file open. `base_revisions` is the
+detection half of that gap: it refuses a batch whose document moved. When the
+PCB/IPC path gains mutations, it needs `BeginCommit`/`EndCommit` (plan.md, KiCad
+10 ground truth) rather than this.
+
 ---
 
 ## BENCHMARKS
 
 Full detail and method: **`docs/benchmark.md`**. Headline:
 
-| Metric | Konnect baseline | Fork `gateway` mode | Δ |
-|---|---|---|---|
-| SUCCESS_RATE | 18/18 | 18/18 | = |
-| EXTERNAL_TOKENS/task | 12 373 | **1 995** | **−83.9 %** |
-| RESPONSE_TOKENS/task | 3 984 | 1 995 | −49.9 % |
-| CATALOG_TOKENS/task | 8 389 | **0** | −100 % |
-| MCP_CALLS median/task | 11 | **4** | −7 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | ≈ |
-| WALL_CLOCK_P95 | 888 ms | 916 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 725 tk | +45 (once per session) |
+| Metric | Konnect baseline | Fork `gateway`, Phase F | Fork `gateway`, Phase D | Δ vs baseline |
+|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | = |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | **2 033** | **−83.6 %** |
+| CATALOG_TOKENS/task | 8 389 | 0 | **0** | −100 % |
+| MCP_CALLS median/task | 11 | 4 | **4** | −7 |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | +232 (once per session) |
+
+Phase D bought preconditions, idempotency and rollback for **+38 tokens/task**
+and **+187 startup tokens**. The startup number moves further from its ≤ ~1 000
+target, which was already missed; it is recorded as a regression, not netted off
+against the per-task win.
 
 Intermediate `tools` mode sits at 3 197 tk/task and is kept measured, because it
 is what a client that does not use the gateway pays.
@@ -196,8 +243,8 @@ partly re-spent on the gateway verbs, which pay for themselves after the first
 task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
-`cargo test --workspace --lib --tests` 469 → **487 passed, 0 failed, 5 ignored**
-on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
+`cargo test --workspace --lib --tests` 469 → 487 → **525 passed, 0 failed** on
+the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
 ---
@@ -285,7 +332,7 @@ validator exists.** Feeds the independent-verification work.
 `toolset_not_loaded` and pays a failed call plus a `load_toolset` round trip.
 Taxonomy defect; fix belongs with the capability matrix work.
 
-### E9 — Error messages leak the OS locale (2026-08-10) — OPEN
+### E9 — Error messages leak the OS locale (2026-08-10) — FIXED
 
 ```
 {"error":{"kind":"handler_error","reason":"IO error: Le fichier spécifié est introuvable. (os error 2)"}}
@@ -296,6 +343,17 @@ same failure has different text on a French and an English machine. Error
 matching, dedup, and any stable-finding-id scheme break on that. The error
 catalog must carry a stable code and keep the localized string as a detail
 field.
+
+Fixed with `ToolErrorKind::from_anyhow`, which walks the `anyhow` source chain
+for a `std::io::Error` and emits `Io { code, detail }` — `code` from an explicit
+`ErrorKind` mapping (never `Debug`, which is not a stability promise), `detail`
+keeping the OS's own words for a human. Used at both places a handler error
+reaches an agent: `handler.rs` dispatch and `kicad_invoke`'s inner loop. A test
+asserts the French string classifies as `not_found`.
+
+Still open in one respect: `SexpError::Io`'s own `Display` ("IO error: {0}")
+remains localized. That is now a *detail* string rather than the matchable
+value, which is the part that mattered.
 
 ### E11 — Structured errors were Debug-formatted into opaque strings (2026-08-10) — FIXED
 
@@ -349,20 +407,28 @@ not silently accumulate more.
 
 ## NEXT ACTION
 
-Phase D on top of `kicad_invoke`. It already accepts an ordered list of
-operations and stops on the first failure, which is a plan executor missing its
-guarantees. Add, in this order:
+The four items the previous entry listed are done and measured. Continue into
+Phase E, in this order:
 
-1. **revision + `base_revision`** on the batch — reject a batch compiled against
-   a document the user has since edited, instead of applying it blind.
-2. **`operation_id` idempotency** — a replayed batch after a timeout must return
-   the first result, not mutate twice.
-3. **transaction/rollback around the batch** — `konnect-sexp/transaction.rs`
-   already exists per document; the batch needs to own one span.
-4. **error catalog** — E9 (locale leakage) and E11 (Debug-formatted structured
-   errors) are the same defect seen twice: the agent-facing error is not a
-   stable, matchable value. `try_arg!` fixed the second; the catalog fixes both
-   properly, with a `TransientClass` per plan.md idea #2.
+1. **Semantic diff** (`kam-evidence`). The snapshot already holds the before
+   image and knows exactly which documents changed, so the difference between
+   "3 files changed" and "C17 added, VDD3V3 +2 connections, ERC 4 → 0" is one
+   pass over two parsed documents. Everything downstream — evidence packs, task
+   state, audit — consumes this, so it comes first.
+2. **Evidence handles** — `kicad://evidence/N`, `kicad://diff/N`. The batch reply
+   stays compact and the harness fetches detail only when it wants to challenge.
+   The snapshot is the natural backing store.
+3. **Task State Manager** (`kam-state` grows a task module). Objective,
+   constraints, verified facts, failed attempts — outside the LLM context.
+4. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which now has the three
+   properties a plan executor needs: preconditions, atomicity, identity.
 
-Only then Phase E/G proper. Do not start the local model runtime (H) before a
-batch can be rolled back — an agent that cannot undo is not worth accelerating.
+Still do not start the local model runtime (H). The rule held: a batch can now
+be rolled back, but an agent has no way yet to *describe* what it changed, and
+accelerating a loop that cannot report its own diff only produces faster
+unreviewable work.
+
+Two open defects to fold into that work rather than patch separately: **E6**
+(power symbols do not snap to the 1.27 mm grid) belongs with the geometry pass,
+and **E7** (internal connectivity analysis disagrees with `kicad-cli` ERC) is
+exactly what independent verification exists to prevent.
