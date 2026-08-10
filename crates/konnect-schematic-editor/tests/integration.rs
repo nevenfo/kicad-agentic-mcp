@@ -203,9 +203,9 @@ fn symbol_position() {
 fn symbol_booleans() {
     let sch = load_minimal();
     let r1 = sch.symbols.by_reference("R1").unwrap();
-    assert_eq!(r1.in_bom, true);
-    assert_eq!(r1.on_board, true);
-    assert_eq!(r1.dnp, false);
+    assert!(r1.in_bom);
+    assert!(r1.on_board);
+    assert!(!r1.dnp);
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn mutate_property_round_trips() {
     let sch2 = Schematic::load(tmp.path()).unwrap();
     let r1 = sch2.symbols.by_reference("R1").unwrap();
     assert_eq!(r1.value_str(), Some("4.7k"));
-    assert_eq!(r1.dnp, true);
+    assert!(r1.dnp);
 }
 
 #[test]
@@ -233,7 +233,7 @@ fn set_all_dnp() {
     let mut sch = Schematic::load(tmp.path()).unwrap();
     sch.symbols.set_all_dnp(true);
     for sym in &sch.symbols {
-        assert_eq!(sym.dnp, true);
+        assert!(sym.dnp);
     }
 }
 
@@ -323,7 +323,7 @@ fn add_label_and_save() {
     }
 
     let sch2 = Schematic::load(tmp.path()).unwrap();
-    assert!(sch2.labels.value_contains("GND").len() > 0);
+    assert!(!sch2.labels.value_contains("GND").is_empty());
 }
 
 #[test]
