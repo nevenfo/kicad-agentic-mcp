@@ -1,0 +1,16 @@
+[package]
+name = "kam-evidence"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Deliberately NOT the workspace AGPL licence. This crate is clean-room and
+# knows nothing about KiCAD beyond the vocabulary its callers hand it, so it
+# stays re-licensable and re-usable outside this fork (plan.md, D11).
+license = "MIT OR Apache-2.0"
+description = "Domain-level diffing and evidence handles for design documents"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]

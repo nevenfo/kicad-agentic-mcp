@@ -654,6 +654,96 @@ fn kicad_invoke_keeps_partial_work_when_atomic_is_off() {
     );
 }
 
+/// `done=true` is not a reviewable answer. A batch says what it changed in the
+/// vocabulary of the design — and by default says it in one line, so the audit
+/// trail costs a sentence rather than a transcript.
+#[test]
+fn kicad_invoke_reports_what_it_changed_in_design_terms() {
+    let scratch = Scratch::new("semdiff");
+    let mut p = McpProcess::spawn();
+    let created = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "sd"}}
+        ]}),
+    ));
+    assert_eq!(
+        created["diff"]["summary"].as_str(),
+        Some("document +3"),
+        "creating a project is a change, not the absence of one: {created:#?}"
+    );
+    let sch = scratch.sch("sd");
+
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "batch_place_components", "args": {"schematic": sch, "components": [
+                {"lib_id": "Device:R", "reference": "R1", "value": "10k", "x": 100.33, "y": 80.01},
+                {"lib_id": "Device:R", "reference": "R2", "value": "10k", "x": 100.33, "y": 95.25}
+            ]}}
+        ]}),
+    ));
+
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+    assert_eq!(
+        body["diff"]["summary"].as_str(),
+        Some("symbol +2"),
+        "the reply must name the design change, not the file count: {body:#?}"
+    );
+    assert!(
+        body["diff"]["changes"].is_null(),
+        "the per-item detail is opt-in — it is not in the default reply: {body:#?}"
+    );
+}
+
+/// The detail is one argument away, and `none` turns the whole thing off for a
+/// caller that is paying for every token.
+#[test]
+fn the_diff_detail_level_is_the_callers_choice() {
+    let scratch = Scratch::new("semdifflevel");
+    let mut p = McpProcess::spawn();
+    p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "dl"}}
+        ]}),
+    );
+    let sch = scratch.sch("dl");
+
+    let detailed = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"diff": "changes", "calls": [
+            {"tool": "add_schematic_net_label",
+             "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}}
+        ]}),
+    ));
+    let changes = detailed["diff"]["changes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected per-item changes: {detailed:#?}"));
+    assert!(
+        changes
+            .iter()
+            .any(|c| c.as_str() == Some("label VOUT added")),
+        "a placed label must be named: {changes:#?}"
+    );
+
+    let silent = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"diff": "none", "calls": [
+            {"tool": "add_schematic_net_label",
+             "args": {"schematic": sch, "net": "VIN", "x": 100.33, "y": 74.93}}
+        ]}),
+    ));
+    assert!(
+        silent["diff"].is_null(),
+        "diff: none must cost nothing: {silent:#?}"
+    );
+    assert!(
+        silent["revisions"].is_object(),
+        "turning the diff off must not turn off revision reporting: {silent:#?}"
+    );
+}
+
 /// A plan compiled against a document the user has since edited is refused,
 /// not applied on top. This is the half of the pair a file-level rollback
 /// cannot provide: detection.

@@ -141,6 +141,11 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Extra files/dirs to protect when no path appears in the calls."
+                    },
+                    "diff": {
+                        "type": "string",
+                        "enum": ["none", "summary", "changes"],
+                        "description": "Design diff detail. Default summary ('symbol +2, wire ~1'); changes adds a line per item."
                     }
                 },
                 "required": ["calls"]
@@ -415,7 +420,8 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         }
     }
 
-    let guard = BatchGuard::capture(calls, args.get("documents"), atomic);
+    let diff_level = DiffLevel::from_args(args);
+    let guard = BatchGuard::capture(calls, args.get("documents"), atomic, diff_level);
 
     let mut results = Vec::with_capacity(calls.len());
     let mut ok_count = 0usize;
@@ -630,6 +636,43 @@ fn check_base_revisions(args: &Value) -> Option<CallToolResult> {
     None
 }
 
+/// How much of the design diff a batch reply carries.
+///
+/// `done=true` is not a reviewable answer, but neither is a hundred lines of
+/// change on every call. The default is one line; the detail is one argument
+/// away, and the caller decides which it is paying for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiffLevel {
+    /// Say nothing about the design.
+    None,
+    /// One line: `symbol +2, wire ~1`.
+    Summary,
+    /// The summary plus a line per changed item, bounded.
+    Changes,
+}
+
+impl DiffLevel {
+    fn from_args(args: &Value) -> Self {
+        match args["diff"].as_str() {
+            Some("none") => Self::None,
+            Some("changes") => Self::Changes,
+            // Anything else, including absent and misspelled, gets the default.
+            // A typo silently disabling the audit trail would be the wrong way
+            // to fail.
+            _ => Self::Summary,
+        }
+    }
+
+    fn wants_before_image(self) -> bool {
+        self != Self::None
+    }
+}
+
+/// Most changes fit in a handful of lines; a re-route does not. The rest lives
+/// in the documents themselves, which the caller can re-read at the revisions
+/// the same reply hands back.
+const MAX_REPORTED_CHANGES: usize = 25;
+
 /// The before-image a batch can be rolled back to, plus the reason there isn't
 /// one when that is the case.
 struct BatchGuard {
@@ -638,14 +681,22 @@ struct BatchGuard {
     /// caller is told, because "I have a net" and "I appear to have a net" are
     /// the two states this must never confuse.
     unprotected: Option<String>,
+    /// Whether a failure should restore the snapshot. False when the snapshot
+    /// exists only to describe the change.
+    rollback: bool,
+    diff: DiffLevel,
 }
 
 impl BatchGuard {
-    fn capture(calls: &[Value], documents: Option<&Value>, atomic: bool) -> Self {
-        if !atomic {
+    fn capture(calls: &[Value], documents: Option<&Value>, atomic: bool, diff: DiffLevel) -> Self {
+        // The before-image serves two purposes now — undo and description — so
+        // it is captured when either wants it, and `rollback` records which.
+        if !atomic && !diff.wants_before_image() {
             return Self {
                 snapshot: None,
                 unprotected: None,
+                rollback: false,
+                diff,
             };
         }
         let roots = crate::router::batch::discover_roots(calls, documents);
@@ -655,17 +706,23 @@ impl BatchGuard {
             // to see, which does — hence saying it rather than staying silent.
             return Self {
                 snapshot: None,
-                unprotected: Some("no_project_path_found".to_string()),
+                unprotected: atomic.then(|| "no_project_path_found".to_string()),
+                rollback: atomic,
+                diff,
             };
         }
         match kam_state::Snapshot::capture(&roots, kam_state::SnapshotLimits::default()) {
             Ok(snapshot) => Self {
                 snapshot: Some(snapshot),
                 unprotected: None,
+                rollback: atomic,
+                diff,
             },
             Err(e) => Self {
                 snapshot: None,
-                unprotected: Some(e.code().to_string()),
+                unprotected: atomic.then(|| e.code().to_string()),
+                rollback: atomic,
+                diff,
             },
         }
     }
@@ -679,7 +736,7 @@ impl BatchGuard {
             return;
         };
 
-        if failed {
+        if failed && self.rollback {
             let report = snapshot.restore();
             if report.is_empty() {
                 // Nothing had been written yet — the failure was clean.
@@ -709,6 +766,7 @@ impl BatchGuard {
         if changed.is_empty() {
             return;
         }
+        report_diff(&snapshot, &changed, self.diff, body);
         // Project paths are long and identical up to the filename. Factoring
         // the directory out turns four absolute Windows paths into one plus
         // four basenames — the same information for a third of the tokens.
@@ -738,6 +796,75 @@ impl BatchGuard {
             body["revisions_omitted"] = json!(changed.len() - MAX_REPORTED_REVISIONS);
         }
     }
+}
+
+/// Describe the batch in the vocabulary of the design rather than of the
+/// filesystem.
+///
+/// Every changed document is diffed against its before image and the results
+/// are folded into one answer, because a batch that edits a sheet and its
+/// parent made *one* change to the project, not two.
+///
+/// Documents with no domain extractor (`.kicad_pro`, `.kicad_prl`) are counted
+/// rather than described. Saying "2 other files changed" is honest; guessing at
+/// their contents is not.
+fn report_diff(
+    snapshot: &kam_state::Snapshot,
+    changed: &[(std::path::PathBuf, kam_state::DocState)],
+    level: DiffLevel,
+    body: &mut Value,
+) {
+    if level == DiffLevel::None {
+        return;
+    }
+
+    let mut diff = kam_evidence::Diff::default();
+    let mut undescribed = 0usize;
+    // Documents are items too. Creating a project adds three empty files, whose
+    // *contents* differ in nothing — reporting that as "no design change" would
+    // describe the one batch that changed the most as the one that changed
+    // nothing.
+    let mut docs_before = kam_evidence::ItemSet::new();
+    let mut docs_after = kam_evidence::ItemSet::new();
+
+    for (path, _) in changed {
+        let before = snapshot.before(path);
+        let after = std::fs::read(path).ok();
+
+        let name = path
+            .file_name()
+            .map_or_else(|| path.to_string_lossy(), |n| n.to_string_lossy())
+            .into_owned();
+        if before.is_some() {
+            docs_before.insert(kam_evidence::Item::new("document", &name, &name));
+        }
+        if after.is_some() {
+            docs_after.insert(kam_evidence::Item::new("document", &name, &name));
+        }
+
+        match crate::evidence::diff_document(path, before, after.as_deref()) {
+            Some(one) => diff.extend(one),
+            // Modified, but in a format nothing here can read. Counted rather
+            // than described, and counted only when it was already there: a
+            // created one is covered by the document diff above.
+            None if before.is_some() && after.is_some() => undescribed += 1,
+            None => {}
+        }
+    }
+    diff.extend(kam_evidence::Diff::compute(&docs_before, &docs_after));
+
+    if diff.is_empty() && undescribed == 0 {
+        return;
+    }
+
+    let mut out = json!({ "summary": diff.summary() });
+    if level == DiffLevel::Changes && !diff.is_empty() {
+        out["changes"] = json!(diff.render_lines(MAX_REPORTED_CHANGES));
+    }
+    if undescribed > 0 {
+        out["undescribed_files"] = json!(undescribed);
+    }
+    body["diff"] = out;
 }
 
 /// Concatenate a result's text content. Image content carries no text and is

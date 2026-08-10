@@ -82,6 +82,7 @@ between them are loading mechanics, never search quality.
 | baseline `tools/list` at startup — fork, step 2 | 16 | **1 454** |
 | baseline `tools/list` at startup — fork, gateway | 18 | 1 725 |
 | baseline `tools/list` at startup — fork, Phase D | 18 | 1 912 |
+| baseline `tools/list` at startup — fork, Phase E | 18 | 1 952 |
 | full catalogue, all 18 toolsets loaded | 193 / 195 / 197 | 22 329 / 22 190 / 22 648 |
 
 Step 1 made the startup surface **278 tokens larger** — the price of the two new
@@ -240,6 +241,47 @@ asserts the design the remaining calls build, and an unconditional rollback
 threw that away. `atomic` now defaults to `stop_on_error` — a caller who says
 the calls are independent has said the survivors are wanted. A stdio test pins
 the coupling so it cannot regress silently.
+
+### Phase E — what the semantic diff costs
+
+A batch used to answer "3 files changed". It now answers `symbol +2, wire +1` —
+the domain diff between the before-image the snapshot already held and what is
+on disk after. Same 18 runs, `gateway` mode:
+
+| Metric | Phase D gateway | Phase E gateway | Δ |
+|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | = |
+| EXTERNAL_TOKENS/task | 2 033 | **2 158** | +125 (+6.1 %) |
+| CATALOG_TOKENS/task | 0 | 0 | = |
+| MCP_CALLS median/task | 4 | 4 | = |
+| WALL_CLOCK_P50 (ms) | 67 | 64 | −3 |
+| WALL_CLOCK_P95 (ms) | 911 | 870 | −41 |
+| `tools/list` at startup | 1 912 | 1 952 | +40, once/session |
+| tests | 525 | **567** | +42 |
+
+The +125 splits as **+40 once per session** (the `diff` property on
+`kicad_invoke`'s schema) and **~85 per task** across the batches that actually
+change something — one `"diff":{"summary":"…"}` line per mutating batch.
+
+The target of ≤ 2 000 external tokens per task is now missed by 158 and is
+recorded as missed. The trade is deliberate and is the one the architecture
+asks for: a batch that reports `done=true` cannot be reviewed, and the
+alternative — the harness re-reading the documents to find out what happened —
+costs far more than 85 tokens. `diff: "none"` turns it off for a caller who
+disagrees, and `diff: "changes"` buys a line per item for one that wants the
+detail.
+
+Extraction cost is not visible in the wall clock: P50 and P95 both went down,
+because the parse happens on files already in the page cache from the snapshot
+that was taken anyway.
+
+**One finding from the probe rather than from review.** The first build
+reported `create_project` as `no design change`: three files appeared, and
+their *contents* — an empty schematic, an empty board — differ in no item. The
+batch that changes the most was being described as the one that changed
+nothing. Documents are now items in their own right, so a project creation
+reads as `document +3`. `bench/probes/semantic_diff.yaml` is what surfaced it;
+the same shape is now pinned by a stdio test.
 
 ### Where the baseline's tokens went
 

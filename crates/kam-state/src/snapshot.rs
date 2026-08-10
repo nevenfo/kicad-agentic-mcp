@@ -187,6 +187,18 @@ impl Snapshot {
         self.files.len()
     }
 
+    /// The bytes captured for a path, if it existed when the snapshot was
+    /// taken.
+    ///
+    /// This is what makes the snapshot a *before image* rather than only an
+    /// undo buffer: whoever understands the file format can compare these bytes
+    /// with what is on disk now and say what changed in domain terms. `None`
+    /// means the file was created during the batch.
+    #[must_use]
+    pub fn before(&self, path: &Path) -> Option<&[u8]> {
+        self.files.get(path).map(Vec::as_slice)
+    }
+
     /// Paths whose content differs from the capture, with their current state.
     ///
     /// Covers all three transitions — modified, created, deleted — because the
@@ -442,10 +454,27 @@ mod tests {
     }
 
     #[test]
+    fn the_capture_is_readable_as_a_before_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let sch = write(dir.path(), "a.kicad_sch", "before");
+        let snap =
+            Snapshot::capture(&[dir.path().to_path_buf()], SnapshotLimits::default()).unwrap();
+        std::fs::write(&sch, "after").unwrap();
+
+        assert_eq!(snap.before(&sch), Some(b"before".as_slice()));
+        assert_eq!(
+            snap.before(&dir.path().join("never.kicad_sch")),
+            None,
+            "a file created during the batch has no before image"
+        );
+    }
+
+    #[test]
     fn a_missing_root_captures_nothing_and_deletes_what_appears() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("not-yet");
-        let snap = Snapshot::capture(&[root.clone()], SnapshotLimits::default()).unwrap();
+        let snap =
+            Snapshot::capture(std::slice::from_ref(&root), SnapshotLimits::default()).unwrap();
         assert_eq!(snap.file_count(), 0);
 
         let created = write(&root, "new.kicad_pro", "{}");

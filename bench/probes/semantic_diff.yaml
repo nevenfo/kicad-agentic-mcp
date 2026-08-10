@@ -1,0 +1,32 @@
+# What a batch reply actually costs and says once the semantic diff is in it.
+# Written to measure the real payload rather than estimate it: the token budget
+# is decided per batch, so the shape of one real reply is the evidence.
+project_name: semdiff
+toolsets: [project, sch_components, sch_wiring, sch_batch]
+steps:
+  - tool: kicad_invoke
+    args:
+      calls:
+        - tool: create_project
+          args: { path: "$WORK", name: "$NAME" }
+
+  - tool: kicad_invoke
+    args:
+      calls:
+        - tool: batch_place_components
+          args:
+            schematic: "$SCH"
+            components:
+              - { lib_id: "Device:R", reference: "R1", value: "10k", x: 100.33, y: 80.01 }
+              - { lib_id: "Device:R", reference: "R2", value: "10k", x: 100.33, y: 95.25 }
+        - tool: connect_pins
+          args: { schematic: "$SCH", ref1: "R1", pin1: "2", ref2: "R2", pin2: "1" }
+        - tool: add_schematic_net_label
+          args: { schematic: "$SCH", net: "VOUT", x: 100.33, y: 87.63 }
+
+  - tool: kicad_invoke
+    args:
+      diff: changes
+      calls:
+        - tool: add_power_symbol
+          args: { schematic: "$SCH", power_net: "+3V3", x: 100.33, y: 76.2 }

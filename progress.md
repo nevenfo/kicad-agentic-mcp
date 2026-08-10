@@ -14,32 +14,34 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 ## CURRENT PHASE
 
-**D** — domain stabilisation. A (bootstrap), B (cartography), C (baseline
-benchmark) and F (compact surface) are done. The first three Phase D items —
-revisions, idempotency, transactional batches — and the error catalog are in;
-stable IDs, snapshots as a first-class handle and semantic diff are not.
+**E** — world model / task state / evidence. A (bootstrap), B (cartography),
+C (baseline benchmark) and F (compact surface) are done; D shipped revisions,
+idempotency, transactional batches and the error catalog. Semantic diff is the
+first Phase E item and it is in. Evidence handles, Task State and ProjectGraph
+are not.
 
 ## CURRENT TASK
 
-`kicad_invoke` is now a transaction rather than a loop
-(`crates/konnect-core/src/router/meta_tools.rs`, `crates/kam-state`):
+A batch now says what it changed in the vocabulary of the design
+(`crates/kam-evidence`, `crates/konnect-core/src/evidence/`):
 
-* `base_revisions` — a batch built against a document the user has since edited
-  is refused before any call runs.
-* `operation_id` — a retried batch returns its first result instead of applying
-  twice.
-* `atomic` — every KiCAD file under the batch's directories is captured first
-  and written back if any call fails.
-* error catalog — `TransientClass` on every structured error, plus stable `io`
-  codes so the OS locale stops leaking into matchable text (E9).
+* `kam-evidence` — clean-room, MIT OR Apache-2.0, knows nothing about KiCAD.
+  Documents reduce to an `ItemSet` (kind, stable key, label, attributes); the
+  diff matches by key and reports attribute differences, so re-serialisation
+  noise is removed structurally rather than filtered afterwards.
+* `konnect-core::evidence` — the KiCAD half: `.kicad_sch` and `.kicad_pcb` to
+  items, keyed on KiCAD's own UUIDs. Symbols, wires, buses, labels, junctions,
+  sheets; footprints, tracks, vias, zones and nets, with pads counted rather
+  than listed so a net reports `connections: +2`.
+* `kicad_invoke` grew a `diff` argument — `none` / `summary` (default) /
+  `changes`. The snapshot it already took for rollback is the before-image.
 
-**2 033 external tokens/task (+1.9 % vs Phase F), 4 MCP calls, 18/18, 525
-tests.** Startup surface 1 725 → 1 912, once per session.
+**2 158 external tokens/task (+6.1 % vs Phase D), 4 MCP calls, 18/18, 567
+tests.** Startup surface 1 912 → 1 952, once per session.
 
-Next is Phase E/G: `kicad_invoke` now has preconditions, atomicity and an
-identity, which is what a Plan IR needs underneath it. Semantic diff comes
-first — the snapshot already knows exactly which documents changed, and turning
-that into "U4 moved, C17 added" is what evidence packs are built from.
+Next in Phase E: evidence handles (`kicad://evidence/N`, `kicad://diff/N`), so
+the detail lives outside the reply and the harness fetches it only to
+challenge. Then the Task State Manager, then Plan IR.
 
 ---
 
@@ -64,7 +66,7 @@ that into "U4 moved, C17 added" is what evidence packs are built from.
 [x] Error catalog (TransientClass, stable io codes)         -> E9 closed, E11 stays fixed
 [ ] Stable IDs (UUID-addressed items, not path+coordinates)
 [ ] Snapshots as first-class handles (kicad://snapshot/N)
-[ ] Semantic diff
+[x] Semantic diff                                           -> kam-evidence + konnect-core::evidence, 2 158 tk/task
 [ ] ProjectGraph / World Model
 [ ] Task State Manager
 [ ] Context Manager + Attention Manager (ACTIVE TASK anchor)
@@ -213,26 +215,66 @@ detection half of that gap: it refuses a batch whose document moved. When the
 PCB/IPC path gains mutations, it needs `BeginCommit`/`EndCommit` (plan.md, KiCad
 10 ground truth) rather than this.
 
+### D13 — the diff is on by default, and that costs 6.1 % (2026-08-10)
+
+`diff` could have defaulted to `none` and kept the per-task number at 2 033.
+It does not, because "every change carries its proof" is a project rule and a
+reply of `ok: 3` is not reviewable. The measured price is **+40 startup tokens**
+(the schema property) and **~85 per task** (one summary line per mutating
+batch). The ≤ 2 000 target is now missed by 158 and is recorded as missed.
+
+The counter-argument that decided it: the alternative to 85 tokens of summary
+is a harness re-reading the documents to find out what happened, which costs an
+order of magnitude more. `diff: "none"` exists for a caller who disagrees, and
+`diff: "changes"` buys the per-item detail.
+
+### D14 — documents are items, not a file count (2026-08-10)
+
+The first build reported `create_project` as `no design change`: three files
+appeared and their *contents* — an empty schematic, an empty board — differ in
+no item. The batch that changed the most was described as the one that changed
+nothing.
+
+Fixed by making the document itself an item, so a creation reads `document +3`
+through the same diff engine rather than through a special case. A file that is
+modified but has no extractor (`.kicad_pro`) is still counted as
+`undescribed_files`, because guessing at its contents would be worse than
+admitting the gap.
+
+Found by `bench/probes/semantic_diff.yaml` on a real project, not by review —
+the unit tests all passed, because none of them created a project.
+
+### D15 — the diff engine is format-agnostic on purpose (2026-08-10)
+
+`kam-evidence` could have parsed KiCAD S-expressions directly and been half the
+code. It does not, for two reasons that both cost something now and pay later:
+the licence rule (D11) keeps generic subsystems free of AGPL-derived code, and
+the split means a second document format costs an extractor rather than a
+second diff engine. The extractor lives in `konnect-core::evidence` where the
+KiCAD knowledge already is.
+
 ---
 
 ## BENCHMARKS
 
 Full detail and method: **`docs/benchmark.md`**. Headline:
 
-| Metric | Konnect baseline | Fork `gateway`, Phase F | Fork `gateway`, Phase D | Δ vs baseline |
-|---|---|---|---|---|
-| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | = |
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | **2 033** | **−83.6 %** |
-| CATALOG_TOKENS/task | 8 389 | 0 | **0** | −100 % |
-| MCP_CALLS median/task | 11 | 4 | **4** | −7 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | ≈ |
-| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | +232 (once per session) |
+| Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Δ vs baseline |
+|---|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | = |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 158** | **−82.6 %** |
+| CATALOG_TOKENS/task | 8 389 | 0 | 0 | **0** | −100 % |
+| MCP_CALLS median/task | 11 | 4 | 4 | **4** | −7 |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 64 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 870 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 1 952 tk | +272 (once per session) |
 
 Phase D bought preconditions, idempotency and rollback for **+38 tokens/task**
-and **+187 startup tokens**. The startup number moves further from its ≤ ~1 000
-target, which was already missed; it is recorded as a regression, not netted off
-against the per-task win.
+and **+187 startup tokens**. Phase E bought the semantic diff for **+125
+tokens/task** (+40 of it once per session). Both move the startup number
+further from its ≤ ~1 000 target and the per-task number further from ≤ 2 000;
+both targets are recorded as missed rather than moved, and neither win is
+netted off against them.
 
 Intermediate `tools` mode sits at 3 197 tk/task and is kept measured, because it
 is what a client that does not use the gateway pays.
@@ -243,8 +285,8 @@ partly re-spent on the gateway verbs, which pay for themselves after the first
 task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
-`cargo test --workspace --lib --tests` 469 → 487 → **525 passed, 0 failed** on
-the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
+`cargo test --workspace --lib --tests` 469 → 487 → 525 → **567 passed, 0
+failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
 ---
@@ -407,28 +449,35 @@ not silently accumulate more.
 
 ## NEXT ACTION
 
-The four items the previous entry listed are done and measured. Continue into
-Phase E, in this order:
+Semantic diff is done and measured. Continue in Phase E, in this order:
 
-1. **Semantic diff** (`kam-evidence`). The snapshot already holds the before
-   image and knows exactly which documents changed, so the difference between
-   "3 files changed" and "C17 added, VDD3V3 +2 connections, ERC 4 → 0" is one
-   pass over two parsed documents. Everything downstream — evidence packs, task
-   state, audit — consumes this, so it comes first.
-2. **Evidence handles** — `kicad://evidence/N`, `kicad://diff/N`. The batch reply
-   stays compact and the harness fetches detail only when it wants to challenge.
-   The snapshot is the natural backing store.
+1. **Evidence handles** — `kicad://evidence/N`, `kicad://diff/N` as MCP
+   resources. The reply keeps its one-line summary and the full change list
+   moves behind a handle, which is what makes `diff: "changes"` affordable at
+   any size. The snapshot is the backing store; the diff is already
+   `Serialize`, so the store is the missing half.
+2. **Validators in the evidence pack.** The diff says what moved; it does not
+   say whether the board still passes. `run_erc` / `run_drc` deltas belong in
+   the same reply — `ERC 4 → 0` is the line that turns a diff into a proof, and
+   **E7** says the internal analysis must not be the thing that answers it.
 3. **Task State Manager** (`kam-state` grows a task module). Objective,
    constraints, verified facts, failed attempts — outside the LLM context.
-4. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which now has the three
+4. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which has the three
    properties a plan executor needs: preconditions, atomicity, identity.
 
-Still do not start the local model runtime (H). The rule held: a batch can now
-be rolled back, but an agent has no way yet to *describe* what it changed, and
-accelerating a loop that cannot report its own diff only produces faster
-unreviewable work.
+Still do not start the local model runtime (H). A batch can now be rolled back
+*and* describe itself, but nothing yet verifies the description against KiCAD's
+own validators, and an accelerated loop whose proof is self-reported is the
+failure mode the whole design exists to avoid.
 
 Two open defects to fold into that work rather than patch separately: **E6**
 (power symbols do not snap to the 1.27 mm grid) belongs with the geometry pass,
 and **E7** (internal connectivity analysis disagrees with `kicad-cli` ERC) is
-exactly what independent verification exists to prevent.
+exactly what step 2 above has to get right.
+
+One limitation the diff inherits and does not hide: it reports **objects**, not
+**connectivity**. `VDD3V3 connections: +2` is real on a `.kicad_pcb`, where
+pads name their net in the file. A schematic has no netlist in the document, so
+deriving one would mean re-implementing connectivity — the exact thing E7 shows
+already disagrees with `kicad-cli`. Schematic nets stay absent from the diff
+until they come from a validator.
