@@ -1,0 +1,57 @@
+id: sch_hierarchy
+title: Hierarchical sheet with pins, then a duplicate of it
+project_name: hier
+category: schematic_complex
+toolsets: [project, sch_hierarchy, sch_analysis, sch_export, sch_components]
+
+# Plain-language intents, used by `--load-mode search` to score capability
+# retrieval with no oracle knowledge of the tool names.
+intents:
+  - "create a new kicad project"
+  - "add a hierarchical sheet and its sheet pins"
+  - "duplicate a hierarchical sheet"
+  - "inspect the sheet hierarchy, validate sheet pins, renumber pages"
+
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+
+  - tool: add_hierarchical_sheet
+    args:
+      schematic: "$SCH"
+      sheet_file: "power.kicad_sch"
+      sheet_name: "Power"
+      x: 50.8
+      y: 50.8
+      width: 76.2
+      height: 50.8
+
+  - tool: add_sheet_pin
+    args: { schematic: "$SCH", sheet_name: "Power", pin_name: "VIN", pin_type: "input", x: 50.8, y: 63.5 }
+  - tool: add_sheet_pin
+    args: { schematic: "$SCH", sheet_name: "Power", pin_name: "+3V3", pin_type: "output", x: 127.0, y: 63.5 }
+  - tool: add_sheet_pin
+    args: { schematic: "$SCH", sheet_name: "Power", pin_name: "GND", pin_type: "passive", x: 50.8, y: 76.2 }
+
+  - tool: duplicate_sheet
+    args:
+      schematic: "$SCH"
+      source_sheet_name: "Power"
+      new_sheet_name: "Power2"
+      new_file: "power2.kicad_sch"
+
+  - tool: get_sheet_hierarchy
+    args: { schematic: "$SCH" }
+
+  - tool: validate_sheet_pins
+    args: { schematic: "$SCH" }
+
+  - tool: renumber_sheet_pages
+    args: { schematic: "$SCH" }
+
+assert:
+  - kind: all_steps_ok
+  - kind: file_exists
+    value: "$WORK/power.kicad_sch"
+  - kind: file_exists
+    value: "$WORK/power2.kicad_sch"

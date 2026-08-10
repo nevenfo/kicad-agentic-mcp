@@ -1,0 +1,53 @@
+id: sch_divider
+title: Resistive divider, ERC-clean
+project_name: divider
+category: schematic_simple
+toolsets: [project, sch_components, sch_wiring, sch_analysis, sch_batch, sch_export]
+
+# Grid: KiCad schematics snap to 1.27 mm. Every coordinate below is an exact
+# multiple, so placement is idempotent and the expected pin positions are
+# derivable rather than measured after the fact.
+#   Device:R pins sit at component_y -/+ 3.81
+#   power symbols and PWR_FLAG have their pin at the symbol origin
+# Plain-language intents, used by `--load-mode search` to score capability
+# retrieval with no oracle knowledge of the tool names.
+intents:
+  - "create a new kicad project"
+  - "place resistor symbols on the schematic"
+  - "add power symbols for the supply rails"
+  - "connect two component pins with a wire"
+  - "add a net label"
+  - "run erc and list the components and nets"
+
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+
+  - tool: batch_place_components
+    args:
+      schematic: "$SCH"
+      components:
+        - { lib_id: "Device:R", reference: "R1", value: "10k", x: 100.33, y: 80.01 }
+        - { lib_id: "Device:R", reference: "R2", value: "10k", x: 100.33, y: 95.25 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG01", x: 100.33, y: 76.2 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG02", x: 100.33, y: 99.06 }
+
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "+3V3", x: 100.33, y: 76.2 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "GND", x: 100.33, y: 99.06 }
+
+  - tool: connect_pins
+    args: { schematic: "$SCH", ref1: "R1", pin1: "2", ref2: "R2", pin2: "1" }
+
+  - tool: add_schematic_net_label
+    args: { schematic: "$SCH", net: "VOUT", x: 100.33, y: 87.63 }
+
+assert:
+  - kind: all_steps_ok
+  - kind: erc_max_errors
+    value: 0
+  - kind: components_present
+    value: ["R1", "R2"]
+  - kind: nets_present
+    value: ["VOUT"]

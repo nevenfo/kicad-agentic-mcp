@@ -1,0 +1,74 @@
+id: recovery
+title: Bad input must fail loudly, and the session must survive it
+project_name: recovery
+category: recovery
+toolsets: [project, sch_components, sch_wiring, sch_batch, sch_export, sch_analysis]
+
+# Every `expect_error: true` step below is a way an agent gets it wrong in
+# practice. What is being measured is not that the server refuses — it is that
+# it refuses *and stays usable*, and that the final design is still correct.
+# A server that silently accepts a nonexistent lib_id writes a component with
+# no pins that is invisible to the netlist; that scores as a pass on any
+# assertion that only looks at the last call.
+# Plain-language intents, used by `--load-mode search` to score capability
+# retrieval with no oracle knowledge of the tool names.
+intents:
+  - "create a new kicad project"
+  - "add a symbol to the schematic"
+  - "place multiple symbols on the schematic in one call"
+  - "add power symbols for the supply rails"
+  - "connect two component pins with a wire"
+  - "run erc and list the components"
+
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+
+  # 1. Nonexistent library.
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "NotALibrary:Nope", x: 100.33, y: 80.01 }
+    expect_error: true
+
+  # 2. Existing library, nonexistent symbol.
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "Device:ThisSymbolDoesNotExist", x: 100.33, y: 80.01 }
+    expect_error: true
+
+  # 3. Malformed lib_id (no colon).
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "Device_R", x: 100.33, y: 80.01 }
+    expect_error: true
+
+  # 4. Schematic path that does not exist.
+  - tool: list_schematic_components
+    args: { schematic: "$WORK/does_not_exist.kicad_sch" }
+    expect_error: true
+
+  # 5. Wiring to a component that was never placed.
+  - tool: connect_pins
+    args: { schematic: "$SCH", ref1: "R1", pin1: "1", ref2: "R2", pin2: "2" }
+    expect_error: true
+
+  # The session must still work after all of that.
+  - tool: batch_place_components
+    args:
+      schematic: "$SCH"
+      components:
+        - { lib_id: "Device:R", reference: "R1", value: "10k", x: 100.33, y: 80.01 }
+        - { lib_id: "Device:R", reference: "R2", value: "10k", x: 100.33, y: 95.25 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG01", x: 100.33, y: 76.2 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG02", x: 100.33, y: 99.06 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "+3V3", x: 100.33, y: 76.2 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "GND", x: 100.33, y: 99.06 }
+  - tool: connect_pins
+    args: { schematic: "$SCH", ref1: "R1", pin1: "2", ref2: "R2", pin2: "1" }
+
+assert:
+  - kind: all_steps_ok
+  # The three rejected placements must have left nothing behind.
+  - kind: components_present
+    value: ["R1", "R2"]
+  - kind: erc_max_errors
+    value: 0

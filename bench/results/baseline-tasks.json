@@ -1,0 +1,1748 @@
+{
+  "label": "konnect-baseline",
+  "runs": [
+    {
+      "task_id": "sch_divider",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 59.3648000030953,
+      "request_tokens": 640,
+      "response_tokens": 3900,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.2
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.1
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 40,
+          "resp_tokens": 111,
+          "ms": 2.0
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 159,
+          "resp_tokens": 248,
+          "ms": 12.0
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 32,
+          "ms": 8.0
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 63,
+          "resp_tokens": 31,
+          "ms": 8.6
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 67,
+          "resp_tokens": 54,
+          "ms": 8.5
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 64,
+          "resp_tokens": 24,
+          "ms": 7.3
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 49,
+          "resp_tokens": 17,
+          "ms": 1107.4
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 46,
+          "resp_tokens": 310,
+          "ms": 1.3
+        },
+        {
+          "tool": "list_schematic_nets",
+          "req_tokens": 47,
+          "resp_tokens": 11,
+          "ms": 0.7
+        }
+      ]
+    },
+    {
+      "task_id": "sch_divider",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 59.21409999791649,
+      "request_tokens": 649,
+      "response_tokens": 3913,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.2
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 41,
+          "resp_tokens": 114,
+          "ms": 1.5
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 160,
+          "resp_tokens": 258,
+          "ms": 11.4
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 32,
+          "ms": 8.2
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 31,
+          "ms": 9.2
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 68,
+          "resp_tokens": 54,
+          "ms": 8.6
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 65,
+          "resp_tokens": 24,
+          "ms": 7.1
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 50,
+          "resp_tokens": 17,
+          "ms": 1084.7
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 47,
+          "resp_tokens": 310,
+          "ms": 1.3
+        },
+        {
+          "tool": "list_schematic_nets",
+          "req_tokens": 48,
+          "resp_tokens": 11,
+          "ms": 0.8
+        }
+      ]
+    },
+    {
+      "task_id": "sch_divider",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 58.666199998697266,
+      "request_tokens": 631,
+      "response_tokens": 3901,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 39,
+          "resp_tokens": 108,
+          "ms": 2.1
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 158,
+          "resp_tokens": 252,
+          "ms": 10.8
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 63,
+          "resp_tokens": 32,
+          "ms": 8.6
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 62,
+          "resp_tokens": 31,
+          "ms": 7.9
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 66,
+          "resp_tokens": 54,
+          "ms": 8.4
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 63,
+          "resp_tokens": 24,
+          "ms": 7.8
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 48,
+          "resp_tokens": 17,
+          "ms": 1070.4
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 45,
+          "resp_tokens": 310,
+          "ms": 1.2
+        },
+        {
+          "tool": "list_schematic_nets",
+          "req_tokens": 46,
+          "resp_tokens": 11,
+          "ms": 0.8
+        }
+      ]
+    },
+    {
+      "task_id": "sch_ldo",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 69.93809999767109,
+      "request_tokens": 902,
+      "response_tokens": 4055,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', '#PWR003', 'C1', 'C2', 'U1']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 40,
+          "resp_tokens": 111,
+          "ms": 1.5
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 204,
+          "resp_tokens": 334,
+          "ms": 13.9
+        },
+        {
+          "tool": "batch_add_wire",
+          "req_tokens": 246,
+          "resp_tokens": 7,
+          "ms": 7.7
+        },
+        {
+          "tool": "batch_add_junction",
+          "req_tokens": 86,
+          "resp_tokens": 5,
+          "ms": 7.8
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 63,
+          "resp_tokens": 31,
+          "ms": 9.1
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 32,
+          "ms": 8.8
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 63,
+          "resp_tokens": 31,
+          "ms": 8.1
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 49,
+          "resp_tokens": 17,
+          "ms": 1054.8
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 46,
+          "resp_tokens": 425,
+          "ms": 1.5
+        }
+      ]
+    },
+    {
+      "task_id": "sch_ldo",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 71.371400001226,
+      "request_tokens": 920,
+      "response_tokens": 4061,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', '#PWR003', 'C1', 'C2', 'U1']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 42,
+          "resp_tokens": 117,
+          "ms": 2.9
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 206,
+          "resp_tokens": 334,
+          "ms": 13.4
+        },
+        {
+          "tool": "batch_add_wire",
+          "req_tokens": 248,
+          "resp_tokens": 7,
+          "ms": 8.5
+        },
+        {
+          "tool": "batch_add_junction",
+          "req_tokens": 88,
+          "resp_tokens": 5,
+          "ms": 8.6
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 31,
+          "ms": 8.4
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 66,
+          "resp_tokens": 32,
+          "ms": 8.2
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 31,
+          "ms": 8.4
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 51,
+          "resp_tokens": 17,
+          "ms": 1045.3
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 48,
+          "resp_tokens": 425,
+          "ms": 1.5
+        }
+      ]
+    },
+    {
+      "task_id": "sch_ldo",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 71.4735000001383,
+      "request_tokens": 920,
+      "response_tokens": 4062,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', '#PWR003', 'C1', 'C2', 'U1']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.2
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 42,
+          "resp_tokens": 117,
+          "ms": 2.4
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 206,
+          "resp_tokens": 335,
+          "ms": 14.0
+        },
+        {
+          "tool": "batch_add_wire",
+          "req_tokens": 248,
+          "resp_tokens": 7,
+          "ms": 8.5
+        },
+        {
+          "tool": "batch_add_junction",
+          "req_tokens": 88,
+          "resp_tokens": 5,
+          "ms": 7.3
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 31,
+          "ms": 9.8
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 66,
+          "resp_tokens": 32,
+          "ms": 8.1
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 31,
+          "ms": 8.4
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 51,
+          "resp_tokens": 17,
+          "ms": 1067.2
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 48,
+          "resp_tokens": 425,
+          "ms": 1.5
+        }
+      ]
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "success": true,
+      "mcp_calls": 6,
+      "setup_calls": 2,
+      "wall_clock_ms": 19.86350000152015,
+      "request_tokens": 216,
+      "response_tokens": 3379,
+      "catalog_tokens": 5408,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 25,
+          "resp_tokens": 1476,
+          "ms": 3.4
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 44,
+          "resp_tokens": 123,
+          "ms": 1.9
+        },
+        {
+          "tool": "search_templates",
+          "req_tokens": 13,
+          "resp_tokens": 82,
+          "ms": 0.7
+        },
+        {
+          "tool": "apply_template",
+          "req_tokens": 70,
+          "resp_tokens": 921,
+          "ms": 8.7
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 53,
+          "resp_tokens": 17,
+          "ms": 1082.9
+        }
+      ]
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "success": true,
+      "mcp_calls": 6,
+      "setup_calls": 2,
+      "wall_clock_ms": 20.9233999994467,
+      "request_tokens": 213,
+      "response_tokens": 3376,
+      "catalog_tokens": 5408,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.9
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 25,
+          "resp_tokens": 1476,
+          "ms": 3.5
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 43,
+          "resp_tokens": 120,
+          "ms": 2.1
+        },
+        {
+          "tool": "search_templates",
+          "req_tokens": 13,
+          "resp_tokens": 82,
+          "ms": 0.7
+        },
+        {
+          "tool": "apply_template",
+          "req_tokens": 69,
+          "resp_tokens": 921,
+          "ms": 9.5
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 52,
+          "resp_tokens": 17,
+          "ms": 1072.6
+        }
+      ]
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "success": true,
+      "mcp_calls": 6,
+      "setup_calls": 2,
+      "wall_clock_ms": 20.383799997944152,
+      "request_tokens": 213,
+      "response_tokens": 3376,
+      "catalog_tokens": 5408,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 25,
+          "resp_tokens": 1476,
+          "ms": 3.4
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 43,
+          "resp_tokens": 120,
+          "ms": 2.3
+        },
+        {
+          "tool": "search_templates",
+          "req_tokens": 13,
+          "resp_tokens": 82,
+          "ms": 0.7
+        },
+        {
+          "tool": "apply_template",
+          "req_tokens": 69,
+          "resp_tokens": 921,
+          "ms": 8.8
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 52,
+          "resp_tokens": 17,
+          "ms": 1078.6
+        }
+      ]
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 68.72499999735737,
+      "request_tokens": 590,
+      "response_tokens": 3628,
+      "catalog_tokens": 6690,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-m0593n5d\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-m0593n5d\\power2.kicad_sch"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.8
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 27,
+          "resp_tokens": 2069,
+          "ms": 4.6
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 40,
+          "resp_tokens": 111,
+          "ms": 2.6
+        },
+        {
+          "tool": "add_hierarchical_sheet",
+          "req_tokens": 86,
+          "resp_tokens": 126,
+          "ms": 14.3
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 72,
+          "resp_tokens": 27,
+          "ms": 7.8
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 74,
+          "resp_tokens": 29,
+          "ms": 6.7
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 74,
+          "resp_tokens": 29,
+          "ms": 7.0
+        },
+        {
+          "tool": "duplicate_sheet",
+          "req_tokens": 68,
+          "resp_tokens": 126,
+          "ms": 14.4
+        },
+        {
+          "tool": "get_sheet_hierarchy",
+          "req_tokens": 46,
+          "resp_tokens": 258,
+          "ms": 1.5
+        },
+        {
+          "tool": "validate_sheet_pins",
+          "req_tokens": 46,
+          "resp_tokens": 43,
+          "ms": 1.6
+        },
+        {
+          "tool": "renumber_sheet_pages",
+          "req_tokens": 46,
+          "resp_tokens": 50,
+          "ms": 2.0
+        }
+      ]
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 69.57710000278894,
+      "request_tokens": 590,
+      "response_tokens": 3625,
+      "catalog_tokens": 6690,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-bpn1_u4o\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-bpn1_u4o\\power2.kicad_sch"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 27,
+          "resp_tokens": 2069,
+          "ms": 4.5
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 40,
+          "resp_tokens": 111,
+          "ms": 1.5
+        },
+        {
+          "tool": "add_hierarchical_sheet",
+          "req_tokens": 86,
+          "resp_tokens": 125,
+          "ms": 14.5
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 72,
+          "resp_tokens": 27,
+          "ms": 8.3
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 74,
+          "resp_tokens": 29,
+          "ms": 7.0
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 74,
+          "resp_tokens": 29,
+          "ms": 7.7
+        },
+        {
+          "tool": "duplicate_sheet",
+          "req_tokens": 68,
+          "resp_tokens": 125,
+          "ms": 14.7
+        },
+        {
+          "tool": "get_sheet_hierarchy",
+          "req_tokens": 46,
+          "resp_tokens": 256,
+          "ms": 1.5
+        },
+        {
+          "tool": "validate_sheet_pins",
+          "req_tokens": 46,
+          "resp_tokens": 44,
+          "ms": 1.7
+        },
+        {
+          "tool": "renumber_sheet_pages",
+          "req_tokens": 46,
+          "resp_tokens": 50,
+          "ms": 2.2
+        }
+      ]
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "success": true,
+      "mcp_calls": 11,
+      "setup_calls": 2,
+      "wall_clock_ms": 69.69129999924917,
+      "request_tokens": 590,
+      "response_tokens": 3618,
+      "catalog_tokens": 6690,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-6nlelnsp\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-6nlelnsp\\power2.kicad_sch"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 27,
+          "resp_tokens": 2069,
+          "ms": 4.4
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 40,
+          "resp_tokens": 111,
+          "ms": 1.5
+        },
+        {
+          "tool": "add_hierarchical_sheet",
+          "req_tokens": 86,
+          "resp_tokens": 124,
+          "ms": 14.8
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 72,
+          "resp_tokens": 27,
+          "ms": 6.9
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 74,
+          "resp_tokens": 29,
+          "ms": 8.1
+        },
+        {
+          "tool": "add_sheet_pin",
+          "req_tokens": 74,
+          "resp_tokens": 29,
+          "ms": 7.8
+        },
+        {
+          "tool": "duplicate_sheet",
+          "req_tokens": 68,
+          "resp_tokens": 123,
+          "ms": 14.6
+        },
+        {
+          "tool": "get_sheet_hierarchy",
+          "req_tokens": 46,
+          "resp_tokens": 253,
+          "ms": 1.5
+        },
+        {
+          "tool": "validate_sheet_pins",
+          "req_tokens": 46,
+          "resp_tokens": 43,
+          "ms": 1.7
+        },
+        {
+          "tool": "renumber_sheet_pages",
+          "req_tokens": 46,
+          "resp_tokens": 50,
+          "ms": 2.3
+        }
+      ]
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": true,
+      "mcp_calls": 12,
+      "setup_calls": 2,
+      "wall_clock_ms": 898.4215999989829,
+      "request_tokens": 779,
+      "response_tokens": 4182,
+      "catalog_tokens": 10146,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-cya2tb51\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-cya2tb51\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 33,
+          "resp_tokens": 2798,
+          "ms": 6.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 40,
+          "resp_tokens": 111,
+          "ms": 1.7
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 159,
+          "resp_tokens": 247,
+          "ms": 12.6
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 32,
+          "ms": 8.0
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 63,
+          "resp_tokens": 31,
+          "ms": 8.9
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 67,
+          "resp_tokens": 54,
+          "ms": 8.3
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 64,
+          "resp_tokens": 24,
+          "ms": 7.4
+        },
+        {
+          "tool": "export_bom",
+          "req_tokens": 76,
+          "resp_tokens": 36,
+          "ms": 275.4
+        },
+        {
+          "tool": "generate_netlist",
+          "req_tokens": 76,
+          "resp_tokens": 39,
+          "ms": 279.7
+        },
+        {
+          "tool": "export_schematic_svg",
+          "req_tokens": 77,
+          "resp_tokens": 33,
+          "ms": 280.3
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 49,
+          "resp_tokens": 17,
+          "ms": 1114.7
+        }
+      ]
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": true,
+      "mcp_calls": 12,
+      "setup_calls": 2,
+      "wall_clock_ms": 888.3791000007477,
+      "request_tokens": 805,
+      "response_tokens": 4202,
+      "catalog_tokens": 10146,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-6p4ccmdw\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-6p4ccmdw\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.2
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 33,
+          "resp_tokens": 2798,
+          "ms": 5.9
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 42,
+          "resp_tokens": 117,
+          "ms": 1.5
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 161,
+          "resp_tokens": 255,
+          "ms": 11.6
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 66,
+          "resp_tokens": 32,
+          "ms": 8.7
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 31,
+          "ms": 8.8
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 69,
+          "resp_tokens": 54,
+          "ms": 7.9
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 66,
+          "resp_tokens": 24,
+          "ms": 7.5
+        },
+        {
+          "tool": "export_bom",
+          "req_tokens": 80,
+          "resp_tokens": 38,
+          "ms": 280.5
+        },
+        {
+          "tool": "generate_netlist",
+          "req_tokens": 80,
+          "resp_tokens": 41,
+          "ms": 265.8
+        },
+        {
+          "tool": "export_schematic_svg",
+          "req_tokens": 81,
+          "resp_tokens": 35,
+          "ms": 280.4
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 51,
+          "resp_tokens": 17,
+          "ms": 1126.8
+        }
+      ]
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": true,
+      "mcp_calls": 12,
+      "setup_calls": 2,
+      "wall_clock_ms": 882.8721000027144,
+      "request_tokens": 779,
+      "response_tokens": 4185,
+      "catalog_tokens": 10146,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-h70q7igt\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-h70q7igt\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.3
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 33,
+          "resp_tokens": 2798,
+          "ms": 6.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 40,
+          "resp_tokens": 111,
+          "ms": 3.3
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 159,
+          "resp_tokens": 250,
+          "ms": 11.3
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 32,
+          "ms": 8.7
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 63,
+          "resp_tokens": 31,
+          "ms": 7.7
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 67,
+          "resp_tokens": 54,
+          "ms": 9.4
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 64,
+          "resp_tokens": 24,
+          "ms": 8.2
+        },
+        {
+          "tool": "export_bom",
+          "req_tokens": 76,
+          "resp_tokens": 36,
+          "ms": 274.0
+        },
+        {
+          "tool": "generate_netlist",
+          "req_tokens": 76,
+          "resp_tokens": 39,
+          "ms": 283.0
+        },
+        {
+          "tool": "export_schematic_svg",
+          "req_tokens": 77,
+          "resp_tokens": 33,
+          "ms": 261.4
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 49,
+          "resp_tokens": 17,
+          "ms": 1045.4
+        }
+      ]
+    },
+    {
+      "task_id": "recovery",
+      "success": true,
+      "mcp_calls": 14,
+      "setup_calls": 2,
+      "wall_clock_ms": 338.2064999968861,
+      "request_tokens": 822,
+      "response_tokens": 4083,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.9
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.2
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 39,
+          "resp_tokens": 108,
+          "ms": 2.6
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 66,
+          "resp_tokens": 44,
+          "ms": 1.3
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 67,
+          "resp_tokens": 50,
+          "ms": 277.0
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 62,
+          "resp_tokens": 39,
+          "ms": 0.8
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 46,
+          "resp_tokens": 54,
+          "ms": 1.0
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 65,
+          "resp_tokens": 32,
+          "ms": 0.7
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 157,
+          "resp_tokens": 250,
+          "ms": 13.6
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 62,
+          "resp_tokens": 32,
+          "ms": 7.8
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 61,
+          "resp_tokens": 31,
+          "ms": 8.4
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 65,
+          "resp_tokens": 54,
+          "ms": 8.3
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 44,
+          "resp_tokens": 310,
+          "ms": 1.1
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 47,
+          "resp_tokens": 17,
+          "ms": 1063.8
+        }
+      ]
+    },
+    {
+      "task_id": "recovery",
+      "success": true,
+      "mcp_calls": 14,
+      "setup_calls": 2,
+      "wall_clock_ms": 331.40930000081426,
+      "request_tokens": 822,
+      "response_tokens": 4075,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 3.6
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 7.1
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 39,
+          "resp_tokens": 108,
+          "ms": 2.5
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 66,
+          "resp_tokens": 44,
+          "ms": 1.2
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 67,
+          "resp_tokens": 50,
+          "ms": 276.4
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 62,
+          "resp_tokens": 39,
+          "ms": 0.7
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 46,
+          "resp_tokens": 54,
+          "ms": 1.0
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 65,
+          "resp_tokens": 32,
+          "ms": 0.7
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 157,
+          "resp_tokens": 242,
+          "ms": 11.4
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 62,
+          "resp_tokens": 32,
+          "ms": 7.7
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 61,
+          "resp_tokens": 31,
+          "ms": 9.6
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 65,
+          "resp_tokens": 54,
+          "ms": 7.2
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 44,
+          "resp_tokens": 310,
+          "ms": 1.2
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 47,
+          "resp_tokens": 17,
+          "ms": 1048.5
+        }
+      ]
+    },
+    {
+      "task_id": "recovery",
+      "success": true,
+      "mcp_calls": 14,
+      "setup_calls": 2,
+      "wall_clock_ms": 333.7279999977909,
+      "request_tokens": 846,
+      "response_tokens": 4093,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.8
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 41,
+          "resp_tokens": 114,
+          "ms": 2.2
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 68,
+          "resp_tokens": 44,
+          "ms": 1.2
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 69,
+          "resp_tokens": 50,
+          "ms": 276.4
+        },
+        {
+          "tool": "add_schematic_component",
+          "req_tokens": 64,
+          "resp_tokens": 39,
+          "ms": 0.8
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 48,
+          "resp_tokens": 54,
+          "ms": 1.0
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 67,
+          "resp_tokens": 32,
+          "ms": 0.7
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 159,
+          "resp_tokens": 254,
+          "ms": 12.7
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 32,
+          "ms": 8.7
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 63,
+          "resp_tokens": 31,
+          "ms": 8.1
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 67,
+          "resp_tokens": 54,
+          "ms": 8.8
+        },
+        {
+          "tool": "list_schematic_components",
+          "req_tokens": 46,
+          "resp_tokens": 310,
+          "ms": 1.3
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 49,
+          "resp_tokens": 17,
+          "ms": 1160.9
+        }
+      ]
+    }
+  ]
+}

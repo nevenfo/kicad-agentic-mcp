@@ -10,3 +10,10 @@ crates/schematic-viewer/target/
 .konnect-transaction-*.json
 .konnect-transaction-*.abandoned.json
 dist/
+
+# Benchmark output. Named result files under bench/results/ are committed
+# evidence; these two kinds are regenerated on every `gate.ps1 -Bench` run and
+# would otherwise churn the diff on each measurement.
+bench/results/latest-*.json
+bench/results/catalog.json
+__pycache__/

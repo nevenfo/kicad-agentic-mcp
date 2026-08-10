@@ -1,0 +1,13 @@
+# Config used by every benchmark run so results are comparable across machines.
+# Explicit paths only: relying on PATH made `run_erc` fail with
+# "Failed to spawn kicad-cli" and silently turned a validation task into a
+# no-op, which is exactly the kind of fake success a benchmark must not produce.
+
+kicad_cli = "C:/Users/FlowUP/AppData/Local/Programs/KiCad/10.0/bin/kicad-cli.exe"
+kicad_binary = "C:/Users/FlowUP/AppData/Local/Programs/KiCad/10.0/bin/kicad.exe"
+transport = "stdio"
+log_level = "warn"
+
+# Off on purpose: the baseline must measure the real cost of explicit
+# `load_toolset` calls, not hide it behind an implicit load.
+auto_load_toolsets = false

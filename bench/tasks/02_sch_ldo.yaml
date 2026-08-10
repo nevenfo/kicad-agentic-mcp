@@ -1,0 +1,73 @@
+id: sch_ldo
+title: AMS1117-3.3 LDO with input/output decoupling
+project_name: ldo
+category: schematic_simple
+toolsets: [project, sch_components, sch_wiring, sch_analysis, sch_batch, sch_export]
+
+# Regulator_Linear:AMS1117-3.3 pin offsets from the symbol origin (measured via
+# get_symbol_info, y flipped into schematic space):
+#   pin 1 GND -> (x,        y + 7.62)
+#   pin 2 VO  -> (x + 7.62, y)
+#   pin 3 VI  -> (x - 7.62, y)
+# Device:C -> pin 1 (x, y - 3.81), pin 2 (x, y + 3.81)
+#
+# Layout (all coordinates are exact 1.27 multiples):
+#   U1 (101.60, 88.90)   VI 93.98,88.90   VO 109.22,88.90   GND 101.60,96.52
+#   C1 ( 86.36, 92.71)   pins 86.36,88.90 / 86.36,96.52
+#   C2 (116.84, 92.71)   pins 116.84,88.90 / 116.84,96.52
+# Plain-language intents, used by `--load-mode search` to score capability
+# retrieval with no oracle knowledge of the tool names.
+intents:
+  - "create a new kicad project"
+  - "place multiple symbols on the schematic in one call"
+  - "add several wire segments and junction dots"
+  - "add power symbols for the supply rails"
+  - "run erc and list the components"
+
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+
+  - tool: batch_place_components
+    args:
+      schematic: "$SCH"
+      components:
+        - { lib_id: "Regulator_Linear:AMS1117-3.3", reference: "U1", value: "AMS1117-3.3", x: 101.6, y: 88.9 }
+        - { lib_id: "Device:C", reference: "C1", value: "10uF", x: 86.36, y: 92.71 }
+        - { lib_id: "Device:C", reference: "C2", value: "22uF", x: 116.84, y: 92.71 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG01", x: 86.36, y: 85.09 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG02", x: 101.6, y: 100.33 }
+
+  - tool: batch_add_wire
+    args:
+      schematic: "$SCH"
+      wires:
+        - { x1: 86.36, y1: 88.9, x2: 93.98, y2: 88.9 }      # +5V rail into VI
+        - { x1: 86.36, y1: 85.09, x2: 86.36, y2: 88.9 }     # +5V symbol down to rail
+        - { x1: 109.22, y1: 88.9, x2: 116.84, y2: 88.9 }    # VO out to C2
+        - { x1: 116.84, y1: 85.09, x2: 116.84, y2: 88.9 }   # +3V3 symbol down to rail
+        - { x1: 86.36, y1: 96.52, x2: 101.6, y2: 96.52 }    # GND rail, left half
+        - { x1: 101.6, y1: 96.52, x2: 116.84, y2: 96.52 }   # GND rail, right half
+        - { x1: 101.6, y1: 96.52, x2: 101.6, y2: 100.33 }   # GND down to symbol
+
+  - tool: batch_add_junction
+    args:
+      schematic: "$SCH"
+      positions:
+        - { x: 86.36, y: 88.9 }
+        - { x: 116.84, y: 88.9 }
+        - { x: 101.6, y: 96.52 }
+
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "+5V", x: 86.36, y: 85.09 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "+3V3", x: 116.84, y: 85.09 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "GND", x: 101.6, y: 100.33 }
+
+assert:
+  - kind: all_steps_ok
+  - kind: erc_max_errors
+    value: 0
+  - kind: components_present
+    value: ["U1", "C1", "C2"]

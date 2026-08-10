@@ -1,0 +1,36 @@
+project_name: divider
+toolsets: [project, sch_components, sch_wiring, sch_analysis, sch_batch, sch_export]
+# The probe that produced the geometry in bench/tasks/01_sch_divider.yaml.
+#
+# Two things were learned here and both are now encoded in the golden task:
+#   1. add_schematic_component snaps to the 1.27 mm grid (100, 80 -> 100.33,
+#      80.01) but add_power_symbol does not. Placing both at the same nominal
+#      coordinate leaves the power symbol 0.33 mm off the pin, and ERC reports
+#      "Pin not connected" with no tool error at all.
+#   2. PWR_FLAG on each rail is required. Without a driving output-power pin,
+#      KiCad reports "Input Power pin not driven by any Output Power pins" —
+#      correct behaviour, not a Konnect defect. A golden task has to be
+#      ERC-clean by construction so a real regression is unambiguous.
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+  - tool: batch_place_components
+    args:
+      schematic: "$SCH"
+      components:
+        - { lib_id: "Device:R", reference: "R1", value: "10k", x: 100, y: 80 }
+        - { lib_id: "Device:R", reference: "R2", value: "10k", x: 100, y: 95.25 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG01", x: 100.33, y: 76.2 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG02", x: 100.33, y: 99.06, rotation: 180 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "+3V3", x: 100.33, y: 76.2 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "GND", x: 100.33, y: 99.06 }
+  - tool: connect_pins
+    args: { schematic: "$SCH", ref1: "R1", pin1: "2", ref2: "R2", pin2: "1" }
+  - tool: add_schematic_net_label
+    args: { schematic: "$SCH", net: "VOUT", x: 100.33, y: 87.63 }
+  - tool: run_erc
+    args: { schematic: "$SCH", severity: "error" }
+  - tool: list_schematic_nets
+    args: { schematic: "$SCH" }

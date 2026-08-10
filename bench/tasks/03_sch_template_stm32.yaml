@@ -1,0 +1,34 @@
+id: sch_template_stm32
+title: Instantiate the STM32 reference template and validate it
+project_name: stm32
+category: schematic_complex
+toolsets: [project, templates, sch_analysis, sch_export, sch_components]
+
+# Templates are the server's own "reference circuit" shortcut. They are the
+# closest thing the baseline has to a batched, high-level intent, so they are
+# the fairest existing comparison point for the Plan IR work in Phase G.
+# Plain-language intents, used by `--load-mode search` to score capability
+# retrieval with no oracle knowledge of the tool names.
+intents:
+  - "create a new kicad project"
+  - "search reference circuit templates and instantiate one"
+  - "run erc"
+
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+
+  - tool: search_templates
+    args: { query: "stm32" }
+
+  - tool: apply_template
+    args:
+      schematic: "$SCH"
+      template_id: "stm32_minimal"
+      position_x: 101.6
+      position_y: 88.9
+
+assert:
+  - kind: all_steps_ok
+  - kind: erc_max_errors
+    value: 40

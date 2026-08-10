@@ -1,0 +1,14 @@
+project_name: discover
+toolsets: [project, sch_components, sch_wiring, sch_analysis, sch_batch, sch_export, sch_hierarchy, templates, library]
+steps:
+  - tool: list_template_categories
+  - tool: search_templates
+    args: { query: "ldo" }
+  - tool: search_symbols
+    args: { query: "AMS1117", limit: 5 }
+  - tool: search_symbols
+    args: { query: "STM32F103C8", limit: 3 }
+  - tool: get_symbol_info
+    args: { lib_id: "Regulator_Linear:AMS1117-3.3" }
+  - tool: get_symbol_info
+    args: { lib_id: "Device:C" }
