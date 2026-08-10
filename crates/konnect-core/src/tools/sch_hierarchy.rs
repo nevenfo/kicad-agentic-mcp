@@ -26,23 +26,22 @@ pub fn tools() -> Vec<ToolDef> {
     vec![
         tool!(
             "add_hierarchical_sheet",
-            "Insert a hierarchical sheet into a parent schematic, linking it to a child \
-             .kicad_sch file. Creates the child file (blank) if it doesn't exist yet, or \
-             links to it as-is if it does — reusing an existing file places the *same* \
-             sub-circuit at a second location (KiCAD's multi-instance sheet pattern) rather \
-             than duplicating it. If the linked file already has symbols in it, their \
-             hierarchical instance paths are patched immediately so ERC resolves them.",
+            "Insert a hierarchical sheet into a parent schematic and link it to a child \
+             .kicad_sch file, created blank if it does not exist. Linking a file that does \
+             exist places the *same* sub-circuit a second time (KiCAD's multi-instance sheet \
+             pattern) rather than duplicating it, and patches any symbols it already holds \
+             with hierarchical instance paths so ERC resolves them.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string", "description": "Path to the parent .kicad_sch file" },
-                    "sheet_file": { "type": "string", "description": "Filename of the child .kicad_sch, resolved relative to the parent's directory" },
-                    "sheet_name": { "type": "string", "description": "Display name (Sheetname property). Default: 'Sheet'" },
-                    "x": { "type": "number", "description": "Top-left X in mm. Default: 50" },
-                    "y": { "type": "number", "description": "Top-left Y in mm. Default: 50" },
-                    "width": { "type": "number", "description": "Sheet box width in mm. Default: 80" },
-                    "height": { "type": "number", "description": "Sheet box height in mm. Default: 50" },
-                    "project_name": { "type": "string", "description": "Project name key for the page-number instance entry. Default: the schematic file's stem (matching eeschema)" }
+                    "sheet_file": { "type": "string", "description": "Child .kicad_sch filename, relative to the parent's directory" },
+                    "sheet_name": { "type": "string", "default": "Sheet", "description": "Display name (Sheetname property)" },
+                    "x": { "type": "number", "default": 50, "description": "Top-left X in mm" },
+                    "y": { "type": "number", "default": 50, "description": "Top-left Y in mm" },
+                    "width": { "type": "number", "default": 80, "description": "Sheet box width in mm" },
+                    "height": { "type": "number", "default": 50, "description": "Sheet box height in mm" },
+                    "project_name": { "type": "string", "description": "Project name key for the page-number instance entry. Defaults to the schematic file's stem, matching eeschema." }
                 },
                 "required": ["schematic", "sheet_file"]
             }),

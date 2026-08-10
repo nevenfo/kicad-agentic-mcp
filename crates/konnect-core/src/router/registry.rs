@@ -8,14 +8,22 @@ use crate::tools::ToolDef;
 
 /// Toolsets auto-loaded when the server starts.
 ///
-/// Kept minimal so that baseline `tools/list` context stays small (~19 tools
-/// including meta-tools ≈ 2K tokens). The LLM expands its toolbelt on demand
-/// via `load_toolset(...)`.
+/// Kept minimal so that baseline `tools/list` context stays small. Every token
+/// here is paid again on every `tools/list` refresh a `load_toolset` /
+/// `load_tools` call triggers, so this list is the most expensive real estate
+/// the server owns — not a convenience list.
 ///
-/// Starter choices:
 /// - `project` — needed to open / create / save any project
-/// - `config` — user preferences, design rules; call `load_user_config` at session start
-pub static STARTER_KIT: &[&str] = &["project", "config"];
+pub static STARTER_KIT: &[&str] = &["project"];
+
+/// Individual tools auto-loaded at startup without their toolset.
+///
+/// `config` used to be a whole starter toolset: 7 tools, 625 tokens, of which
+/// the golden suite calls zero. The two read paths below are what "load the
+/// user's preferences at session start" actually needs; the five write and
+/// design-rule tools are one `find_capabilities` away and cost 507 tokens on
+/// every refresh if they sit here instead.
+pub static STARTER_TOOLS: &[&str] = &["load_user_config", "get_effective_config"];
 
 pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
     ToolsetMeta {

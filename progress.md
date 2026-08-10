@@ -19,9 +19,16 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 ## CURRENT TASK
 
-Phase F landed its first two reductions and they are measured
-(`docs/benchmark.md`). Next lever is schema compression, starting with
-`create_symbol` (1 448 tokens, 74 % of the whole startup budget).
+Phase F has landed three reductions, all measured (`docs/benchmark.md`):
+`load_toolset` stopped echoing descriptions, tool-granular loading, and now
+schema compression + a smaller starter kit. `tools` mode is at **3 197 external
+tokens/task (−74.2 % vs baseline)** and startup is **1 454 tokens**, below
+upstream's own 1 680.
+
+Remaining Phase F lever is the compact gateway (~7 stable verbs, catalogue never
+changes, `CATALOG_TOKENS` → 0). At 3 197 tk/task, 2 281 of them are still
+catalogue churn, so the gateway is worth roughly twice everything Phase F has
+achieved so far.
 
 ---
 
@@ -38,7 +45,8 @@ Phase F landed its first two reductions and they are measured
 [x] Measure baseline tokens / calls / latency / success    -> docs/benchmark.md
 [x] Reduce the external MCP surface (first two levers)     -> -70.1 % external tokens
 [x] Optimise progressive disclosure / tool retrieval       -> done + measured; retrieval is the weak link
-[ ] Compress heavy tool schemas (create_symbol first)
+[x] Compress heavy tool schemas + shrink the starter kit    -> 3 698 -> 3 197 tk/task, startup 1 958 -> 1 454
+[ ] Compact gateway (~7 stable verbs, CATALOG_TOKENS -> 0)
 [ ] Map the scope gaps (capability matrix)
 [ ] Stable IDs / revisions / snapshots / optimistic concurrency
 [ ] Transactions / rollback / idempotency at the MCP layer
@@ -108,6 +116,42 @@ Implemented in `capability_search.rs`, measured, removed. It moved retrieval
 recall at 8 results/query from 100 % to 98.2 % and helped at no limit. The
 rejection is documented at the code site so it is not re-attempted.
 
+### D7 — No `$defs` / `$ref` in `inputSchema` (2026-08-10)
+
+`create_symbol` inlines the same pin-item object three times; a local `$ref`
+would have removed ~400 tokens from it. Rejected after checking the whole chain,
+not just the spec:
+
+* **MCP 2026-07-28**: explicitly allows it. `inputSchema` is full JSON Schema
+  2020-12, `$defs` is named in the composition-keyword section, and there is a
+  dedicated `$ref` resolution section (local `$ref` fine; network `$ref` MUST
+  NOT be auto-dereferenced).
+* **Anthropic Messages API**: supported under `strict: true` with documented
+  limits (no external `$ref`, no recursion, no `allOf` + `$ref`). **Undocumented
+  for non-strict tools** — the mode Claude Code actually uses.
+* **Client chain: not reliable.** `openai/codex` #3152 and #13746 (schema
+  degraded to `{"request": string}` / arrays of strings), `gemini-cli` #13326
+  (Gemini API rejects `$defs`), `mcpb` #174 (Claude Desktop on Windows fails to
+  compile schemas with `$defs`), plus the same symptom in Kiro, mastra, n8n and
+  autogen.
+
+A tool schema the model receives mangled is worse than a fat one. Compression
+therefore stays inside inlined schemas, which every client already handles. Note
+that several of those issues recommend the opposite direction — servers should
+*inline* their `$ref`s before exposing them — which is where this already is.
+
+### D8 — `config` is no longer a starter toolset (2026-08-10)
+
+7 tools, 625 tokens, re-sent on every `tools/list` refresh, and **zero** calls
+across the whole golden suite. Split: `load_user_config` and
+`get_effective_config` (118 tk) stay, admitted individually via a new
+`STARTER_TOOLS` list; the five write / design-rule tools leave. Before shipping,
+`find_capabilities` was checked on their own intents and ranks each removed tool
+**first** ("remember that I always use JLCPCB" → `save_user_config`, "add a
+design rule for decoupling" → `add_design_rule`). The behavioural cost is one
+discovery call for a rarely-used feature; the saving is 507 tokens on every
+refresh in every load mode.
+
 ---
 
 ## BENCHMARKS
@@ -117,18 +161,22 @@ Full detail and method: **`docs/benchmark.md`**. Headline:
 | Metric | Konnect baseline | Fork `tools` mode | Δ |
 |---|---|---|---|
 | SUCCESS_RATE | 18/18 | 18/18 | = |
-| EXTERNAL_TOKENS/task | 12 373 | **3 698** | **−70.1 %** |
-| RESPONSE_TOKENS/task | 3 984 | 963 | −75.8 % |
-| CATALOG_TOKENS/task | 8 389 | 2 785 | −66.8 % |
+| EXTERNAL_TOKENS/task | 12 373 | **3 197** | **−74.2 %** |
+| RESPONSE_TOKENS/task | 3 984 | 964 | −75.8 % |
+| CATALOG_TOKENS/task | 8 389 | 2 281 | −72.8 % |
 | MCP_CALLS median/task | 11 | 10 | −1 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 958 tk | **+278 (regression)** |
+| WALL_CLOCK_P50 | 70 ms | 64 ms | −6 ms |
+| WALL_CLOCK_P95 | 888 ms | 1 183 ms | +295 (`kicad-cli` spawn variance) |
+| `tools/list` at startup | 1 680 tk | **1 454 tk** | −13.5 % |
 
-The startup regression is the two new meta-tools. It is stated, not hidden.
+The startup regression introduced in step 1 (+278 tk for the two new meta-tools)
+is now repaid: startup is 504 tokens below that peak and 226 below upstream, with
+the meta-tools still present.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
-`cargo test --workspace --lib --tests` 469 → **473 passed, 0 failed** on the fork
-(4 new `kicad_paths` tests, 9 new `capability_search` tests, minus reshaped ones).
+`cargo test --workspace --lib --tests` 469 → **484 passed, 0 failed, 5 ignored**
+on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
+warnings` are clean.
 
 ---
 
@@ -255,7 +303,15 @@ not silently accumulate more.
 
 ## NEXT ACTION
 
-Compress the heaviest tool schemas — `create_symbol` (1 448 tk),
-`create_footprint` (530 tk), `add_hierarchical_sheet` (318 tk) — then re-run
-`bench/surface.py` and `bench/runner.py --load-mode tools` to confirm the gain
-lands on `CATALOG_TOKENS` rather than just on the startup number.
+Per-tool schema compression has reached diminishing returns: the remaining
+catalogue is flat (median 101 tk/tool) and the golden suite never loads the fat
+tools anyway. The `tools` column is now 3 197 tk/task of which **2 281 is still
+catalogue churn** — the client re-fetching `tools/list` because loading tools
+changes it.
+
+That answers open question 3: the compact gateway has to land. Design it so the
+external catalogue is a fixed set of verbs that never changes, no
+`notifications/tools/list_changed` is ever emitted during a task, and
+`CATALOG_TOKENS` goes to zero — which is worth more than everything Phase F has
+saved so far. That is also the natural seam for Phase G's Plan IR: a gateway
+verb takes an objective, not a tool name.

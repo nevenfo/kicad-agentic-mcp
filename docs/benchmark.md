@@ -73,17 +73,50 @@ isolates *loading granularity* and nothing else.
 | | tools | tokens |
 |---|---|---|
 | baseline `tools/list` at startup — Konnect v0.2.2 | 19 | 1 680 |
-| baseline `tools/list` at startup — fork | 21 | **1 958** |
-| full catalogue, all 18 toolsets loaded | 193 / 195 | 22 329 / 22 607 |
+| baseline `tools/list` at startup — fork, step 1 | 21 | 1 958 |
+| baseline `tools/list` at startup — fork, now | 16 | **1 454** |
+| full catalogue, all 18 toolsets loaded | 193 / 195 | 22 329 / **22 190** |
 
-The fork's startup surface is **278 tokens larger**, which is the price of the
-two new meta-tools (`find_capabilities`, `load_tools`). That is a real
-regression on that one metric and it is what buys the reduction below.
+Step 1 made the startup surface **278 tokens larger** — the price of the two new
+meta-tools (`find_capabilities`, `load_tools`) — and that regression is what
+bought the per-task reduction below. Step 2 paid it back and more: **1 958 →
+1 454**, which is also 13.5 % under upstream's own 1 680 with the meta-tools
+still in place.
 
-Heaviest single tools in the catalogue: `create_symbol` **1 448 tk**,
-`create_footprint` 530, `add_hierarchical_sheet` 318. `create_symbol` alone is
-6.5 % of the whole catalogue and 74 % of the fork's entire startup budget — the
-obvious next schema-compression target.
+Heaviest single tools before compression: `create_symbol` **1 448 tk**,
+`create_footprint` 530, `add_hierarchical_sheet` 318. `create_symbol` alone was
+6.4 % of the whole catalogue.
+
+### Step 2 — where the 504 startup tokens came from
+
+Two changes, both measured with `bench/surface.py`:
+
+1. **Schema compression on the three heaviest tools.** `create_symbol`
+   **1 448 → 1 077** (−25.6 %), `add_hierarchical_sheet` 318 → 285,
+   `create_footprint` 530 → 519. No property, enum value or default was
+   removed. The win is structural: `create_symbol` inlines the same pin-item
+   object **three times** (`pins`, `units[].pins`, `power_pins`), so every word
+   in it was billed three times. Dropping the two self-evident per-field
+   descriptions there (the `type` and `style` enums document themselves) and
+   stating the one fact they carried — NC is spelled `no_connect` — once in the
+   tool description took the pin item from 219 to 118 tokens per copy.
+   `create_footprint`'s prose value lists (`"'smd', 'thru_hole',
+   'np_thru_hole'"`) became real `enum`s: nearly the same token count, but now
+   validated, and `shape` gained the two KiCad values the prose had omitted.
+   Catalogue effect: 22 799 → 22 384 (−1.8 %). It does **not** move the golden
+   suite, because no golden task loads the `library` toolset — stated here
+   rather than quietly folded into the headline.
+2. **`config` left the starter kit.** It was 7 tools and **625 tokens** in every
+   single `tools/list`, and the golden suite calls **zero** of them. The two
+   read paths a session actually opens with (`load_user_config`,
+   `get_effective_config`, 118 tk) are now admitted individually through a new
+   `STARTER_TOOLS` list; the five write / design-rule tools cost 507 tokens per
+   refresh and are one `find_capabilities` call away. Verified before shipping:
+   `find_capabilities` ranks the removed tools **first** on their own intents —
+   "remember that I always use JLCPCB" → `save_user_config`, "add a design rule
+   for decoupling" → `add_design_rule`, "list my design rules" →
+   `list_design_rules`. Discoverability is preserved; only the permanent cost is
+   gone.
 
 ### Golden suite
 
@@ -93,16 +126,32 @@ obvious next schema-compression target.
 |---|---|---|---|---|
 | SUCCESS_RATE | 18/18 (100 %) | 18/18 (100 %) | **18/18 (100 %)** | 6/6 (100 %) |
 | MCP_CALLS median/task | 11 | 11 | **10** | 16 |
-| WALL_CLOCK_P50 (ms) | 70 | 75 | 72 | 69 |
-| WALL_CLOCK_P95 (ms) | 888 | 880 | 900 | 333 |
-| RESPONSE_TOKENS/task | 3 984 | 2 058 | **963** | 2 744 |
-| CATALOG_TOKENS/task | 8 389 | 8 667 | **2 785** | 7 651 |
-| **EXTERNAL_TOKENS/task** | **12 373** | 10 725 | **3 698** | 10 394 |
+| WALL_CLOCK_P50 (ms) | 70 | 71 | 64 | 69 |
+| WALL_CLOCK_P95 (ms) | 888 | 902 | 1 183 | 333 |
+| RESPONSE_TOKENS/task | 3 984 | 2 056 | **964** | 2 765 |
+| CATALOG_TOKENS/task | 8 389 | 8 163 | **2 281** | 7 103 |
+| **EXTERNAL_TOKENS/task** | **12 373** | 10 220 | **3 197** | 9 868 |
 | RETRY_RATE | 0 | 0 | 0 | 0 |
 | ROLLBACK_RATE | 0 | 0 | 0 | 0 |
 
-**Headline: 12 373 → 3 698 external tokens per task, −70.1 %, with success rate
-and latency unchanged.**
+**Headline: 12 373 → 3 197 external tokens per task, −74.2 %, with success rate
+unchanged.**
+
+Progression of the `tools` column across the two steps:
+
+| | baseline | after step 1 | after step 2 |
+|---|---|---|---|
+| EXTERNAL_TOKENS/task | 12 373 | 3 698 | **3 197** |
+| CATALOG_TOKENS/task | 8 389 | 2 785 | **2 281** |
+| `tools/list` at startup | 1 680 | 1 958 | **1 454** |
+
+Step 2 moves every load mode, because the startup surface is re-sent in every
+catalogue refresh regardless of how tools are loaded: `toolsets` 10 725 →
+10 220, `search` 10 394 → 9 868.
+
+P95 in the `tools` column moved 900 → 1 183 ms. That is `kicad-cli` spawn
+variance on `manufacturing_exports`, not server work: P50 went *down* (72 → 64
+ms) and no code on that path changed. It is recorded rather than smoothed.
 
 P95 is dominated by `run_erc`, which spawns `kicad-cli` (1 086 ms mean). Nothing
 in this work touched that, and nothing should: it is KiCad doing real work.

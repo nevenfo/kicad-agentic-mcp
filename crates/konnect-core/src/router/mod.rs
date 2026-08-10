@@ -58,6 +58,9 @@ impl ToolRouter {
         for name in registry::STARTER_KIT {
             let _ = self.load(name).await;
         }
+        for name in registry::STARTER_TOOLS {
+            let _ = self.load_tool(name).await;
+        }
     }
 
     /// Find which toolset a tool name belongs to, whether or not that toolset
@@ -191,6 +194,26 @@ mod tests {
         assert!(!active.contains("pcb_board"));
         assert!(!active.contains("integration"));
         assert!(!active.contains("templates"));
+        // `config` is deliberately not a starter toolset any more: only its two
+        // read paths are admitted individually, and admitting a tool must not
+        // mark its toolset active.
+        assert!(!active.contains("config"));
+    }
+
+    #[tokio::test]
+    async fn starter_tools_are_callable_without_their_toolset() {
+        let router = ToolRouter::new();
+        router.load_starter_kit().await;
+        for name in registry::STARTER_TOOLS {
+            assert!(
+                router.get_tool(name).await.is_some(),
+                "starter tool '{}' is not callable at startup",
+                name
+            );
+        }
+        // The rest of `config` stays out of the baseline `tools/list`.
+        assert!(router.get_tool("save_user_config").await.is_none());
+        assert!(router.get_tool("add_design_rule").await.is_none());
     }
 
     #[tokio::test]
@@ -307,6 +330,18 @@ mod tests {
             assert!(
                 registry::tools_for(name).is_some(),
                 "STARTER_KIT references unknown toolset '{}'",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn starter_tool_entries_all_exist_in_the_registry() {
+        let router = ToolRouter::new();
+        for name in registry::STARTER_TOOLS {
+            assert!(
+                router.find_tool_def(name).is_some(),
+                "STARTER_TOOLS references unknown tool '{}'",
                 name
             );
         }

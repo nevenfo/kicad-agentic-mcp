@@ -15,10 +15,16 @@ use std::path::{Path, PathBuf};
 
 /// The pin-item object schema (number/name/type/style/x/y/angle/length) shared
 /// by `pins`, `units[].pins`, and `power_pins` in the create_symbol schema
-/// below. `type_desc` parameterizes the one wording difference between call
-/// sites. `require_xy` is false where a `glyph` may auto-place the pins (so x/y
+/// below. `require_xy` is false where a `glyph` may auto-place the pins (so x/y
 /// become optional) and true for the always-rectangular `power_pins`.
-fn pin_item_schema(type_desc: &str, require_xy: bool) -> serde_json::Value {
+///
+/// This object is emitted three times in one schema, so every word in it costs
+/// three times as much catalogue budget as it looks like it does. The `type` and
+/// `style` enums are self-documenting and carry no `description`; the one fact
+/// they cannot express (NC is spelled `no_connect`) lives once in the tool
+/// description instead of three times here. Measured: 219 -> 118 tokens per
+/// copy, no field, value or default removed.
+fn pin_item_schema(require_xy: bool) -> serde_json::Value {
     let mut required = vec!["number", "name", "type"];
     if require_xy {
         required.push("x");
@@ -31,13 +37,12 @@ fn pin_item_schema(type_desc: &str, require_xy: bool) -> serde_json::Value {
             "name": { "type": "string" },
             "type": {
                 "type": "string",
-                "enum": ["input", "output", "bidirectional", "tri_state", "passive", "free", "unspecified", "power_in", "power_out", "open_collector", "open_emitter", "no_connect"],
-                "description": type_desc
+                "enum": ["input", "output", "bidirectional", "tri_state", "passive", "free", "unspecified", "power_in", "power_out", "open_collector", "open_emitter", "no_connect"]
             },
             "style": {
                 "type": "string",
-                "enum": ["line", "inverted", "clock", "inverted_clock", "input_low", "clock_low", "output_low", "edge_clock_high", "non_logic"],
-                "description": "Pin graphic style (default 'line'). 'inverted' = active-low bubble, 'clock' = clock input, etc. Works with any body shape."
+                "default": "line",
+                "enum": ["line", "inverted", "clock", "inverted_clock", "input_low", "clock_low", "output_low", "edge_clock_high", "non_logic"]
             },
             "x": { "type": "number" },
             "y": { "type": "number" },
@@ -61,34 +66,38 @@ pub fn tools() -> Vec<ToolDef> {
                     "description": { "type": "string", "description": "Footprint description (optional)" },
                     "pads": {
                         "type": "array",
-                        "description": "Pad definitions",
+                        "description": "Pad definitions. Sizes in mm.",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "number": { "type": "string" },
-                                "type": { "type": "string", "description": "'smd', 'thru_hole', 'np_thru_hole'" },
-                                "shape": { "type": "string", "description": "'rect', 'oval', 'circle', 'roundrect'" },
+                                "type": { "type": "string", "enum": ["smd", "thru_hole", "np_thru_hole", "connect"] },
+                                "shape": { "type": "string", "enum": ["rect", "oval", "circle", "roundrect", "trapezoid", "custom"] },
                                 "x": { "type": "number" },
                                 "y": { "type": "number" },
                                 "width": { "type": "number" },
                                 "height": { "type": "number" },
-                                "drill": { "type": "number", "description": "Drill diameter for thru-hole pads" }
+                                "drill": { "type": "number", "description": "Drill diameter, thru-hole pads only" }
                             },
                             "required": ["number", "type", "shape", "x", "y", "width", "height"]
                         }
                     },
-                    "body_width": { "type": "number", "description": "Physical component body width in mm (optional; used for silk/fab outlines). Falls back to the pad envelope if omitted." },
-                    "body_height": { "type": "number", "description": "Physical component body height in mm (optional)." },
-                    "package_type": { "type": "string", "description": "'smd' (0.25mm courtyard), 'through_hole' (0.5mm), 'small' (0.15mm, <0603), or 'bga' (1.0mm). Sets courtyard clearance when courtyard_clearance is not given." },
-                    "courtyard_clearance": { "type": "number", "description": "Explicit courtyard clearance in mm (overrides package_type / auto-detection)." },
+                    "body_width": { "type": "number", "description": "Component body width in mm, for the silk/fab outlines. Defaults to the pad envelope." },
+                    "body_height": { "type": "number", "description": "Component body height in mm." },
+                    "package_type": {
+                        "type": "string",
+                        "enum": ["smd", "through_hole", "small", "bga"],
+                        "description": "Courtyard clearance preset used when `courtyard_clearance` is absent: smd 0.25mm, through_hole 0.5mm, small 0.15mm (below 0603), bga 1.0mm."
+                    },
+                    "courtyard_clearance": { "type": "number", "description": "Courtyard clearance in mm; overrides `package_type`." },
                     "model": {
                         "type": "object",
-                        "description": "Optional 3D model to associate with the footprint.",
+                        "description": "3D model to attach.",
                         "properties": {
-                            "path": { "type": "string", "description": "Path to the 3D model file (.step/.wrl); absolute or a KiCAD env-var path like ${KICAD9_3DMODEL_DIR}/..." },
-                            "offset": { "type": "object", "description": "{x,y,z} in mm (default 0,0,0)" },
-                            "scale": { "type": "object", "description": "{x,y,z} (default 1,1,1)" },
-                            "rotate": { "type": "object", "description": "{x,y,z} in degrees (default 0,0,0)" }
+                            "path": { "type": "string", "description": "Path to a .step/.wrl file, absolute or KiCAD env-var form (${KICAD9_3DMODEL_DIR}/...)" },
+                            "offset": { "type": "object", "description": "{x,y,z} mm, default 0,0,0" },
+                            "scale": { "type": "object", "description": "{x,y,z}, default 1,1,1" },
+                            "rotate": { "type": "object", "description": "{x,y,z} degrees, default 0,0,0" }
                         },
                         "required": ["path"]
                     }
@@ -154,13 +163,13 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "create_symbol",
-            "Create a new KiCAD schematic symbol and append it to a .kicad_sym library file. \
-             Supports single-unit symbols (via `pins`) and multi-unit parts like dual/quad \
-             op-amps or gate banks (via `units` + optional `power_pins`). By default each unit \
-             gets a rectangular body sized to its pins; set `glyph` (symbol-level and/or per \
-             unit) to draw a conventional op-amp triangle or logic-gate body instead. With a \
-             glyph, pins auto-place by their `type` (inputs left in the order listed top-to- \
-             bottom, output right, power top/bottom) and their x/y are ignored.",
+            "Create a KiCAD schematic symbol and append it to a .kicad_sym library file. \
+             Single-unit part: use `pins`. Multi-unit part (dual/quad op-amp, gate bank, \
+             multi-bank connector): use `units`, plus `power_pins` for the rails they share. \
+             A unit's body is a rectangle sized to its pins unless a `glyph` is set, in which \
+             case the pins auto-place by `type` (inputs left, in the order listed, top-to- \
+             bottom; output right; power top/bottom) and their x/y are ignored. NC pins take \
+             type 'no_connect', not 'not_connected'.",
             json!({
                 "type": "object",
                 "properties": {
@@ -170,40 +179,37 @@ pub fn tools() -> Vec<ToolDef> {
                     "value": { "type": "string", "description": "Default value string" },
                     "glyph": {
                         "type": "string",
+                        "default": "rectangle",
                         "enum": ["rectangle", "opamp", "buffer", "inverter", "schmitt", "schmitt_inverter", "and", "nand", "or", "nor", "xor", "xnor"],
-                        "description": "Symbol-level default body shape. 'rectangle' (default) uses the pin x/y you supply; the others draw a fixed conventional shape and auto-place pins by type (x/y ignored). Op-amp/gate inputs are placed in the order listed, top-to-bottom (KiCAD's op-amp convention is + on top, - on bottom). Inverting glyphs (inverter/schmitt_inverter/nand/nor/xnor) draw the same body as their base and put the inversion bubble on the output pin. If a glyph's pins don't fit (wrong input count, not exactly one output), it falls back to a rectangle and reports a warning."
+                        "description": "Default body shape. 'rectangle' honours the pin x/y you supply; every other value draws a fixed conventional shape and auto-places the pins. Inverting glyphs (inverter/schmitt_inverter/nand/nor/xnor) draw their base body plus an inversion bubble on the output. A glyph whose pins do not fit it (wrong input count, not exactly one output) falls back to a rectangle and reports a warning."
                     },
                     "pins": {
                         "type": "array",
-                        "description": "Pin definitions. x/y position the rectangle body and are ignored when a `glyph` is set.",
-                        "items": pin_item_schema("Pin electrical type — exactly one of KiCAD's 12 values. Note: NC pins are 'no_connect' (not 'not_connected').", false)
+                        "description": "Pins of a single-unit symbol.",
+                        "items": pin_item_schema(false)
                     },
-                    "show_pin_names": { "type": "boolean", "description": "Show pin names on the symbol (default true).", "default": true },
-                    "show_pin_numbers": { "type": "boolean", "description": "Show pin numbers on the symbol (default true).", "default": true },
+                    "show_pin_names": { "type": "boolean", "description": "Show pin names (default true).", "default": true },
+                    "show_pin_numbers": { "type": "boolean", "description": "Show pin numbers (default true).", "default": true },
                     "units": {
                         "type": "array",
-                        "description": "For MULTI-UNIT parts (dual/quad op-amps, gate banks, multi-bank connectors). Each element is one unit (becomes Unit A, B, C...) with its own pins and body. When given, `units` replaces `pins` (use `pins` for single-unit symbols instead). Each unit may set its own `glyph`, overriding the symbol-level default.",
+                        "description": "One element per unit (Unit A, B, C...), each with its own pins and body. Replaces `pins`.",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "glyph": {
                                     "type": "string",
                                     "enum": ["rectangle", "opamp", "buffer", "inverter", "schmitt", "schmitt_inverter", "and", "nand", "or", "nor", "xor", "xnor"],
-                                    "description": "Body shape for this unit, overriding the symbol-level `glyph`."
+                                    "description": "Overrides the symbol-level `glyph` for this unit."
                                 },
-                                "pins": {
-                                    "type": "array",
-                                    "description": "Pins for this unit. x/y are ignored when the unit has a `glyph`.",
-                                    "items": pin_item_schema("Pin electrical type — exactly one of KiCAD's 12 values. Note: NC pins are 'no_connect' (not 'not_connected').", false)
-                                }
+                                "pins": { "type": "array", "items": pin_item_schema(false) }
                             },
                             "required": ["pins"]
                         }
                     },
                     "power_pins": {
                         "type": "array",
-                        "description": "Shared power pins (V+/V-, VCC/GND). Only meaningful with `units`: they become a dedicated final 'power unit' (e.g. Unit C of a dual op-amp, Unit E of a quad gate) placed once, following KiCAD's own 74xx convention. This avoids drawing the power pins on every unit (which would each need wiring to pass ERC). The power unit is always a rectangle.",
-                        "items": pin_item_schema("Pin electrical type — exactly one of KiCAD's 12 values (power pins are usually 'power_in'). Note: NC pins are 'no_connect' (not 'not_connected').", true)
+                        "description": "Rails shared by every unit (V+/V-, VCC/GND). Only meaningful with `units`: they become one final rectangular power unit, following KiCAD's 74xx convention, instead of being drawn on every unit where each copy would need its own wiring to pass ERC.",
+                        "items": pin_item_schema(true)
                     }
                 },
                 "required": ["library_path", "name", "reference_prefix"]

@@ -278,10 +278,11 @@ Anything not achieved gets written down as not achieved. No benchmark rigging.
 * Does KiCad 10.0.3 on Windows expose `KICAD_API_SOCKET` reliably enough for
   unattended E2E, or do PCB E2E tests need a GUI session? This currently blocks
   PCB benchmark coverage entirely.
-* Tool-granular loading bottoms out at **3 698 external tokens per task**, of
-  which 2 785 is still `tools/list` churn. Does the ~7-verb gateway (stable
-  catalogue, `CATALOG_TOKENS` → 0) have to land before Phase H, or can the local
-  agent absorb the churn because it holds the toolbelt across many tasks?
+* ~~Tool-granular loading bottoms out at 3 698 external tokens per task. Does the
+  ~7-verb gateway have to land before Phase H?~~ **Answered 2026-08-10: yes.**
+  Schema compression and a smaller starter kit took it to 3 197, and 2 281 of
+  that is catalogue churn no per-tool work can touch. The gateway is the only
+  remaining lever of that size.
 
 ## Measured state (2026-08-10)
 
@@ -289,9 +290,15 @@ See `docs/benchmark.md` for method and full tables.
 
 | | baseline | now | target |
 |---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | **3 698** | ≤ 2 000 |
+| EXTERNAL_TOKENS/task | 12 373 | **3 197** | ≤ 2 000 |
 | SUCCESS_RATE | 18/18 | 18/18 | ≥ baseline ✓ |
 | MCP_CALLS median/task | 11 | 10 | ≤ 5 |
-| `tools/list` at startup | 1 680 | 1 958 | ≤ ~1 000 |
+| `tools/list` at startup | 1 680 | **1 454** | ≤ ~1 000 |
+| full catalogue | 22 329 | 22 190 | — |
 | retrieval recall @8 | — | 100 % | ≥ 98 % ✓ |
 | retrieval precision @8 | — | 22.4 % | ≥ 60 % ✗ |
+
+Of the 3 197, **2 281 is catalogue churn** — `tools/list` re-fetches the loading
+mechanism forces. Per-tool schema compression cannot reach it; only a catalogue
+that never changes can. Open question 3 is therefore answered: the gateway lands
+before Phase H.

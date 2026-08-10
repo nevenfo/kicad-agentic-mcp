@@ -17,9 +17,10 @@
 //!   get_recent_calls(limit?)  — last N tool calls (newest first) with timing + status
 //!   server_stats()            — uptime, per-tool totals/errors, JSONL log path
 //!
-//! At server startup only the STARTER_KIT (`project`, `config`) is pre-loaded so
-//! baseline context stays small. The LLM reads `list_toolboxes` and calls
-//! `load_toolset(name)` to expose the tools it actually needs for the task.
+//! At server startup only the STARTER_KIT (`project`) and STARTER_TOOLS
+//! (`load_user_config`, `get_effective_config`) are pre-loaded so baseline
+//! context stays small. The LLM reaches the rest with `find_capabilities` +
+//! `load_tools`, or with `list_toolboxes` + `load_toolset` for a whole domain.
 
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::{CallToolResult, McpToolDescription};
@@ -77,7 +78,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
             name: "list_toolboxes".to_string(),
             description:
                 "List all available KiCAD toolsets with descriptions, categories, tool counts, \
-                 and whether each is currently loaded. Only the starter kit (project, config) \
+                 and whether each is currently loaded. Only the starter kit (project) \
                  is loaded at startup — call load_toolset(name) to expose additional tools \
                  in subsequent tools/list responses. Always call this first to discover what \
                  tools are available for the task."
