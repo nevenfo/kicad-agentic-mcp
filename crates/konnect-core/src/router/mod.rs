@@ -1,3 +1,4 @@
+pub mod capability_search;
 pub mod meta_tools;
 pub mod registry;
 
@@ -71,6 +72,55 @@ impl ToolRouter {
             }
         }
         None
+    }
+
+    /// Load a single tool by name, without pulling in the rest of its toolset.
+    ///
+    /// Toolset-granularity loading is the coarsest possible answer to "what
+    /// does this task need". On the golden suite it costs ~8 400 tokens of
+    /// `tools/list` refresh per task to obtain the ~12 tools actually called.
+    /// This is the fine-grained path: `find_capabilities` proposes names,
+    /// `load_tools` admits exactly those.
+    ///
+    /// The owning toolset is deliberately *not* marked active — `active_names`
+    /// keeps meaning "whole toolsets the caller asked for", so
+    /// `unload_toolset` on a toolset the caller never loaded stays a no-op
+    /// rather than silently revoking individually admitted tools.
+    pub async fn load_tool(&self, name: &str) -> Option<ToolDef> {
+        let def = self.find_tool_def(name)?;
+        self.loaded_tools
+            .write()
+            .await
+            .insert(def.name.to_string(), def.clone());
+        Some(def)
+    }
+
+    /// Look up a tool's definition anywhere in the registry, loaded or not.
+    pub fn find_tool_def(&self, name: &str) -> Option<ToolDef> {
+        for ts in self.registry {
+            if let Some(defs) = registry::tools_for(ts.name) {
+                if let Some(def) = defs.into_iter().find(|d| d.name == name) {
+                    return Some(def);
+                }
+            }
+        }
+        None
+    }
+
+    /// Every registered tool paired with its owning toolset. Used by capability
+    /// search; the definitions are rebuilt on each call, which is fine for a
+    /// search that runs once per task and keeps the registry the single source
+    /// of truth rather than caching a second copy that can drift.
+    pub fn all_tools_with_toolset(&self) -> Vec<(&'static str, ToolDef)> {
+        let mut out = Vec::new();
+        for ts in self.registry {
+            if let Some(defs) = registry::tools_for(ts.name) {
+                for def in defs {
+                    out.push((ts.name, def));
+                }
+            }
+        }
+        out
     }
 
     pub async fn unload(&self, name: &str) -> bool {

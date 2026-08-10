@@ -296,17 +296,23 @@ fn load_toolset_batch_form_loads_all_and_notifies_once() {
         .clone();
     let body = McpProcess::tool_body(&r);
     assert_eq!(body["tools_added"].as_u64(), Some(36));
-    // tools items are {name, description} objects, matching the legacy
-    // single-name result shape -- not bare name strings.
+    // `tools` items are bare name strings. Echoing each description here used
+    // to be the single largest response-token line item in the whole protocol
+    // (2 208 tokens per task on the golden suite, 18% of everything the harness
+    // received) and it was pure duplication: this call emits
+    // notifications/tools/list_changed, the client re-fetches tools/list, and
+    // the very same descriptions arrive again with their schemas attached.
     let tools = body["tools"].as_array().expect("tools array");
-    assert!(!tools.is_empty());
+    assert_eq!(tools.len(), 36);
     for t in tools {
-        assert!(t.get("name").and_then(Value::as_str).is_some(), "{t:#?}");
         assert!(
-            t.get("description").and_then(Value::as_str).is_some(),
-            "{t:#?}"
+            t.as_str().is_some(),
+            "tools must be bare name strings, not objects: {t:#?}"
         );
     }
+    assert!(tools
+        .iter()
+        .any(|t| t.as_str() == Some("add_schematic_component")));
 
     let notification_count = lines
         .iter()

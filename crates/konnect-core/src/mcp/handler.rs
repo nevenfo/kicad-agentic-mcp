@@ -214,7 +214,11 @@ impl McpHandler {
     ) -> (CallToolResult, CallStatus, Option<String>) {
         // Meta-tools always win.
         if let Some(result) = meta_tools::handle_meta_tool(name, args, &self.ctx).await {
-            if name == "load_toolset" || name == "unload_toolset" {
+            // Any meta-tool that changes what tools/list would return must say
+            // so, or the client keeps a stale catalogue and the newly admitted
+            // tools stay uncallable for the rest of the session (issue #19).
+            if matches!(name, "load_toolset" | "unload_toolset" | "load_tools") && !result.is_error
+            {
                 self.notify_tools_list_changed().await;
             }
             let status = if result.is_error {
