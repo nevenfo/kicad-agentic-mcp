@@ -17,6 +17,7 @@
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, require_str, ToolContext, ToolDef};
+use crate::try_arg;
 use konnect_sexp::writer::{read_consistent, write_atomic_if_unchanged};
 use serde_json::json;
 use std::path::PathBuf;
@@ -403,9 +404,7 @@ async fn handle_get_jlcpcb_part(
             "JLCPCB database not found. Run download_jlcpcb_database first.",
         ));
     }
-    let lcsc_id = require_str(args, "lcsc_id")
-        .map_err(|e| anyhow::anyhow!("{:?}", e))?
-        .to_string();
+    let lcsc_id = try_arg!(require_str(args, "lcsc_id")).to_string();
 
     let key = cache_key("get_jlcpcb_part", &db_path, &[&lcsc_id]);
     if let Some(mut cached) = ctx.jlcpcb_cache.get(&key) {

@@ -22,8 +22,9 @@
 //! context stays small. The LLM reaches the rest with `find_capabilities` +
 //! `load_tools`, or with `list_toolboxes` + `load_toolset` for a whole domain.
 
-use crate::mcp::error::ToolErrorKind;
+use crate::mcp::error::{extract_error_kind, ToolErrorKind};
 use crate::mcp::protocol::{CallToolResult, McpToolDescription};
+use crate::observability::{new_call_id, unix_ms, CallRecord, CallStatus};
 use crate::tools::ToolContext;
 use serde_json::{json, Value};
 
@@ -72,6 +73,54 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                     }
                 },
                 "required": ["names"]
+            }),
+        },
+        McpToolDescription {
+            name: "kicad_describe".to_string(),
+            description: "Return the full input schema of named tools so they can be called \
+                 through kicad_invoke without ever appearing in tools/list. Names come from \
+                 find_capabilities(). This is the gateway path: one response carries exactly \
+                 the schemas you asked for, where load_tools makes the client re-fetch the \
+                 whole catalogue instead."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tool names to describe, e.g. ['connect_pins', 'run_erc']"
+                    }
+                },
+                "required": ["names"]
+            }),
+        },
+        McpToolDescription {
+            name: "kicad_invoke".to_string(),
+            description: "Call one or more KiCAD tools by name, in order, whether or not they \
+                 are loaded. Nothing is added to tools/list, so no catalogue refresh is \
+                 triggered and the batch costs only its own result. Use kicad_describe() for \
+                 the argument schemas. Execution stops at the first failure unless \
+                 stop_on_error is false."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "calls": {
+                        "type": "array",
+                        "description": "Tool calls to run in order.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "tool": { "type": "string" },
+                                "args": { "type": "object" }
+                            },
+                            "required": ["tool"]
+                        }
+                    },
+                    "stop_on_error": { "type": "boolean", "default": true }
+                },
+                "required": ["calls"]
             }),
         },
         McpToolDescription {
@@ -185,6 +234,8 @@ pub async fn handle_meta_tool(
     match name {
         "find_capabilities" => Some(handle_find_capabilities(args, ctx).await),
         "load_tools" => Some(handle_load_tools(args, ctx).await),
+        "kicad_describe" => Some(handle_kicad_describe(args, ctx).await),
+        "kicad_invoke" => Some(handle_kicad_invoke(args, ctx).await),
         "list_toolboxes" => Some(handle_list_toolboxes(ctx).await),
         "load_toolset" => Some(handle_load_toolset(args, ctx).await),
         "unload_toolset" => Some(handle_unload_toolset(args, ctx).await),
@@ -193,6 +244,237 @@ pub async fn handle_meta_tool(
         "server_stats" => Some(handle_server_stats(ctx).await),
         _ => None,
     }
+}
+
+/// Read a deduplicated `names` array argument. A non-string entry is an error
+/// rather than something to skip: silently dropping it would report a schema
+/// the caller never asked about and omit the one it did.
+fn require_names(args: &Value, tool: &str) -> Result<Vec<String>, CallToolResult> {
+    let Some(items) = args["names"].as_array() else {
+        let kind = ToolErrorKind::InvalidArgument {
+            field: "names".to_string(),
+            reason: "must be an array of tool names".to_string(),
+        };
+        return Err(CallToolResult::error_kind(
+            kind,
+            format!("{tool} requires names: an array of tool names"),
+        ));
+    };
+    let mut names = Vec::with_capacity(items.len());
+    for item in items {
+        match item.as_str() {
+            Some(s) => names.push(s.to_string()),
+            None => {
+                return Err(CallToolResult::error(
+                    "names array must contain only strings",
+                ))
+            }
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|n| seen.insert(n.clone()));
+    Ok(names)
+}
+
+/// `kicad_describe` — hand out input schemas without touching `tools/list`.
+///
+/// The catalogue is the expensive part of MCP: `load_tools` admits a tool by
+/// changing what `tools/list` returns, which obliges the client to re-fetch the
+/// *entire* list, startup tools included. Measured on the golden suite that
+/// refresh is 2 281 tokens per task against 964 tokens of actual tool output.
+/// A schema handed back as a plain result costs only itself, once.
+async fn handle_kicad_describe(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> CallToolResult {
+    let names = match require_names(args, "kicad_describe") {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+
+    let mut described = Vec::new();
+    let mut not_found = Vec::new();
+    for name in &names {
+        match ctx.router.find_tool_def(name) {
+            Some(def) => described.push(json!({
+                "name": def.name,
+                "description": def.description,
+                "input_schema": def.input_schema,
+            })),
+            None => not_found.push(name.clone()),
+        }
+    }
+
+    CallToolResult::json(&json!({
+        "count": described.len(),
+        "tools": described,
+        "not_found": not_found,
+    }))
+}
+
+/// `kicad_invoke` — run a batch of tools by name, loaded or not.
+///
+/// Two costs disappear at once. The catalogue never changes, so no
+/// `notifications/tools/list_changed` fires and the client never re-fetches
+/// `tools/list`. And a sequence that would have been N MCP round trips becomes
+/// one, which is where the `MCP_CALLS per task` target comes from.
+///
+/// Every inner call is recorded with the shared observer under its own tool
+/// name, so `get_recent_calls` / `server_stats` / the JSONL log see exactly what
+/// they would have seen had the caller made the calls itself. Batching must not
+/// become a way to mutate a design without an audit record.
+async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> CallToolResult {
+    let Some(calls) = args["calls"].as_array() else {
+        let kind = ToolErrorKind::InvalidArgument {
+            field: "calls".to_string(),
+            reason: "must be an array of {tool, args} objects".to_string(),
+        };
+        return CallToolResult::error_kind(
+            kind,
+            "kicad_invoke requires calls: [{\"tool\": \"...\", \"args\": {...}}, ...]",
+        );
+    };
+    let stop_on_error = args["stop_on_error"].as_bool().unwrap_or(true);
+
+    let mut results = Vec::with_capacity(calls.len());
+    let mut ok_count = 0usize;
+    let mut failed_at: Option<usize> = None;
+
+    for (index, call) in calls.iter().enumerate() {
+        let Some(name) = call["tool"].as_str() else {
+            results.push(json!({
+                "index": index,
+                "ok": false,
+                "error_kind": "invalid_argument",
+                "error": "each call needs a 'tool' name",
+            }));
+            failed_at = Some(index);
+            if stop_on_error {
+                break;
+            }
+            continue;
+        };
+        let call_args = call.get("args").cloned().unwrap_or_else(|| json!({}));
+
+        let Some(def) = ctx.router.find_tool_def(name) else {
+            results.push(json!({
+                "index": index,
+                "tool": name,
+                "ok": false,
+                "error_kind": "unknown_tool",
+                "error": format!("Tool '{name}' does not exist. Use find_capabilities() to look it up."),
+            }));
+            failed_at = Some(index);
+            if stop_on_error {
+                break;
+            }
+            continue;
+        };
+
+        let call_id = new_call_id();
+        let ts = unix_ms();
+        let started = std::time::Instant::now();
+        let args_bytes = serde_json::to_string(&call_args)
+            .map(|s| s.len())
+            .unwrap_or(0);
+
+        let (entry, status, error_kind, result_bytes) =
+            match (def.handler)(&call_args, ctx.clone()).await {
+                Ok(result) => {
+                    let bytes = result_text(&result).len();
+                    let error_kind = extract_error_kind(&result);
+                    let status = if result.is_error {
+                        CallStatus::Error
+                    } else {
+                        CallStatus::Ok
+                    };
+                    let entry = json!({
+                        "index": index,
+                        "tool": name,
+                        "ok": !result.is_error,
+                        "result": compact_result(&result),
+                    });
+                    (entry, status, error_kind, bytes)
+                }
+                Err(e) => {
+                    let entry = json!({
+                        "index": index,
+                        "tool": name,
+                        "ok": false,
+                        "error_kind": "handler_error",
+                        "error": e.to_string(),
+                    });
+                    (
+                        entry,
+                        CallStatus::Error,
+                        Some("handler_error".to_string()),
+                        0,
+                    )
+                }
+            };
+
+        ctx.observer
+            .record(CallRecord {
+                call_id,
+                ts,
+                tool: name.to_string(),
+                toolset: ctx.router.find_toolset_for_tool(name).map(str::to_string),
+                dur_ms: started.elapsed().as_millis() as u64,
+                status,
+                error_kind,
+                args_bytes,
+                result_bytes,
+            })
+            .await;
+
+        let succeeded = entry["ok"].as_bool().unwrap_or(false);
+        results.push(entry);
+        if succeeded {
+            ok_count += 1;
+        } else {
+            failed_at = Some(index);
+            if stop_on_error {
+                break;
+            }
+        }
+    }
+
+    let mut body = json!({
+        "count": results.len(),
+        "ok": ok_count,
+        "results": results,
+    });
+    if let Some(index) = failed_at {
+        body["failed_at"] = json!(index);
+        let remaining = calls.len().saturating_sub(results.len());
+        if stop_on_error && remaining > 0 {
+            body["not_run"] = json!(remaining);
+        }
+    }
+
+    // The envelope itself succeeded even when an inner call did not: the caller
+    // needs the per-call detail to decide what to retry, and an `is_error`
+    // envelope invites clients to discard the body.
+    CallToolResult::json(&body)
+}
+
+/// Concatenate a result's text content. Image content carries no text and is
+/// not something a batched caller can act on, so it is skipped.
+fn result_text(result: &CallToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter_map(|c| match c {
+            crate::mcp::protocol::ToolContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Domain handlers return JSON encoded as a string. Re-parsing it means the
+/// batch response nests real JSON instead of an escaped blob — same information,
+/// fewer tokens, and directly readable by the caller.
+fn compact_result(result: &CallToolResult) -> Value {
+    let text = result_text(result);
+    serde_json::from_str::<Value>(&text).unwrap_or(Value::String(text))
 }
 
 async fn handle_find_capabilities(

@@ -404,3 +404,133 @@ fn auto_load_toolsets_config_loads_and_executes_on_miss() {
         "expected notifications/tools/list_changed after auto-load; saw: {lines:#?}"
     );
 }
+
+/// The gateway's whole reason to exist: `kicad_invoke` runs a tool that is not
+/// in `tools/list` and the catalogue does not change, so no
+/// `notifications/tools/list_changed` fires and the client never re-fetches.
+/// On the golden suite that refresh is 2 281 tokens per task — more than twice
+/// the tool output it accompanies.
+#[test]
+fn kicad_invoke_runs_an_unloaded_tool_without_touching_the_catalogue() {
+    let mut p = McpProcess::spawn();
+
+    // Baseline catalogue, captured before the call.
+    let before: Vec<String> = p.request("tools/list", json!({}))["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        !before.contains(&"get_symbol_info".to_string()),
+        "get_symbol_info must not be loaded at startup for this test to mean anything"
+    );
+
+    let lines = p.call_tool_then_fence(
+        "kicad_invoke",
+        json!({"calls": [{"tool": "get_symbol_info", "args": {}}]}),
+    );
+    let saw_notification = lines.iter().any(|v| {
+        v.get("method").and_then(Value::as_str) == Some("notifications/tools/list_changed")
+            && v.get("id").is_none()
+    });
+    assert!(
+        !saw_notification,
+        "kicad_invoke must not change the catalogue; saw: {lines:#?}"
+    );
+
+    // The call reached the real handler — it failed on its own argument check,
+    // not on toolset_not_loaded.
+    let r = lines
+        .iter()
+        .find(|v| v.get("result").is_some())
+        .expect("expected a tools/call result")["result"]
+        .clone();
+    let body = McpProcess::tool_body(&r);
+    assert_eq!(body["count"].as_u64(), Some(1));
+    assert_eq!(body["ok"].as_u64(), Some(0));
+    assert_eq!(body["results"][0]["ok"], json!(false));
+    assert_eq!(
+        body["results"][0]["result"]["error"]["kind"], "invalid_argument",
+        "expected the tool's own validation error, got {body:#?}"
+    );
+
+    let after: Vec<String> = p.request("tools/list", json!({}))["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(before, after, "the catalogue must be byte-identical");
+}
+
+/// A batch runs in order, and by default stops at the first failure rather than
+/// applying the rest of a plan on top of a state that already went wrong. The
+/// calls that did not run are reported so the caller knows what to retry.
+#[test]
+fn kicad_invoke_batches_in_order_and_stops_on_error() {
+    let dir = std::env::temp_dir().join(format!("konnect-gw-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+
+    let mut p = McpProcess::spawn();
+    let r = p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": dir.to_str().unwrap(), "name": "gw"}},
+            {"tool": "get_symbol_info", "args": {}},
+            {"tool": "list_schematic_components", "args": {"schematic": dir.join("gw.kicad_sch")}}
+        ]}),
+    );
+    let body = McpProcess::tool_body(&r);
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+    assert_eq!(body["failed_at"].as_u64(), Some(1));
+    assert_eq!(body["not_run"].as_u64(), Some(1));
+    assert_eq!(body["results"][0]["tool"], "create_project");
+    assert_eq!(body["results"][0]["ok"], json!(true));
+
+    // Every inner call is auditable under its own name, not swallowed by the
+    // batch: a mutation without an audit record is the one thing batching must
+    // not buy.
+    let recent = McpProcess::tool_body(&p.call_tool("get_recent_calls", json!({"limit": 20})));
+    let names: Vec<&str> = recent["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["tool"].as_str())
+        .collect();
+    assert!(
+        names.contains(&"create_project") && names.contains(&"get_symbol_info"),
+        "inner calls missing from the call log: {names:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `kicad_describe` hands back the schema of a tool that is not loaded, and
+/// names what it could not find instead of failing the whole call.
+#[test]
+fn kicad_describe_returns_schemas_without_loading_anything() {
+    let mut p = McpProcess::spawn();
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_describe",
+        json!({"names": ["connect_pins", "no_such_tool"]}),
+    ));
+    assert_eq!(body["count"].as_u64(), Some(1));
+    assert_eq!(body["tools"][0]["name"], "connect_pins");
+    assert!(
+        body["tools"][0]["input_schema"]["properties"].is_object(),
+        "expected a real input schema, got {body:#?}"
+    );
+    assert_eq!(body["not_found"], json!(["no_such_tool"]));
+
+    let listed: Vec<String> = p.request("tools/list", json!({}))["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        !listed.contains(&"connect_pins".to_string()),
+        "kicad_describe must not admit the tool into tools/list"
+    );
+}

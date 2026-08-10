@@ -50,19 +50,24 @@ reproducible rather than approximately right.
 
 ### Load modes
 
-The same six tasks run under three loading strategies:
+The same six tasks run under four loading strategies:
 
 * **`toolsets`** — `list_toolboxes` then `load_toolset([...])`. What upstream
   Konnect offers, and what its skills tell an agent to do.
 * **`tools`** — `load_tools([exact names])`. Fine-grained loading with oracle
-  knowledge of the tool names. This is the floor: the best a perfect selector
-  could do.
+  knowledge of the tool names. The floor for anything that still goes through
+  `tools/list`.
 * **`search`** — `find_capabilities(intent)` on the task's plain-language
   intents, load whatever comes back. No oracle. Scores retrieval, not the
   server.
+* **`gateway`** — `kicad_describe([exact names])` then one batched
+  `kicad_invoke`. Same oracle as `tools`, so the comparison isolates *how the
+  schemas arrive* and nothing else. Assertions run through the gateway too: a
+  `run_erc` called directly would be a tool the gateway never had to expose,
+  and the number would be a lie.
 
-`toolsets` and `tools` both get oracle knowledge, so the comparison between them
-isolates *loading granularity* and nothing else.
+`toolsets`, `tools` and `gateway` all get oracle knowledge, so differences
+between them are loading mechanics, never search quality.
 
 ---
 
@@ -122,32 +127,67 @@ Two changes, both measured with `bench/surface.py`:
 
 18 runs (6 tasks × 3 repeats) per column, except `search` (1 repeat, deterministic).
 
-| Metric | Konnect baseline | Fork `toolsets` | Fork `tools` | Fork `search` |
+| Metric | Konnect baseline | Fork `toolsets` | Fork `tools` | Fork `search` | Fork `gateway` |
+|---|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 (100 %) | 18/18 (100 %) | 18/18 (100 %) | 6/6 (100 %) | **18/18 (100 %)** |
+| MCP_CALLS median/task | 11 | 11 | 10 | 16 | **4** |
+| WALL_CLOCK_P50 (ms) | 70 | 71 | 64 | 69 | 72 |
+| WALL_CLOCK_P95 (ms) | 888 | 902 | 1 183 | 333 | 916 |
+| RESPONSE_TOKENS/task | 3 984 | 2 056 | 964 | 2 765 | 1 995 |
+| CATALOG_TOKENS/task | 8 389 | 8 163 | 2 281 | 7 103 | **0** |
+| **EXTERNAL_TOKENS/task** | **12 373** | 10 220 | 3 197 | 9 868 | **1 995** |
+| RETRY_RATE | 0 | 0 | 0 | 0 | 0 |
+| ROLLBACK_RATE | 0 | 0 | 0 | 0 | 0 |
+
+**Headline: 12 373 → 1 995 external tokens per task, −83.9 %, with success rate
+unchanged and MCP calls down from 11 to 4.**
+
+Both V1 surface targets are met in the `gateway` column: `EXTERNAL_TOKENS/task`
+≤ 2 000 and median `MCP_CALLS` ≤ 5.
+
+### The gateway — where the last 1 200 tokens went
+
+`kicad_describe` + `kicad_invoke` (`crates/konnect-core/src/router/meta_tools.rs`)
+call any registered tool without exposing it. Two costs vanish:
+
+* **`CATALOG_TOKENS` → 0.** Nothing is added to `tools/list`, so no
+  `notifications/tools/list_changed` fires and the client never re-fetches. In
+  `tools` mode that refresh was 2 281 tokens per task — more than twice the
+  964 tokens of actual tool output it accompanied. A stdio test asserts the
+  catalogue is byte-identical before and after a `kicad_invoke` that runs an
+  unloaded tool, so this cannot silently regress.
+* **Round trips collapse.** A task's whole scripted path is one batched call:
+  median MCP calls 10 → **4** (describe, the batch, and the assertions' own
+  reads — which also go through the gateway, so nothing is measured through a
+  cheaper door than the one being sold).
+
+The trade is stated rather than hidden: `RESPONSE_TOKENS` rises from 964 to
+1 995 because the schemas now arrive inside a `kicad_describe` result instead of
+a catalogue refresh. That is the point — the caller asked for exactly those
+schemas, once, instead of being handed the whole list including tools it already
+had. Net per task: −1 202 tokens.
+
+The two new meta-tools cost 271 tokens on the startup surface (1 454 → 1 725),
+paid **once per session** rather than per task. Upstream's own startup is 1 680,
+so the fork now sits 45 tokens above it while carrying four extra meta-tools.
+
+Batching does not buy anonymity: every inner call is recorded with the shared
+observer under its own tool name, asserted by a test that reads
+`get_recent_calls` after a batch.
+
+Progression across the three steps:
+
+| | baseline | step 1 (`tools`) | step 2 (`tools`) | step 3 (`gateway`) |
 |---|---|---|---|---|
-| SUCCESS_RATE | 18/18 (100 %) | 18/18 (100 %) | **18/18 (100 %)** | 6/6 (100 %) |
-| MCP_CALLS median/task | 11 | 11 | **10** | 16 |
-| WALL_CLOCK_P50 (ms) | 70 | 71 | 64 | 69 |
-| WALL_CLOCK_P95 (ms) | 888 | 902 | 1 183 | 333 |
-| RESPONSE_TOKENS/task | 3 984 | 2 056 | **964** | 2 765 |
-| CATALOG_TOKENS/task | 8 389 | 8 163 | **2 281** | 7 103 |
-| **EXTERNAL_TOKENS/task** | **12 373** | 10 220 | **3 197** | 9 868 |
-| RETRY_RATE | 0 | 0 | 0 | 0 |
-| ROLLBACK_RATE | 0 | 0 | 0 | 0 |
-
-**Headline: 12 373 → 3 197 external tokens per task, −74.2 %, with success rate
-unchanged.**
-
-Progression of the `tools` column across the two steps:
-
-| | baseline | after step 1 | after step 2 |
-|---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | 3 698 | **3 197** |
-| CATALOG_TOKENS/task | 8 389 | 2 785 | **2 281** |
-| `tools/list` at startup | 1 680 | 1 958 | **1 454** |
+| EXTERNAL_TOKENS/task | 12 373 | 3 698 | 3 197 | **1 995** |
+| CATALOG_TOKENS/task | 8 389 | 2 785 | 2 281 | **0** |
+| MCP_CALLS median/task | 11 | 10 | 10 | **4** |
+| `tools/list` at startup | 1 680 | 1 958 | 1 454 | 1 725 |
 
 Step 2 moves every load mode, because the startup surface is re-sent in every
 catalogue refresh regardless of how tools are loaded: `toolsets` 10 725 →
-10 220, `search` 10 394 → 9 868.
+10 220, `search` 10 394 → 9 868. Step 3 makes that irrelevant for callers that
+use the gateway, and adds 271 tokens to startup for callers that do not.
 
 P95 in the `tools` column moved 900 → 1 183 ms. That is `kicad-cli` spawn
 variance on `manufacturing_exports`, not server work: P50 went *down* (72 → 64
@@ -219,7 +259,7 @@ $env:PROTOC = "<path to protoc.exe>"
 
 # individual runs
 python bench\surface.py --server .\target\release\konnect.exe --label mine
-python bench\runner.py  --server .\target\release\konnect.exe --label mine --repeat 3 --load-mode tools
+python bench\runner.py  --server .\target\release\konnect.exe --label mine --repeat 3 --load-mode gateway
 python bench\analyze.py bench\results\latest-tasks.json
 python bench\probe.py   --server .\target\release\konnect.exe --script bench\probes\divider.yaml
 ```

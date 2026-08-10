@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import tiktoken  # noqa: E402
 import yaml  # noqa: E402
 
-from mcp_client import McpStdioClient  # noqa: E402
+from mcp_client import Call, McpStdioClient  # noqa: E402
 
 ENC = tiktoken.get_encoding("o200k_base")
 TASK_DIR = Path(__file__).parent / "tasks"
@@ -68,6 +68,66 @@ def _json_of(call_result: Any) -> Any:
         return json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def _unwrap_invoke(call: Call, index: int) -> Call:
+    """Present one entry of a `kicad_invoke` batch as if it were its own call.
+
+    The synthetic Call is deliberately **not** appended to the session: the
+    round trip that really happened is the `kicad_invoke` one, and counting both
+    would inflate MCP_CALLS with calls that were never on the wire.
+    """
+    payload = _json_of(call.result) or {}
+    entry = next((r for r in payload.get("results", []) if r.get("index") == index), None)
+    if entry is None:
+        text = json.dumps({"error": "no result at index", "index": index, "batch": payload})
+        ok = False
+    elif entry.get("ok"):
+        inner = entry.get("result")
+        text = inner if isinstance(inner, str) else json.dumps(inner)
+        ok = True
+    else:
+        inner = entry.get("result", {"error": entry.get("error"), "kind": entry.get("error_kind")})
+        text = inner if isinstance(inner, str) else json.dumps(inner)
+        ok = False
+    return Call(
+        method="tools/call",
+        params={"name": entry.get("tool") if entry else "?", "arguments": {}},
+        request_bytes=0,
+        response_bytes=0,
+        duration_ms=0.0,
+        result={"content": [{"type": "text", "text": text}], "isError": not ok},
+        error=call.error,
+    )
+
+
+class GatewayClient:
+    """Route every tool call through `kicad_invoke`.
+
+    The gateway's claim is that a caller can drive the whole server through a
+    catalogue that never changes. Assertions have to go through the same door as
+    the steps or the measurement would quietly cheat: a `run_erc` called
+    directly would be a tool the gateway never had to expose.
+    """
+
+    PASSTHROUGH = {"kicad_invoke", "kicad_describe", "find_capabilities", "list_toolboxes"}
+
+    def __init__(self, inner: McpStdioClient):
+        self.inner = inner
+
+    @property
+    def session(self):  # noqa: ANN201 - mirrors McpStdioClient
+        return self.inner.session
+
+    def tools_call(self, name: str, arguments: dict | None = None, timeout: float = 300.0) -> Call:
+        if name in self.PASSTHROUGH:
+            return self.inner.tools_call(name, arguments, timeout=timeout)
+        call = self.inner.tools_call(
+            "kicad_invoke",
+            {"calls": [{"tool": name, "args": arguments or {}}]},
+            timeout=timeout,
+        )
+        return _unwrap_invoke(call, 0)
 
 
 def check_assertion(spec: dict, client: McpStdioClient, env: dict[str, str], step_errors: list[str]) -> AssertResult:
@@ -207,8 +267,11 @@ def run_task(
     step_errors: list[str] = []
     assertions: list[AssertResult] = []
 
-    with McpStdioClient([server, "--config", config], env=proc_env) as client:
-        client.initialize()
+    with McpStdioClient([server, "--config", config], env=proc_env) as raw_client:
+        raw_client.initialize()
+        # In gateway mode every domain call travels inside `kicad_invoke`;
+        # `client` is what the task and its assertions see either way.
+        client = GatewayClient(raw_client) if load_mode == "gateway" else raw_client
 
         # A real agent must discover and load its toolbelt. Count it honestly:
         # discovery calls, their responses, and the tools/list refresh they
@@ -221,6 +284,11 @@ def run_task(
         retrieval: dict | None = None
         if load_mode == "tools":
             client.tools_call("load_tools", {"names": required_tools(task)})
+        elif load_mode == "gateway":
+            # Same oracle as `tools` mode, so the comparison isolates *how* the
+            # schemas arrive: as a result the caller asked for, or as a
+            # catalogue refresh it cannot decline.
+            client.tools_call("kicad_describe", {"names": required_tools(task)})
         elif load_mode == "search":
             # No oracle here. The task's plain-language `intents` are all the
             # agent gets; whatever the search returns is the whole toolbelt.
@@ -256,9 +324,31 @@ def run_task(
         setup_calls = len(client.session.calls) - setup_before
 
         t0 = time.perf_counter()
-        for i, step in enumerate(task["steps"]):
-            args = substitute(step.get("args", {}), env_vars)
-            call = client.tools_call(step["tool"], args)
+        step_calls: list[tuple[dict, Call]] = []
+        if load_mode == "gateway":
+            # One round trip for the whole scripted path. `stop_on_error` is off
+            # because recovery tasks deliberately contain failing steps and the
+            # ones after them still have to run.
+            batch = raw_client.tools_call(
+                "kicad_invoke",
+                {
+                    "calls": [
+                        {"tool": s["tool"], "args": substitute(s.get("args", {}), env_vars)}
+                        for s in task["steps"]
+                    ],
+                    "stop_on_error": False,
+                },
+            )
+            step_calls = [
+                (step, _unwrap_invoke(batch, i)) for i, step in enumerate(task["steps"])
+            ]
+        else:
+            step_calls = [
+                (step, client.tools_call(step["tool"], substitute(step.get("args", {}), env_vars)))
+                for step in task["steps"]
+            ]
+
+        for i, (step, call) in enumerate(step_calls):
             # `expect_error: true` inverts the check. Recovery tasks need to
             # assert that a bad call *fails* — a server that silently accepts
             # a nonexistent lib_id or a stale path is the failure mode we are
@@ -338,11 +428,12 @@ def main() -> None:
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument(
         "--load-mode",
-        choices=["toolsets", "tools", "search"],
+        choices=["toolsets", "tools", "search", "gateway"],
         default="toolsets",
         help="toolsets: list_toolboxes + load_toolset (baseline). "
         "tools: load_tools with the exact names the task needs (oracle). "
-        "search: find_capabilities on the task's plain-language intents, no oracle.",
+        "search: find_capabilities on the task's plain-language intents, no oracle. "
+        "gateway: kicad_describe + a single batched kicad_invoke, catalogue never changes.",
     )
     ap.add_argument("--search-limit", type=int, default=None, help="override per-query result count")
     ap.add_argument("--keep", action="store_true", help="keep the generated projects on disk")

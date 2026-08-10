@@ -225,7 +225,7 @@ crates/kam-bench         benchmark runner + metrics schema (new)
 | **A** Bootstrap | clean workspace, fork, build, tests, run real MCP | **DONE** |
 | **B** Cartography | map transport / registry / IPC / sexp / validation / errors | **DONE** |
 | **C** Baseline benchmark | golden projects + metrics, measured before any refactor | **DONE** — `docs/benchmark.md` |
-| **F** Compact MCP surface | capability index + tool-granular loading, then the ~7-verb gateway | **WIP** — −70.1 % external tokens landed |
+| **F** Compact MCP surface | capability index, tool-granular loading, schema compression, gateway | **DONE** — −83.9 % external tokens, 4 MCP calls/task |
 | **D** Domain stabilisation | stable IDs, revisions, snapshots, idempotency, error catalog | TODO |
 | **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | TODO |
 | **G** Plan IR + deterministic executor | batching, preconditions, postconditions, rollback | TODO |
@@ -288,17 +288,23 @@ Anything not achieved gets written down as not achieved. No benchmark rigging.
 
 See `docs/benchmark.md` for method and full tables.
 
-| | baseline | now | target |
+| | baseline | now (`gateway`) | target |
 |---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | **3 197** | ≤ 2 000 |
+| EXTERNAL_TOKENS/task | 12 373 | **1 995** | ≤ 2 000 ✓ |
 | SUCCESS_RATE | 18/18 | 18/18 | ≥ baseline ✓ |
-| MCP_CALLS median/task | 11 | 10 | ≤ 5 |
-| `tools/list` at startup | 1 680 | **1 454** | ≤ ~1 000 |
-| full catalogue | 22 329 | 22 190 | — |
+| MCP_CALLS median/task | 11 | **4** | ≤ 5 ✓ |
+| CATALOG_TOKENS/task | 8 389 | **0** | — |
+| `tools/list` at startup | 1 680 | 1 725 | ≤ ~1 000 ✗ |
+| full catalogue | 22 329 | 22 461 | — |
 | retrieval recall @8 | — | 100 % | ≥ 98 % ✓ |
 | retrieval precision @8 | — | 22.4 % | ≥ 60 % ✗ |
 
-Of the 3 197, **2 281 is catalogue churn** — `tools/list` re-fetches the loading
-mechanism forces. Per-tool schema compression cannot reach it; only a catalogue
-that never changes can. Open question 3 is therefore answered: the gateway lands
-before Phase H.
+Startup missed its target and the gateway is why: 10 always-visible meta-tools
+cost 1 725 tokens. It is now a **once-per-session** cost rather than a per-task
+one, so it stopped being the number that matters — but it is not what was aimed
+for, and it is only reachable by retiring the toolset-loading path (D5), which
+would break every shipped skill.
+
+Retrieval precision is still the open weakness: 22.4 % at the recall needed to
+succeed. The gateway does not fix it, it only makes each wrong guess cheaper.
+Plan IR (Phase G) is where a compiled plan names its own capabilities.

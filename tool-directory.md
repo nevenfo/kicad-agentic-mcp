@@ -10,19 +10,32 @@ Canonical reference for every MCP tool exposed by Konnect. Generated from the Ru
 ## Overview
 
 - **18 toolsets** organized into 10 categories
-- **187 registered tools** + **6 always-visible meta-tools** = **193 total**
-- **Discovery pattern**: the server pre-loads only the **starter kit** (`project`, `config`) so baseline `tools/list` costs ~2K tokens instead of ~23K. The LLM reads `list_toolboxes` → calls `load_toolset(name)` to expose additional tools on demand; `unload_toolset(name)` prunes them. `tools/list_changed` is notified on every mutation. If the LLM calls a tool whose toolset isn't loaded, the error names the owning toolset so recovery is a single `load_toolset` hop. `load_toolset` also accepts an array of names to load several toolsets with a single `tools/list` refresh.
-- **Observability**: every `tools/call` is recorded — ring buffer of the last 100 calls + per-tool counters + JSONL at `<konnect dir>/logs/calls.jsonl`. The LLM self-diagnoses via `get_recent_calls` and `server_stats`.
+- **187 registered tools** + **10 always-visible meta-tools** = **197 total**
+- **Three ways to reach a tool**, cheapest last:
+  1. **Toolset loading** — `list_toolboxes` → `load_toolset(name)` exposes a whole domain in `tools/list`; `unload_toolset(name)` prunes it. Coarse, and every load makes the client re-fetch the entire catalogue.
+  2. **Tool loading** — `find_capabilities(intent)` → `load_tools([names])` exposes exactly the tools named. Same refresh, far less of it.
+  3. **The gateway** — `kicad_describe([names])` → `kicad_invoke([calls])` calls tools *without* exposing them at all. The catalogue never changes, so no refresh happens, and a whole sequence fits in one round trip. Measured on the golden suite: 1 995 external tokens per task and 4 MCP calls, against 3 197 / 10 for path 2 and 12 373 / 11 for path 1.
+- **Startup surface**: the server pre-loads only the **starter kit** (`project`) plus two individually admitted config read tools, so baseline `tools/list` costs ~1.7K tokens instead of ~22K. If the LLM calls an unloaded tool by name, the error names the owning toolset so recovery is a single `load_toolset` hop.
+- **Observability**: every `tools/call` is recorded — ring buffer of the last 100 calls + per-tool counters + JSONL at `<konnect dir>/logs/calls.jsonl`. Calls made inside a `kicad_invoke` batch are recorded individually under their own tool names. The LLM self-diagnoses via `get_recent_calls` and `server_stats`.
 
 ## Meta-tools (always visible)
 
-Six tools, grouped into *discovery/routing* and *observability*.
+Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
+
+### Gateway
+
+| Tool | Purpose |
+|------|---------|
+| `kicad_describe` | Return the full input schema of named tools. The schemas arrive as a result the caller asked for instead of a catalogue refresh it cannot decline. |
+| `kicad_invoke` | Run one or more tools by name, in order, loaded or not. Nothing is added to `tools/list`. Stops at the first failure unless `stop_on_error: false`; reports `failed_at` and `not_run` so the caller knows what to retry. |
 
 ### Discovery / routing
 
 | Tool | Purpose |
 |------|---------|
-| `list_toolboxes` | List all 18 toolsets with category, tool count, and whether each is currently loaded. The LLM's starting point. |
+| `find_capabilities` | Search all 187 tools by plain-language intent; returns name + toolset + one-line summary. |
+| `load_tools` | Expose specific tools by name without loading their toolset. |
+| `list_toolboxes` | List all 18 toolsets with category, tool count, and whether each is currently loaded. |
 | `load_toolset` | Load a toolset by name to expose its tools in `tools/list`. Returns the list of tools added. |
 | `unload_toolset` | Unload a toolset to prune its tools from `tools/list`. Use when switching tasks to keep context small. |
 | `get_active_toolsets` | Return the currently loaded toolsets and how many tools each provides. |

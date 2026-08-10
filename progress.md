@@ -19,16 +19,17 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 ## CURRENT TASK
 
-Phase F has landed three reductions, all measured (`docs/benchmark.md`):
-`load_toolset` stopped echoing descriptions, tool-granular loading, and now
-schema compression + a smaller starter kit. `tools` mode is at **3 197 external
-tokens/task (−74.2 % vs baseline)** and startup is **1 454 tokens**, below
-upstream's own 1 680.
+Phase F is done on its own terms. Four measured reductions
+(`docs/benchmark.md`): `load_toolset` stopped echoing descriptions,
+tool-granular loading, schema compression + a smaller starter kit, and the
+gateway (`kicad_describe` + `kicad_invoke`).
 
-Remaining Phase F lever is the compact gateway (~7 stable verbs, catalogue never
-changes, `CATALOG_TOKENS` → 0). At 3 197 tk/task, 2 281 of them are still
-catalogue churn, so the gateway is worth roughly twice everything Phase F has
-achieved so far.
+**1 995 external tokens/task, −83.9 % vs baseline, 4 MCP calls, 18/18.** Both V1
+surface targets (≤ 2 000 tokens, ≤ 5 calls) are met.
+
+Next is Phase D/G: the gateway is the seam the Plan IR plugs into — `kicad_invoke`
+already takes a list of operations, so giving it preconditions, a base revision
+and rollback is the natural continuation rather than a new subsystem.
 
 ---
 
@@ -46,7 +47,7 @@ achieved so far.
 [x] Reduce the external MCP surface (first two levers)     -> -70.1 % external tokens
 [x] Optimise progressive disclosure / tool retrieval       -> done + measured; retrieval is the weak link
 [x] Compress heavy tool schemas + shrink the starter kit    -> 3 698 -> 3 197 tk/task, startup 1 958 -> 1 454
-[ ] Compact gateway (~7 stable verbs, CATALOG_TOKENS -> 0)
+[x] Compact gateway (kicad_describe + kicad_invoke)         -> 1 995 tk/task, 4 calls, CATALOG_TOKENS = 0
 [ ] Map the scope gaps (capability matrix)
 [ ] Stable IDs / revisions / snapshots / optimistic concurrency
 [ ] Transactions / rollback / idempotency at the MCP layer
@@ -152,29 +153,50 @@ design rule for decoupling" → `add_design_rule`). The behavioural cost is one
 discovery call for a rarely-used feature; the saving is 507 tokens on every
 refresh in every load mode.
 
+### D9 — The gateway is two verbs, not seven (2026-08-10)
+
+`plan.md` sketched ~7 external verbs (`kicad_status`, `kicad_capabilities`,
+`kicad_delegate`, `kicad_query`, `kicad_verify`, `kicad_evidence`,
+`kicad_history`). Shipped: **two**, `kicad_describe` and `kicad_invoke`. The
+other five all describe *what* is being called, not *how*, and the registry
+already answers that — `kicad_invoke("run_erc")` is a verify, and
+`kicad_invoke("list_schematic_nets")` is a query. Adding verbs whose only
+content is a category would have re-created the schema cost the gateway exists
+to remove. `kicad_status`, `kicad_evidence` and `kicad_history` earn their own
+verbs when there is state behind them (Phases D/E); until then
+`server_stats` / `get_recent_calls` cover it.
+
+Both loading paths stay (D5 still holds): `load_toolset` and `load_tools` are
+what every shipped skill and existing client uses, and removing them would break
+them for a saving already obtained by adding a third path.
+
 ---
 
 ## BENCHMARKS
 
 Full detail and method: **`docs/benchmark.md`**. Headline:
 
-| Metric | Konnect baseline | Fork `tools` mode | Δ |
+| Metric | Konnect baseline | Fork `gateway` mode | Δ |
 |---|---|---|---|
 | SUCCESS_RATE | 18/18 | 18/18 | = |
-| EXTERNAL_TOKENS/task | 12 373 | **3 197** | **−74.2 %** |
-| RESPONSE_TOKENS/task | 3 984 | 964 | −75.8 % |
-| CATALOG_TOKENS/task | 8 389 | 2 281 | −72.8 % |
-| MCP_CALLS median/task | 11 | 10 | −1 |
-| WALL_CLOCK_P50 | 70 ms | 64 ms | −6 ms |
-| WALL_CLOCK_P95 | 888 ms | 1 183 ms | +295 (`kicad-cli` spawn variance) |
-| `tools/list` at startup | 1 680 tk | **1 454 tk** | −13.5 % |
+| EXTERNAL_TOKENS/task | 12 373 | **1 995** | **−83.9 %** |
+| RESPONSE_TOKENS/task | 3 984 | 1 995 | −49.9 % |
+| CATALOG_TOKENS/task | 8 389 | **0** | −100 % |
+| MCP_CALLS median/task | 11 | **4** | −7 |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | +45 (once per session) |
 
-The startup regression introduced in step 1 (+278 tk for the two new meta-tools)
-is now repaid: startup is 504 tokens below that peak and 226 below upstream, with
-the meta-tools still present.
+Intermediate `tools` mode sits at 3 197 tk/task and is kept measured, because it
+is what a client that does not use the gateway pays.
+
+Startup is 45 tokens above upstream while carrying **four** extra meta-tools;
+the +278 regression from step 1 was repaid by the starter-kit work and then
+partly re-spent on the gateway verbs, which pay for themselves after the first
+task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
-`cargo test --workspace --lib --tests` 469 → **484 passed, 0 failed, 5 ignored**
+`cargo test --workspace --lib --tests` 469 → **487 passed, 0 failed, 5 ignored**
 on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
@@ -275,6 +297,30 @@ matching, dedup, and any stable-finding-id scheme break on that. The error
 catalog must carry a stable code and keep the localized string as a detail
 field.
 
+### E11 — Structured errors were Debug-formatted into opaque strings (2026-08-10) — FIXED
+
+Found by the gateway's first test. `get_symbol_info` with no `lib_id` returned:
+
+```
+Tool error: CallToolResult { content: [Text { text: "{\"error\":{\"field\":\"lib_id\",\"kind\":\"invalid_argument\",...
+```
+
+The cause is `require_str(args, "k").map_err(|e| anyhow::anyhow!("{:?}", e))?`
+— eight sites across `library.rs` and `integration.rs`. The helper builds a
+proper structured `invalid_argument` with a `field`, and the handler then
+Debug-formats it into a string and re-wraps it as `handler_error`. Every
+consumer that matches on `error.kind` — recovery loops, the observability
+`error_kind` column, any future stable finding id — silently degrades to
+"something went wrong" on exactly these calls.
+
+This predates the fork and affects the normal path as much as the gateway; the
+gateway only made it visible because its test asserted on the error *kind*
+rather than on the presence of an error.
+
+Fixed with a `try_arg!` macro that returns the structured result unchanged, and
+the macro's doc comment states the anti-pattern so it does not come back. All
+eight sites converted.
+
 ### E10 — Pre-existing clippy debt under `--all-targets` (2026-08-10) — DEFERRED
 
 Upstream CI runs `cargo clippy --workspace --locked -- -D warnings` (no
@@ -303,15 +349,20 @@ not silently accumulate more.
 
 ## NEXT ACTION
 
-Per-tool schema compression has reached diminishing returns: the remaining
-catalogue is flat (median 101 tk/tool) and the golden suite never loads the fat
-tools anyway. The `tools` column is now 3 197 tk/task of which **2 281 is still
-catalogue churn** — the client re-fetching `tools/list` because loading tools
-changes it.
+Phase D on top of `kicad_invoke`. It already accepts an ordered list of
+operations and stops on the first failure, which is a plan executor missing its
+guarantees. Add, in this order:
 
-That answers open question 3: the compact gateway has to land. Design it so the
-external catalogue is a fixed set of verbs that never changes, no
-`notifications/tools/list_changed` is ever emitted during a task, and
-`CATALOG_TOKENS` goes to zero — which is worth more than everything Phase F has
-saved so far. That is also the natural seam for Phase G's Plan IR: a gateway
-verb takes an objective, not a tool name.
+1. **revision + `base_revision`** on the batch — reject a batch compiled against
+   a document the user has since edited, instead of applying it blind.
+2. **`operation_id` idempotency** — a replayed batch after a timeout must return
+   the first result, not mutate twice.
+3. **transaction/rollback around the batch** — `konnect-sexp/transaction.rs`
+   already exists per document; the batch needs to own one span.
+4. **error catalog** — E9 (locale leakage) and E11 (Debug-formatted structured
+   errors) are the same defect seen twice: the agent-facing error is not a
+   stable, matchable value. `try_arg!` fixed the second; the catalog fixes both
+   properly, with a `TransientClass` per plan.md idea #2.
+
+Only then Phase E/G proper. Do not start the local model runtime (H) before a
+batch can be rolled back — an agent that cannot undo is not worth accelerating.

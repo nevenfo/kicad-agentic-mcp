@@ -244,6 +244,30 @@ macro_rules! tool {
     }};
 }
 
+/// Unwrap a `require_*` helper inside a handler that returns
+/// `anyhow::Result<CallToolResult>`, returning the structured error result to
+/// the caller unchanged.
+///
+/// The pattern this replaces was `require_str(args, "k").map_err(|e|
+/// anyhow::anyhow!("{:?}", e))?`, which Debug-formats the structured error into
+/// an opaque string and then re-wraps it as `handler_error`. The client sees
+/// `Tool error: CallToolResult { content: [Text { text: "{\"error\":..." }] }`
+/// instead of a matchable `invalid_argument` with a `field`, so error matching,
+/// dedup and recovery all break on exactly the calls that need them most.
+///
+/// ```ignore
+/// let lib_id = try_arg!(require_str(args, "lib_id"));
+/// ```
+#[macro_export]
+macro_rules! try_arg {
+    ($e:expr) => {
+        match $e {
+            Ok(value) => value,
+            Err(result) => return Ok(result),
+        }
+    };
+}
+
 // ─── Argument helpers ─────────────────────────────────────────────────────────
 
 /// Build a structured `InvalidArgument` CallToolResult. Used by the
