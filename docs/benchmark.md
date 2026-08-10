@@ -1,0 +1,196 @@
+# Benchmark
+
+Everything in this document is measured on this machine with the harness in
+`bench/`. Nothing here is estimated. Where a target was not reached, it says so.
+
+**Machine** — Windows 11 Pro 26200, AMD Ryzen 7 9800X3D (8C/16T), 32 GiB RAM,
+RTX 5080 (16 303 MiB VRAM), KiCad 10.0.3 per-user install, protoc 35.1,
+rustc 1.96.0 (pinned).
+
+**Baseline** — `mixelpixx/Konnect` v0.2.2 at commit `5cd6454`, unmodified.
+
+---
+
+## What is measured, and why it is measured this way
+
+Three numbers matter and only one of them is obvious:
+
+* `RESPONSE_TOKENS` — the text tool results push into the caller's context.
+* `CATALOG_TOKENS` — `tools/list` payloads the client re-fetches because the
+  server sent `notifications/tools/list_changed`. **The caller cannot decline
+  this.** A harness that ignores the notification would be broken, so the cost
+  is real even though no tool call appears to have caused it.
+* `EXTERNAL_TOKENS` = the two added together. This is what a harness actually
+  eats per task, and it is the number the project is judged on.
+
+Early runs of this harness undercounted by 8 000 tokens per task because the
+bench client ignored `list_changed`. It now re-fetches like a real client does
+(`bench/mcp_client.py`, `auto_refresh_tools`).
+
+Success is never judged from a model's prose. Assertions run KiCad's own ERC
+through `kicad-cli`, or read the design back through the server's query tools.
+A task passes only if every step succeeded *and* every assertion held.
+
+## Golden tasks
+
+Six tasks in `bench/tasks/`, each starting from an empty temp directory:
+
+| id | category | what it exercises |
+|---|---|---|
+| `sch_divider` | schematic_simple | placement, power symbols, pin-to-pin wiring, net label, ERC=0 |
+| `sch_ldo` | schematic_simple | AMS1117 + input/output caps, batched wires and junctions, ERC=0 |
+| `sch_template_stm32` | schematic_complex | reference-circuit template instantiation |
+| `sch_hierarchy` | schematic_complex | hierarchical sheet, sheet pins, sheet duplication, page renumbering |
+| `manufacturing_exports` | manufacturing | BOM, netlist, schematic SVG through `kicad-cli` |
+| `recovery` | recovery | five wrong inputs must each fail loudly, then the session must still build a correct ERC-clean design |
+
+Coordinates in the task specs are exact 1.27 mm grid multiples and the pin
+offsets are the ones `get_symbol_info` actually reports, so a run is
+reproducible rather than approximately right.
+
+### Load modes
+
+The same six tasks run under three loading strategies:
+
+* **`toolsets`** — `list_toolboxes` then `load_toolset([...])`. What upstream
+  Konnect offers, and what its skills tell an agent to do.
+* **`tools`** — `load_tools([exact names])`. Fine-grained loading with oracle
+  knowledge of the tool names. This is the floor: the best a perfect selector
+  could do.
+* **`search`** — `find_capabilities(intent)` on the task's plain-language
+  intents, load whatever comes back. No oracle. Scores retrieval, not the
+  server.
+
+`toolsets` and `tools` both get oracle knowledge, so the comparison between them
+isolates *loading granularity* and nothing else.
+
+---
+
+## Results
+
+### MCP surface cost (`bench/surface.py`, tiktoken `o200k_base`)
+
+| | tools | tokens |
+|---|---|---|
+| baseline `tools/list` at startup — Konnect v0.2.2 | 19 | 1 680 |
+| baseline `tools/list` at startup — fork | 21 | **1 958** |
+| full catalogue, all 18 toolsets loaded | 193 / 195 | 22 329 / 22 607 |
+
+The fork's startup surface is **278 tokens larger**, which is the price of the
+two new meta-tools (`find_capabilities`, `load_tools`). That is a real
+regression on that one metric and it is what buys the reduction below.
+
+Heaviest single tools in the catalogue: `create_symbol` **1 448 tk**,
+`create_footprint` 530, `add_hierarchical_sheet` 318. `create_symbol` alone is
+6.5 % of the whole catalogue and 74 % of the fork's entire startup budget — the
+obvious next schema-compression target.
+
+### Golden suite
+
+18 runs (6 tasks × 3 repeats) per column, except `search` (1 repeat, deterministic).
+
+| Metric | Konnect baseline | Fork `toolsets` | Fork `tools` | Fork `search` |
+|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 (100 %) | 18/18 (100 %) | **18/18 (100 %)** | 6/6 (100 %) |
+| MCP_CALLS median/task | 11 | 11 | **10** | 16 |
+| WALL_CLOCK_P50 (ms) | 70 | 75 | 72 | 69 |
+| WALL_CLOCK_P95 (ms) | 888 | 880 | 900 | 333 |
+| RESPONSE_TOKENS/task | 3 984 | 2 058 | **963** | 2 744 |
+| CATALOG_TOKENS/task | 8 389 | 8 667 | **2 785** | 7 651 |
+| **EXTERNAL_TOKENS/task** | **12 373** | 10 725 | **3 698** | 10 394 |
+| RETRY_RATE | 0 | 0 | 0 | 0 |
+| ROLLBACK_RATE | 0 | 0 | 0 | 0 |
+
+**Headline: 12 373 → 3 698 external tokens per task, −70.1 %, with success rate
+and latency unchanged.**
+
+P95 is dominated by `run_erc`, which spawns `kicad-cli` (1 086 ms mean). Nothing
+in this work touched that, and nothing should: it is KiCad doing real work.
+
+### Where the baseline's tokens went
+
+From `bench/analyze.py` on the 18-run baseline:
+
+| tool | calls | resp tk | tk/call | % of all response tokens |
+|---|---|---|---|---|
+| `load_toolset` | 18 | 39 747 | 2 208 | **57.0 %** |
+| `list_toolboxes` | 18 | 13 680 | 760 | 19.6 % |
+| `list_schematic_components` | 12 | 3 297 | 275 | 4.7 % |
+| `batch_place_components` | 12 | 3 246 | 270 | 4.7 % |
+| `apply_template` | 3 | 2 763 | 921 | 4.0 % |
+
+**76.6 % of every response token the baseline emitted was the discovery
+handshake**, not KiCad output. Adding the catalogue refresh on top, roughly 92 %
+of external tokens per task were protocol overhead.
+
+### Two changes produced the reduction
+
+1. **`load_toolset` stopped echoing tool descriptions** (returns bare names).
+   Those descriptions were already arriving a second time in the `tools/list`
+   refresh the very same call triggers. 3 984 → 2 058 response tokens/task,
+   **−48 %**, zero behaviour change.
+2. **Tool-granular loading** (`find_capabilities` + `load_tools`). Loading the
+   ~12 tools a task calls instead of the ~90 in the five toolsets that contain
+   them: 8 667 → 2 785 catalogue tokens/task, **−68 %**.
+
+### Retrieval quality — the part that is not good enough yet
+
+`find_capabilities` is deterministic lexical scoring over tool names and
+descriptions plus a small EDA synonym table. Sweeping the per-query result limit
+on the golden intents:
+
+| results/query | task success | recall | precision | external tk/task |
+|---|---|---|---|---|
+| 2 | 1/6 | 81.3 % | 61.5 % | 5 090 |
+| 3 | 2/6 | 85.8 % | 44.3 % | 5 918 |
+| 4 | 4/6 | 92.1 % | 37.3 % | 7 892 |
+| 5 | 4/6 | 94.0 % | 31.8 % | 8 576 |
+| **8** | **6/6** | **100 %** | 22.4 % | 10 394 |
+
+Recall reaches 100 % only where precision has fallen to 22 %, so search-driven
+loading lands at 10 394 external tokens — barely better than the baseline and
+nearly 3× the oracle floor of 3 698. **Lexical retrieval is not competitive with
+knowing the answer.** Closing that gap is the job of the Plan IR (a compiled
+plan names its own capabilities) and the local agent router, not of a better
+regex.
+
+Recorded so it is not retried blindly: **plural stemming was implemented,
+measured, and removed.** It looked obviously correct — "symbols" should match
+`add_power_symbol` — but it moved recall at 8 results/query from 100 % to
+98.2 % (losing `batch_place_components`) and helped nowhere. The comment in
+`capability_search.rs` says so at the site.
+
+---
+
+## Reproducing
+
+```powershell
+$env:PROTOC = "<path to protoc.exe>"
+.\gate.ps1 -Bench                       # fmt + clippy + tests + build + benchmark
+
+# individual runs
+python bench\surface.py --server .\target\release\konnect.exe --label mine
+python bench\runner.py  --server .\target\release\konnect.exe --label mine --repeat 3 --load-mode tools
+python bench\analyze.py bench\results\latest-tasks.json
+python bench\probe.py   --server .\target\release\konnect.exe --script bench\probes\divider.yaml
+```
+
+`bench/konnect.bench.toml` pins the `kicad-cli` path. Relying on `PATH` made
+`run_erc` fail with `Failed to spawn kicad-cli` while the task still reported
+"0 ERC errors" on an empty schematic — a benchmark that scores a no-op as a pass
+is worse than no benchmark.
+
+To run the baseline for comparison, export `KICAD10_SYMBOL_DIR` and
+`KICAD10_FOOTPRINT_DIR` first: upstream cannot find a per-user KiCad install
+(see `progress.md` E3), so without them every symbol lookup fails and the
+comparison is meaningless.
+
+## Not yet measured
+
+* `LOCAL_*` tokens, `TTFT_LOCAL`, `VRAM_PEAK`, `KV_CACHE_PEAK` — no local model
+  runtime exists yet (Phase H).
+* `LLM_CALLS_PER_SUCCESSFUL_TASK` — the golden suite is a scripted oracle path
+  with no model in the loop. It measures the server, not an agent.
+* PCB tasks — they need KiCad running with the IPC API enabled. Only the
+  schematic and export paths are covered, and both are file/CLI based.
+* `PREFIX_CACHE_HIT_RATE`, `CACHE_HIT_RATE` — no local inference yet.
