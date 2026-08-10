@@ -1,0 +1,19 @@
+[package]
+name = "kam-state"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+# Deliberately NOT the workspace AGPL licence. This crate is clean-room: it
+# contains no code derived from Konnect and depends on no `konnect-*` type, so
+# it stays re-licensable and re-basable if the base ever changes (plan.md,
+# "License impact"). Nothing in here knows what KiCAD is beyond a file suffix.
+license = "MIT OR Apache-2.0"
+description = "Content revisions, idempotency and rollback snapshots for batched project mutations."
+
+[dependencies]
+serde.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

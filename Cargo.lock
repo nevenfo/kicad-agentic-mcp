@@ -1042,6 +1042,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kam-state"
+version = "0.2.2"
+dependencies = [
+ "serde",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "konnect"
 version = "0.2.2"
 dependencies = [
