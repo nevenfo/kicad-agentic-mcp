@@ -1,3 +1,4 @@
+pub mod capability;
 pub mod evidence;
 pub mod mcp;
 pub mod observability;
