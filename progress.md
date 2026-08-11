@@ -616,6 +616,53 @@ believes it is being checked and is not is the failure mode D17 already refused
 for `verify`, and a plan is a worse place for it: the caller is further away from
 the mutation.
 
+### D31 — the backend is OpenAI-compatible HTTP, and the model stays unchosen (2026-08-11)
+
+Phase H's first two questions are answered from primary sources; the third is
+deliberately not.
+
+**Backend.** `vLLM` has no native Windows support — Linux or WSL2 only, per its
+own installation doc — so it is out for this machine without a second OS.
+`llama.cpp` is the only native path, and Blackwell `sm_120` needs
+`-DCMAKE_CUDA_ARCHITECTURES=120` from source; the upstream issue asking for it
+(#22696) closed *not planned*. LM Studio is already installed, wraps
+`llama.cpp`, and exposes both tools and `response_format: json_schema` on an
+OpenAI-compatible endpoint — enough for everything Phase H needs to measure.
+
+So the provider abstraction targets **OpenAI-compatible HTTP** and nothing else,
+which costs nothing in generality: LM Studio and `llama-server` both speak it.
+LM Studio is the default because it is installed; `llama-server` is the escape
+hatch the moment a measurement needs a flag LM Studio does not expose — KV cache
+type, MoE expert offload (`--n-cpu-moe`). That switch must be a config change,
+never a code change, which is the whole reason the trait exists.
+
+**Shortlist**, both Apache-2.0, both with tool calling documented on their own
+model card rather than inferred:
+
+| candidate | shape | why it is on the list |
+|---|---|---|
+| `Qwen3.5-9B` | 9B, `Q6_K`/`Q8_0` | BFCL-V4 **66.1**, TAU2-Bench **79.1**; comfortably inside the budget with room for KV cache |
+| `openai/gpt-oss-20b` | 20B MoE, 3.6B active, native `MXFP4` | more capable, and ~12–13 GB is most of the 14 GB budget |
+
+Ruled out on the 16 GB budget, with the number: `Qwen3.5-27B` at `Q4_K_M` is
+~16.5 GB — over budget before any KV cache, despite the best BFCL score of the
+family (68.5). `Qwen3.6-35B-A3B` fits only with CPU expert offload, which is a
+latency question, not a capability one, and belongs in the benchmark rather than
+in a preemptive exclusion. `Qwen3-Coder-Next` is 80B-A3B, out.
+
+**The model is not chosen and will not be chosen by reputation.** Every VRAM
+figure above is an estimate that no primary source confirmed, BFCL V4 has not
+been updated since 2026-04-12, and `llama.cpp`'s support for Qwen3.5's hybrid
+Gated DeltaNet architecture is suggested by the existence of community GGUFs and
+confirmed by nobody. All three get measured on this machine.
+
+**There is no open-weight model specialised in EDA, PCB or electronics.** The
+projects that look like one (`kicad-llm-plugin`, `circuit-synth`, `tscircuit`,
+`PCBSchemaGen`) are systems built on general models. Recorded so the question is
+not re-asked: the local model will be a general one, and the electronics
+competence has to come from the deterministic engine and the validators, which
+is what this architecture already assumes.
+
 ### D30 — the graph wins on filtering and adjacency, not on serialisation (2026-08-11)
 
 The honest result of the first measurement: `graph_query kind=symbol` with no
@@ -1058,7 +1105,13 @@ not silently accumulate more.
 ## OPEN QUESTIONS
 
 1. Local model that fits 16 GB VRAM with reliable tool-calling and structured
-   output. Needs a real benchmark (Phase H).
+   output. **Narrowed, not answered** (D31): backend is OpenAI-compatible HTTP
+   over LM Studio, with `llama-server` as the escape hatch; `vLLM` is out on
+   Windows. Candidates are `Qwen3.5-9B` and `gpt-oss-20b`, both Apache-2.0 with
+   documented tool calling. Every VRAM figure is still an unconfirmed estimate
+   and BFCL V4 is four months stale, so the choice waits on measurement on this
+   machine. There is **no** EDA-specialised open-weight model — the electronics
+   competence stays in the deterministic engine and the validators.
 2. Can PCB E2E run unattended on Windows, or does `KICAD_API_SOCKET` require a
    live GUI session? Blocks PCB benchmark coverage.
 3. Is tool-granular loading enough, or does the compact-gateway design (~7
