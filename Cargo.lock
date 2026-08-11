@@ -1051,6 +1051,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kam-plan"
+version = "0.2.2"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kam-state"
 version = "0.2.2"
 dependencies = [

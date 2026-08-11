@@ -1,0 +1,16 @@
+[package]
+name = "kam-plan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+# Deliberately NOT the workspace AGPL licence, for the same reason as kam-state
+# and kam-evidence: this crate is clean-room, contains no code derived from
+# Konnect, and depends on no `konnect-*` type. It knows what a *plan* is and
+# nothing about what the operations mean (plan.md, "License impact").
+license = "MIT OR Apache-2.0"
+description = "A typed, versioned plan IR: compiled once, resolved deterministically, executed as one unit."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
