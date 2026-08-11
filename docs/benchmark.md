@@ -504,6 +504,68 @@ What the fix does buy on every path is one fewer failed call: an agent holding
 every schematic toolset previously got `toolset_not_loaded` from `export_bom`
 and paid a `load_toolset` round trip to recover.
 
+### ProjectGraph — a query that had to be made cheaper than the dump it replaces
+
+The three `graph_*` tools are a toolset, so they cost **0** startup tokens
+(`the_graph_toolset_costs_nothing_until_it_is_used` asserts both halves: absent
+from the startup catalogue, callable through `kicad_invoke` without a refresh),
+and the golden suite never calls them — 18/18 at 2 174 tk/task against 2 178,
+inside the noise band, no saving claimed.
+
+The measurement that mattered was the one the suite cannot make. Against a
+six-symbol divider, on the payloads the probe actually returns:
+
+| query | tokens |
+|---|---|
+| `graph_query kind=symbol`, `fields: full` | 525 |
+| `graph_query kind=symbol`, `fields: compact` | **340** |
+| `list_schematic_components` — the plain dump of the same six items | 310 |
+| `graph_query attrs value=10k`, `fields: compact` — two items | **109** |
+
+The first row is the defect the probe found: a query tool 69 % *more* expensive
+than the dump it exists to replace. `fields: compact` — no geometry, no `angle`,
+no `unit`, and `kind` omitted per item when the query already pinned it — takes
+it to 340.
+
+340 is still 10 % above the dump and stays there. The remainder is the full UUID
+key (~23 tk/item), which `graph_neighbors` takes as input; shortening it would
+buy tokens by making the graph's one distinguishing capability need a round
+trip. The conclusion is written into the tool's own description rather than
+hidden: **the graph wins on filtering (109 against 310) and on adjacency, which
+no dump answers at all — not on serialising the same items.**
+
+`graph_query`'s schema is **662 tk**, second heaviest in the repository after
+`create_symbol`. Free today because it lives in a toolset; worth re-measuring if
+it is ever promoted.
+
+### E6 and E7 — two defects, and what closing them cost
+
+**E6** (`add_power_symbol` wrote coordinates verbatim while
+`add_schematic_component` snapped to the 1.27 mm grid, so both pins read
+`Pin not connected`) is fixed as a class: one `snap_reporting()` helper, one
+`SCHEMATIC_GRID_MM`. Searching for the other instances is what it was worth —
+**nine further tools had the same bug** and none had ever been observed failing,
+including `apply_template`, whose 15 mm column spacing is not a multiple of 1.27
+and drifted off-grid from an on-grid origin. Golden suite 18/18 at 2 178,
+P50 64 ms: placement changed, the benchmark did not. Proved by a `#[ignore]`d
+e2e that rebuilds the original failing placement and gets 0 errors from real
+`kicad-cli sch erc`.
+
+**E7's disclosure** puts the advisory caveat in the `tool!` description of the
+fifteen in-process connectivity tools, from the same `MANIFEST` the capability
+matrix renders. Measured:
+
+| | before | after |
+|---|---|---|
+| startup catalogue | 2 034 | **2 034** |
+| full catalogue | 25 238 | **25 642** |
+| the fifteen advisory tools | — | **+27 tk each** |
+| every other tool | — | **+0** |
+
+Golden suite 18/18 at 2 190 against 2 178, with mixed-sign per-task deltas
+(`sch_hierarchy` +5, `manufacturing_exports` −12, `recovery` +6) — the noise
+band, not the suffix, which would have moved a single task +27 in one direction.
+
 ### Where the baseline's tokens went
 
 From `bench/analyze.py` on the 18-run baseline:
