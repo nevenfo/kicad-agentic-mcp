@@ -3,7 +3,7 @@
 //! Discovery / routing:
 //!   find_capabilities(query)  — rank tools by relevance, return names + one-line summaries
 //!   load_tools(names)         — expose exactly those tools, without their toolsets
-//!   list_toolboxes()          — show all 18 toolsets with descriptions and load state
+//!   list_toolboxes()          — show all 21 toolsets with descriptions and load state
 //!   load_toolset(name)        — activate a toolset, expose its tools in tools/list
 //!   unload_toolset(name)      — deactivate a toolset, remove its tools from tools/list
 //!   get_active_toolsets()     — list currently loaded toolsets
@@ -33,7 +33,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
     vec![
         McpToolDescription {
             name: "find_capabilities".to_string(),
-            description: "Search all 193 KiCAD tools by intent and return the best matches as \
+            description: "Search all 196 KiCAD tools by intent and return the best matches as \
                  name + toolset + one-line summary. This is the cheap way to build a \
                  toolbelt: describe the task in plain words ('connect two pins', \
                  'export gerbers', 'run ERC'), then pass the names you want to \

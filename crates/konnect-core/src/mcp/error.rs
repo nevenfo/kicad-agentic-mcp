@@ -91,6 +91,15 @@ pub enum ToolErrorKind {
     InvalidArgument { field: String, reason: String },
     /// A referenced file doesn't exist or can't be read.
     FileNotFound { path: String },
+    /// An address (document, kind, key) resolves to no item — a `graph_*`
+    /// tool's `document`/`kind`/`key` named nothing in the index. Distinct
+    /// from `FileNotFound`: the project resolved and built, the address
+    /// inside it did not.
+    NotFound {
+        document: String,
+        item_kind: String,
+        key: String,
+    },
     /// A document is not at the revision the caller's plan was built against.
     /// Re-read it, recompute, retry — never overwrite.
     StaleRevision {
@@ -148,6 +157,7 @@ impl ToolErrorKind {
             Self::UnknownTool { .. } => "unknown_tool",
             Self::InvalidArgument { .. } => "invalid_argument",
             Self::FileNotFound { .. } => "file_not_found",
+            Self::NotFound { .. } => "not_found",
             Self::StaleRevision { .. } => "stale_revision",
             Self::OperationInFlight { .. } => "operation_in_flight",
             Self::Io { .. } => "io",
@@ -164,9 +174,10 @@ impl ToolErrorKind {
             // request, is wrong.
             Self::ToolsetNotLoaded { .. } | Self::StaleRevision { .. } => TransientClass::State,
             Self::OperationInFlight { .. } => TransientClass::Lock,
-            Self::UnknownTool { .. } | Self::InvalidArgument { .. } | Self::FileNotFound { .. } => {
-                TransientClass::None
-            }
+            Self::UnknownTool { .. }
+            | Self::InvalidArgument { .. }
+            | Self::FileNotFound { .. }
+            | Self::NotFound { .. } => TransientClass::None,
             Self::Io { code, .. } => match *code {
                 "would_block" | "interrupted" | "resource_busy" => TransientClass::Lock,
                 "timed_out" => TransientClass::Timeout,
@@ -340,6 +351,11 @@ mod tests {
                 reason: "r".into(),
             },
             ToolErrorKind::FileNotFound { path: "p".into() },
+            ToolErrorKind::NotFound {
+                document: "a.kicad_sch".into(),
+                item_kind: "symbol".into(),
+                key: "ghost".into(),
+            },
             ToolErrorKind::StaleRevision {
                 path: "p".into(),
                 expected: "a".into(),

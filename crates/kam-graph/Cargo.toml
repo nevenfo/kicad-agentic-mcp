@@ -1,0 +1,19 @@
+[package]
+name = "kam-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+# Deliberately NOT the workspace AGPL licence. This crate is clean-room: it
+# indexes whatever `kam-evidence::Item`s it is handed and depends on no
+# `konnect-*` type, so it stays re-licensable and re-usable outside this fork
+# (plan.md, D11). Nothing in here knows what KiCAD is.
+license = "MIT OR Apache-2.0"
+description = "A generic, queryable index over item sets — the world model an agent queries instead of dumping a document."
+
+[dependencies]
+kam-evidence = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]

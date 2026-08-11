@@ -37,7 +37,7 @@ inflates the number it exists to keep honest.
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
 | KiCAD domains | 166 | 45 | 5 | 107 | 4 | 5 | 28.0 % |
-| server's own | 37 | 15 | 0 | 22 | 0 | 0 | 40.5 % |
+| server's own | 40 | 15 | 3 | 22 | 0 | 0 | 37.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
 
@@ -80,6 +80,7 @@ Coverage is `(supported + external) / (entries − entries KiCAD has no API for)
 | [`task`](#task) | 4 | 4 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`plan`](#plan) | 2 | 2 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`ui`](#ui) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
+| [`graph`](#graph) | 3 | 0 | 3 | 0 | 0 | 0 | 0.0 % |
 
 ## Adapters
 
@@ -87,7 +88,7 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 
 | adapter | tools | needs a running KiCAD |
 |---|---|---|
-| `sexpr` | 117 | no |
+| `sexpr` | 120 | no |
 | `cli` | 21 | no |
 | `ipc` | 21 | yes |
 | `ipc→sexpr` | 5 | no |
@@ -134,7 +135,7 @@ Not covered by any tool:
 | `delete_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
 | `edit_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
 | `get_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `list_schematic_components` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/tasks/06_recovery.yaml` |  |
+| `list_schematic_components` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/probes/graph.yaml` |  |
 | `move_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
 | `rotate_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
 | `move_connected` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
@@ -516,9 +517,17 @@ Not covered by any tool:
 | `check_kicad_ui` | `verification` | `process` | NOT_TESTED | — | — |  |
 | `launch_kicad_ui` | `verification` | `process` | NOT_TESTED | — | — |  |
 
+### graph
+
+| tool | toolset | adapter | status | proof | evidence | note |
+|---|---|---|---|---|---|---|
+| `graph_query` | `graph` | `sexpr` | PARTIAL | bench | `bench/probes/graph.yaml` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
+| `graph_neighbors` | `graph` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/graph.rs` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
+| `graph_stats` | `graph` | `sexpr` | PARTIAL | bench | `bench/probes/graph.yaml` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
+
 ## Not tested
 
-129 of 193 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+129 of 196 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|

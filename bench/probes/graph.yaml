@@ -1,0 +1,67 @@
+# What graph_query actually costs and actually saves, on a real project.
+#
+# Two questions the design cannot answer by reasoning: how long building and
+# querying a kam_graph::Graph takes against a real divider schematic, and
+# whether graph_query's reply is smaller than the existing alternative
+# (list_schematic_components, which returns every component unfiltered).
+# Both are measured here rather than argued about.
+project_name: divider
+toolsets: [project, sch_components, sch_wiring, sch_batch, sch_analysis, graph]
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+
+  - tool: batch_place_components
+    args:
+      schematic: "$SCH"
+      components:
+        - { lib_id: "Device:R", reference: "R1", value: "10k", x: 100.33, y: 80.01 }
+        - { lib_id: "Device:R", reference: "R2", value: "10k", x: 100.33, y: 95.25 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG01", x: 100.33, y: 76.2 }
+        - { lib_id: "power:PWR_FLAG", reference: "#FLG02", x: 100.33, y: 99.06 }
+
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "+3V3", x: 100.33, y: 76.2 }
+  - tool: add_power_symbol
+    args: { schematic: "$SCH", power_net: "GND", x: 100.33, y: 99.06 }
+
+  - tool: connect_pins
+    args: { schematic: "$SCH", ref1: "R1", pin1: "2", ref2: "R2", pin2: "1" }
+
+  - tool: add_schematic_net_label
+    args: { schematic: "$SCH", net: "VOUT", x: 100.33, y: 87.63 }
+
+  # Cold build: first graph_* call on this project builds the index from
+  # scratch, extraction included.
+  - tool: graph_stats
+    args: { project: "$SCH" }
+
+  # Warm cache: same project, nothing on disk changed since graph_stats —
+  # should reuse the built graph rather than re-parsing or re-indexing.
+  - tool: graph_query
+    args: { project: "$SCH", kind: "symbol" }
+
+  # The comparison that decides whether the graph earns its keep: the same
+  # question ("what symbols are on this sheet"), asked the existing way.
+  - tool: list_schematic_components
+    args: { schematic: "$SCH" }
+
+  # A filtered question the existing tool cannot ask directly — the reply
+  # this design exists to make cheap.
+  - tool: graph_query
+    args: { project: "$SCH", kind: "symbol", attrs: [{ name: "value", value: "10k" }] }
+
+  # fields is compact by default — same query as step 7 above, spelled out,
+  # to compare against list_schematic_components explicitly rather than by
+  # relying on the default never changing silently.
+  - tool: graph_query
+    args: { project: "$SCH", kind: "symbol", fields: "compact" }
+
+  # fields=full: the pre-projection shape, geometry included, for measuring
+  # what compact actually saves.
+  - tool: graph_query
+    args: { project: "$SCH", kind: "symbol", fields: "full" }
+
+  # A typo'd fields value must be refused, not silently treated as compact.
+  - tool: graph_query
+    args: { project: "$SCH", kind: "symbol", fields: "verbose" }

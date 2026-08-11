@@ -73,6 +73,7 @@ pub enum Domain {
     Task,
     Plan,
     Ui,
+    Graph,
 }
 
 impl Domain {
@@ -114,6 +115,7 @@ impl Domain {
             Task => "task",
             Plan => "plan",
             Ui => "ui",
+            Graph => "graph",
         }
     }
 
@@ -130,6 +132,7 @@ impl Domain {
                 | Domain::Plan
                 | Domain::Ui
                 | Domain::Export
+                | Domain::Graph
         )
     }
 }
@@ -176,6 +179,7 @@ pub static ALL_DOMAINS: &[Domain] = &[
     Domain::Task,
     Domain::Plan,
     Domain::Ui,
+    Domain::Graph,
 ];
 
 // ─── Adapters ────────────────────────────────────────────────────────────────
@@ -370,6 +374,16 @@ const ADVISORY: Limitation = Limitation::Partial(
 /// sign-off.
 const HEURISTIC: Limitation = Limitation::Partial(
     "heuristic audit, not a validator — ERC/DRC decide whether a design is sound",
+);
+
+/// The `graph_*` tools index only what a document states (`konnect_core::graph`,
+/// E7): a `.kicad_pcb` footprint's `net` is a fact copied from the file, but no
+/// `.kicad_sch` item is ever given a derived `net` attribute, because this
+/// project's own connectivity analysis has previously disagreed with
+/// `kicad-cli sch erc` on a real schematic.
+const GRAPH_E7: Limitation = Limitation::Partial(
+    "indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; \
+     the connectivity verdict comes from run_erc, never from this tool (E7)",
 );
 
 pub static MANIFEST: &[Capability] = &[
@@ -693,6 +707,10 @@ pub static MANIFEST: &[Capability] = &[
     cap("update_task", Domain::Task, Adapter::Internal),
     cap("get_task", Domain::Task, Adapter::Internal),
     cap("list_tasks", Domain::Task, Adapter::Internal),
+    // ── graph ───────────────────────────────────────────────────────────────
+    cap_lim("graph_query", Domain::Graph, Adapter::Sexpr, GRAPH_E7),
+    cap_lim("graph_neighbors", Domain::Graph, Adapter::Sexpr, GRAPH_E7),
+    cap_lim("graph_stats", Domain::Graph, Adapter::Sexpr, GRAPH_E7),
 ];
 
 // ─── Capabilities with no tool at all ────────────────────────────────────────

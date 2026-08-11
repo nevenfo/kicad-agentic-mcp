@@ -3,6 +3,7 @@
 pub mod cli;
 pub mod config;
 pub mod design_review;
+pub mod graph;
 pub mod integration;
 pub mod library;
 pub mod manufacturing;
@@ -100,6 +101,9 @@ pub struct ToolContext {
     /// Objectives, constraints and what has already been tried — the part of a
     /// session that must outlive any one model's context window.
     pub tasks: Arc<kam_state::TaskStore>,
+    /// Built graphs of a project's documents, cached by content revision so a
+    /// `graph_*` call reuses the last build when nothing on disk moved.
+    pub graph: Arc<crate::graph::GraphStore>,
 }
 
 impl ToolContext {
@@ -115,6 +119,7 @@ impl ToolContext {
             evidence: Arc::default(),
             validation: Arc::default(),
             tasks: Arc::default(),
+            graph: Arc::default(),
         }
     }
 
@@ -134,6 +139,7 @@ impl ToolContext {
             evidence: Arc::default(),
             validation: Arc::default(),
             tasks: Arc::default(),
+            graph: Arc::default(),
         }
     }
 }

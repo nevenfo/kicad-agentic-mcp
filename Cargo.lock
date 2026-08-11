@@ -1051,6 +1051,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kam-graph"
+version = "0.2.2"
+dependencies = [
+ "kam-evidence",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kam-plan"
 version = "0.2.2"
 dependencies = [
@@ -1096,6 +1105,7 @@ dependencies = [
  "axum",
  "base64 0.23.0",
  "kam-evidence",
+ "kam-graph",
  "kam-plan",
  "kam-state",
  "konnect-ipc",

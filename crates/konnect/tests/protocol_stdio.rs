@@ -967,6 +967,48 @@ fn the_plan_toolset_costs_nothing_until_it_is_used() {
     assert_eq!(body["results"][0]["result"]["steps"].as_u64(), Some(1));
 }
 
+/// Same bargain again: a graph is an optimisation over tools that already
+/// exist, so it must not be baseline weight on every session that never
+/// queries it.
+#[test]
+fn the_graph_toolset_costs_nothing_until_it_is_used() {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj = tmp.path().join("graph_demo");
+    let mut p = McpProcess::spawn();
+
+    let names: Vec<String> = p.request("tools/list", json!({}))["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap_or_default().to_string())
+        .collect();
+    for tool in ["graph_query", "graph_neighbors", "graph_stats"] {
+        assert!(
+            !names.contains(&tool.to_string()),
+            "{tool} must not be in the startup catalogue: {names:#?}"
+        );
+    }
+
+    let created = p.call_tool(
+        "create_project",
+        json!({"name": "graph_demo", "path": proj.to_string_lossy()}),
+    );
+    assert_ne!(
+        created["isError"],
+        json!(true),
+        "create_project failed: {created}"
+    );
+
+    // Reachable all the same, without a catalogue refresh.
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [{"tool": "graph_stats", "args": {
+            "project": proj.join("graph_demo.kicad_pro").to_string_lossy()
+        }}]}),
+    ));
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+}
+
 /// The vertical slice: one MCP call carries an objective's worth of work, the
 /// plan does the arithmetic, and KiCAD's own ERC says whether the result holds.
 ///

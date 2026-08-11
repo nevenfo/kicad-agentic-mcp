@@ -13,7 +13,7 @@
 //!   [`Proof::Gated`]. They are real evidence for a human and no evidence at
 //!   all for a claim of coverage, so they are shown and do not count.
 //! * **The registry's own tests are excluded.** `router/` enumerates every tool
-//!   name to check the catalogue, so scanning it would "prove" all 193 tools at
+//!   name to check the catalogue, so scanning it would "prove" all 196 tools at
 //!   once. The scan skips it; proof has to come from a test that exercises the
 //!   behaviour or a benchmark that runs it against KiCAD.
 //! * **A tool is recognised by its name or its handler.** Unit tests here call

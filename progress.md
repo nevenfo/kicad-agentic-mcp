@@ -14,16 +14,59 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 ## CURRENT PHASE
 
-**G** — Plan IR and the deterministic executor. A (bootstrap), B (cartography),
-C (baseline benchmark) and F (compact surface) are done; D shipped revisions,
-idempotency, transactional batches and the error catalog; E shipped the semantic
-diff, evidence handles, independent verification and the Task State Manager, and
-still owes ProjectGraph. G has shipped the IR, the compiler, the KiCAD operation
-library and the `plan` toolset; the plan's own `validators` list is carried but
-not yet executed by the plan itself. The capability matrix is generated and
+**E closed, G closed.** A (bootstrap), B (cartography), C (baseline benchmark)
+and F (compact surface) were already done; D shipped revisions, idempotency,
+transactional batches and the error catalog, and still owes stable IDs and
+snapshot handles. E now shipped its last piece — ProjectGraph — alongside the
+semantic diff, evidence handles, independent verification and the Task State
+Manager. G shipped the IR, the compiler, the KiCAD operation library, the `plan`
+toolset and plan-owned postconditions. The capability matrix is generated and
 committed, and closed **E8** on its way through.
 
-## CURRENT TASK — a plan that can be held to its own promise
+Next up is the decision that has been deferred twice: **Phase H**, the local
+model runtime, whose precondition set is now empty — a plan exists for a model
+to write, an anchor exists for it to be reminded by, a graph exists for it to
+ask instead of dumping, and a matrix exists that says which 107 tools it should
+not be handed.
+
+## CURRENT TASK — a world model the model can ask, instead of a document it must read
+
+ProjectGraph is the last of Phase E. The point is not that a graph exists; it is
+that an agent can ask a *question* — which symbols carry this value, what sits
+next to this pad — and pay for the answer rather than for the document.
+
+* `kam-graph` — clean-room, MIT OR Apache-2.0, knows nothing about KiCAD.
+  `graph` is the indexed store (items keyed by stable key, typed, attributed,
+  spatially placed); `query` is the filter/neighbor/count language. 46 tests.
+* `konnect-core::graph` — the KiCAD half: extractors keyed on KiCAD's own UUIDs,
+  and `GraphStore`, which caches a built graph against the content revision it
+  describes, so a second query on an unmoved document rebuilds nothing (D18's
+  rule, applied to the graph).
+* `konnect-core::tools::graph` — `graph_query`, `graph_neighbors`, `graph_stats`.
+  A toolset, not gateway verbs, so **0 startup tokens** — asserted by
+  `the_graph_toolset_costs_nothing_until_it_is_used`, which checks both halves:
+  none of the three appear in the startup catalogue, and `graph_stats` is
+  callable through `kicad_invoke` without a catalogue refresh.
+
+**Measured, and the first measurement was a defect.** `graph_query kind=symbol`
+returned **525 tk** for six items where the plain `list_schematic_components`
+dump costs **310** — a query tool more expensive than the dump it exists to
+replace. `fields` (`compact` default, `full`) now drops geometry, `angle` and
+`unit`, and omits `kind` per item when the query already pinned it: unfiltered
+**525 → 340 tk**, and a *filtered* query (`attrs value=10k`, two items) is
+**109 tk** against the same 310. An unrecognised `fields` is refused with
+`invalid_argument` before anything runs (D17's rule again).
+
+**340 is still 10 % above the dump, and that is recorded rather than fixed** —
+see D30. The graph's win is filtering and adjacency, not serialisation.
+
+**752 tests**, `gate.ps1` green, golden suite **18/18 at 2 174 tk/task**
+(2 178 before — inside the ±12 noise, no saving claimed), 4 MCP calls, startup
+**2 034 unchanged**.
+
+---
+
+## PREVIOUS TASK — a plan that can be held to its own promise
 
 `kam-plan`'s IR has carried a `validators` list since Phase G and nothing ran it;
 the verdict came from the enclosing `kicad_invoke(verify: "auto")`. It runs now,
@@ -63,7 +106,7 @@ divider, against real `kicad-cli`. It was run, not merely written — see E12.
 **706 tests** (`konnect-core` 321 → 327), 18/18 golden, 4 MCP calls, startup
 2 034 unchanged, gate and benchmark clean.
 
-Next: ProjectGraph, then the advisory wording in the tool descriptions (E7).
+(Next at the time: ProjectGraph — done, above.)
 
 ---
 
@@ -193,7 +236,7 @@ why it is opt-in.
 [x] Independent verification (ERC/DRC in the reply)         -> verify: auto, stable finding ids, cached baselines
 [x] Task State Manager                                      -> kam-state::task + task toolset, 0 startup tokens
 [x] Attention anchor (ACTIVE TASK), rendered from the record -> TaskState::anchor, ~40 tk
-[ ] ProjectGraph / World Model
+[x] ProjectGraph / World Model                              -> kam-graph + graph toolset, 0 startup tokens, filtered query 109 vs 310 tk
 [ ] Context Manager (budgets, compaction, retrieval)
 [x] Plan IR + compiler + reference checking                 -> kam-plan, 46 tests
 [x] Deterministic executor + operation library + batching   -> plan toolset, -48.4 % / -61.1 %
@@ -501,6 +544,31 @@ believes it is being checked and is not is the failure mode D17 already refused
 for `verify`, and a plan is a worse place for it: the caller is further away from
 the mutation.
 
+### D30 — the graph wins on filtering and adjacency, not on serialisation (2026-08-11)
+
+The honest result of the first measurement: `graph_query kind=symbol` with no
+filter costs **340 tk** compact against **310 tk** for the `list_schematic_components`
+dump of the same six items. Ten per cent worse, after the compact projection
+already took 525 down to 340.
+
+It stays that way. The remaining 30 tokens are the full UUID key (~23 tk/item)
+and the repeated `document` field, and both were considered:
+
+* **Shortening the key was rejected.** `key` is what `graph_neighbors` takes.
+  A short id would need a second resolution index in `kam-graph` and would buy
+  tokens by making the graph's one distinguishing capability need a round trip —
+  the graph exists to be addressable, so the address is not the thing to
+  compress.
+* **The unfiltered query is not the use case.** A query that names no filter is
+  a dump written in query syntax, and `list_schematic_components` is a better
+  dump. The measurements that matter are the other two: a filtered query is
+  **109 tk against 310** (−65 %), and `graph_neighbors` answers a question no
+  dump answers at all without the caller re-deriving geometry.
+
+Recorded rather than hidden, because the alternative is a tool whose
+documentation implies a saving in a case where it costs more. The tool's own
+description says which case it wins.
+
 ### D26 — `SUPPORTED` is discovered, never declared (2026-08-11)
 
 The matrix could have carried a status field per capability, which is how most
@@ -609,17 +677,26 @@ KiCAD knowledge already is.
 
 Full detail and method: **`docs/benchmark.md`**. Headline:
 
-| Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Fork, Phase G | Fork, matrix | Δ vs baseline |
-|---|---|---|---|---|---|---|---|
-| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | 18/18 | 18/18 | **18/18** | = |
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | 2 175 | 2 171 | **2 178** | **−82.4 %** |
-| CATALOG_TOKENS/task | 8 389 | 0 | 0 | 0 | 0 | **0** | −100 % |
-| MCP_CALLS median/task | 11 | 4 | 4 | 4 | 4 | **4** | −7 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 68 ms | 66 ms | 64 ms | ≈ |
-| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 854 ms | 877 ms | 885 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 2 034 tk | 2 034 tk | **2 034 tk** | +354 (once per session) |
+| Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Fork, Phase G | Fork, matrix | Fork, graph | Δ vs baseline |
+|---|---|---|---|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | 18/18 | 18/18 | 18/18 | **18/18** | = |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | 2 175 | 2 171 | 2 178 | **2 174** | **−82.4 %** |
+| CATALOG_TOKENS/task | 8 389 | 0 | 0 | 0 | 0 | 0 | **0** | −100 % |
+| MCP_CALLS median/task | 11 | 4 | 4 | 4 | 4 | 4 | **4** | −7 |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 68 ms | 66 ms | 64 ms | 62 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 854 ms | 877 ms | 885 ms | 951 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 2 034 tk | 2 034 tk | 2 034 tk | **2 034 tk** | +354 (once per session) |
 
-The 2 171 → 2 178 in the last column is **not** a regression to explain: repeated
+ProjectGraph costs **nothing** on this suite in either column, which is the
+expected result and not a claimed win: the three `graph_*` tools are a toolset,
+so they are absent from the startup catalogue, and the golden tasks never call
+them. The full catalogue grew 203 → 206 tools (25 058 → 25 238 tk), paid only by
+a client that loads everything. `graph_query`'s schema is **662 tk**, second
+heaviest in the repository after `create_symbol` — worth watching if it is ever
+promoted out of a toolset.
+
+The 2 171 → 2 178 → 2 174 across the last three columns is **not** a regression
+or a saving to explain: repeated
 runs of the same build spread ±12 on a single task (`sch_hierarchy` measures
 2 195 / 2 200 / 2 208 in one three-run set), so the two columns are the same
 number. The E8 fix that landed with the matrix pays in `toolsets` mode, where
@@ -674,7 +751,7 @@ task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
 `cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → 606 →
-682 → 700 → **706 passed, 0 failed** on the fork, plus the `#[ignore]`d e2e
+682 → 700 → 706 → **752 passed, 0 failed** on the fork, plus the `#[ignore]`d e2e
 tests, of which `plan_postconditions_e2e` was run against a real KiCad 10 for
 this phase rather than only compiled. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
@@ -896,31 +973,33 @@ not silently accumulate more.
 
 ## NEXT ACTION
 
-A change can now be described once rather than enumerated, refused before it
-starts if it cannot finish, expanded deterministically, run as one transaction,
-and proved against KiCAD's own ERC. That is Phase G's spine. Continue in this
-order:
+**Phases E and G are closed.** A change can be described once rather than
+enumerated, refused before it starts if it cannot finish, expanded
+deterministically, run as one transaction, proved against KiCAD's own ERC, and
+questioned afterwards through an indexed graph instead of a document dump.
 
-1. **ProjectGraph / World Model** — the last of Phase E, and now the last
-   unticked item before Phase H. Still the least urgent of what remains: the
-   semantic diff and the validators answer most of what an agent would ask a
-   graph for, which is precisely why it should be scoped by what a *model*
-   asks, not by what a graph could hold.
-2. **The advisory wording where an agent will actually read it.** The matrix
-   labels the fifteen in-process connectivity tools `ADVISORY`; their `tool!`
-   descriptions still say nothing (E7, remaining half).
-3. **E6** — snap the grid in `add_power_symbol`, with the geometry pass.
-   Unreachable through a plan since D23, still live on the direct tool path.
+Two open defects come first, because both are things a *model* will walk into on
+the direct tool path and both would corrupt a Phase H measurement rather than
+merely annoy a human:
 
-Still do not start the local model runtime (H). Two things it needs now exist
-and neither has a local consumer: the ACTIVE TASK anchor is exercised only
-through an MCP reply, and the plan is written by hand rather than by a model.
-The question Phase H answers — does a small local model write a *valid* plan,
-and how often — is the one that decides whether any of this reduces
-`LLM_CALLS_PER_SUCCESSFUL_TASK` in practice. The precondition set for it is now
-one item shorter: the capability matrix exists, so which operations are actually
-proved — and which 107 tools a model should not be handed as if they were — is a
-question with a written answer.
+1. **E6 — `add_power_symbol` does not snap to the 1.27 mm grid.** The only open
+   defect that silently produces a wrong schematic: six ERC errors from a
+   placement that reported success. Unreachable through a plan since D23, fully
+   live everywhere else. Fix it in the placement path itself, one snap for every
+   tool, with an ERC assertion against real `kicad-cli`.
+2. **E7, remaining half — the advisory wording where an agent will read it.**
+   The matrix labels fifteen in-process connectivity tools `ADVISORY`; their
+   `tool!` descriptions still say nothing, and a model reads descriptions.
+
+Then **Phase H**, whose precondition set is now empty. Everything it needs to be
+measured against exists and none of it has a local consumer yet: the plan is
+written by hand rather than by a model, the ACTIVE TASK anchor is exercised only
+through an MCP reply, the graph is queried by a probe, and the capability matrix
+says which 107 unproved tools a model should not be handed. The question H
+answers — does a small local model write a *valid* plan, and how often — is the
+one that decides whether any of this reduces
+`LLM_CALLS_PER_SUCCESSFUL_TASK` in practice. That metric is still unmeasured and
+still not claimed.
 
 Open defects to fold into later work rather than patch separately: **E6**
 (power symbols do not snap to the 1.27 mm grid) is now *unreachable through a

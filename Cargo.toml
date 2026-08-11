@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/kam-evidence",
+    "crates/kam-graph",
     "crates/kam-plan",
     "crates/kam-state",
     "crates/konnect",
@@ -77,6 +78,7 @@ usvg = "0.47"
 
 # Internal crates
 kam-evidence = { path = "crates/kam-evidence" }
+kam-graph = { path = "crates/kam-graph" }
 kam-plan = { path = "crates/kam-plan" }
 kam-state = { path = "crates/kam-state" }
 konnect-sexp = { path = "crates/konnect-sexp" }

@@ -141,6 +141,12 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
         tool_count: 4,
     },
     ToolsetMeta {
+        name: "graph",
+        description: "Query the indexed world model — filtered item lookups, spatial neighbors, and per-document/per-kind counts — instead of dumping a whole document",
+        category: "graph",
+        tool_count: 3,
+    },
+    ToolsetMeta {
         name: "manufacturing",
         description: "Design-to-fab pipeline: export Gerber+BOM+positions package, validate for fab house, estimate cost",
         category: "manufacturing",
@@ -172,6 +178,7 @@ pub fn tools_for(name: &str) -> Option<Vec<ToolDef>> {
         "manufacturing" => Some(manufacturing::tools()),
         "plan" => Some(plan::tools()),
         "task" => Some(task::tools()),
+        "graph" => Some(graph::tools()),
         _ => None,
     }
 }
