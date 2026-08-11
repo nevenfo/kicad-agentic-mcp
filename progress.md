@@ -23,7 +23,51 @@ library and the `plan` toolset; the plan's own `validators` list is carried but
 not yet executed by the plan itself. The capability matrix is generated and
 committed, and closed **E8** on its way through.
 
-## CURRENT TASK — the capability matrix, and the defect it forced
+## CURRENT TASK — a plan that can be held to its own promise
+
+`kam-plan`'s IR has carried a `validators` list since Phase G and nothing ran it;
+the verdict came from the enclosing `kicad_invoke(verify: "auto")`. It runs now,
+which is what lets a plan declare "this is only done if ERC is clean" and be held
+to it rather than merely audited afterwards.
+
+* Four names: `erc` / `drc` mean **this plan introduced no new finding** (delta
+  against a baseline, by stable finding id); `erc_clean` / `drc_clean` mean
+  **zero errors, absolutely**. An unrecognised name is refused in `build()`,
+  before the first mutation — D17's rule, applied one level down.
+* The documents checked are the ones the plan's own steps touch, collected from
+  the compiled step arguments. Baseline comes from `ctx.validation`; when the
+  cache has none and the plan asked for a no-regression check, one is computed
+  **before** the first step. A document that did not exist gets an empty
+  baseline, not an unknown one.
+* Failure returns `error_kind: "postcondition_failed"` with the check, the
+  document, the counts and the introduced ids — and `is_error` is what makes the
+  enclosing atomic `kicad_invoke` roll the plan back. A validator that could not
+  run is a failure, never zero findings (E4).
+* `preview_plan` reports `validators_plan` — which validator would run against
+  which document — and still spawns nothing.
+* `kam-plan` stays ignorant of KiCAD (D11): `Postcondition` lives in
+  `konnect-core::evidence::validators`.
+
+**Measured** on the divider, release binary, real `kicad-cli`: no `validators`
+**48 ms**, `erc_clean` **1 114 ms**, `erc` **2 182 ms** — the second run is the
+baseline the no-regression promise requires. The reply is byte-identical in all
+three cases, so **a passing postcondition costs no tokens at all**; the price is
+latency, and it is opt-in for exactly that reason. A unit test gives the context
+an impossible `kicad-cli` path to prove the empty-`validators` path spawns
+nothing.
+
+The e2e test is the part worth trusting: `erc_clean` fails on a plan that leaves
+floating pins and a duplicate reference, and passes on the golden suite's own
+divider, against real `kicad-cli`. It was run, not merely written — see E12.
+
+**706 tests** (`konnect-core` 321 → 327), 18/18 golden, 4 MCP calls, startup
+2 034 unchanged, gate and benchmark clean.
+
+Next: ProjectGraph, then the advisory wording in the tool descriptions (E7).
+
+---
+
+## PREVIOUS TASK — the capability matrix, and the defect it forced
 
 `docs/capability-matrix.md` is rendered from `konnect-core::capability`, and the
 point of it is the rule rather than the table: `SUPPORTED` is not a field
@@ -54,8 +98,6 @@ repeated runs on one build. No saving is claimed there. `bom` coverage 0 % →
 
 **700 tests, 18/18, 4 MCP calls, startup 2 034 — unchanged**; `fmt`, `clippy` and
 the benchmark gate clean.
-
-Next: plan-owned postconditions, then ProjectGraph.
 
 ---
 
@@ -155,7 +197,7 @@ why it is opt-in.
 [ ] Context Manager (budgets, compaction, retrieval)
 [x] Plan IR + compiler + reference checking                 -> kam-plan, 46 tests
 [x] Deterministic executor + operation library + batching   -> plan toolset, -48.4 % / -61.1 %
-[ ] Plan-owned postconditions (the `validators` list is carried, not run)
+[x] Plan-owned postconditions                               -> erc/drc + erc_clean/drc_clean, rollback on failure
 [ ] Direct mode / Agent mode split
 [ ] Local model provider, hardware probe, model benchmark, router
 [ ] Error catalog completeness, retries, recovery policy
@@ -423,6 +465,42 @@ macro dereferences away), and it writes each inner step to the observability log
 by hand — otherwise a plan would be a mutation without an audit record, which is
 a V1 success criterion at 0.
 
+### D28 — a plan's promise is checked after the steps, and it fails the batch (2026-08-11)
+
+A postcondition could have been advisory: run the validator, report the verdict,
+let the caller decide. That is what `kicad_invoke(verify: "auto")` already does,
+and duplicating it inside the plan would have added a second way to say the same
+thing.
+
+`apply_plan` instead returns `is_error` when a declared postcondition fails, so
+an atomic `kicad_invoke` rolls the whole plan back. The reason is what a plan is
+*for*: it exists so a change can be described once instead of enumerated, and a
+description that ends "…and ERC must be clean" is not honoured by a reply that
+says ERC is dirty and keeps the change. The steps summary survives in the error
+body — the caller still learns what ran — but the verdict decides the outcome.
+
+The line this does not cross: the plan does not choose *what* clean means. The
+verdict is `kicad-cli`'s, through the same `evidence::validators` path as
+`verify`, cache and stable finding ids included (E7's rule at one more level).
+
+### D29 — `erc` and `erc_clean` are two different promises, and both are spelled out (2026-08-11)
+
+One name would have been simpler. It would also have been ambiguous in the way
+that matters: on a design that already has three ERC errors somewhere else, does
+"ERC" mean the plan must fix them, or must merely not add a fourth?
+
+`erc_clean` is absolute — zero errors — and needs no baseline. `erc` is "no new
+findings by stable id", which cannot be evaluated without a verdict on the state
+the plan started from; when the cache does not have one, it is computed **before**
+the first mutation rather than inferred. Measured, that is the difference between
+1 114 ms and 2 182 ms on the same divider, and it is the honest price of a promise
+about a delta.
+
+Both refuse an unrecognised name in `build()`, before anything runs. A plan that
+believes it is being checked and is not is the failure mode D17 already refused
+for `verify`, and a plan is a worse place for it: the caller is further away from
+the mutation.
+
 ### D26 — `SUPPORTED` is discovered, never declared (2026-08-11)
 
 The matrix could have carried a status field per capability, which is how most
@@ -596,7 +674,9 @@ task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
 `cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → 606 →
-682 → **700 passed, 0 failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
+682 → 700 → **706 passed, 0 failed** on the fork, plus the `#[ignore]`d e2e
+tests, of which `plan_postconditions_e2e` was run against a real KiCad 10 for
+this phase rather than only compiled. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
 ---
@@ -755,6 +835,39 @@ Fixed with a `try_arg!` macro that returns the structured result unchanged, and
 the macro's doc comment states the anti-pattern so it does not come back. All
 eight sites converted.
 
+### E12 — a floating passive pin is an ERC **error**, not a warning (2026-08-11) — FIXED IN TEST
+
+The first postconditions e2e test asserted that a two-resistor schematic with the
+pair wired together was ERC-clean, on the strength of a comment in this repo's own
+`e2e_kicad.rs` ("a 2-part net has floating-pin warnings"). It failed:
+
+```
+assertion `left != right` failed: a clean schematic must pass erc_clean:
+{"error":{"check":"erc_clean","document":"clean.kicad_sch","errors":1,...},
+ "message":"Postcondition 'erc_clean' failed on clean.kicad_sch: 1 error(s), 0 warning(s), 1 new finding(s)."}
+```
+
+Probed directly against KiCad 10 `kicad-cli sch erc`:
+
+```json
+{"errors":1,"warnings":0,"violations":[
+  {"description":"Pin not connected: Symbol R1 Pin 1 [Passive, Line]","severity":"error"}]}
+```
+
+So the postcondition machinery was right and the fixture was wrong. The clean
+case is now the golden suite's own divider — `bench/tasks/01_sch_divider.yaml`,
+which asserts `erc_max_errors: 0` on every benchmark run — where the two
+`PWR_FLAG`s and two power symbols sit exactly on the outer resistor pins and
+nothing floats. The broken case keeps floating pins *and* a duplicate reference.
+Verified by running the test, not by reasoning about it: **it passes.**
+
+The misleading comment in `e2e_kicad.rs` is corrected in place, with the measured
+severity written down, because it is what caused the wrong assumption once.
+
+Worth keeping in mind for Phase H: a plausible-looking schematic that a model
+would call finished is ERC-*error* territory in KiCad 10 as soon as one pin is
+left alone. `erc_clean` is a stricter promise than it sounds.
+
 ### E10 — Pre-existing clippy debt under `--all-targets` (2026-08-10) — DEFERRED
 
 Upstream CI runs `cargo clippy --workspace --locked -- -D warnings` (no
@@ -788,18 +901,16 @@ starts if it cannot finish, expanded deterministically, run as one transaction,
 and proved against KiCAD's own ERC. That is Phase G's spine. Continue in this
 order:
 
-1. **Plan-owned postconditions.** A plan carries a `validators` list and
-   nothing runs it; the verdict comes from the enclosing `kicad_invoke(verify:
-   "auto")`. That is not wrong — it is the same validator either way — but it
-   means a plan cannot yet declare "this is only done if ERC is clean" and be
-   held to it. Small, and it closes the last gap between the IR as designed
-   and the IR as implemented.
-2. **ProjectGraph / World Model** — the last of Phase E, and still the least
-   urgent: the diff and the validators answer most of what an agent would ask
-   a graph for.
-3. **The advisory wording where an agent will actually read it.** The matrix
+1. **ProjectGraph / World Model** — the last of Phase E, and now the last
+   unticked item before Phase H. Still the least urgent of what remains: the
+   semantic diff and the validators answer most of what an agent would ask a
+   graph for, which is precisely why it should be scoped by what a *model*
+   asks, not by what a graph could hold.
+2. **The advisory wording where an agent will actually read it.** The matrix
    labels the fifteen in-process connectivity tools `ADVISORY`; their `tool!`
    descriptions still say nothing (E7, remaining half).
+3. **E6** — snap the grid in `add_power_symbol`, with the geometry pass.
+   Unreachable through a plan since D23, still live on the direct tool path.
 
 Still do not start the local model runtime (H). Two things it needs now exist
 and neither has a local consumer: the ACTIVE TASK anchor is exercised only

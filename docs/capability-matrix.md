@@ -496,7 +496,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `start_task` | `task` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/task.rs` |  |
+| `start_task` | `task` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/plan.rs` |  |
 | `update_task` | `task` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/task.rs` |  |
 | `get_task` | `task` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/task.rs` |  |
 | `list_tasks` | `task` | `internal` | SUPPORTED | test | `crates/konnect/tests/protocol_stdio.rs` |  |

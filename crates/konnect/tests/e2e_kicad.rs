@@ -203,8 +203,12 @@ fn full_design_loop_with_real_kicad() {
     p.load("sch_export");
     p.load("verification");
     let erc = body(&p.tool("run_erc", json!({"schematic": sch.to_string_lossy()})));
-    // A 2-part net has floating-pin warnings; what matters is that eeschema
-    // parsed OUR file and produced a structured report at all.
+    // This test asserts the shape of the report, not its verdict: what matters
+    // here is that eeschema parsed OUR file and produced a structured report.
+    // Do not read the loose assertion as "the design is fine" — measured on
+    // KiCad 10, a floating passive pin is `severity: "error"`, not a warning
+    // (`plan_postconditions_e2e.rs` depends on that being an error). The
+    // verdict is checked there and by `kicad_invoke(verify: "auto")`.
     assert!(
         erc.get("errors").is_some()
             || erc.get("violations").is_some()

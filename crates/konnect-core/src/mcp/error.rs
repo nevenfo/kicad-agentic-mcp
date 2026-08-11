@@ -111,6 +111,31 @@ pub enum ToolErrorKind {
     /// Catch-all for handler `anyhow::Error` that hasn't been migrated yet.
     /// Eventually each variant above subsumes a subset of these.
     HandlerError { reason: String },
+    /// A plan's own `validators` promise did not hold after it ran.
+    ///
+    /// This is what makes `apply_plan` an honest "done": a plan that declared
+    /// `erc_clean` and left an ERC error is not finished, no matter how many of
+    /// its steps succeeded. Returned as an error specifically so the enclosing
+    /// `kicad_invoke` batch (D4) rolls the whole plan back — a caller must never
+    /// be left holding the half of a promise that broke it.
+    PostconditionFailed {
+        /// The validator name as declared in the plan, e.g. `erc_clean`.
+        check: String,
+        /// The document the postcondition was about.
+        document: String,
+        /// Errors present after the plan ran.
+        errors: usize,
+        /// Warnings present after the plan ran.
+        warnings: usize,
+        /// Finding ids the delta form found new, or the clean form found still
+        /// present at error severity. Empty when the validator could not run at
+        /// all (see `reason`).
+        introduced: Vec<String>,
+        /// Set when the validator itself could not run — a missing `kicad-cli`
+        /// must surface as a failed postcondition, never as zero findings (E4).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
 }
 
 impl ToolErrorKind {
@@ -127,6 +152,7 @@ impl ToolErrorKind {
             Self::OperationInFlight { .. } => "operation_in_flight",
             Self::Io { .. } => "io",
             Self::HandlerError { .. } => "handler_error",
+            Self::PostconditionFailed { .. } => "postcondition_failed",
         }
     }
 
@@ -155,6 +181,9 @@ impl ToolErrorKind {
             // Unclassified by construction. Claiming a class for an error we
             // have not looked at is worse than admitting we do not know.
             Self::HandlerError { .. } => TransientClass::None,
+            // Deterministic: the same plan broke the same promise. A retry
+            // needs a different plan, not a second attempt at this one.
+            Self::PostconditionFailed { .. } => TransientClass::None,
         }
     }
 
@@ -324,6 +353,14 @@ mod tests {
                 detail: "d".into(),
             },
             ToolErrorKind::HandlerError { reason: "r".into() },
+            ToolErrorKind::PostconditionFailed {
+                check: "erc".into(),
+                document: "a.kicad_sch".into(),
+                errors: 1,
+                warnings: 0,
+                introduced: vec!["abc123".into()],
+                reason: None,
+            },
         ];
         for kind in kinds {
             let code = kind.short_code();

@@ -55,6 +55,66 @@ impl Check {
     }
 }
 
+/// A postcondition name a plan may declare in `validators`.
+///
+/// A plan is `kam-plan`'s concern only up to the wire name — recognising it as
+/// `erc` vs `erc_clean` and knowing which [`Check`] and threshold each implies
+/// is KiCAD knowledge, so it lives here rather than in `kam-plan` (D11: that
+/// crate stays ignorant of KiCAD to keep its narrower license honest).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Postcondition {
+    /// The plan must introduce no new ERC finding (delta vs. the baseline).
+    Erc,
+    /// The plan must leave zero ERC errors, absolutely.
+    ErcClean,
+    /// The plan must introduce no new DRC finding (delta vs. the baseline).
+    Drc,
+    /// The plan must leave zero DRC errors, absolutely.
+    DrcClean,
+}
+
+impl Postcondition {
+    /// Parse a wire name, or `None` for anything else — a plan is refused
+    /// rather than silently ignoring a misspelled postcondition (D17: a
+    /// validator that does not run in silence is worse than an error).
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "erc" => Some(Self::Erc),
+            "erc_clean" => Some(Self::ErcClean),
+            "drc" => Some(Self::Drc),
+            "drc_clean" => Some(Self::DrcClean),
+            _ => None,
+        }
+    }
+
+    /// The wire name, for error messages and reports.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Erc => "erc",
+            Self::ErcClean => "erc_clean",
+            Self::Drc => "drc",
+            Self::DrcClean => "drc_clean",
+        }
+    }
+
+    /// Which validator applies.
+    #[must_use]
+    pub fn check(self) -> Check {
+        match self {
+            Self::Erc | Self::ErcClean => Check::Erc,
+            Self::Drc | Self::DrcClean => Check::Drc,
+        }
+    }
+
+    /// Whether this is the absolute-zero-errors form, which needs no baseline.
+    #[must_use]
+    pub fn is_clean(self) -> bool {
+        matches!(self, Self::ErcClean | Self::DrcClean)
+    }
+}
+
 /// Run the validator and translate its violations into findings.
 ///
 /// # Errors
@@ -167,6 +227,31 @@ mod tests {
         assert_eq!(Check::of_path(Path::new("a.kicad_sch")), Some(Check::Erc));
         assert_eq!(Check::of_path(Path::new("a.kicad_pcb")), Some(Check::Drc));
         assert_eq!(Check::of_path(Path::new("a.kicad_pro")), None);
+    }
+
+    #[test]
+    fn only_the_four_recognised_names_parse() {
+        assert_eq!(Postcondition::parse("erc"), Some(Postcondition::Erc));
+        assert_eq!(
+            Postcondition::parse("erc_clean"),
+            Some(Postcondition::ErcClean)
+        );
+        assert_eq!(Postcondition::parse("drc"), Some(Postcondition::Drc));
+        assert_eq!(
+            Postcondition::parse("drc_clean"),
+            Some(Postcondition::DrcClean)
+        );
+        assert_eq!(Postcondition::parse("ERC"), None);
+        assert_eq!(Postcondition::parse("erc-clean"), None);
+        assert_eq!(Postcondition::parse(""), None);
+    }
+
+    #[test]
+    fn clean_variants_share_the_check_with_their_delta_counterpart() {
+        assert_eq!(Postcondition::Erc.check(), Postcondition::ErcClean.check());
+        assert_eq!(Postcondition::Drc.check(), Postcondition::DrcClean.check());
+        assert!(Postcondition::ErcClean.is_clean() && !Postcondition::Erc.is_clean());
+        assert!(Postcondition::DrcClean.is_clean() && !Postcondition::Drc.is_clean());
     }
 
     #[test]

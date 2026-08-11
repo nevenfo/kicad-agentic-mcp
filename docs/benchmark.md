@@ -435,6 +435,39 @@ growth being re-sent on each `tools/list` refresh (+580 startup × one refresh),
 not this change — the golden suite never loads the plan toolset, which
 `bench/results/fork-phaseG-plan-tools.json` shows directly.
 
+### Plan-owned postconditions — what a promise costs
+
+`apply_plan` now runs the plan's own `validators` list. Same divider, three
+declarations, measured on a real project through the release binary:
+
+| plan | wall clock | reply |
+|---|---|---|
+| no `validators` | **48 ms** | `{"ok":5,"ops":4,"steps":5}` |
+| `validators: ["erc_clean"]` | **1 114 ms** | byte-identical |
+| `validators: ["erc"]` | **2 182 ms** | byte-identical |
+
+Three things this table says, in order of how easy they are to get wrong:
+
+* **A passing postcondition costs no tokens.** The reply is the same 46 bytes
+  with and without it. The cost is entirely latency, which is where D17 already
+  put `verify`'s cost, and for the same reason.
+* **`erc_clean` is one `kicad-cli` run; `erc` is two.** `erc_clean` is absolute —
+  zero errors — so it needs no baseline. `erc` means "this plan introduced
+  nothing", which cannot be known without a verdict on the state the plan
+  started from; when the cache has none, one is computed *before* the first
+  mutation. That is the whole 1 068 ms difference.
+* **Nothing is paid when nothing is declared.** 48 ms is the plan without a
+  single hash or spawn, and a unit test pins that down by giving the context a
+  `kicad-cli` path that cannot exist: if the empty-`validators` fast path ever
+  regressed into computing a baseline, the test would fail loudly instead of
+  quietly getting slower.
+
+The failure path is what the feature is for: a postcondition that fails returns
+`error_kind: "postcondition_failed"` naming the check, the document, the counts
+and the introduced finding ids, and `is_error` on that reply is what makes the
+enclosing atomic `kicad_invoke` roll the whole plan back. A validator that could
+not run at all is a failure too, never zero findings — E4 is the reason.
+
 ### E8 — a taxonomy fix that only one load mode can see
 
 `export_bom` reads a `.kicad_sch` and nothing else, and was registered in the
