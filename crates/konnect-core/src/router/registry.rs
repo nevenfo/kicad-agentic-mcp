@@ -157,28 +157,60 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
 /// Return the ToolDefs for a given toolset name, or None if unknown.
 pub fn tools_for(name: &str) -> Option<Vec<ToolDef>> {
     use crate::tools::*;
-    match name {
-        "project" => Some(project::tools()),
-        "sch_components" => Some(sch_components::tools()),
-        "sch_wiring" => Some(sch_wiring::tools()),
-        "sch_analysis" => Some(sch_analysis::tools()),
-        "sch_batch" => Some(sch_batch::tools()),
-        "sch_export" => Some(sch_export::tools()),
-        "sch_hierarchy" => Some(sch_hierarchy::tools()),
-        "pcb_board" => Some(pcb_board::tools()),
-        "pcb_components" => Some(pcb_components::tools()),
-        "pcb_routing" => Some(pcb_routing::tools()),
-        "pcb_export" => Some(pcb_export::tools()),
-        "library" => Some(library::tools()),
-        "integration" => Some(integration::tools()),
-        "verification" => Some(verification::tools()),
-        "config" => Some(config::tools()),
-        "design_review" => Some(design_review::tools()),
-        "templates" => Some(templates::tools()),
-        "manufacturing" => Some(manufacturing::tools()),
-        "plan" => Some(plan::tools()),
-        "task" => Some(task::tools()),
-        "graph" => Some(graph::tools()),
-        _ => None,
+    let mut defs = match name {
+        "project" => project::tools(),
+        "sch_components" => sch_components::tools(),
+        "sch_wiring" => sch_wiring::tools(),
+        "sch_analysis" => sch_analysis::tools(),
+        "sch_batch" => sch_batch::tools(),
+        "sch_export" => sch_export::tools(),
+        "sch_hierarchy" => sch_hierarchy::tools(),
+        "pcb_board" => pcb_board::tools(),
+        "pcb_components" => pcb_components::tools(),
+        "pcb_routing" => pcb_routing::tools(),
+        "pcb_export" => pcb_export::tools(),
+        "library" => library::tools(),
+        "integration" => integration::tools(),
+        "verification" => verification::tools(),
+        "config" => config::tools(),
+        "design_review" => design_review::tools(),
+        "templates" => templates::tools(),
+        "manufacturing" => manufacturing::tools(),
+        "plan" => plan::tools(),
+        "task" => task::tools(),
+        "graph" => graph::tools(),
+        _ => return None,
+    };
+    apply_advisory_suffix(&mut defs);
+    Some(defs)
+}
+
+/// Append [`crate::capability::ADVISORY_SUFFIX`] to the description of every
+/// tool [`crate::capability::is_advisory_tool`] flags, so the caveat is what
+/// an agent sees in the tool listing, not only in `docs/capability-matrix.md`.
+///
+/// `ToolDef::description` is `&'static str`, so the suffixed string is leaked
+/// once per tool name and cached — the alternative (widening the field to
+/// `String` or `Cow`) would touch every `tool!` call site in the crate for a
+/// caveat that applies to 15 of several hundred tools.
+fn apply_advisory_suffix(defs: &mut [ToolDef]) {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<HashMap<&'static str, &'static str>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    for def in defs.iter_mut() {
+        if !crate::capability::is_advisory_tool(def.name) {
+            continue;
+        }
+        let mut guard = cache.lock().expect("advisory description cache poisoned");
+        let suffixed = *guard.entry(def.name).or_insert_with(|| {
+            Box::leak(
+                format!("{}{}", def.description, crate::capability::ADVISORY_SUFFIX)
+                    .into_boxed_str(),
+            )
+        });
+        def.description = suffixed;
     }
 }

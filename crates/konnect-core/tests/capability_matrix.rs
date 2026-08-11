@@ -16,7 +16,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use konnect_core::capability::{
-    coverage, render, Adapter, Limitation, Status, ALL_DOMAINS, MANIFEST, MISSING,
+    coverage, is_advisory_tool, render, Adapter, Limitation, Status, ADVISORY_SUFFIX, ALL_DOMAINS,
+    MANIFEST, MISSING,
 };
 use konnect_core::router::registry;
 
@@ -215,6 +216,40 @@ fn the_committed_matrix_is_up_to_date() {
         rendered.replace("\r\n", "\n"),
         "docs/capability-matrix.md is stale — regenerate with KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix"
     );
+}
+
+/// The MCP `description` an agent actually reads — not just the matrix —
+/// carries the advisory caveat, for exactly the tools `is_advisory_tool` (the
+/// single source both this test and `router::registry::tools_for` consult)
+/// flags in `MANIFEST`. Regression this guards: a fifteenth ADVISORY tool
+/// added to the matrix without the registry suffix picking it up, or a
+/// non-advisory tool acquiring the caveat by accident.
+#[test]
+fn advisory_tools_and_only_advisory_tools_carry_the_caveat_in_their_description() {
+    let advisory_in_manifest: BTreeSet<&str> = MANIFEST
+        .iter()
+        .filter(|c| is_advisory_tool(c.tool))
+        .map(|c| c.tool)
+        .collect();
+    assert_eq!(
+        advisory_in_manifest.len(),
+        15,
+        "expected 15 ADVISORY tools, found {}: {advisory_in_manifest:?}",
+        advisory_in_manifest.len()
+    );
+
+    for meta in registry::ALL_TOOLSETS {
+        for tool in registry::tools_for(meta.name).unwrap() {
+            let carries_caveat = tool.description.ends_with(ADVISORY_SUFFIX);
+            let should = advisory_in_manifest.contains(tool.name);
+            assert_eq!(
+                carries_caveat, should,
+                "'{}': description carries the advisory caveat = {carries_caveat}, \
+                 but is_advisory_tool() = {should} — description and manifest disagree",
+                tool.name
+            );
+        }
+    }
 }
 
 /// The scan finds real proofs in this repository. A silent regression in the

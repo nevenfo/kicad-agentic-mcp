@@ -370,6 +370,26 @@ const ADVISORY: Limitation = Limitation::Partial(
     "advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify",
 );
 
+/// Whether `tool` carries the shared [`ADVISORY`] limitation in [`MANIFEST`].
+///
+/// This is the single source of truth for "which tools need the advisory
+/// caveat": `docs/capability-matrix.md` reads it from `MANIFEST` via
+/// [`Capability::status`], and the MCP tool descriptions read it from here
+/// (`router::registry::tools_for`, which appends [`ADVISORY_SUFFIX`]). A tool
+/// cannot gain or lose the caveat in one place without moving in the other,
+/// because both walk the same `MANIFEST` entry.
+pub fn is_advisory_tool(tool: &str) -> bool {
+    MANIFEST
+        .iter()
+        .any(|c| c.tool == tool && c.limitation == ADVISORY)
+}
+
+/// Caveat appended to an `ADVISORY` tool's MCP `description`, read on every
+/// `tools/list` an agent sees — unlike [`ADVISORY`]'s longer reason string,
+/// which is archival prose read once when someone opens the matrix. Kept to
+/// ~20 tokens: says what to call instead, not just what is wrong.
+pub const ADVISORY_SUFFIX: &str = " Advisory: connectivity is derived in-process and has disagreed with kicad-cli ERC. For a verdict, use run_erc.";
+
 /// A heuristic audit, not a validator: useful as a checklist, never as a
 /// sign-off.
 const HEURISTIC: Limitation = Limitation::Partial(

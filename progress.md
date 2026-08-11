@@ -30,7 +30,43 @@ ask instead of dumping, a matrix exists that says which 107 tools it should not
 be handed, and **E6 is closed**, so the direct tool path no longer produces
 silently wrong geometry for a model to be measured on.
 
-## CURRENT TASK — E6, closed as a class rather than as a symptom
+## CURRENT TASK — E7, closed where an agent will actually read it
+
+The matrix had labelled fifteen in-process connectivity tools `ADVISORY` since
+the capability pass, and it changed nothing for the one reader that matters: a
+model calling `find_single_pin_nets` reads the tool's *description*, not
+`docs/capability-matrix.md`. It saw nothing saying the answer is not a verdict —
+on a tool that has returned `single_pin_net_count: 0` while `kicad-cli` found
+six unconnected pins.
+
+The description now carries it: *"Advisory: connectivity is derived in-process
+and has disagreed with kicad-cli ERC. For a verdict, use run_erc."*
+
+**Membership comes from one source.** `capability::is_advisory_tool` queries the
+same `MANIFEST` the matrix renders, and `router::registry::tools_for` appends
+the suffix as it builds each toolset's `ToolDef`s. Nobody retypes the list into
+fifteen descriptions, so the matrix and the descriptions cannot disagree about
+*which* tools are advisory. The wording is deliberately allowed to differ: the
+matrix's `reason()` is archival prose read once, the suffix is paid on every
+`tools/list`. The test asserts the equivalence rather than a hard-coded list —
+for every tool in every toolset, `description.ends_with(ADVISORY_SUFFIX)` must
+equal `is_advisory_tool(name)` — and pins the count at fifteen.
+
+**Measured:** startup catalogue **2 034 — unchanged**, because none of the
+fifteen is a starter tool. Full catalogue **25 238 → 25 642 tk (+404)**, all of
+it on those fifteen at +27 each, and **exactly zero** on any other tool. Golden
+suite 18/18 at 2 190 tk/task against 2 178: per-task deltas are mixed-sign
+(`sch_hierarchy` +5, `manufacturing_exports` −12, `recovery` +6), which is the
+established noise band and not the suffix — a task that actually described an
+advisory tool would have moved +27 in one direction. **759 tests**, gate green.
+
+The honest limit: this closes E7's *disclosure*, not E7. The internal
+connectivity analysis still disagrees with `kicad-cli`. What is now true is that
+no agent can call it without being told so, and the evidence path never asks it.
+
+---
+
+## PREVIOUS TASK — E6, closed as a class rather than as a symptom
 
 `add_power_symbol` wrote its coordinate verbatim while
 `add_schematic_component` snapped to the 1.27 mm grid, so a power symbol placed
@@ -787,7 +823,7 @@ task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
 `cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → 606 →
-682 → 700 → 706 → 752 → **758 passed, 0 failed** on the fork, plus the `#[ignore]`d e2e
+682 → 700 → 706 → 752 → 758 → **759 passed, 0 failed** on the fork, plus the `#[ignore]`d e2e
 tests, of which `plan_postconditions_e2e` was run against a real KiCad 10 for
 this phase rather than only compiled. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
@@ -897,10 +933,17 @@ in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes f
 run_erc / verify" — so none of them can publish as `SUPPORTED` and the disclaimer
 is rendered next to each.
 
-**Still open in the place that matters most:** an agent reads tool
-*descriptions*, not `docs/capability-matrix.md`. Until the advisory wording is in
-the `tool!` description itself, a model calling `find_single_pin_nets` still sees
-nothing that says the answer is not a verdict.
+Third half, same day — DISCLOSURE CLOSED. `router::registry::tools_for` appends
+an advisory suffix to the description of every tool the same `MANIFEST` marks
+`ADVISORY`, so a model reads it at the call site instead of in a document it
+will never open. +404 catalogue tokens on those fifteen, +0 at startup, +0 on
+every other tool.
+
+**What remains open is the defect itself, not its disclosure:** the in-process
+connectivity analysis still disagrees with `kicad-cli`. It is now labelled
+everywhere it is reachable and excluded from every path that produces a verdict.
+Making it agree would mean re-implementing KiCad's connectivity, which is a
+Phase J question, not a patch.
 
 ### E8 — `export_bom` lives in the `pcb_export` toolset (2026-08-10) — FIXED
 
@@ -1031,17 +1074,12 @@ enumerated, refused before it starts if it cannot finish, expanded
 deterministically, run as one transaction, proved against KiCAD's own ERC, and
 questioned afterwards through an indexed graph instead of a document dump.
 
-**E6 is closed** and took nine undiscovered instances of itself with it. One
-open defect remains before Phase H, and it is cheap:
+**E6 is closed** and took nine undiscovered instances of itself with it. **E7's
+disclosure is closed** — its underlying disagreement with `kicad-cli` is now a
+Phase J scope question rather than a defect an agent can be misled by. No open
+defect blocks Phase H.
 
-1. **E7, remaining half — the advisory wording where an agent will read it.**
-   The matrix labels fifteen in-process connectivity tools `ADVISORY`; their
-   `tool!` descriptions still say nothing, and a model reads descriptions, not
-   `docs/capability-matrix.md`. Put the disclaimer in the `tool!` description
-   itself, from the same manifest string the matrix renders, so the two cannot
-   drift.
-
-Then **Phase H**, whose precondition set is now empty. Everything it needs to be
+**Phase H is the next action**, and its precondition set is empty. Everything it needs to be
 measured against exists and none of it has a local consumer yet: the plan is
 written by hand rather than by a model, the ACTIVE TASK anchor is exercised only
 through an MCP reply, the graph is queried by a probe, and the capability matrix
