@@ -186,6 +186,56 @@ impl CallToolResult {
     }
 }
 
+// ─── MCP Resources ───────────────────────────────────────────────────────────
+
+/// One resource as seen by the client. `description` carries the summary line
+/// so a reader can decide whether to fetch the body at all — that choice is the
+/// whole point of a handle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceDescription {
+    pub uri: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+/// resources/list response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListResourcesResult {
+    pub resources: Vec<ResourceDescription>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// resources/read params
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadResourceParams {
+    pub uri: String,
+}
+
+/// One resource body. Text only: everything this server stores is JSON.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceContents {
+    pub uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    pub text: String,
+}
+
+/// resources/read response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadResourceResult {
+    pub contents: Vec<ResourceContents>,
+}
+
+/// MIME type of every resource this server serves.
+pub const RESOURCE_MIME: &str = "application/json";
+
 // ─── MCP Notifications ───────────────────────────────────────────────────────
 
 /// Sent by server when the tool list changes (after load_toolset / unload_toolset).

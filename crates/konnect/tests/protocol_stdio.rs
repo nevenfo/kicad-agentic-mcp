@@ -52,6 +52,13 @@ impl McpProcess {
             }),
         );
         assert_eq!(init["result"]["serverInfo"]["name"], "konnect");
+        // Evidence handles are only followable by a client that was told the
+        // server serves resources, so the capability is part of the handshake
+        // contract rather than an implementation detail.
+        assert!(
+            init["result"]["capabilities"]["resources"].is_object(),
+            "the server must advertise resources: {init:#?}"
+        );
         p.notify("notifications/initialized");
         p
     }
@@ -741,6 +748,78 @@ fn the_diff_detail_level_is_the_callers_choice() {
     assert!(
         silent["revisions"].is_object(),
         "turning the diff off must not turn off revision reporting: {silent:#?}"
+    );
+}
+
+/// The summary belongs in the reply; the item-by-item detail belongs behind a
+/// handle. A reviewer follows `kicad://diff/N` once; everyone else pays a URI.
+#[test]
+fn the_change_detail_lives_behind_a_handle_rather_than_in_the_reply() {
+    let scratch = Scratch::new("evhandle");
+    let mut p = McpProcess::spawn();
+
+    let before = p.request("resources/list", json!({}));
+    assert_eq!(
+        before["result"]["resources"].as_array().map(Vec::len),
+        Some(0),
+        "nothing has run yet, so there is nothing to fetch: {before:#?}"
+    );
+
+    let created = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "ev"}}
+        ]}),
+    ));
+    let handle = created["diff"]["evidence"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a change must carry a handle to its detail: {created:#?}"))
+        .to_string();
+    assert!(
+        handle.starts_with("kicad://diff/"),
+        "handle must be resolvable: {handle}"
+    );
+
+    let listed = p.request("resources/list", json!({}));
+    let entry = listed["result"]["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["uri"].as_str() == Some(handle.as_str()))
+        .unwrap_or_else(|| panic!("the handle must be listed: {listed:#?}"));
+    assert_eq!(
+        entry["description"].as_str(),
+        Some("document +3"),
+        "a listing must say what the body is, so it can be skipped: {entry:#?}"
+    );
+
+    let read = p.request("resources/read", json!({ "uri": handle }));
+    let text = read["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("resources/read must return the body: {read:#?}"));
+    let pack: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(pack["count"].as_u64(), Some(3), "{pack:#?}");
+    assert_eq!(
+        pack["changes"].as_array().map(Vec::len),
+        Some(3),
+        "the unbounded list is what the handle is for: {pack:#?}"
+    );
+    assert!(
+        pack["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d.as_str() == Some("ev.kicad_sch")),
+        "the pack names the documents it describes: {pack:#?}"
+    );
+
+    // An invented handle must fail loudly. Returning an empty body would read
+    // as "the batch changed nothing", which is the opposite of the truth.
+    let bad = p.request("resources/read", json!({"uri": "kicad://diff/9999"}));
+    let message = bad["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("unknown_handle"),
+        "an unknown handle must be an error with a stable code: {bad:#?}"
     );
 }
 

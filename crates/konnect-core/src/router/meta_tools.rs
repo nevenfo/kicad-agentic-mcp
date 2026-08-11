@@ -540,7 +540,7 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         }
     }
 
-    guard.finish(failed_at.is_some(), &mut body);
+    guard.finish(failed_at.is_some(), &ctx.evidence, &mut body);
 
     if let Some(id) = &operation_id {
         ctx.idempotency.complete(id, body.clone());
@@ -728,7 +728,7 @@ impl BatchGuard {
     }
 
     /// Roll back on failure, then report what changed.
-    fn finish(self, failed: bool, body: &mut Value) {
+    fn finish(self, failed: bool, store: &kam_evidence::EvidenceStore, body: &mut Value) {
         if let Some(reason) = self.unprotected {
             body["unprotected"] = json!(reason);
         }
@@ -766,7 +766,7 @@ impl BatchGuard {
         if changed.is_empty() {
             return;
         }
-        report_diff(&snapshot, &changed, self.diff, body);
+        report_diff(&snapshot, &changed, self.diff, store, body);
         // Project paths are long and identical up to the filename. Factoring
         // the directory out turns four absolute Windows paths into one plus
         // four basenames — the same information for a third of the tokens.
@@ -808,10 +808,16 @@ impl BatchGuard {
 /// Documents with no domain extractor (`.kicad_pro`, `.kicad_prl`) are counted
 /// rather than described. Saying "2 other files changed" is honest; guessing at
 /// their contents is not.
+///
+/// The reply gets the summary and, at `diff: "changes"`, a bounded list. The
+/// unbounded one goes to the evidence store and the reply carries its handle:
+/// a caller that wants to challenge the change reads `kicad://diff/N` once,
+/// and a caller that does not pays eight tokens instead of eight hundred.
 fn report_diff(
     snapshot: &kam_state::Snapshot,
     changed: &[(std::path::PathBuf, kam_state::DocState)],
     level: DiffLevel,
+    store: &kam_evidence::EvidenceStore,
     body: &mut Value,
 ) {
     if level == DiffLevel::None {
@@ -826,6 +832,7 @@ fn report_diff(
     // nothing.
     let mut docs_before = kam_evidence::ItemSet::new();
     let mut docs_after = kam_evidence::ItemSet::new();
+    let mut documents: Vec<String> = Vec::with_capacity(changed.len());
 
     for (path, _) in changed {
         let before = snapshot.before(path);
@@ -841,6 +848,7 @@ fn report_diff(
         if after.is_some() {
             docs_after.insert(kam_evidence::Item::new("document", &name, &name));
         }
+        documents.push(name);
 
         match crate::evidence::diff_document(path, before, after.as_deref()) {
             Some(one) => diff.extend(one),
@@ -857,12 +865,32 @@ fn report_diff(
         return;
     }
 
-    let mut out = json!({ "summary": diff.summary() });
+    let summary = diff.summary();
+    let mut out = json!({ "summary": &summary });
     if level == DiffLevel::Changes && !diff.is_empty() {
         out["changes"] = json!(diff.render_lines(MAX_REPORTED_CHANGES));
     }
     if undescribed > 0 {
         out["undescribed_files"] = json!(undescribed);
+    }
+
+    // The handle is offered whenever there is something behind it. A batch that
+    // only touched files nothing can read has a summary and nothing to fetch,
+    // and a handle to an empty change list would be a link to a disappointment.
+    if !diff.is_empty() {
+        let handle = store.put(
+            "diff",
+            summary.as_str(),
+            json!({
+                "summary": &summary,
+                "count": diff.len(),
+                "documents": documents,
+                "undescribed_files": undescribed,
+                "touched": diff.touched_labels(),
+                "changes": diff.changes,
+            }),
+        );
+        out["evidence"] = json!(handle.uri);
     }
     body["diff"] = out;
 }

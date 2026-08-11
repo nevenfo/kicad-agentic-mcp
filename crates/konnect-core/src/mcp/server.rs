@@ -20,6 +20,14 @@ impl McpServerState {
                 tools: Some(ToolsCapability {
                     list_changed: Some(true),
                 }),
+                // Evidence handles are served here. Neither flag is claimed:
+                // there is no per-resource subscription, and the list changes
+                // silently as batches run — a client re-lists when it follows a
+                // handle it was given, which is the only time it matters.
+                resources: Some(serde_json::json!({
+                    "subscribe": false,
+                    "listChanged": false,
+                })),
                 ..Default::default()
             },
             server_info: ServerInfo {

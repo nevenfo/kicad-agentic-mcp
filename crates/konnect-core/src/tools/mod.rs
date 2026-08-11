@@ -87,6 +87,10 @@ pub struct ToolContext {
     /// after a timeout gets the first outcome back instead of applying it
     /// twice. Shared for the life of the server, like the observer.
     pub idempotency: Arc<kam_state::IdempotencyLedger<serde_json::Value>>,
+    /// Artefacts a reply refers to instead of carrying: the full change list
+    /// behind `kicad://diff/N`, served over MCP `resources/read`. Shared for
+    /// the life of the server so a handle stays resolvable across calls.
+    pub evidence: Arc<kam_evidence::EvidenceStore>,
 }
 
 impl ToolContext {
@@ -99,6 +103,7 @@ impl ToolContext {
             observer: crate::observability::CallObserver::new(None),
             jlcpcb_cache: QueryCache::default(),
             idempotency: Arc::default(),
+            evidence: Arc::default(),
         }
     }
 
@@ -115,6 +120,7 @@ impl ToolContext {
             observer,
             jlcpcb_cache: QueryCache::default(),
             idempotency: Arc::default(),
+            evidence: Arc::default(),
         }
     }
 }

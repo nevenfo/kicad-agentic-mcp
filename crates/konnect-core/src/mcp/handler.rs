@@ -142,8 +142,52 @@ impl McpHandler {
                 Ok(Some(serde_json::to_value(call_result)?))
             }
 
+            // ── Evidence handles ───────────────────────────────────────────
+            // What a batch changed, item by item, lives here rather than in
+            // the batch's reply. The reply carries `kicad://diff/N`; this is
+            // where following it lands.
+            "resources/list" => {
+                let resources = self
+                    .ctx
+                    .evidence
+                    .list()
+                    .into_iter()
+                    .map(|entry| ResourceDescription {
+                        uri: entry.uri(self.ctx.evidence.scheme()),
+                        name: format!("{} {}", entry.kind, entry.id),
+                        description: (!entry.summary.is_empty()).then(|| entry.summary.clone()),
+                        mime_type: Some(RESOURCE_MIME.to_string()),
+                    })
+                    .collect();
+                let result = ListResourcesResult {
+                    resources,
+                    next_cursor: None,
+                };
+                Ok(Some(serde_json::to_value(result)?))
+            }
+
+            "resources/read" => {
+                let params: ReadResourceParams =
+                    serde_json::from_value(req.params.clone().unwrap_or(Value::Null))?;
+                match self.ctx.evidence.get(&params.uri) {
+                    Ok(entry) => {
+                        let result = ReadResourceResult {
+                            contents: vec![ResourceContents {
+                                uri: entry.uri(self.ctx.evidence.scheme()),
+                                mime_type: Some(RESOURCE_MIME.to_string()),
+                                text: serde_json::to_string(&entry.body)?,
+                            }],
+                        };
+                        Ok(Some(serde_json::to_value(result)?))
+                    }
+                    // A handle that aged out is a different failure from one
+                    // that never existed, and an agent deciding whether to
+                    // re-run the check needs to know which it hit.
+                    Err(e) => Err(anyhow::anyhow!("{} ({})", e.message(), e.code())),
+                }
+            }
+
             // ── Unimplemented MCP methods ──────────────────────────────────
-            "resources/list" | "resources/read" => Ok(Some(json!({ "resources": [] }))),
             "prompts/list" => Ok(Some(json!({ "prompts": [] }))),
 
             method => {
