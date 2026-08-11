@@ -10,6 +10,11 @@
 //! * **"Can I undo what I just half-did?"** [`snapshot`] — before-images of a
 //!   directory, written back when a batch fails partway.
 //!
+//! And one a batch executor cannot answer alone: **"what was I doing?"**
+//! [`task`] — objective, constraints, verified facts and failed attempts held
+//! outside any model's context, so a compaction or a model swap does not lose
+//! them.
+//!
 //! Deliberately domain-free: this crate has no idea what a schematic is, and
 //! depends on no `konnect-*` type. It is one of the `kam-*` crates kept
 //! clean-room so the base project underneath can change without rewriting them
@@ -18,7 +23,9 @@
 pub mod ledger;
 pub mod revision;
 pub mod snapshot;
+pub mod task;
 
 pub use ledger::{Claim, IdempotencyLedger};
 pub use revision::{DocState, Revision, ABSENT};
 pub use snapshot::{RestoreReport, Snapshot, SnapshotError, SnapshotLimits, TRACKED_EXTENSIONS};
+pub use task::{FailedAttempt, Progress, TaskError, TaskState, TaskStatus, TaskStore, TaskSummary};

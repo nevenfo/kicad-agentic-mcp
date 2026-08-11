@@ -20,6 +20,7 @@ pub mod sch_hierarchy;
 pub mod sch_wiring;
 pub mod schematic_builder;
 pub mod svg_import;
+pub mod task;
 pub mod templates;
 pub mod verification;
 
@@ -95,6 +96,9 @@ pub struct ToolContext {
     /// computed for, so a batch can report `ERC 4 -> 0` without running the
     /// validator twice.
     pub validation: Arc<crate::evidence::validators::Cache>,
+    /// Objectives, constraints and what has already been tried — the part of a
+    /// session that must outlive any one model's context window.
+    pub tasks: Arc<kam_state::TaskStore>,
 }
 
 impl ToolContext {
@@ -109,6 +113,7 @@ impl ToolContext {
             idempotency: Arc::default(),
             evidence: Arc::default(),
             validation: Arc::default(),
+            tasks: Arc::default(),
         }
     }
 
@@ -127,6 +132,7 @@ impl ToolContext {
             idempotency: Arc::default(),
             evidence: Arc::default(),
             validation: Arc::default(),
+            tasks: Arc::default(),
         }
     }
 }

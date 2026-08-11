@@ -129,6 +129,12 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
         tool_count: 4,
     },
     ToolsetMeta {
+        name: "task",
+        description: "Track an objective across calls: constraints, success criteria, verified facts, failed attempts, evidence — held outside the conversation so a compaction cannot lose them",
+        category: "task",
+        tool_count: 4,
+    },
+    ToolsetMeta {
         name: "manufacturing",
         description: "Design-to-fab pipeline: export Gerber+BOM+positions package, validate for fab house, estimate cost",
         category: "manufacturing",
@@ -158,6 +164,7 @@ pub fn tools_for(name: &str) -> Option<Vec<ToolDef>> {
         "design_review" => Some(design_review::tools()),
         "templates" => Some(templates::tools()),
         "manufacturing" => Some(manufacturing::tools()),
+        "task" => Some(task::tools()),
         _ => None,
     }
 }

@@ -151,6 +151,10 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                         "type": "string",
                         "enum": ["none", "auto"],
                         "description": "auto runs KiCAD's own ERC/DRC on every document the batch changed and reports the counts and the delta. Costs seconds, not milliseconds."
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "description": "From start_task. The batch files its revisions, evidence and failures under the task and the reply carries the refreshed ACTIVE TASK anchor."
                     }
                 },
                 "required": ["calls"]
@@ -559,6 +563,9 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
     if verify == Verify::Auto {
         report_validators(ctx, &changed, &mut body).await;
     }
+    if let Some(task_id) = args["task_id"].as_str() {
+        file_under_task(ctx, task_id, &changed, &mut body);
+    }
 
     if let Some(id) = &operation_id {
         ctx.idempotency.complete(id, body.clone());
@@ -568,6 +575,85 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
     // needs the per-call detail to decide what to retry, and an `is_error`
     // envelope invites clients to discard the body.
     CallToolResult::json(&body)
+}
+
+/// Record what the batch did against the task it belongs to, and hand back the
+/// refreshed anchor.
+///
+/// This is the half of the Task State Manager that does not depend on an agent
+/// remembering to call `update_task`. Revisions, evidence handles and failures
+/// are facts the batch already produced; asking a model to copy them into the
+/// task record would be asking it to do reliably the one thing it does badly.
+///
+/// An unknown `task_id` does not fail the batch: the mutations already
+/// happened, and reporting them as a failure would be a worse lie than
+/// reporting that the filing did not happen.
+fn file_under_task(
+    ctx: &std::sync::Arc<ToolContext>,
+    task_id: &str,
+    changed: &[ChangedDoc],
+    body: &mut Value,
+) {
+    let diff_handle = body["diff"]["evidence"].as_str().map(str::to_string);
+    let validators_handle = body["validators_evidence"].as_str().map(str::to_string);
+    // A verdict from `kicad-cli` is the one kind of "fact" this system is
+    // entitled to call verified, so it goes in as one.
+    let verdicts: Vec<String> = body["validators"]
+        .as_array()
+        .map(|reports| {
+            reports
+                .iter()
+                .filter(|r| r["errors"].is_u64())
+                .map(|r| {
+                    format!(
+                        "{} {}: {} errors, {} warnings",
+                        r["check"].as_str().unwrap_or("?"),
+                        r["document"].as_str().unwrap_or("?"),
+                        r["errors"].as_u64().unwrap_or(0),
+                        r["warnings"].as_u64().unwrap_or(0)
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let failure = body["results"]
+        .as_array()
+        .and_then(|results| results.iter().find(|r| r["ok"].as_bool() == Some(false)))
+        .map(|r| {
+            (
+                r["tool"].as_str().unwrap_or("unknown tool").to_string(),
+                r["error"]
+                    .as_str()
+                    .or_else(|| r["error_kind"].as_str())
+                    .unwrap_or("failed")
+                    .to_string(),
+            )
+        });
+
+    let updated = ctx.tasks.update(task_id, |task| {
+        task.batches += 1;
+        for doc in changed {
+            task.note_revision(doc.path.to_string_lossy(), &doc.after);
+        }
+        if let Some(handle) = &diff_handle {
+            task.attach_evidence(handle);
+        }
+        if let Some(handle) = &validators_handle {
+            task.attach_evidence(handle);
+        }
+        for verdict in &verdicts {
+            task.add_verified_fact(verdict);
+        }
+        if let Some((tool, why)) = &failure {
+            task.add_failed_attempt(tool, why);
+        }
+        Ok(())
+    });
+
+    body["task"] = match updated {
+        Ok((task, ())) => json!({ "id": task.id, "anchor": task.anchor() }),
+        Err(e) => json!({ "id": task_id, "error": e.code() }),
+    };
 }
 
 /// At most this many revisions are reported. A batch that rewrites forty sheets

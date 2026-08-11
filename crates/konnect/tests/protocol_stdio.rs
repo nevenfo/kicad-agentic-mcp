@@ -823,6 +823,115 @@ fn the_change_detail_lives_behind_a_handle_rather_than_in_the_reply() {
     );
 }
 
+/// The objective outlives the conversation, and a batch files itself under it
+/// without being asked to. The point is that the revisions, the evidence handle
+/// and the failure end up in the record because the batch produced them — not
+/// because a model remembered to copy them across.
+#[test]
+fn a_task_collects_what_its_batches_did() {
+    let scratch = Scratch::new("taskstate");
+    let mut p = McpProcess::spawn();
+
+    let started = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "start_task", "args": {
+                "objective": "Build the divider and keep ERC clean",
+                "constraints": ["do not touch the RF section"],
+                "success_criteria": ["ERC = 0"]
+            }}
+        ]}),
+    ));
+    let task_id = started["results"][0]["result"]["task_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("start_task must return an id: {started:#?}"))
+        .to_string();
+    assert!(
+        started["results"][0]["result"]["anchor"]
+            .as_str()
+            .is_some_and(|a| a.contains("ACTIVE TASK") && a.contains("RF section")),
+        "the anchor names the hard constraint: {started:#?}"
+    );
+
+    let applied = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"task_id": task_id, "calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "ts"}}
+        ]}),
+    ));
+    assert_eq!(
+        applied["task"]["id"].as_str(),
+        Some(task_id.as_str()),
+        "{applied:#?}"
+    );
+    assert!(
+        applied["task"]["anchor"].as_str().is_some(),
+        "every batch under a task refreshes the anchor: {applied:#?}"
+    );
+
+    // A failure is filed too, so the next attempt can see the wall it hit.
+    let failed = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"task_id": task_id, "calls": [
+            {"tool": "add_schematic_component", "args": {
+                "schematic": scratch.sch("ts"), "lib_id": "Nonexistent:Part", "reference": "X1"
+            }}
+        ]}),
+    ));
+    assert_eq!(failed["ok"].as_u64(), Some(0), "{failed:#?}");
+
+    let record = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [{"tool": "get_task", "args": {"task_id": task_id}}]}),
+    ));
+    let task = &record["results"][0]["result"]["task"];
+    assert_eq!(task["batches"].as_u64(), Some(2), "{task:#?}");
+    assert!(
+        task["revisions"]
+            .as_object()
+            .is_some_and(|r| r.keys().any(|k| k.ends_with("ts.kicad_sch"))),
+        "the batch's revisions are in the record: {task:#?}"
+    );
+    assert!(
+        task["evidence"].as_array().is_some_and(|e| e
+            .iter()
+            .any(|h| h.as_str().is_some_and(|h| h.starts_with("kicad://diff/")))),
+        "so is the evidence handle: {task:#?}"
+    );
+    assert_eq!(
+        task["failed_attempts"].as_array().map(Vec::len),
+        Some(1),
+        "and so is the failure: {task:#?}"
+    );
+}
+
+/// A task's hard constraints are the one thing this record must not silently
+/// forget, so the bound refuses instead of evicting.
+#[test]
+fn the_task_toolset_costs_nothing_until_it_is_used() {
+    let mut p = McpProcess::spawn();
+    let list = p.request("tools/list", json!({}));
+    let names: Vec<String> = list["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap_or_default().to_string())
+        .collect();
+    for tool in ["start_task", "update_task", "get_task", "list_tasks"] {
+        assert!(
+            !names.contains(&tool.to_string()),
+            "{tool} must not be in the startup catalogue; it is reachable through \
+             kicad_invoke: {names:#?}"
+        );
+    }
+    // Reachable all the same, without a catalogue refresh.
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [{"tool": "list_tasks", "args": {}}]}),
+    ));
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+}
+
 /// Where `kicad-cli` really is, if it is anywhere. The tests that need a real
 /// verdict are pointless without it, and hard-coding one machine's install
 /// path would make them lie on every other machine.
