@@ -208,10 +208,12 @@ Crate plan (new crates are clean-room, no upstream-derived code):
 
 ```
 crates/konnect-*         existing, AGPL, refactored in place
-crates/kam-state         revisions, idempotency, rollback snapshots  (SHIPPED,
-                         MIT OR Apache-2.0, no konnect-* dependency)
-                         Task State Manager lands here next          (new)
-crates/kam-context       Context + Attention Manager  (new)
+crates/kam-state         revisions, idempotency, rollback snapshots and the
+                         Task State Manager + ACTIVE TASK anchor  (SHIPPED,
+                         MIT OR Apache-2.0, no konnect-* dependency; the MCP
+                         skin is konnect-core::tools::task)
+crates/kam-context       Context Manager: budgets, compaction, retrieval (new;
+                         the attention half already lives in kam-state::task)
 crates/kam-plan          Plan IR + compiler + executor contract (new)
 crates/kam-llm           local provider abstraction + router (new)
 crates/kam-evidence      semantic diff over an abstract ItemSet, the bounded
@@ -233,7 +235,7 @@ crates/kam-bench         benchmark runner + metrics schema (new)
 | **C** Baseline benchmark | golden projects + metrics, measured before any refactor | **DONE** — `docs/benchmark.md` |
 | **F** Compact MCP surface | capability index, tool-granular loading, schema compression, gateway | **DONE** — −83.9 % external tokens, 4 MCP calls/task |
 | **D** Domain stabilisation | stable IDs, revisions, snapshots, idempotency, error catalog | **PARTIAL** — revisions, idempotency, atomic batches and the error catalog shipped (`kam-state`, `kicad_invoke`); stable IDs and snapshot handles remain |
-| **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | **PARTIAL** — semantic diff, evidence handles (`kicad://diff/N`, `kicad://evidence/N` over MCP resources) and independent verification (`kicad_invoke verify=`, stable finding ids, revision-keyed baselines) shipped; Task State and ProjectGraph remain |
+| **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | **PARTIAL** — semantic diff, evidence handles (`kicad://diff/N`, `kicad://evidence/N` over MCP resources), independent verification (`kicad_invoke verify=`, stable finding ids, revision-keyed baselines) and the Task State Manager (`kam-state::task`, `task` toolset, ACTIVE TASK anchor) shipped; ProjectGraph remains |
 | **G** Plan IR + deterministic executor | batching, preconditions, postconditions, rollback | TODO |
 | **H** Local AI runtime | provider abstraction, hardware probe, model bench, router | TODO |
 | **I** Custom KiCad gate | only if a measured blocker survives KiCad 11 | TODO |
@@ -296,12 +298,12 @@ See `docs/benchmark.md` for method and full tables.
 
 | | baseline | Phase F | Phase D | now, Phase E | target |
 |---|---|---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 174** | ≤ 2 000 ✗ (by 174) |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 175** | ≤ 2 000 ✗ (by 175) |
 | SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | ≥ baseline ✓ |
 | MCP_CALLS median/task | 11 | 4 | 4 | **4** | ≤ 5 ✓ |
 | CATALOG_TOKENS/task | 8 389 | 0 | 0 | **0** | — |
-| `tools/list` at startup | 1 680 | 1 725 | 1 912 | 1 998 | ≤ ~1 000 ✗ |
-| full catalogue | 22 329 | 22 461 | 22 648 | 22 734 | — |
+| `tools/list` at startup | 1 680 | 1 725 | 1 912 | 2 034 | ≤ ~1 000 ✗ |
+| full catalogue | 22 329 | 22 461 | 22 648 | 23 411 | — |
 | silent stale-state write | possible | possible | refused | **refused** | 0 ✓ |
 | partial batch left on failure | yes | yes | rolled back | **rolled back** | 0 ✓ |
 | mutation without an audit record | yes | yes | yes | **no** | 0 ✓ |
@@ -309,7 +311,9 @@ See `docs/benchmark.md` for method and full tables.
 | retrieval recall @8 | — | 100 % | 100 % | 100 % | ≥ 98 % ✓ |
 | retrieval precision @8 | — | 22.4 % | 22.4 % | 22.4 % | ≥ 60 % ✗ |
 
-The token target is missed by 174, in deliberate trades. Phase D's +38 buys the
+| the objective survives a compaction | no | no | no | **yes** | — |
+
+The token target is missed by 175, in deliberate trades. Phase D's +38 buys the
 stale-write refusal ("silent stale-state write: 0"); Phase E's +125 buys the
 semantic diff, which is what moves "mutations without an audit record" to 0;
 +14 more buys the handle that keeps the audit affordable as it grows. Each is a

@@ -290,16 +290,17 @@ Two additions on top of the semantic diff. The item-by-item detail moved behind
 a handle (`kicad://diff/N`, served over MCP `resources/read`), and `verify:
 "auto"` runs KiCAD's own ERC/DRC on every document a batch changed.
 
-| Metric | Phase E diff | + handles | + validators | Δ vs Phase D |
-|---|---|---|---|---|
-| SUCCESS_RATE | 18/18 | 18/18 | **18/18** | = |
-| EXTERNAL_TOKENS/task | 2 158 | 2 172 | **2 174** | +141 |
-| CATALOG_TOKENS/task | 0 | 0 | **0** | = |
-| MCP_CALLS median/task | 4 | 4 | **4** | = |
-| WALL_CLOCK_P50 (ms) | 64 | 61 | 73 | ≈ |
-| WALL_CLOCK_P95 (ms) | 870 | 886 | 885 | ≈ |
-| `tools/list` at startup | 1 952 | 1 952 | **1 998** | +86, once/session |
-| tests | 567 | 575 | **588** | +63 |
+| Metric | Phase E diff | + handles | + validators | + task state | Δ vs Phase D |
+|---|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | = |
+| EXTERNAL_TOKENS/task | 2 158 | 2 172 | 2 174 | **2 175** | +142 |
+| CATALOG_TOKENS/task | 0 | 0 | 0 | **0** | = |
+| MCP_CALLS median/task | 4 | 4 | 4 | **4** | = |
+| WALL_CLOCK_P50 (ms) | 64 | 61 | 73 | 68 | ≈ |
+| WALL_CLOCK_P95 (ms) | 870 | 886 | 885 | 854 | ≈ |
+| `tools/list` at startup | 1 952 | 1 952 | 1 998 | **2 034** | +122, once/session |
+| full catalogue | 22 688 | 22 688 | 22 734 | **23 411** | +763 |
+| tests | 567 | 575 | 588 | **606** | +81 |
 
 The handle costs **+14 tokens/task** — the URI itself, on mutating batches — and
 nothing at startup. What it buys is that `diff: "changes"`'s `"... 25 more"` now
@@ -326,9 +327,32 @@ run. `fixed: 2` is two finding *ids* that disappeared, not a count that fell —
 the distinction matters because two fixed and two introduced also moves a count
 from 4 to 4.
 
-Running total against the targets: external tokens per task are **174 over** the
-≤ 2 000 target, and startup is **998 over** its ≤ ~1 000 target. Both stay
-recorded as missed. The 174 buys "mutations without an audit record: 0" and the
+### Phase E — what the Task State Manager costs
+
+Four tools (`start_task`, `update_task`, `get_task`, `list_tasks`) and one
+`task_id` argument on `kicad_invoke`. The interesting number is where the cost
+did **not** land:
+
+| | tokens |
+|---|---|
+| the four task tools, at startup | **0** |
+| the four task tools, in the full catalogue | 677 |
+| `task_id` on `kicad_invoke`'s schema, at startup | **36** |
+
+Registering them as a toolset rather than as gateway verbs is what buys that.
+A client that never opens a task pays 36 tokens once; one that does reaches
+them through `kicad_invoke` with no catalogue refresh, which is the case the
+gateway exists for. A stdio test asserts none of the four appear in the startup
+catalogue *and* that they are callable anyway, so the property cannot regress
+into a convenience.
+
+Per task the suite is unchanged (2 175, within noise of 2 174) because the
+golden tasks do not open a task. A batch that does pays the anchor — roughly 40
+tokens — on each reply.
+
+Running total against the targets: external tokens per task are **175 over** the
+≤ 2 000 target, and startup is **1 034 over** its ≤ ~1 000 target. Both stay
+recorded as missed. The 175 buys "mutations without an audit record: 0" and the
 handle that keeps the audit affordable; the startup figure is a once-per-session
 cost against a per-task saving of ~10 000.
 

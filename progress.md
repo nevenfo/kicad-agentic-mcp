@@ -17,14 +17,13 @@ verification that comes from KiCad rather than from the agent's own opinion.
 **E** — world model / task state / evidence. A (bootstrap), B (cartography),
 C (baseline benchmark) and F (compact surface) are done; D shipped revisions,
 idempotency, transactional batches and the error catalog. Semantic diff,
-evidence handles and independent verification are in. Task State and
-ProjectGraph are not.
+evidence handles, independent verification and the Task State Manager are in.
+ProjectGraph is not.
 
 ## CURRENT TASK
 
-A batch now describes its change, hands out a handle to the detail, and can
-prove the design still holds (`crates/kam-evidence`,
-`crates/konnect-core/src/evidence/`):
+A batch now describes its change, hands out a handle to the detail, can prove
+the design still holds, and files itself under the task it belongs to:
 
 * `kam-evidence` — clean-room, MIT OR Apache-2.0, knows nothing about KiCAD.
   `diff` matches items by stable key so re-serialisation noise is removed
@@ -38,12 +37,22 @@ prove the design still holds (`crates/kam-evidence`,
   `verify` (`none` / `auto`). The reply carries `kicad://diff/N` and, when
   verified, `kicad://evidence/N`; both resolve over MCP `resources/read`,
   which until now returned an empty array.
+* `kam-state::task` — the objective, constraints, verified facts, failed
+  attempts and evidence handles, held outside any model's context. The ACTIVE
+  TASK anchor is rendered from the record on every read, never stored, so a
+  reminder cannot drift from what it reminds about. Hard constraints are
+  *refused* at the bound rather than evicted.
+* `konnect-core::tools::task` — four tools in their own toolset, so they cost
+  **zero** startup tokens and are reached through `kicad_invoke`.
+  `kicad_invoke(task_id=…)` files the batch's revisions, evidence and failures
+  under the task by itself and returns the refreshed anchor.
 
-**2 174 external tokens/task, 4 MCP calls, 18/18, 588 tests.** Startup surface
-1 952 → 1 998, once per session. `verify` costs ~1.1 s per batch on a real
-project, measured, which is why it is opt-in.
+**2 175 external tokens/task, 4 MCP calls, 18/18, 606 tests.** Startup surface
+1 952 → 2 034, once per session, of which 36 is `task_id` and 0 is the task
+tools. `verify` costs ~1.1 s per batch on a real project, measured, which is
+why it is opt-in.
 
-Next in Phase E: the Task State Manager, then Plan IR.
+Next in Phase E: Plan IR, then ProjectGraph.
 
 ---
 
@@ -71,9 +80,10 @@ Next in Phase E: the Task State Manager, then Plan IR.
 [x] Semantic diff                                           -> kam-evidence + konnect-core::evidence, 2 158 tk/task
 [x] Handles / resources / evidence packs                    -> kicad://diff/N + kicad://evidence/N, MCP resources
 [x] Independent verification (ERC/DRC in the reply)         -> verify: auto, stable finding ids, cached baselines
+[x] Task State Manager                                      -> kam-state::task + task toolset, 0 startup tokens
+[x] Attention anchor (ACTIVE TASK), rendered from the record -> TaskState::anchor, ~40 tk
 [ ] ProjectGraph / World Model
-[ ] Task State Manager
-[ ] Context Manager + Attention Manager (ACTIVE TASK anchor)
+[ ] Context Manager (budgets, compaction, retrieval)
 [ ] Plan IR + deterministic executor + batching
 [ ] Direct mode / Agent mode split
 [ ] Local model provider, hardware probe, model benchmark, router
@@ -247,6 +257,42 @@ admitting the gap.
 Found by `bench/probes/semantic_diff.yaml` on a real project, not by review —
 the unit tests all passed, because none of them created a project.
 
+### D20 — the task tools are a toolset, not gateway verbs (2026-08-11)
+
+D9 said a verb earns its place when there is state behind it, and the Task
+State Manager is state. Four always-visible meta-tools would still have cost
+every client a few hundred startup tokens per session, including every client
+that never opens a task — on a startup number already 1 000 over target.
+
+As a registry toolset they cost **zero** at startup: `find_capabilities` finds
+them by intent and `kicad_invoke` calls them without a catalogue refresh, which
+is precisely the case the gateway was built for. Measured: startup went
+1 998 → 2 034, and **all 36 tokens of that are the `task_id` property on
+`kicad_invoke`**, not the tools. A stdio test asserts both halves — that none of
+the four appear in the startup catalogue, and that they are callable anyway —
+so the property cannot decay into a convenience.
+
+### D21 — the anchor is rendered, and batches file themselves (2026-08-11)
+
+Two related choices about who is trusted to remember what.
+
+`TaskState::anchor()` builds the ACTIVE TASK block from the record on every
+read, and the block is never stored. A cached anchor could disagree with the
+task it describes, and a model paraphrasing its own objective back into its own
+prompt is the exact drift the Task State Manager exists to prevent.
+
+`kicad_invoke(task_id=…)` attaches the batch's revisions, evidence handles,
+`kicad-cli` verdicts and failures to the task without being asked. These are
+facts the batch already produced; routing them through "the agent calls
+`update_task` afterwards" would make the audit trail depend on the one thing a
+model does least reliably. `update_task` stays for the things only the caller
+knows — subgoals, assumptions, what to stop trying.
+
+One consequence recorded rather than hidden: an unknown `task_id` does **not**
+fail the batch. The mutations already happened, and reporting them as a failure
+would be a worse lie than reporting that the filing did not happen. The reply
+carries `task: {id, error: "unknown_task"}`.
+
 ### D16 — an expired handle is not an unknown one (2026-08-11)
 
 The evidence store is bounded, so a handle can outlive its body. `get()` could
@@ -319,18 +365,20 @@ Full detail and method: **`docs/benchmark.md`**. Headline:
 | Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Δ vs baseline |
 |---|---|---|---|---|---|
 | SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | = |
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 174** | **−82.4 %** |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 175** | **−82.4 %** |
 | CATALOG_TOKENS/task | 8 389 | 0 | 0 | **0** | −100 % |
 | MCP_CALLS median/task | 11 | 4 | 4 | **4** | −7 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 73 ms | ≈ |
-| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 885 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 1 998 tk | +318 (once per session) |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 68 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 854 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 2 034 tk | +354 (once per session) |
 
 Phase D bought preconditions, idempotency and rollback for **+38 tokens/task**
 and **+187 startup tokens**. Phase E bought the semantic diff (+125/task, +40
 startup), the evidence handle (+14/task, +0 startup) and independent
 verification (+0/task on this suite, +46 startup — the suite does not call
-`verify`). All of it moves the startup number further from its ≤ ~1 000 target
+`verify`) and the Task State Manager (+0/task, +36 startup, and **0** for the
+four task tools themselves because they are a toolset rather than gateway
+verbs). All of it moves the startup number further from its ≤ ~1 000 target
 and the per-task number further from ≤ 2 000; both targets are recorded as
 missed rather than moved, and no win is netted off against them.
 
@@ -347,8 +395,8 @@ partly re-spent on the gateway verbs, which pay for themselves after the first
 task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
-`cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → **588 passed, 0
-failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
+`cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → **606
+passed, 0 failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
 ---
@@ -518,29 +566,29 @@ not silently accumulate more.
 ## NEXT ACTION
 
 A batch can now be rolled back, describe itself, hand out a handle to the
-detail, and prove against KiCAD's own validators that the design still holds.
-That closes the evidence half of Phase E. Continue in this order:
+detail, prove against KiCAD's own validators that the design still holds, and
+file all of that under a task that outlives any model's context. That closes
+the evidence and task halves of Phase E. Continue in this order:
 
-1. **Task State Manager** (`kam-state` grows a task module). Objective,
-   constraints, verified facts, failed attempts, forbidden repeats — outside
-   the LLM context, so a compaction or a model swap cannot lose them. The
-   evidence handles are the natural contents of `evidence_handles:`.
-2. **Attention anchor.** A ~40-token `ACTIVE TASK` block rendered
-   deterministically from the Task State, appended to every local prompt. Has
-   no consumer until H, so it lands with the Task State and stays untested
-   until then — note that when it ships.
-3. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which already has the
+1. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which already has the
    three properties a plan executor needs: preconditions (`base_revisions`),
    atomicity (`atomic`), identity (`operation_id`). Retrieval precision at
    22.4 % is the open weakness a compiled plan is meant to fix, because a plan
-   names its own capabilities instead of guessing them per step.
-4. **ProjectGraph / World Model** — last of Phase E, and the least urgent: the
+   names its own capabilities instead of guessing them per step. This is also
+   the highest-value item left on the priority list: it is the lever on
+   `LLM_CALLS_PER_SUCCESSFUL_TASK`, which nothing shipped so far touches.
+2. **Capability matrix** (`docs/capability-matrix.md`, generated). Still the
+   oldest unticked TODO, and three open defects (**E7**, **E8**, unlabelled
+   advisory tools) are all waiting on it. Cheap next to Plan IR and it unblocks
+   honest scope reporting.
+3. **ProjectGraph / World Model** — last of Phase E, and the least urgent: the
    diff and the validators already answer most of what an agent would ask a
    graph for.
 
-Still do not start the local model runtime (H). The proof path exists now, but
-nothing yet keeps a *task* alive across turns, and an accelerated loop with no
-task memory would rediscover its own objective every iteration.
+Still do not start the local model runtime (H). The anchor now exists but has
+**no local consumer** — it is exercised only through the MCP reply, so its real
+job (surviving a 40-turn local trajectory) is untested. Plan IR is what makes
+that trajectory short enough to be worth testing.
 
 Open defects to fold into later work rather than patch separately: **E6**
 (power symbols do not snap to the 1.27 mm grid) belongs with the geometry pass;
