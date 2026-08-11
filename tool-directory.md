@@ -9,12 +9,13 @@ Canonical reference for every MCP tool exposed by Konnect. Generated from the Ru
 
 ## Overview
 
-- **18 toolsets** organized into 10 categories
-- **187 registered tools** + **10 always-visible meta-tools** = **197 total**
-- **Three ways to reach a tool**, cheapest last:
+- **20 toolsets** organized into 12 categories
+- **193 registered tools** + **10 always-visible meta-tools** = **203 total**
+- **Four ways to reach a tool**, cheapest last:
   1. **Toolset loading** — `list_toolboxes` → `load_toolset(name)` exposes a whole domain in `tools/list`; `unload_toolset(name)` prunes it. Coarse, and every load makes the client re-fetch the entire catalogue.
   2. **Tool loading** — `find_capabilities(intent)` → `load_tools([names])` exposes exactly the tools named. Same refresh, far less of it.
-  3. **The gateway** — `kicad_describe([names])` → `kicad_invoke([calls])` calls tools *without* exposing them at all. The catalogue never changes, so no refresh happens, and a whole sequence fits in one round trip. Measured on the golden suite: 1 995 external tokens per task and 4 MCP calls, against 3 197 / 10 for path 2 and 12 373 / 11 for path 1.
+  3. **The gateway** — `kicad_describe([names])` → `kicad_invoke([calls])` calls tools *without* exposing them at all. The catalogue never changes, so no refresh happens, and a whole sequence fits in one round trip. Measured on the golden suite: 2 171 external tokens per task and 4 MCP calls, against 3 770 / 10 for path 2 and 10 912 / 11 for path 1.
+  4. **A plan** — `kicad_invoke([{tool: "apply_plan", …}])` describes the change once instead of enumerating it, and one operation may expand to many calls. Measured on the same divider: 1 124 external tokens against the batch's 2 180; on a four-capacitor decoupling bank, 882 against 2 265. See `docs/benchmark.md`, "Phase G".
 - **Startup surface**: the server pre-loads only the **starter kit** (`project`) plus two individually admitted config read tools, so baseline `tools/list` costs ~1.7K tokens instead of ~22K. If the LLM calls an unloaded tool by name, the error names the owning toolset so recovery is a single `load_toolset` hop.
 - **Observability**: every `tools/call` is recorded — ring buffer of the last 100 calls + per-tool counters + JSONL at `<konnect dir>/logs/calls.jsonl`. Calls made inside a `kicad_invoke` batch are recorded individually under their own tool names. The LLM self-diagnoses via `get_recent_calls` and `server_stats`.
 
@@ -33,9 +34,9 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 
 | Tool | Purpose |
 |------|---------|
-| `find_capabilities` | Search all 187 tools by plain-language intent; returns name + toolset + one-line summary. |
+| `find_capabilities` | Search all 193 tools by plain-language intent; returns name + toolset + one-line summary. |
 | `load_tools` | Expose specific tools by name without loading their toolset. |
-| `list_toolboxes` | List all 18 toolsets with category, tool count, and whether each is currently loaded. |
+| `list_toolboxes` | List all 20 toolsets with category, tool count, and whether each is currently loaded. |
 | `load_toolset` | Load a toolset by name to expose its tools in `tools/list`. Returns the list of tools added. |
 | `unload_toolset` | Unload a toolset to prune its tools from `tools/list`. Use when switching tasks to keep context small. |
 | `get_active_toolsets` | Return the currently loaded toolsets and how many tools each provides. |
@@ -402,6 +403,38 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `export_manufacturing_package` | Generate ALL files needed for PCB fab + assembly in one call: Gerbers, drill, fab-house BOM, pick-and-place. Targets JLCPCB, PCBWay, etc. |
 | `validate_for_manufacturing` | Pre-flight check before ordering: verifies the design is ready for the target fab house (board outline, design rules, BOM completeness, assembly constraints). |
 | `estimate_cost` | Estimate total manufacturing cost (PCB + components + assembly) with itemized breakdown. |
+
+---
+
+## Plan
+
+### `plan` · 2 tools
+**Purpose:** Compile and run a plan: one operation expands to many grid-snapped tool calls, a later one may use an earlier one's result, and a plan that cannot finish is refused before it starts.
+**Source:** [`crates/konnect-core/src/tools/plan.rs`](crates/konnect-core/src/tools/plan.rs) · IR in [`crates/kam-plan`](crates/kam-plan) · operations in [`crates/konnect-core/src/plan/ops.rs`](crates/konnect-core/src/plan/ops.rs)
+
+| Tool | Description |
+|------|-------------|
+| `preview_plan` | Compile a plan and return the exact tool calls it would run, changing nothing. The same compile that would execute produces the listing, so what is reviewed is what runs. |
+| `apply_plan` | Compile a plan and run it. Call it through `kicad_invoke` so the plan inherits the batch's snapshot, rollback, semantic diff and `verify`. Every inner step is recorded in the call log under its own name. |
+
+Operations: `call` (any tool, verbatim), `place`, `power`, `label`, `wire`, `connect`, `decouple`. Every coordinate an operation emits is snapped to the 1.27 mm grid before it reaches a tool, which is what makes E6 — a power symbol written 0.33 mm off its pin, with no tool error anywhere — unreachable inside a plan.
+
+---
+
+## Task
+
+### `task` · 4 tools
+**Purpose:** Track an objective across calls: constraints, success criteria, verified facts, failed attempts, evidence — held outside the conversation so a compaction cannot lose them.
+**Source:** [`crates/konnect-core/src/tools/task.rs`](crates/konnect-core/src/tools/task.rs) · state in [`crates/kam-state`](crates/kam-state)
+
+| Tool | Description |
+|------|-------------|
+| `start_task` | Open a task: objective, hard constraints, success criteria. Returns a `task_id` and the ACTIVE TASK anchor. |
+| `update_task` | Append to the record — subgoal, progress, verified facts, assumptions, unresolved items, a failed attempt, an approach to stop retrying, a new status. |
+| `get_task` | The full record plus the anchor. What to read after a compaction. |
+| `list_tasks` | Id, truncated objective, status and progress for every task this session knows about. |
+
+`kicad_invoke(task_id=…)` files a batch's revisions, evidence handles and failures under the task by itself; `update_task` is for what only the caller knows.
 
 ---
 

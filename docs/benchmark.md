@@ -356,6 +356,85 @@ recorded as missed. The 175 buys "mutations without an audit record: 0" and the
 handle that keeps the audit affordable; the startup figure is a once-per-session
 cost against a per-task saving of ~10 000.
 
+### Phase G — what a plan costs against the batch it replaces
+
+The golden suite measures the server. It cannot measure a plan, because it is a
+scripted oracle: it already knows the exact calls, so it can never pay for not
+knowing them. `bench/plan_cost.py` measures the claim directly instead — the
+same design built twice by a fresh server, once as an enumerated batch and once
+as a plan, with `verify: "auto"` on both, and the run is void unless the two
+produce the same semantic diff and the same ERC verdict.
+
+Both shapes are given **the same pre-snapped coordinates**. The plan would also
+accept the round numbers a person types and snap them, where the batch would
+write them verbatim and fail ERC (E6); that advantage is real and deliberately
+kept out of these numbers.
+
+Median of 3, tiktoken `o200k_base`, excluding the handshake and the startup
+catalogue, which are identical in both shapes:
+
+| | divider batch | divider plan | | bank batch | bank plan |
+|---|---|---|---|---|---|
+| MCP calls | 2 | 2 | | 2 | 2 |
+| request tokens | 517 | **470** (−9.1 %) | | 767 | **236** (−69.2 %) |
+| response tokens | 1 663 | **654** (−60.7 %) | | 1 498 | **646** (−56.9 %) |
+| external tokens | 2 180 | **1 124** (−48.4 %) | | 2 265 | **882** (−61.1 %) |
+| wall clock | 2 325 ms | 2 282 ms | | 2 311 ms | 2 338 ms |
+| ERC errors | 0 | 0 | | 2 | 2 |
+| semantic diff | identical | identical | | identical | identical |
+
+Attributed, because "half the tokens" is not a claim until it says which half
+paid (first run of each):
+
+| | schemas req/resp | the change itself req/resp |
+|---|---|---|
+| divider, batch | 35 / 814 | 476 / 841 |
+| divider, plan | 17 / **393** | 453 / **262** |
+| bank, batch | 25 / 475 | 732 / 1 022 |
+| bank, plan | 17 / **393** | **225** / **256** |
+
+Two different savings, and they are worth separating:
+
+* **The divider's saving is structural.** Five tool schemas become one (814 →
+  393) and six per-call results become one execution summary (841 → 262). The
+  request barely moves — 476 → 453 — because every coordinate in a divider is
+  data the caller chose, and a plan does not compress data. That null result is
+  the honest half of this table.
+* **The bank's saving is the macro.** One `decouple` operation replaces nine
+  calls, and the eight power-symbol positions it computes are eight positions
+  the caller never writes down: 732 → 225 request tokens, −69.2 %. This is
+  where a plan stops being a nicer wrapper and starts removing work.
+
+The bank is a fragment rather than a finished design — a rail with no source is
+not driven, so both shapes report ERC 2. They report the *same* 2 on the same
+twelve symbols, which is what makes the comparison like for like; the script
+voids the run if they ever diverge.
+
+Two things this does **not** measure, and neither should be read into it:
+
+* **`LLM_CALLS_PER_SUCCESSFUL_TASK` is still unmeasured.** There is no model in
+  this loop. What is measured is that the payload a model would have to emit and
+  read is between a half and a third of the size, and that a nine-call sequence
+  can be emitted as one operation — the mechanism by which the call count would
+  fall, not the fall itself. That number needs Phase H.
+* **Retrieval precision (22.4 %) is untouched.** A plan names its own
+  capabilities instead of searching for them per step, which is why it was
+  expected to help; but a caller still has to find `apply_plan` once. The
+  measurement of that belongs with the capability matrix.
+
+Per-task cost on the golden suite is **2 171** (was 2 175 — within noise; the
+suite never opens a plan), startup `tools/list` is **2 034 — unchanged**, and
+the full catalogue grew 23 411 → 24 082 for the two plan tools. That the startup
+number did not move is the design working: the `plan` toolset costs nothing
+until it is used, and a stdio test asserts both halves of that.
+
+One number in this document was stale and is corrected rather than quietly
+updated: the intermediate `tools` load mode now measures **3 770** tokens per
+task, not the 3 197 recorded at Phase F. The drift is Phase D/E's meta-tool
+growth being re-sent on each `tools/list` refresh (+580 startup × one refresh),
+not this change — the golden suite never loads the plan toolset, which
+`bench/results/fork-phaseG-plan-tools.json` shows directly.
+
 ### Where the baseline's tokens went
 
 From `bench/analyze.py` on the 18-run baseline:
@@ -422,6 +501,7 @@ python bench\surface.py --server .\target\release\konnect.exe --label mine
 python bench\runner.py  --server .\target\release\konnect.exe --label mine --repeat 3 --load-mode gateway
 python bench\analyze.py bench\results\latest-tasks.json
 python bench\probe.py   --server .\target\release\konnect.exe --script bench\probes\divider.yaml
+python bench\plan_cost.py --server .\target\release\konnect.exe --repeat 3
 ```
 
 `bench/konnect.bench.toml` pins the `kicad-cli` path. Relying on `PATH` made

@@ -1,0 +1,290 @@
+{
+  "divider": {
+    "batch": [
+      {
+        "scenario": "divider",
+        "shape": "batch",
+        "mcp_calls": 2,
+        "request_tokens": 511,
+        "response_tokens": 1655,
+        "external_tokens": 2166,
+        "wall_ms": 46086.7573000005,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 35,
+            "response": 814
+          },
+          "kicad_invoke": {
+            "request": 476,
+            "response": 841
+          }
+        },
+        "erc_errors": 0,
+        "ok": 6,
+        "diff": "document +3, label +1, symbol +6, wire +1",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-divider-batch-m48qviml"
+      },
+      {
+        "scenario": "divider",
+        "shape": "batch",
+        "mcp_calls": 2,
+        "request_tokens": 517,
+        "response_tokens": 1663,
+        "external_tokens": 2180,
+        "wall_ms": 2315.2068999997937,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 35,
+            "response": 814
+          },
+          "kicad_invoke": {
+            "request": 482,
+            "response": 849
+          }
+        },
+        "erc_errors": 0,
+        "ok": 6,
+        "diff": "document +3, label +1, symbol +6, wire +1",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-divider-batch-5oelsxo8"
+      },
+      {
+        "scenario": "divider",
+        "shape": "batch",
+        "mcp_calls": 2,
+        "request_tokens": 517,
+        "response_tokens": 1667,
+        "external_tokens": 2184,
+        "wall_ms": 2324.6514000002207,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 35,
+            "response": 814
+          },
+          "kicad_invoke": {
+            "request": 482,
+            "response": 853
+          }
+        },
+        "erc_errors": 0,
+        "ok": 6,
+        "diff": "document +3, label +1, symbol +6, wire +1",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-divider-batch-5fao0738"
+      }
+    ],
+    "plan": [
+      {
+        "scenario": "divider",
+        "shape": "plan",
+        "mcp_calls": 2,
+        "request_tokens": 470,
+        "response_tokens": 655,
+        "external_tokens": 1125,
+        "wall_ms": 2318.3248000004824,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 17,
+            "response": 393
+          },
+          "kicad_invoke": {
+            "request": 453,
+            "response": 262
+          }
+        },
+        "erc_errors": 0,
+        "ok": 1,
+        "diff": "document +3, label +1, symbol +6, wire +1",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-divider-plan-n5vqqr6n"
+      },
+      {
+        "scenario": "divider",
+        "shape": "plan",
+        "mcp_calls": 2,
+        "request_tokens": 470,
+        "response_tokens": 654,
+        "external_tokens": 1124,
+        "wall_ms": 2278.8878999999724,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 17,
+            "response": 393
+          },
+          "kicad_invoke": {
+            "request": 453,
+            "response": 261
+          }
+        },
+        "erc_errors": 0,
+        "ok": 1,
+        "diff": "document +3, label +1, symbol +6, wire +1",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-divider-plan-mzrw8w7h"
+      },
+      {
+        "scenario": "divider",
+        "shape": "plan",
+        "mcp_calls": 2,
+        "request_tokens": 465,
+        "response_tokens": 654,
+        "external_tokens": 1119,
+        "wall_ms": 2282.2075999993103,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 17,
+            "response": 393
+          },
+          "kicad_invoke": {
+            "request": 448,
+            "response": 261
+          }
+        },
+        "erc_errors": 0,
+        "ok": 1,
+        "diff": "document +3, label +1, symbol +6, wire +1",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-divider-plan-cnkqkczb"
+      }
+    ]
+  },
+  "bank": {
+    "batch": [
+      {
+        "scenario": "bank",
+        "shape": "batch",
+        "mcp_calls": 2,
+        "request_tokens": 757,
+        "response_tokens": 1497,
+        "external_tokens": 2254,
+        "wall_ms": 2294.6592999996938,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 25,
+            "response": 475
+          },
+          "kicad_invoke": {
+            "request": 732,
+            "response": 1022
+          }
+        },
+        "erc_errors": 2,
+        "ok": 10,
+        "diff": "document +3, symbol +12",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-bank-batch-q41br5tx"
+      },
+      {
+        "scenario": "bank",
+        "shape": "batch",
+        "mcp_calls": 2,
+        "request_tokens": 767,
+        "response_tokens": 1501,
+        "external_tokens": 2268,
+        "wall_ms": 2311.4470999998957,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 25,
+            "response": 475
+          },
+          "kicad_invoke": {
+            "request": 742,
+            "response": 1026
+          }
+        },
+        "erc_errors": 2,
+        "ok": 10,
+        "diff": "document +3, symbol +12",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-bank-batch-3yz2voyr"
+      },
+      {
+        "scenario": "bank",
+        "shape": "batch",
+        "mcp_calls": 2,
+        "request_tokens": 767,
+        "response_tokens": 1498,
+        "external_tokens": 2265,
+        "wall_ms": 2316.795400000956,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 25,
+            "response": 475
+          },
+          "kicad_invoke": {
+            "request": 742,
+            "response": 1023
+          }
+        },
+        "erc_errors": 2,
+        "ok": 10,
+        "diff": "document +3, symbol +12",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-bank-batch-q8pky1ga"
+      }
+    ],
+    "plan": [
+      {
+        "scenario": "bank",
+        "shape": "plan",
+        "mcp_calls": 2,
+        "request_tokens": 242,
+        "response_tokens": 649,
+        "external_tokens": 891,
+        "wall_ms": 2447.5888999986637,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 17,
+            "response": 393
+          },
+          "kicad_invoke": {
+            "request": 225,
+            "response": 256
+          }
+        },
+        "erc_errors": 2,
+        "ok": 1,
+        "diff": "document +3, symbol +12",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-bank-plan-2cp9_5a1"
+      },
+      {
+        "scenario": "bank",
+        "shape": "plan",
+        "mcp_calls": 2,
+        "request_tokens": 236,
+        "response_tokens": 644,
+        "external_tokens": 880,
+        "wall_ms": 2338.0808000001707,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 17,
+            "response": 393
+          },
+          "kicad_invoke": {
+            "request": 219,
+            "response": 251
+          }
+        },
+        "erc_errors": 2,
+        "ok": 1,
+        "diff": "document +3, symbol +12",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-bank-plan-rmnhupmg"
+      },
+      {
+        "scenario": "bank",
+        "shape": "plan",
+        "mcp_calls": 2,
+        "request_tokens": 236,
+        "response_tokens": 646,
+        "external_tokens": 882,
+        "wall_ms": 2301.785099999506,
+        "breakdown": {
+          "kicad_describe": {
+            "request": 17,
+            "response": 393
+          },
+          "kicad_invoke": {
+            "request": 219,
+            "response": 253
+          }
+        },
+        "erc_errors": 2,
+        "ok": 1,
+        "diff": "document +3, symbol +12",
+        "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-plancost-bank-plan-738g2zul"
+      }
+    ]
+  }
+}

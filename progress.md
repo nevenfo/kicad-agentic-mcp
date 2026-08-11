@@ -14,13 +14,49 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 ## CURRENT PHASE
 
-**E** — world model / task state / evidence. A (bootstrap), B (cartography),
+**G** — Plan IR and the deterministic executor. A (bootstrap), B (cartography),
 C (baseline benchmark) and F (compact surface) are done; D shipped revisions,
-idempotency, transactional batches and the error catalog. Semantic diff,
-evidence handles, independent verification and the Task State Manager are in.
-ProjectGraph is not.
+idempotency, transactional batches and the error catalog; E shipped the semantic
+diff, evidence handles, independent verification and the Task State Manager, and
+still owes ProjectGraph. G has shipped the IR, the compiler, the KiCAD operation
+library and the `plan` toolset; the plan's own `validators` list is carried but
+not yet executed by the plan itself.
 
 ## CURRENT TASK
+
+A change can now be described once instead of enumerated, and a description that
+cannot finish is refused before the first mutation:
+
+* `kam-plan` — clean-room, MIT OR Apache-2.0, knows nothing about KiCAD. `ir` is
+  the plan document; `refs` resolves `${op.field}` so a later operation reads an
+  earlier one's output instead of round-tripping through the model; `compile`
+  expands each operation through an `OpLibrary` and **refuses a reference that
+  names an operation which does not exist, runs later, or is itself**; `execute`
+  is a state machine the async host drives, so the crate needs no runtime.
+* `konnect-core::plan` — the KiCAD half: `call`, `place`, `power`, `label`,
+  `wire`, `connect`, `decouple`. Every coordinate an operation emits is snapped
+  to the 1.27 mm grid before it reaches a tool, which makes **E6 unreachable
+  inside a plan**: the same off-grid input that produced six ERC errors produces
+  none, asserted end to end against real `kicad-cli`.
+* `konnect-core::tools::plan` — `preview_plan` (compile, list the calls, change
+  nothing) and `apply_plan` (compile and run). A toolset, not gateway verbs, so
+  **0 startup tokens**; run inside `kicad_invoke` so a plan inherits the batch's
+  snapshot, rollback, diff, `verify` and task filing, and every inner step is
+  written to the call log under its own name.
+
+**Measured** (`bench/plan_cost.py`, same design built both ways, void unless the
+semantic diff and the ERC verdict match): divider **2 180 → 1 124** external
+tokens (−48.4 %), decoupling bank **2 265 → 882** (−61.1 %, and −69.2 % on the
+request alone). Golden suite unchanged at **2 171 tk/task, 4 MCP calls, 18/18**;
+startup **2 034 — unchanged**; **682 tests**.
+
+`LLM_CALLS_PER_SUCCESSFUL_TASK` is still unmeasured and is not claimed.
+
+Next: the capability matrix, then ProjectGraph.
+
+---
+
+## PREVIOUS TASK — Phase E, task state
 
 A batch now describes its change, hands out a handle to the detail, can prove
 the design still holds, and files itself under the task it belongs to:
@@ -52,8 +88,6 @@ the design still holds, and files itself under the task it belongs to:
 tools. `verify` costs ~1.1 s per batch on a real project, measured, which is
 why it is opt-in.
 
-Next in Phase E: Plan IR, then ProjectGraph.
-
 ---
 
 ## TODO
@@ -84,7 +118,9 @@ Next in Phase E: Plan IR, then ProjectGraph.
 [x] Attention anchor (ACTIVE TASK), rendered from the record -> TaskState::anchor, ~40 tk
 [ ] ProjectGraph / World Model
 [ ] Context Manager (budgets, compaction, retrieval)
-[ ] Plan IR + deterministic executor + batching
+[x] Plan IR + compiler + reference checking                 -> kam-plan, 46 tests
+[x] Deterministic executor + operation library + batching   -> plan toolset, -48.4 % / -61.1 %
+[ ] Plan-owned postconditions (the `validators` list is carried, not run)
 [ ] Direct mode / Agent mode split
 [ ] Local model provider, hardware probe, model benchmark, router
 [ ] Error catalog completeness, retries, recovery policy
@@ -293,6 +329,65 @@ fail the batch. The mutations already happened, and reporting them as a failure
 would be a worse lie than reporting that the filing did not happen. The reply
 carries `task: {id, error: "unknown_task"}`.
 
+### D22 — a plan is refused at compile time, not discovered at step 4 (2026-08-11)
+
+`compile` could have resolved references lazily and failed at the step that
+needed one. It does not. Every `${op.field}` is checked against the operations
+that will have run by then, *before* the first mutation, so a plan that cannot
+finish never starts — the same order of business as `check_base_revisions`
+running before the idempotency key is claimed.
+
+Unknown and forward references are separate errors on purpose: one is fixed by
+renaming, the other by reordering, and a single "bad reference" would make the
+caller guess which. What the compiler deliberately does **not** check is whether
+the referenced *field* will exist in the run-time output — that would mean
+modelling every tool's result shape here. It stays a step failure with the
+reference named, which is honest about which half was proved.
+
+### D23 — plan operations refuse a coordinate they cannot snap (2026-08-11)
+
+The one guarantee the operation library makes is that every coordinate it emits
+is on the 1.27 mm grid. A `${prev.x}` in a coordinate field would put a hole in
+it: the value only exists at run time, and the snap happens at compile time.
+
+Passing such a value through unsnapped was the obvious choice and is the wrong
+one — it would make the guarantee true *usually*, which is the same as not
+having it, and E6 is precisely a bug that only bites usually. So a coordinate
+must be a number, and the error says to use `call` for the other case. That
+keeps references for identifiers, where they belong.
+
+### D24 — `decouple` places and wires; it does not review (2026-08-11)
+
+The macro computes positions, connections and ground symbols for a bank of
+capacitors. It has no opinion on whether 100 nF is right for that rail, whether
+four is enough, or whether the placement is good, and it says so in its own
+documentation rather than implying competence by silence.
+
+This is the same rule as E7 one level up: an internal routine must not be the
+thing that says a design is sound. `kicad_invoke(verify: "auto")` gets that
+verdict from `kicad-cli` or the plan does not carry one.
+
+`ic` is required only when a capacitor names a `pin`, because a bank that all
+sits on a rail wires to no IC — a schema demanding a name it will never use is
+a schema asking for a fact to satisfy itself.
+
+### D25 — the plan runs inside `kicad_invoke` rather than beside it (2026-08-11)
+
+`apply_plan` could have compiled and handed the calls back for the caller to
+pass to `kicad_invoke`. That costs a round trip *and* makes the caller pay
+tokens for the full expansion, which is the cost a plan exists to remove — on
+the decoupling bank it would have re-introduced the 732-token payload the plan
+reduces to 225.
+
+Running the steps inside the batch means the plan inherits the snapshot, the
+rollback, `base_revisions`, the semantic diff, the `verify` verdict and the task
+filing without re-implementing any of them: a plan is one MCP call and still a
+transaction. The cost is that `apply_plan` dispatches tools itself, so it is the
+one tool built without the `tool!` macro (it needs the `Arc<ToolContext>` the
+macro dereferences away), and it writes each inner step to the observability log
+by hand — otherwise a plan would be a mutation without an audit record, which is
+a V1 success criterion at 0.
+
 ### D16 — an expired handle is not an unknown one (2026-08-11)
 
 The evidence store is bounded, so a handle can outlive its body. `get()` could
@@ -362,15 +457,35 @@ KiCAD knowledge already is.
 
 Full detail and method: **`docs/benchmark.md`**. Headline:
 
-| Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Δ vs baseline |
-|---|---|---|---|---|---|
-| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | = |
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 175** | **−82.4 %** |
-| CATALOG_TOKENS/task | 8 389 | 0 | 0 | **0** | −100 % |
-| MCP_CALLS median/task | 11 | 4 | 4 | **4** | −7 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 68 ms | ≈ |
-| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 854 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 2 034 tk | +354 (once per session) |
+| Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Fork, Phase G | Δ vs baseline |
+|---|---|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | 18/18 | **18/18** | = |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | 2 175 | **2 171** | **−82.5 %** |
+| CATALOG_TOKENS/task | 8 389 | 0 | 0 | 0 | **0** | −100 % |
+| MCP_CALLS median/task | 11 | 4 | 4 | 4 | **4** | −7 |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 68 ms | 66 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 854 ms | 877 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 2 034 tk | **2 034 tk** | +354 (once per session) |
+
+The plan path is measured separately, by `bench/plan_cost.py`, because the
+golden suite is a scripted oracle: it already knows every call, so it can never
+pay the cost of not knowing them, which is the whole thing a plan removes. Same
+design built twice, void unless both shapes produce the same semantic diff and
+the same ERC verdict:
+
+| | as a batch | as a plan | Δ |
+|---|---|---|---|
+| divider — request tokens | 517 | 470 | −9.1 % |
+| divider — response tokens | 1 663 | 654 | −60.7 % |
+| divider — external tokens | 2 180 | **1 124** | **−48.4 %** |
+| decoupling bank — request tokens | 767 | 236 | **−69.2 %** |
+| decoupling bank — external tokens | 2 265 | **882** | **−61.1 %** |
+
+Two different savings, worth keeping apart. The divider's is structural — five
+tool schemas become one, six per-call results become one summary — and its
+request barely moves, because every coordinate in a divider is data the caller
+chose and a plan does not compress data. The bank's is the macro: one `decouple`
+replaces nine calls and eight power-symbol positions the caller never writes.
 
 Phase D bought preconditions, idempotency and rollback for **+38 tokens/task**
 and **+187 startup tokens**. Phase E bought the semantic diff (+125/task, +40
@@ -386,8 +501,12 @@ missed rather than moved, and no win is netted off against them.
 same batch, measured on `bench/probes/validators.yaml`. That is the whole
 reason it is opt-in.
 
-Intermediate `tools` mode sits at 3 197 tk/task and is kept measured, because it
-is what a client that does not use the gateway pays.
+Intermediate `tools` mode now sits at **3 770** tk/task, not the 3 197 recorded
+at Phase F. Corrected rather than quietly updated: the drift is Phase D/E's
+meta-tool growth (+580 at startup) being re-sent on each `tools/list` refresh,
+not Phase G — the golden suite never loads the `plan` toolset, which
+`bench/results/fork-phaseG-plan-tools.json` shows directly. It is kept measured
+because it is what a client that does not use the gateway pays.
 
 Startup is 45 tokens above upstream while carrying **four** extra meta-tools;
 the +278 regression from step 1 was repaid by the starter-kit work and then
@@ -395,8 +514,8 @@ partly re-spent on the gateway verbs, which pay for themselves after the first
 task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
-`cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → **606
-passed, 0 failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
+`cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → 606 →
+**682 passed, 0 failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
 ---
@@ -565,36 +684,42 @@ not silently accumulate more.
 
 ## NEXT ACTION
 
-A batch can now be rolled back, describe itself, hand out a handle to the
-detail, prove against KiCAD's own validators that the design still holds, and
-file all of that under a task that outlives any model's context. That closes
-the evidence and task halves of Phase E. Continue in this order:
+A change can now be described once rather than enumerated, refused before it
+starts if it cannot finish, expanded deterministically, run as one transaction,
+and proved against KiCAD's own ERC. That is Phase G's spine. Continue in this
+order:
 
-1. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which already has the
-   three properties a plan executor needs: preconditions (`base_revisions`),
-   atomicity (`atomic`), identity (`operation_id`). Retrieval precision at
-   22.4 % is the open weakness a compiled plan is meant to fix, because a plan
-   names its own capabilities instead of guessing them per step. This is also
-   the highest-value item left on the priority list: it is the lever on
-   `LLM_CALLS_PER_SUCCESSFUL_TASK`, which nothing shipped so far touches.
-2. **Capability matrix** (`docs/capability-matrix.md`, generated). Still the
-   oldest unticked TODO, and three open defects (**E7**, **E8**, unlabelled
-   advisory tools) are all waiting on it. Cheap next to Plan IR and it unblocks
-   honest scope reporting.
-3. **ProjectGraph / World Model** — last of Phase E, and the least urgent: the
-   diff and the validators already answer most of what an agent would ask a
-   graph for.
+1. **Capability matrix** (`docs/capability-matrix.md`, generated). Now the
+   oldest unticked TODO by a wide margin, and four open items are waiting on
+   it: **E7** (internal analysis disagrees with `kicad-cli` and nothing marks
+   it advisory), **E8** (`export_bom` in the wrong toolset), the unmeasured
+   question of whether a plan moves retrieval precision, and honest scope
+   reporting in general. Cheap, and it unblocks more than it costs.
+2. **ProjectGraph / World Model** — the last of Phase E, and still the least
+   urgent: the diff and the validators answer most of what an agent would ask
+   a graph for.
+3. **Plan-owned postconditions.** A plan carries a `validators` list and
+   nothing runs it; the verdict comes from the enclosing `kicad_invoke(verify:
+   "auto")`. That is not wrong — it is the same validator either way — but it
+   means a plan cannot yet declare "this is only done if ERC is clean" and be
+   held to it. Small, and it closes the last gap between the IR as designed
+   and the IR as implemented.
 
-Still do not start the local model runtime (H). The anchor now exists but has
-**no local consumer** — it is exercised only through the MCP reply, so its real
-job (surviving a 40-turn local trajectory) is untested. Plan IR is what makes
-that trajectory short enough to be worth testing.
+Still do not start the local model runtime (H). Two things it needs now exist
+and neither has a local consumer: the ACTIVE TASK anchor is exercised only
+through an MCP reply, and the plan is written by hand rather than by a model.
+The question Phase H answers — does a small local model write a *valid* plan,
+and how often — is the one that decides whether any of this reduces
+`LLM_CALLS_PER_SUCCESSFUL_TASK` in practice. It is worth starting once the
+capability matrix says which operations a model would actually need.
 
 Open defects to fold into later work rather than patch separately: **E6**
-(power symbols do not snap to the 1.27 mm grid) belongs with the geometry pass;
-**E7** is half-closed — the evidence path now uses `kicad-cli`, but the
-disagreeing internal tools are still callable and still unlabelled; **E8**
-(`export_bom` in the wrong toolset) belongs with the capability matrix.
+(power symbols do not snap to the 1.27 mm grid) is now *unreachable through a
+plan* and still live on the direct tool path — the fix belongs in
+`add_power_symbol` itself, with the geometry pass; **E7** is half-closed — the
+evidence path uses `kicad-cli`, but the disagreeing internal tools are still
+callable and still unlabelled; **E8** (`export_bom` in the wrong toolset)
+belongs with the capability matrix.
 
 Two limitations the current evidence inherits and does not hide:
 
@@ -605,3 +730,18 @@ Two limitations the current evidence inherits and does not hide:
 * `verify` only checks documents the batch **changed**. A read-only batch gets
   no verdict, and a caller wanting a bare check still calls `run_erc`. Whether
   that is the right boundary is an open question, not a settled one.
+
+Three the plan path adds, recorded rather than hidden:
+
+* **A plan operation cannot take a coordinate from a previous step.** It is
+  refused, not passed through, because snapping happens at compile time and a
+  guarantee that holds *usually* is the bug E6 already is (D23). `call` is the
+  way out, and it does no arithmetic.
+* **The macro library is small and mechanical.** Seven operations, of which one
+  (`decouple`) is a real circuit macro. Whether that is the right seven is
+  unmeasured: no model has been asked to write a plan yet, so the evidence for
+  which operations matter does not exist.
+* **`LLM_CALLS_PER_SUCCESSFUL_TASK` is not measured and is not claimed.** What
+  is measured is that a nine-call sequence fits in one operation and that the
+  payload is between a half and a third of the size. That is the mechanism, not
+  the effect.

@@ -905,8 +905,10 @@ fn a_task_collects_what_its_batches_did() {
     );
 }
 
-/// A task's hard constraints are the one thing this record must not silently
-/// forget, so the bound refuses instead of evicting.
+/// Four meta-tools that every session pays for and most never open would be a
+/// few hundred startup tokens spent on nothing. As a registry toolset they cost
+/// zero and stay reachable, which is the whole argument of D20 — so it is
+/// asserted rather than intended.
 #[test]
 fn the_task_toolset_costs_nothing_until_it_is_used() {
     let mut p = McpProcess::spawn();
@@ -930,6 +932,164 @@ fn the_task_toolset_costs_nothing_until_it_is_used() {
         json!({"calls": [{"tool": "list_tasks", "args": {}}]}),
     ));
     assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+}
+
+/// Same bargain as the task toolset, and a stronger case for it: `apply_plan`'s
+/// schema carries an entire plan document, so as a startup tool it would be the
+/// most expensive property in the catalogue.
+#[test]
+fn the_plan_toolset_costs_nothing_until_it_is_used() {
+    let mut p = McpProcess::spawn();
+    let names: Vec<String> = p.request("tools/list", json!({}))["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap_or_default().to_string())
+        .collect();
+    for tool in ["preview_plan", "apply_plan"] {
+        assert!(
+            !names.contains(&tool.to_string()),
+            "{tool} must not be in the startup catalogue: {names:#?}"
+        );
+    }
+
+    // Reachable all the same, and a preview mutates nothing.
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [{"tool": "preview_plan", "args": {"plan": {"ops": [
+            {"op": "power", "with": {
+                "schematic": "/p/a.kicad_sch",
+                "symbols": [{"net": "GND", "x": 100.0, "y": 99.0}]
+            }}
+        ]}}}]}),
+    ));
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+    assert_eq!(body["results"][0]["result"]["steps"].as_u64(), Some(1));
+}
+
+/// The vertical slice: one MCP call carries an objective's worth of work, the
+/// plan does the arithmetic, and KiCAD's own ERC says whether the result holds.
+///
+/// Every coordinate in this plan is deliberately **off** the 1.27 mm grid —
+/// 100.0, 80.0, 76.0 — which is exactly how E6 was found: `add_power_symbol`
+/// writes what it is handed, so a power symbol at a resistor's nominal position
+/// lands 0.33 mm from the pin and ERC reports both ends unconnected with no tool
+/// error anywhere. A plan snaps before it calls, so the same input that produced
+/// six ERC errors produces none.
+#[test]
+fn a_plan_builds_a_divider_that_erc_passes_from_off_grid_coordinates() {
+    let Some(cli) = kicad_cli_path() else {
+        eprintln!("skipping: no kicad-cli found (set KONNECT_TEST_KICAD_CLI)");
+        return;
+    };
+    let scratch = Scratch::new("plandivider");
+    std::fs::write(
+        scratch.dir.join("konnect.toml"),
+        format!("kicad_cli = {}\n", serde_json::to_string(&cli).unwrap()),
+    )
+    .unwrap();
+    let mut p = McpProcess::spawn_in_dir(Some(&scratch.dir));
+    let sch = scratch.sch("pd");
+
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"verify": "auto", "calls": [{"tool": "apply_plan", "args": {"plan": {
+            "plan_id": "divider",
+            "ops": [
+                {"op": "call", "with": {"tool": "create_project",
+                    "args": {"path": scratch.path(), "name": "pd"}}},
+                {"op": "place", "with": {
+                    "schematic": sch,
+                    "components": [
+                        {"lib_id": "Device:R", "reference": "R1", "value": "10k", "x": 100.0, "y": 80.0},
+                        {"lib_id": "Device:R", "reference": "R2", "value": "10k", "x": 100.0, "y": 95.0},
+                        {"lib_id": "power:PWR_FLAG", "reference": "#FLG01", "x": 100.0, "y": 76.0},
+                        {"lib_id": "power:PWR_FLAG", "reference": "#FLG02", "x": 100.0, "y": 99.0}
+                    ]
+                }},
+                {"op": "power", "with": {
+                    "schematic": sch,
+                    "symbols": [
+                        {"net": "+3V3", "x": 100.0, "y": 76.0},
+                        {"net": "GND", "x": 100.0, "y": 99.0}
+                    ]
+                }},
+                {"op": "connect", "with": {
+                    "schematic": sch,
+                    "connections": [{"from": "R1.2", "to": "R2.1"}]
+                }},
+                {"op": "label", "with": {
+                    "schematic": sch,
+                    "labels": [{"net": "VOUT", "x": 100.0, "y": 87.6}]
+                }}
+            ]
+        }}}]}),
+    ));
+
+    let report = &body["results"][0]["result"];
+    assert_eq!(body["ok"].as_u64(), Some(1), "{body:#?}");
+    assert_eq!(
+        report["ok"].as_u64(),
+        report["steps"].as_u64(),
+        "every step of the plan ran: {report:#?}"
+    );
+    assert_eq!(
+        report["ops"].as_u64(),
+        Some(5),
+        "five operations, and more tool calls than that: {report:#?}"
+    );
+    assert!(
+        report["steps"].as_u64().unwrap_or(0) > report["ops"].as_u64().unwrap_or(0),
+        "the plan expanded rather than merely renaming calls: {report:#?}"
+    );
+
+    let erc = body["validators"]
+        .as_array()
+        .and_then(|r| r.iter().find(|r| r["check"].as_str() == Some("erc")))
+        .unwrap_or_else(|| panic!("expected an ERC verdict: {body:#?}"));
+    assert_eq!(
+        erc["errors"].as_u64(),
+        Some(0),
+        "the plan snapped every coordinate, so nothing is 0.33 mm off its pin: {erc:#?}"
+    );
+
+    // And the batch's own machinery still applies to a plan: the change is
+    // described, and the detail is behind a handle.
+    assert!(
+        body["diff"]["summary"].as_str().is_some(),
+        "a plan is still a batch, and a batch says what it changed: {body:#?}"
+    );
+}
+
+/// A plan that cannot finish never starts. The forward reference is caught by
+/// the compiler, so the `create_project` ahead of it never runs either.
+#[test]
+fn a_plan_with_an_impossible_reference_applies_nothing() {
+    let scratch = Scratch::new("planrefuse");
+    let mut p = McpProcess::spawn_in_dir(Some(&scratch.dir));
+
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [{"tool": "apply_plan", "args": {"plan": {"ops": [
+            {"id": "make", "op": "call", "with": {"tool": "create_project",
+                "args": {"path": scratch.path(), "name": "pr"}}},
+            {"id": "uses", "op": "call", "with": {"tool": "get_project_info",
+                "args": {"project_path": "${later.path}"}}},
+            {"id": "later", "op": "call", "with": {"tool": "list_schematic_components",
+                "args": {"schematic": "x.kicad_sch"}}}
+        ]}}}]}),
+    ));
+
+    assert_eq!(body["ok"].as_u64(), Some(0), "{body:#?}");
+    assert_eq!(
+        body["results"][0]["result"]["error"]["field"].as_str(),
+        Some("uses"),
+        "the rejection names the operation that has to change: {body:#?}"
+    );
+    assert!(
+        !scratch.sch("pr").exists(),
+        "nothing ran, so the project was never created: {body:#?}"
+    );
 }
 
 /// Where `kicad-cli` really is, if it is anywhere. The tests that need a real

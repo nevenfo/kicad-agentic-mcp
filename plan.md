@@ -214,7 +214,11 @@ crates/kam-state         revisions, idempotency, rollback snapshots and the
                          skin is konnect-core::tools::task)
 crates/kam-context       Context Manager: budgets, compaction, retrieval (new;
                          the attention half already lives in kam-state::task)
-crates/kam-plan          Plan IR + compiler + executor contract (new)
+crates/kam-plan          Plan IR + compiler + reference resolution + execution
+                         state machine  (SHIPPED, MIT OR Apache-2.0, no
+                         konnect-* dependency; the KiCAD operation library is
+                         konnect-core::plan and the MCP skin is
+                         konnect-core::tools::plan)
 crates/kam-llm           local provider abstraction + router (new)
 crates/kam-evidence      semantic diff over an abstract ItemSet, the bounded
                          handle store, and findings with stable ids  (SHIPPED,
@@ -236,7 +240,7 @@ crates/kam-bench         benchmark runner + metrics schema (new)
 | **F** Compact MCP surface | capability index, tool-granular loading, schema compression, gateway | **DONE** — −83.9 % external tokens, 4 MCP calls/task |
 | **D** Domain stabilisation | stable IDs, revisions, snapshots, idempotency, error catalog | **PARTIAL** — revisions, idempotency, atomic batches and the error catalog shipped (`kam-state`, `kicad_invoke`); stable IDs and snapshot handles remain |
 | **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | **PARTIAL** — semantic diff, evidence handles (`kicad://diff/N`, `kicad://evidence/N` over MCP resources), independent verification (`kicad_invoke verify=`, stable finding ids, revision-keyed baselines) and the Task State Manager (`kam-state::task`, `task` toolset, ACTIVE TASK anchor) shipped; ProjectGraph remains |
-| **G** Plan IR + deterministic executor | batching, preconditions, postconditions, rollback | TODO |
+| **G** Plan IR + deterministic executor | batching, preconditions, postconditions, rollback | **PARTIAL** — `kam-plan` (IR, compile-time reference checking, execution state machine), the KiCAD operation library (`call`/`place`/`power`/`label`/`wire`/`connect`/`decouple`, every coordinate grid-snapped) and the `plan` toolset (`preview_plan`, `apply_plan`) shipped; measured at −48.4 % external tokens on the divider and −61.1 % on a decoupling bank. Postconditions still come from the enclosing `kicad_invoke`, not from the plan's own `validators` list |
 | **H** Local AI runtime | provider abstraction, hardware probe, model bench, router | TODO |
 | **I** Custom KiCad gate | only if a measured blocker survives KiCad 11 | TODO |
 | **J** Scope expansion | fill the highest-value capability gaps | TODO |
@@ -286,6 +290,10 @@ Anything not achieved gets written down as not achieved. No benchmark rigging.
 * Does KiCad 10.0.3 on Windows expose `KICAD_API_SOCKET` reliably enough for
   unattended E2E, or do PCB E2E tests need a GUI session? This currently blocks
   PCB benchmark coverage entirely.
+* Does a compiled plan move retrieval precision? A plan names its own
+  capabilities instead of searching per step, which was the argument for
+  expecting it to help, but a caller still has to find `apply_plan` once. Not
+  measured; belongs with the capability matrix.
 * ~~Tool-granular loading bottoms out at 3 698 external tokens per task. Does the
   ~7-verb gateway have to land before Phase H?~~ **Answered 2026-08-10: yes.**
   Schema compression and a smaller starter kit took it to 3 197, and 2 281 of
@@ -296,20 +304,22 @@ Anything not achieved gets written down as not achieved. No benchmark rigging.
 
 See `docs/benchmark.md` for method and full tables.
 
-| | baseline | Phase F | Phase D | now, Phase E | target |
-|---|---|---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 175** | ≤ 2 000 ✗ (by 175) |
-| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | ≥ baseline ✓ |
-| MCP_CALLS median/task | 11 | 4 | 4 | **4** | ≤ 5 ✓ |
-| CATALOG_TOKENS/task | 8 389 | 0 | 0 | **0** | — |
-| `tools/list` at startup | 1 680 | 1 725 | 1 912 | 2 034 | ≤ ~1 000 ✗ |
-| full catalogue | 22 329 | 22 461 | 22 648 | 23 411 | — |
-| silent stale-state write | possible | possible | refused | **refused** | 0 ✓ |
-| partial batch left on failure | yes | yes | rolled back | **rolled back** | 0 ✓ |
-| mutation without an audit record | yes | yes | yes | **no** | 0 ✓ |
-| a change verified against KiCAD itself | no | no | no | **on request** | — |
-| retrieval recall @8 | — | 100 % | 100 % | 100 % | ≥ 98 % ✓ |
-| retrieval precision @8 | — | 22.4 % | 22.4 % | 22.4 % | ≥ 60 % ✗ |
+| | baseline | Phase F | Phase D | Phase E | now, Phase G | target |
+|---|---|---|---|---|---|---|
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | 2 175 | **2 171** | ≤ 2 000 ✗ (by 171) |
+| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | 18/18 | **18/18** | ≥ baseline ✓ |
+| MCP_CALLS median/task | 11 | 4 | 4 | 4 | **4** | ≤ 5 ✓ |
+| CATALOG_TOKENS/task | 8 389 | 0 | 0 | 0 | **0** | — |
+| `tools/list` at startup | 1 680 | 1 725 | 1 912 | 2 034 | **2 034** | ≤ ~1 000 ✗ |
+| full catalogue | 22 329 | 22 461 | 22 648 | 23 411 | 24 082 | — |
+| silent stale-state write | possible | possible | refused | refused | **refused** | 0 ✓ |
+| partial batch left on failure | yes | yes | rolled back | rolled back | **rolled back** | 0 ✓ |
+| mutation without an audit record | yes | yes | yes | no | **no** | 0 ✓ |
+| a change verified against KiCAD itself | no | no | no | on request | **on request** | — |
+| retrieval recall @8 | — | 100 % | 100 % | 100 % | 100 % | ≥ 98 % ✓ |
+| retrieval precision @8 | — | 22.4 % | 22.4 % | 22.4 % | 22.4 % | ≥ 60 % ✗ |
+| one design step, as a batch vs as a plan | — | — | — | — | **2 180 → 1 124 tk** | — |
+| a nine-call decoupling bank | — | — | — | — | **2 265 → 882 tk** | — |
 
 | the objective survives a compaction | no | no | no | **yes** | — |
 
@@ -335,4 +345,21 @@ would break every shipped skill.
 
 Retrieval precision is still the open weakness: 22.4 % at the recall needed to
 succeed. The gateway does not fix it, it only makes each wrong guess cheaper.
-Plan IR (Phase G) is where a compiled plan names its own capabilities.
+Plan IR was expected to help, because a compiled plan names its own capabilities
+instead of searching for them per step — but the golden suite cannot show that
+(it is a scripted oracle, so it never searches) and the number has not moved.
+It stays 22.4 % and stays open.
+
+The last two rows are the only measurement of the plan path, and they come from
+`bench/plan_cost.py` rather than the golden suite, for a reason worth writing
+down: the suite already knows the exact calls for every task, so it can never
+pay the cost of not knowing them, and a plan's whole value is in the payload a
+caller who does not know them would have had to write. Both shapes are checked
+to produce the same semantic diff and the same ERC verdict before the tokens are
+compared; a divergence voids the run.
+
+`LLM_CALLS_PER_SUCCESSFUL_TASK` is still **unmeasured**. What Phase G shows is
+that a nine-call sequence can be emitted as one operation and that the payload
+either way is between a half and a third of the size — the mechanism by which
+the call count would fall, not the fall itself. That needs a model in the loop,
+which is Phase H.

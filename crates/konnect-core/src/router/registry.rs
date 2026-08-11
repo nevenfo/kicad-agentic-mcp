@@ -129,6 +129,12 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
         tool_count: 4,
     },
     ToolsetMeta {
+        name: "plan",
+        description: "Compile and run a plan: one operation expands to many grid-snapped tool calls, a later one may use an earlier one's result, and a plan that cannot finish is refused before it starts",
+        category: "plan",
+        tool_count: 2,
+    },
+    ToolsetMeta {
         name: "task",
         description: "Track an objective across calls: constraints, success criteria, verified facts, failed attempts, evidence — held outside the conversation so a compaction cannot lose them",
         category: "task",
@@ -164,6 +170,7 @@ pub fn tools_for(name: &str) -> Option<Vec<ToolDef>> {
         "design_review" => Some(design_review::tools()),
         "templates" => Some(templates::tools()),
         "manufacturing" => Some(manufacturing::tools()),
+        "plan" => Some(plan::tools()),
         "task" => Some(task::tools()),
         _ => None,
     }

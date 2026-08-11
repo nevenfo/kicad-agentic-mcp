@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 kam-evidence.workspace = true
+kam-plan.workspace = true
 kam-state.workspace = true
 konnect-sexp.workspace = true
 konnect-ipc.workspace = true

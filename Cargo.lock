@@ -1096,6 +1096,7 @@ dependencies = [
  "axum",
  "base64 0.23.0",
  "kam-evidence",
+ "kam-plan",
  "kam-state",
  "konnect-ipc",
  "konnect-schematic-editor",
