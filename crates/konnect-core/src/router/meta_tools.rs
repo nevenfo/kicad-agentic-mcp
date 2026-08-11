@@ -146,6 +146,11 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                         "type": "string",
                         "enum": ["none", "summary", "changes"],
                         "description": "Design diff detail. Default summary ('symbol +2, wire ~1'); changes adds a line per item."
+                    },
+                    "verify": {
+                        "type": "string",
+                        "enum": ["none", "auto"],
+                        "description": "auto runs KiCAD's own ERC/DRC on every document the batch changed and reports the counts and the delta. Costs seconds, not milliseconds."
                     }
                 },
                 "required": ["calls"]
@@ -420,6 +425,16 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         }
     }
 
+    let verify = match Verify::from_args(args) {
+        Ok(v) => v,
+        Err(rejection) => {
+            if let Some(id) = &operation_id {
+                ctx.idempotency.abandon(id);
+            }
+            return rejection;
+        }
+    };
+
     let diff_level = DiffLevel::from_args(args);
     let guard = BatchGuard::capture(calls, args.get("documents"), atomic, diff_level);
 
@@ -540,7 +555,10 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         }
     }
 
-    guard.finish(failed_at.is_some(), &ctx.evidence, &mut body);
+    let changed = guard.finish(failed_at.is_some(), &ctx.evidence, &mut body);
+    if verify == Verify::Auto {
+        report_validators(ctx, &changed, &mut body).await;
+    }
 
     if let Some(id) = &operation_id {
         ctx.idempotency.complete(id, body.clone());
@@ -668,6 +686,54 @@ impl DiffLevel {
     }
 }
 
+/// Whether a batch ends by asking KiCAD whether the design still holds.
+///
+/// Off by default, and the default is a latency decision rather than a
+/// philosophical one: `kicad-cli sch erc` is seconds on a real project, so
+/// paying it on every placement would make the common case worse to make the
+/// rare case better. A caller that has finished a unit of work asks for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verify {
+    /// Say nothing about validity.
+    None,
+    /// Run ERC/DRC on every document the batch changed.
+    Auto,
+}
+
+impl Verify {
+    /// Unlike `diff`, an unrecognised value is refused rather than defaulted.
+    /// The default here is *silence*, and a typo that silently skips
+    /// verification would leave a caller believing a check ran that did not —
+    /// the one failure mode this whole feature exists to prevent (E4).
+    fn from_args(args: &Value) -> Result<Self, CallToolResult> {
+        match args.get("verify") {
+            None | Some(Value::Null) => Ok(Self::None),
+            Some(Value::String(s)) if s == "none" => Ok(Self::None),
+            Some(Value::String(s)) if s == "auto" => Ok(Self::Auto),
+            Some(other) => {
+                let kind = ToolErrorKind::InvalidArgument {
+                    field: "verify".to_string(),
+                    reason: format!("expected 'none' or 'auto', got {other}"),
+                };
+                Err(CallToolResult::error_kind(
+                    kind,
+                    "verify must be 'none' or 'auto'. Nothing was run: a misspelled \
+                     verify would look like a check that passed.",
+                ))
+            }
+        }
+    }
+}
+
+/// A document the batch changed, and the revisions on either side of it.
+struct ChangedDoc {
+    path: std::path::PathBuf,
+    /// Revision now.
+    after: String,
+    /// Revision before the batch, or `None` when the file did not exist.
+    before: Option<String>,
+}
+
 /// Most changes fit in a handful of lines; a re-route does not. The rest lives
 /// in the documents themselves, which the caller can re-read at the revisions
 /// the same reply hands back.
@@ -728,19 +794,29 @@ impl BatchGuard {
     }
 
     /// Roll back on failure, then report what changed.
-    fn finish(self, failed: bool, store: &kam_evidence::EvidenceStore, body: &mut Value) {
+    ///
+    /// Returns the documents that survived the batch, so a caller that asked
+    /// for verification knows what to verify. A rolled-back batch returns
+    /// nothing: the design is what it was, and checking it would report a
+    /// verdict about a state the caller never created.
+    fn finish(
+        self,
+        failed: bool,
+        store: &kam_evidence::EvidenceStore,
+        body: &mut Value,
+    ) -> Vec<ChangedDoc> {
         if let Some(reason) = self.unprotected {
             body["unprotected"] = json!(reason);
         }
         let Some(snapshot) = self.snapshot else {
-            return;
+            return Vec::new();
         };
 
         if failed && self.rollback {
             let report = snapshot.restore();
             if report.is_empty() {
                 // Nothing had been written yet — the failure was clean.
-                return;
+                return Vec::new();
             }
             let mut rolled_back = json!({
                 "restored": report.restored.len(),
@@ -759,12 +835,12 @@ impl BatchGuard {
                     .collect::<Vec<_>>());
             }
             body["rolled_back"] = rolled_back;
-            return;
+            return Vec::new();
         }
 
         let changed = snapshot.changed();
         if changed.is_empty() {
-            return;
+            return Vec::new();
         }
         report_diff(&snapshot, &changed, self.diff, store, body);
         // Project paths are long and identical up to the filename. Factoring
@@ -795,6 +871,146 @@ impl BatchGuard {
         if changed.len() > MAX_REPORTED_REVISIONS {
             body["revisions_omitted"] = json!(changed.len() - MAX_REPORTED_REVISIONS);
         }
+
+        // Every changed document, not only the reported ones: a verdict on a
+        // sheet is not less true for having been left out of a revision list
+        // that was truncated to keep the reply small.
+        changed
+            .into_iter()
+            .map(|(path, state)| ChangedDoc {
+                after: state.token(),
+                before: snapshot
+                    .before(&path)
+                    .map(|bytes| kam_state::DocState::of_bytes(bytes).token()),
+                path,
+            })
+            .collect()
+    }
+}
+
+/// Ask KiCAD's own validators whether the design still holds, and say so in
+/// the reply.
+///
+/// Two things make this more than an inlined `run_erc`. The verdict is cached
+/// against the revision it describes, so the next batch on the same document
+/// gets a real baseline for free and can report `ERC 4 -> 0`. And the findings
+/// carry stable ids, so "4 fixed" means four ids that left, not a count that
+/// fell while four others arrived.
+///
+/// A validator that could not run is reported as an error, never as zero
+/// findings. That distinction is E4 in `progress.md`: a missing `kicad-cli`
+/// once made an empty schematic look like a passing one.
+async fn report_validators(
+    ctx: &std::sync::Arc<ToolContext>,
+    changed: &[ChangedDoc],
+    body: &mut Value,
+) {
+    use crate::evidence::validators;
+
+    let mut reports = Vec::new();
+    let mut packs = Vec::new();
+
+    for doc in changed {
+        let Some(check) = validators::Check::of_path(&doc.path) else {
+            continue;
+        };
+        let document = doc
+            .path
+            .file_name()
+            .map_or_else(|| doc.path.to_string_lossy(), |n| n.to_string_lossy())
+            .into_owned();
+
+        let after = match ctx.validation.get(&doc.path, &doc.after) {
+            Some(cached) => cached,
+            None => match validators::run(check, &ctx.config.kicad_cli, &doc.path).await {
+                Ok(set) => {
+                    ctx.validation.put(&doc.path, &doc.after, set.clone());
+                    set
+                }
+                Err(e) => {
+                    let kind = ToolErrorKind::from_anyhow(&e);
+                    reports.push(json!({
+                        "check": check.name(),
+                        "document": document,
+                        "error_kind": kind.short_code(),
+                        "error": e.to_string(),
+                    }));
+                    continue;
+                }
+            },
+        };
+
+        let counts = after.counts();
+        let mut entry = json!({
+            "check": check.name(),
+            "document": document,
+            "errors": counts.errors,
+            "warnings": counts.warnings,
+        });
+
+        // A document that did not exist has an empty baseline rather than an
+        // unknown one — nothing was wrong with it, because it was not there.
+        let baseline = match &doc.before {
+            None => Some(kam_evidence::FindingSet::new()),
+            Some(revision) => ctx.validation.get(&doc.path, revision),
+        };
+        let delta = match baseline {
+            Some(before) => {
+                let delta = kam_evidence::FindingDelta::between(&before, &after);
+                if !delta.fixed.is_empty() {
+                    entry["fixed"] = json!(delta.fixed.len());
+                }
+                if !delta.introduced.is_empty() {
+                    entry["introduced"] = json!(delta.introduced.len());
+                }
+                Some(delta)
+            }
+            // No verdict was ever computed for the revision this batch started
+            // from, so the counts are absolute and the reply says so instead of
+            // implying the design went from zero to zero.
+            None => {
+                entry["baseline"] = json!("unknown");
+                None
+            }
+        };
+
+        packs.push(json!({
+            "check": check.name(),
+            "document": document,
+            "revision": &doc.after,
+            "errors": counts.errors,
+            "warnings": counts.warnings,
+            "findings": after.findings,
+            "fixed": delta.as_ref().map(|d| d.fixed.clone()),
+            "introduced": delta.as_ref().map(|d| d.introduced.clone()),
+        }));
+        reports.push(entry);
+    }
+
+    if reports.is_empty() {
+        return;
+    }
+
+    let summary = reports
+        .iter()
+        .map(|r| match r["error"].as_str() {
+            Some(_) => format!("{} failed", r["check"].as_str().unwrap_or("?")),
+            None => format!(
+                "{} {}E {}W",
+                r["check"].as_str().unwrap_or("?"),
+                r["errors"].as_u64().unwrap_or(0),
+                r["warnings"].as_u64().unwrap_or(0)
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    body["validators"] = json!(reports);
+    if !packs.is_empty() {
+        let handle = ctx
+            .evidence
+            .put("evidence", summary, json!({ "validators": packs }));
+        body["validators_evidence"] = json!(handle.uri);
     }
 }
 

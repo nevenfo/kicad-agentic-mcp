@@ -823,6 +823,187 @@ fn the_change_detail_lives_behind_a_handle_rather_than_in_the_reply() {
     );
 }
 
+/// Where `kicad-cli` really is, if it is anywhere. The tests that need a real
+/// verdict are pointless without it, and hard-coding one machine's install
+/// path would make them lie on every other machine.
+fn kicad_cli_path() -> Option<String> {
+    if let Ok(explicit) = std::env::var("KONNECT_TEST_KICAD_CLI") {
+        return Some(explicit);
+    }
+    let exe = if cfg!(windows) {
+        "kicad-cli.exe"
+    } else {
+        "kicad-cli"
+    };
+    let mut roots: Vec<std::path::PathBuf> = Vec::new();
+    for var in ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(base) = std::env::var(var) {
+            roots.push(std::path::PathBuf::from(&base).join("Programs\\KiCad"));
+            roots.push(std::path::PathBuf::from(&base).join("KiCad"));
+        }
+    }
+    roots.push(std::path::PathBuf::from("/usr/bin"));
+    roots.push(std::path::PathBuf::from("/usr/local/bin"));
+    for root in roots {
+        if root.join(exe).is_file() {
+            return Some(root.join(exe).to_string_lossy().into_owned());
+        }
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let candidate = entry.path().join("bin").join(exe);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None
+}
+
+/// E4, as a test. `kicad-cli` was once absent and `run_erc` answered
+/// `{"errors": 0}` — a no-op scored as a pass. A validator that could not run
+/// must report that it could not run, and must never contribute a count.
+#[test]
+fn a_validator_that_could_not_run_is_an_error_not_a_pass() {
+    let scratch = Scratch::new("verifyfail");
+    std::fs::write(
+        scratch.dir.join("konnect.toml"),
+        "kicad_cli = \"konnect-no-such-kicad-cli\"\n",
+    )
+    .unwrap();
+    let mut p = McpProcess::spawn_in_dir(Some(&scratch.dir));
+
+    let body = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"verify": "auto", "calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "vf"}}
+        ]}),
+    ));
+
+    let reports = body["validators"]
+        .as_array()
+        .unwrap_or_else(|| panic!("verify: auto must report something: {body:#?}"));
+    let erc = reports
+        .iter()
+        .find(|r| r["check"].as_str() == Some("erc"))
+        .unwrap_or_else(|| panic!("the schematic must be checked: {body:#?}"));
+    assert!(
+        erc["errors"].is_null() && erc["warnings"].is_null(),
+        "a validator that did not run must not report counts: {erc:#?}"
+    );
+    assert!(
+        erc["error_kind"].is_string(),
+        "the failure must be classified, not narrated: {erc:#?}"
+    );
+    assert_eq!(
+        body["ok"].as_u64(),
+        Some(1),
+        "the batch itself succeeded; only the check failed: {body:#?}"
+    );
+}
+
+/// A misspelled `verify` must not read as a check that passed.
+#[test]
+fn an_unrecognised_verify_level_is_refused() {
+    let scratch = Scratch::new("verifytypo");
+    let mut p = McpProcess::spawn();
+    let result = p.call_tool(
+        "kicad_invoke",
+        json!({"verify": "atuo", "calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "vt"}}
+        ]}),
+    );
+    let body = McpProcess::tool_body(&result);
+    assert_eq!(body["error"]["kind"], "invalid_argument", "{body:#?}");
+    assert_eq!(body["error"]["field"], "verify", "{body:#?}");
+    assert!(
+        !scratch.sch("vt").exists(),
+        "a refused argument must refuse the batch, not run it: {body:#?}"
+    );
+}
+
+/// The diff says what moved; ERC says whether the design still holds. The
+/// second batch gets a real baseline from the first, so a fix reads as a
+/// finding that left rather than as a number that fell.
+#[test]
+fn verify_reports_a_real_erc_verdict_and_its_delta() {
+    let Some(cli) = kicad_cli_path() else {
+        eprintln!("skipping: no kicad-cli found (set KONNECT_TEST_KICAD_CLI)");
+        return;
+    };
+    let scratch = Scratch::new("verifyerc");
+    std::fs::write(
+        scratch.dir.join("konnect.toml"),
+        format!("kicad_cli = {}\n", serde_json::to_string(&cli).unwrap()),
+    )
+    .unwrap();
+    let mut p = McpProcess::spawn_in_dir(Some(&scratch.dir));
+
+    let created = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"verify": "auto", "calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "ve"}}
+        ]}),
+    ));
+    let erc = created["validators"]
+        .as_array()
+        .and_then(|r| r.iter().find(|r| r["check"].as_str() == Some("erc")))
+        .unwrap_or_else(|| panic!("expected an ERC verdict: {created:#?}"));
+    assert!(
+        erc["errors"].is_u64(),
+        "a validator that ran reports a count: {erc:#?}"
+    );
+    assert!(
+        created["validators_evidence"]
+            .as_str()
+            .is_some_and(|u| u.starts_with("kicad://evidence/")),
+        "the findings live behind a handle: {created:#?}"
+    );
+
+    // Two resistors with nothing connected to them: ERC has something to say,
+    // and the baseline is the verdict the previous batch already cached.
+    let sch = scratch.sch("ve");
+    let placed = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"verify": "auto", "calls": [
+            {"tool": "batch_place_components", "args": {"schematic": sch, "components": [
+                {"lib_id": "Device:R", "reference": "R1", "value": "10k", "x": 100.33, "y": 80.01},
+                {"lib_id": "Device:R", "reference": "R2", "value": "10k", "x": 100.33, "y": 95.25}
+            ]}}
+        ]}),
+    ));
+    let erc = placed["validators"]
+        .as_array()
+        .and_then(|r| r.iter().find(|r| r["check"].as_str() == Some("erc")))
+        .unwrap_or_else(|| panic!("expected an ERC verdict: {placed:#?}"));
+    assert!(
+        erc["baseline"].is_null(),
+        "the previous batch's verdict is the baseline; it must not be unknown: {erc:#?}"
+    );
+    assert!(
+        erc["introduced"].as_u64().unwrap_or(0) > 0,
+        "four unconnected pins are four new findings: {erc:#?}"
+    );
+
+    // The pack behind the handle carries the findings themselves, with the
+    // stable ids the delta was computed from.
+    let handle = placed["validators_evidence"].as_str().unwrap().to_string();
+    let read = p.request("resources/read", json!({ "uri": handle }));
+    let pack: Value =
+        serde_json::from_str(read["result"]["contents"][0]["text"].as_str().unwrap()).unwrap();
+    let findings = pack["validators"][0]["findings"].as_array().unwrap();
+    assert!(!findings.is_empty(), "{pack:#?}");
+    let id = findings[0]["id"].as_str().unwrap();
+    assert_eq!(id.len(), 12, "a finding id is a short stable digest: {id}");
+    assert!(
+        pack["validators"][0]["introduced"]
+            .as_array()
+            .is_some_and(|v| v.contains(&Value::String(id.to_string()))),
+        "the delta names the ids, not only their number: {pack:#?}"
+    );
+}
+
 /// A plan compiled against a document the user has since edited is refused,
 /// not applied on top. This is the half of the pair a file-level rollback
 /// cannot provide: detection.

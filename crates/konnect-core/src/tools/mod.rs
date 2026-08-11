@@ -91,6 +91,10 @@ pub struct ToolContext {
     /// behind `kicad://diff/N`, served over MCP `resources/read`. Shared for
     /// the life of the server so a handle stays resolvable across calls.
     pub evidence: Arc<kam_evidence::EvidenceStore>,
+    /// ERC/DRC verdicts remembered against the document revision they were
+    /// computed for, so a batch can report `ERC 4 -> 0` without running the
+    /// validator twice.
+    pub validation: Arc<crate::evidence::validators::Cache>,
 }
 
 impl ToolContext {
@@ -104,6 +108,7 @@ impl ToolContext {
             jlcpcb_cache: QueryCache::default(),
             idempotency: Arc::default(),
             evidence: Arc::default(),
+            validation: Arc::default(),
         }
     }
 
@@ -121,6 +126,7 @@ impl ToolContext {
             jlcpcb_cache: QueryCache::default(),
             idempotency: Arc::default(),
             evidence: Arc::default(),
+            validation: Arc::default(),
         }
     }
 }

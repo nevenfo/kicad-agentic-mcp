@@ -6,12 +6,16 @@
 //! re-serialised, reordered or reformatted is still recognised as the same
 //! item.
 //!
+//! [`validators`] is the other half of an evidence pack: the diff says what
+//! moved, `kicad-cli` says whether the design still holds.
+//!
 //! Extraction is deliberately lossy. A diff that reports every S-expression
 //! node is the textual diff we are replacing; what a reviewer needs is which
 //! symbols, tracks, zones and nets changed, and how.
 
 mod pcb;
 mod schematic;
+pub mod validators;
 
 use kam_evidence::{Diff, ItemSet};
 use std::path::Path;

@@ -1,0 +1,35 @@
+# What `verify: auto` really costs and really says.
+#
+# Two questions the design cannot answer by reasoning: how many seconds a real
+# `kicad-cli sch erc` adds to a batch, and whether the second batch gets a
+# usable baseline from the first one's cached verdict. Both are measured here
+# on a real project rather than argued about.
+project_name: valid
+toolsets: [project, sch_components, sch_wiring, sch_batch]
+steps:
+  # Baseline: the same batch without verification, for the latency comparison.
+  - tool: kicad_invoke
+    args:
+      calls:
+        - tool: create_project
+          args: { path: "$WORK", name: "$NAME" }
+
+  - tool: kicad_invoke
+    args:
+      verify: auto
+      calls:
+        - tool: batch_place_components
+          args:
+            schematic: "$SCH"
+            components:
+              - { lib_id: "Device:R", reference: "R1", value: "10k", x: 100.33, y: 80.01 }
+              - { lib_id: "Device:R", reference: "R2", value: "10k", x: 100.33, y: 95.25 }
+
+  # The fix. R1 pin 2 to R2 pin 1 removes two of the unconnected pins, so the
+  # delta must name two ids that left — not merely a count that fell.
+  - tool: kicad_invoke
+    args:
+      verify: auto
+      calls:
+        - tool: connect_pins
+          args: { schematic: "$SCH", ref1: "R1", pin1: "2", ref2: "R2", pin2: "1" }

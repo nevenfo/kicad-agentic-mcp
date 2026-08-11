@@ -28,6 +28,11 @@ pub struct ErcViolation {
     pub description: String,
     pub sheet: Option<String>,
     pub pos: Option<ErcPos>,
+    /// KiCAD's own rule name (`pin_not_connected`, …). Prose is reworded
+    /// between versions; the rule name is what a stable finding id can be
+    /// built on, so it is kept rather than folded into the description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +46,10 @@ pub struct DrcViolation {
     pub severity: String,
     pub description: String,
     pub pos: Option<ErcPos>,
+    /// KiCAD's own rule name (`clearance`, `courtyards_overlap`, …). See
+    /// [`ErcViolation::rule`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 // ─── KiCAD CLI Runner ─────────────────────────────────────────────────────────
@@ -145,6 +154,7 @@ fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
             }
             out.push(ErcViolation {
                 severity: v["severity"].as_str().unwrap_or("error").to_string(),
+                rule: v["type"].as_str().map(str::to_string),
                 description,
                 sheet: sheet_path.clone(),
                 pos: first_item.and_then(|item| item.get("pos")).and_then(|p| {
@@ -192,6 +202,7 @@ pub async fn run_drc(cli: &str, pcb: &Path, refill_zones: bool) -> Result<Vec<Dr
         .iter()
         .map(|v| DrcViolation {
             severity: v["severity"].as_str().unwrap_or("error").to_string(),
+            rule: v["type"].as_str().map(str::to_string),
             description: v["description"].as_str().unwrap_or("").to_string(),
             pos: v.get("pos").and_then(|p| {
                 Some(ErcPos {
