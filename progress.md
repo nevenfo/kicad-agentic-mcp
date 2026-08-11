@@ -16,32 +16,34 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 **E** — world model / task state / evidence. A (bootstrap), B (cartography),
 C (baseline benchmark) and F (compact surface) are done; D shipped revisions,
-idempotency, transactional batches and the error catalog. Semantic diff is the
-first Phase E item and it is in. Evidence handles, Task State and ProjectGraph
-are not.
+idempotency, transactional batches and the error catalog. Semantic diff,
+evidence handles and independent verification are in. Task State and
+ProjectGraph are not.
 
 ## CURRENT TASK
 
-A batch now says what it changed in the vocabulary of the design
-(`crates/kam-evidence`, `crates/konnect-core/src/evidence/`):
+A batch now describes its change, hands out a handle to the detail, and can
+prove the design still holds (`crates/kam-evidence`,
+`crates/konnect-core/src/evidence/`):
 
 * `kam-evidence` — clean-room, MIT OR Apache-2.0, knows nothing about KiCAD.
-  Documents reduce to an `ItemSet` (kind, stable key, label, attributes); the
-  diff matches by key and reports attribute differences, so re-serialisation
-  noise is removed structurally rather than filtered afterwards.
-* `konnect-core::evidence` — the KiCAD half: `.kicad_sch` and `.kicad_pcb` to
-  items, keyed on KiCAD's own UUIDs. Symbols, wires, buses, labels, junctions,
-  sheets; footprints, tracks, vias, zones and nets, with pads counted rather
-  than listed so a net reports `connections: +2`.
-* `kicad_invoke` grew a `diff` argument — `none` / `summary` (default) /
-  `changes`. The snapshot it already took for rollback is the before-image.
+  `diff` matches items by stable key so re-serialisation noise is removed
+  structurally; `store` is the bounded handle store; `finding` gives every
+  validator finding a stable id hashed from validator + rule + location.
+* `konnect-core::evidence` — the KiCAD half: extractors for `.kicad_sch` and
+  `.kicad_pcb` keyed on KiCAD's own UUIDs, plus `validators`, which runs
+  `kicad-cli` ERC/DRC and caches each verdict against the revision it
+  describes.
+* `kicad_invoke` arguments: `diff` (`none` / `summary` / `changes`) and
+  `verify` (`none` / `auto`). The reply carries `kicad://diff/N` and, when
+  verified, `kicad://evidence/N`; both resolve over MCP `resources/read`,
+  which until now returned an empty array.
 
-**2 158 external tokens/task (+6.1 % vs Phase D), 4 MCP calls, 18/18, 567
-tests.** Startup surface 1 912 → 1 952, once per session.
+**2 174 external tokens/task, 4 MCP calls, 18/18, 588 tests.** Startup surface
+1 952 → 1 998, once per session. `verify` costs ~1.1 s per batch on a real
+project, measured, which is why it is opt-in.
 
-Next in Phase E: evidence handles (`kicad://evidence/N`, `kicad://diff/N`), so
-the detail lives outside the reply and the harness fetches it only to
-challenge. Then the Task State Manager, then Plan IR.
+Next in Phase E: the Task State Manager, then Plan IR.
 
 ---
 
@@ -67,14 +69,15 @@ challenge. Then the Task State Manager, then Plan IR.
 [ ] Stable IDs (UUID-addressed items, not path+coordinates)
 [ ] Snapshots as first-class handles (kicad://snapshot/N)
 [x] Semantic diff                                           -> kam-evidence + konnect-core::evidence, 2 158 tk/task
+[x] Handles / resources / evidence packs                    -> kicad://diff/N + kicad://evidence/N, MCP resources
+[x] Independent verification (ERC/DRC in the reply)         -> verify: auto, stable finding ids, cached baselines
 [ ] ProjectGraph / World Model
 [ ] Task State Manager
 [ ] Context Manager + Attention Manager (ACTIVE TASK anchor)
-[ ] Handles / resources / evidence packs
 [ ] Plan IR + deterministic executor + batching
 [ ] Direct mode / Agent mode split
 [ ] Local model provider, hardware probe, model benchmark, router
-[ ] Independent verification, error catalog, retries, recovery
+[ ] Error catalog completeness, retries, recovery policy
 [ ] Event journal / deltas
 [ ] Custom KiCad gate  (default: NO — see D3)
 [ ] Multi-harness tests (Claude Code / Codex / AGY)
@@ -244,6 +247,60 @@ admitting the gap.
 Found by `bench/probes/semantic_diff.yaml` on a real project, not by review —
 the unit tests all passed, because none of them created a project.
 
+### D16 — an expired handle is not an unknown one (2026-08-11)
+
+The evidence store is bounded, so a handle can outlive its body. `get()` could
+have returned one "not found" for both cases and been simpler. It does not,
+because the two demand opposite responses: an evicted handle means "re-run the
+check, the reply's own summary is still accurate", and an unknown one means the
+caller invented a URI. Conflating them would let an agent read "not found" as
+"the server is lying about what it did". The store keeps a high-water mark of
+issued ids for exactly this discrimination.
+
+### D17 — `verify` is opt-in, and a typo is refused (2026-08-11)
+
+Measured on `bench/probes/validators.yaml`: the same batch is **7 ms** without
+verification and **~1 100 ms** with it. Making ERC the default would pay a
+second on every placement to make the occasional checkpoint cheaper, which is
+the wrong trade for a per-task latency KPI.
+
+That makes the default *silence*, and silence is dangerous in a way `diff`'s
+default is not: `diff` defaults to saying something, so a misspelled value
+still produces an audit line. A misspelled `verify` would produce nothing while
+the caller believed a check had run — E4 exactly. So `verify` rejects an
+unrecognised value with `invalid_argument` and runs no calls, while `diff`
+keeps falling back to its default. The two arguments look symmetric and are
+deliberately not.
+
+### D18 — the ERC baseline is cached, not recomputed (2026-08-11)
+
+A true before/after would run the validator twice per batch: ~2.2 s instead of
+~1.1 s, for a number the session already has. Each verdict is instead stored
+against the content revision it describes (`konnect-core::evidence::validators::Cache`),
+so the next batch on the same document finds its baseline for free.
+
+The honest cost is that the *first* verification of a session has no baseline,
+and it reports `baseline: "unknown"` rather than implying the design went from
+zero to zero. A document that did not exist before gets an empty baseline
+instead, because nothing was wrong with it — it was not there.
+
+Verified end to end by the probe: batch 1 `errors: 4, baseline: unknown`,
+batch 2 `errors: 2, fixed: 2`.
+
+### D19 — findings are identified by rule and location, never by prose (2026-08-11)
+
+`kam-evidence::finding` hashes `validator + rule + location` into a 12-hex id.
+Prose is excluded on purpose: KiCAD rewords descriptions between versions, and
+two unconnected pins on one sheet share every word. This is what makes
+`fixed: 2` mean two ids that left rather than a count that fell — a count going
+from 4 to 4 is also what two fixes plus two regressions look like.
+
+Two genuinely identical findings (same rule, same location) get an ordinal
+folded into the digest rather than being collapsed: collapsing would
+under-report, and sharing an id would make one look fixed the moment the other
+was. Requires KiCAD's `type` field, which the CLI parser previously discarded;
+`ErcViolation`/`DrcViolation` now keep it as `rule`.
+
 ### D15 — the diff engine is format-agnostic on purpose (2026-08-10)
 
 `kam-evidence` could have parsed KiCAD S-expressions directly and been half the
@@ -262,19 +319,24 @@ Full detail and method: **`docs/benchmark.md`**. Headline:
 | Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Δ vs baseline |
 |---|---|---|---|---|---|
 | SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | = |
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 158** | **−82.6 %** |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 174** | **−82.4 %** |
 | CATALOG_TOKENS/task | 8 389 | 0 | 0 | **0** | −100 % |
 | MCP_CALLS median/task | 11 | 4 | 4 | **4** | −7 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 64 ms | ≈ |
-| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 870 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 1 952 tk | +272 (once per session) |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 73 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 885 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 1 998 tk | +318 (once per session) |
 
 Phase D bought preconditions, idempotency and rollback for **+38 tokens/task**
-and **+187 startup tokens**. Phase E bought the semantic diff for **+125
-tokens/task** (+40 of it once per session). Both move the startup number
-further from its ≤ ~1 000 target and the per-task number further from ≤ 2 000;
-both targets are recorded as missed rather than moved, and neither win is
-netted off against them.
+and **+187 startup tokens**. Phase E bought the semantic diff (+125/task, +40
+startup), the evidence handle (+14/task, +0 startup) and independent
+verification (+0/task on this suite, +46 startup — the suite does not call
+`verify`). All of it moves the startup number further from its ≤ ~1 000 target
+and the per-task number further from ≤ 2 000; both targets are recorded as
+missed rather than moved, and no win is netted off against them.
+
+`verify`'s real cost is not tokens but latency: **7 ms → ~1 100 ms** for the
+same batch, measured on `bench/probes/validators.yaml`. That is the whole
+reason it is opt-in.
 
 Intermediate `tools` mode sits at 3 197 tk/task and is kept measured, because it
 is what a client that does not use the gateway pays.
@@ -285,7 +347,7 @@ partly re-spent on the gateway verbs, which pay for themselves after the first
 task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
-`cargo test --workspace --lib --tests` 469 → 487 → 525 → **567 passed, 0
+`cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → **588 passed, 0
 failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
@@ -365,7 +427,13 @@ On the same broken schematic, `find_single_pin_nets` returned
 while `kicad-cli sch erc` reported 6 unconnected-pin errors. The internal
 analysis is not a substitute for the real validator. This is direct evidence for
 the project's own rule: **never report OK from an internal check when a real
-validator exists.** Feeds the independent-verification work.
+validator exists.**
+
+Partly addressed 2026-08-11: `kicad_invoke verify: "auto"` gets its verdict
+from `kicad-cli`, never from `find_single_pin_nets`, so the *evidence path* no
+longer depends on the internal analysis. Still open as a defect: the internal
+tools remain callable and still disagree, and nothing yet marks them as
+advisory in their own descriptions. Belongs with the capability matrix.
 
 ### E8 — `export_bom` lives in the `pcb_export` toolset (2026-08-10) — OPEN
 
@@ -449,35 +517,43 @@ not silently accumulate more.
 
 ## NEXT ACTION
 
-Semantic diff is done and measured. Continue in Phase E, in this order:
+A batch can now be rolled back, describe itself, hand out a handle to the
+detail, and prove against KiCAD's own validators that the design still holds.
+That closes the evidence half of Phase E. Continue in this order:
 
-1. **Evidence handles** — `kicad://evidence/N`, `kicad://diff/N` as MCP
-   resources. The reply keeps its one-line summary and the full change list
-   moves behind a handle, which is what makes `diff: "changes"` affordable at
-   any size. The snapshot is the backing store; the diff is already
-   `Serialize`, so the store is the missing half.
-2. **Validators in the evidence pack.** The diff says what moved; it does not
-   say whether the board still passes. `run_erc` / `run_drc` deltas belong in
-   the same reply — `ERC 4 → 0` is the line that turns a diff into a proof, and
-   **E7** says the internal analysis must not be the thing that answers it.
-3. **Task State Manager** (`kam-state` grows a task module). Objective,
-   constraints, verified facts, failed attempts — outside the LLM context.
-4. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which has the three
-   properties a plan executor needs: preconditions, atomicity, identity.
+1. **Task State Manager** (`kam-state` grows a task module). Objective,
+   constraints, verified facts, failed attempts, forbidden repeats — outside
+   the LLM context, so a compaction or a model swap cannot lose them. The
+   evidence handles are the natural contents of `evidence_handles:`.
+2. **Attention anchor.** A ~40-token `ACTIVE TASK` block rendered
+   deterministically from the Task State, appended to every local prompt. Has
+   no consumer until H, so it lands with the Task State and stays untested
+   until then — note that when it ships.
+3. **Plan IR** (`kam-plan`) on top of `kicad_invoke`, which already has the
+   three properties a plan executor needs: preconditions (`base_revisions`),
+   atomicity (`atomic`), identity (`operation_id`). Retrieval precision at
+   22.4 % is the open weakness a compiled plan is meant to fix, because a plan
+   names its own capabilities instead of guessing them per step.
+4. **ProjectGraph / World Model** — last of Phase E, and the least urgent: the
+   diff and the validators already answer most of what an agent would ask a
+   graph for.
 
-Still do not start the local model runtime (H). A batch can now be rolled back
-*and* describe itself, but nothing yet verifies the description against KiCAD's
-own validators, and an accelerated loop whose proof is self-reported is the
-failure mode the whole design exists to avoid.
+Still do not start the local model runtime (H). The proof path exists now, but
+nothing yet keeps a *task* alive across turns, and an accelerated loop with no
+task memory would rediscover its own objective every iteration.
 
-Two open defects to fold into that work rather than patch separately: **E6**
-(power symbols do not snap to the 1.27 mm grid) belongs with the geometry pass,
-and **E7** (internal connectivity analysis disagrees with `kicad-cli` ERC) is
-exactly what step 2 above has to get right.
+Open defects to fold into later work rather than patch separately: **E6**
+(power symbols do not snap to the 1.27 mm grid) belongs with the geometry pass;
+**E7** is half-closed — the evidence path now uses `kicad-cli`, but the
+disagreeing internal tools are still callable and still unlabelled; **E8**
+(`export_bom` in the wrong toolset) belongs with the capability matrix.
 
-One limitation the diff inherits and does not hide: it reports **objects**, not
-**connectivity**. `VDD3V3 connections: +2` is real on a `.kicad_pcb`, where
-pads name their net in the file. A schematic has no netlist in the document, so
-deriving one would mean re-implementing connectivity — the exact thing E7 shows
-already disagrees with `kicad-cli`. Schematic nets stay absent from the diff
-until they come from a validator.
+Two limitations the current evidence inherits and does not hide:
+
+* The diff reports **objects**, not **connectivity**. `VDD3V3 connections: +2`
+  is real on a `.kicad_pcb`, where pads name their net in the file. A schematic
+  has no netlist in the document, so deriving one would mean re-implementing
+  the connectivity that E7 shows already disagrees with `kicad-cli`.
+* `verify` only checks documents the batch **changed**. A read-only batch gets
+  no verdict, and a caller wanting a bare check still calls `run_erc`. Whether
+  that is the right boundary is an open question, not a settled one.

@@ -214,10 +214,11 @@ crates/kam-state         revisions, idempotency, rollback snapshots  (SHIPPED,
 crates/kam-context       Context + Attention Manager  (new)
 crates/kam-plan          Plan IR + compiler + executor contract (new)
 crates/kam-llm           local provider abstraction + router (new)
-crates/kam-evidence      semantic diff over an abstract ItemSet  (SHIPPED,
+crates/kam-evidence      semantic diff over an abstract ItemSet, the bounded
+                         handle store, and findings with stable ids  (SHIPPED,
                          MIT OR Apache-2.0, no konnect-* dependency; the KiCAD
-                         extractor lives in konnect-core::evidence)
-                         handles, resources, evidence packs land here next
+                         extractors and the kicad-cli validator runner live in
+                         konnect-core::evidence)
 crates/kam-bench         benchmark runner + metrics schema (new)
 ```
 
@@ -232,7 +233,7 @@ crates/kam-bench         benchmark runner + metrics schema (new)
 | **C** Baseline benchmark | golden projects + metrics, measured before any refactor | **DONE** — `docs/benchmark.md` |
 | **F** Compact MCP surface | capability index, tool-granular loading, schema compression, gateway | **DONE** — −83.9 % external tokens, 4 MCP calls/task |
 | **D** Domain stabilisation | stable IDs, revisions, snapshots, idempotency, error catalog | **PARTIAL** — revisions, idempotency, atomic batches and the error catalog shipped (`kam-state`, `kicad_invoke`); stable IDs and snapshot handles remain |
-| **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | **PARTIAL** — semantic diff shipped (`kam-evidence` + `konnect-core::evidence`, `kicad_invoke diff=`); handles, validators-in-evidence, Task State and ProjectGraph remain |
+| **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | **PARTIAL** — semantic diff, evidence handles (`kicad://diff/N`, `kicad://evidence/N` over MCP resources) and independent verification (`kicad_invoke verify=`, stable finding ids, revision-keyed baselines) shipped; Task State and ProjectGraph remain |
 | **G** Plan IR + deterministic executor | batching, preconditions, postconditions, rollback | TODO |
 | **H** Local AI runtime | provider abstraction, hardware probe, model bench, router | TODO |
 | **I** Custom KiCad gate | only if a measured blocker survives KiCad 11 | TODO |
@@ -295,24 +296,32 @@ See `docs/benchmark.md` for method and full tables.
 
 | | baseline | Phase F | Phase D | now, Phase E | target |
 |---|---|---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 158** | ≤ 2 000 ✗ (by 158) |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | **2 174** | ≤ 2 000 ✗ (by 174) |
 | SUCCESS_RATE | 18/18 | 18/18 | 18/18 | **18/18** | ≥ baseline ✓ |
 | MCP_CALLS median/task | 11 | 4 | 4 | **4** | ≤ 5 ✓ |
 | CATALOG_TOKENS/task | 8 389 | 0 | 0 | **0** | — |
-| `tools/list` at startup | 1 680 | 1 725 | 1 912 | 1 952 | ≤ ~1 000 ✗ |
-| full catalogue | 22 329 | 22 461 | 22 648 | 22 688 | — |
+| `tools/list` at startup | 1 680 | 1 725 | 1 912 | 1 998 | ≤ ~1 000 ✗ |
+| full catalogue | 22 329 | 22 461 | 22 648 | 22 734 | — |
 | silent stale-state write | possible | possible | refused | **refused** | 0 ✓ |
 | partial batch left on failure | yes | yes | rolled back | **rolled back** | 0 ✓ |
 | mutation without an audit record | yes | yes | yes | **no** | 0 ✓ |
+| a change verified against KiCAD itself | no | no | no | **on request** | — |
 | retrieval recall @8 | — | 100 % | 100 % | 100 % | ≥ 98 % ✓ |
 | retrieval precision @8 | — | 22.4 % | 22.4 % | 22.4 % | ≥ 60 % ✗ |
 
-The token target is missed by 158, in two deliberate trades. Phase D's +38 buys
-the stale-write refusal ("silent stale-state write: 0"); Phase E's +125 buys the
-semantic diff, which is what moves "mutations without an audit record" to 0 —
-both are V1 success criteria in their own right. Neither target is moved to
-match the result: they are marked failed and the reason is recorded next to
-them.
+The token target is missed by 174, in deliberate trades. Phase D's +38 buys the
+stale-write refusal ("silent stale-state write: 0"); Phase E's +125 buys the
+semantic diff, which is what moves "mutations without an audit record" to 0;
++14 more buys the handle that keeps the audit affordable as it grows. Each is a
+V1 success criterion in its own right. No target is moved to match the result:
+they are marked failed and the reason is recorded next to them.
+
+Independent verification is `on request` rather than `yes` on purpose:
+`verify: "auto"` costs ~1.1 s per batch against 7 ms without it (measured,
+`bench/probes/validators.yaml`), so making it unconditional would trade a
+per-task latency KPI for a guarantee most batches do not need. What is
+unconditional is that the verdict, when asked for, comes from `kicad-cli` and
+never from Konnect's own analysis (E7).
 
 Startup missed its target and the gateway is why: 10 always-visible meta-tools
 cost 1 725 tokens. It is now a **once-per-session** cost rather than a per-task

@@ -83,6 +83,7 @@ between them are loading mechanics, never search quality.
 | baseline `tools/list` at startup — fork, gateway | 18 | 1 725 |
 | baseline `tools/list` at startup — fork, Phase D | 18 | 1 912 |
 | baseline `tools/list` at startup — fork, Phase E | 18 | 1 952 |
+| baseline `tools/list` at startup — fork, Phase E + validators | 18 | 1 998 |
 | full catalogue, all 18 toolsets loaded | 193 / 195 / 197 | 22 329 / 22 190 / 22 648 |
 
 Step 1 made the startup surface **278 tokens larger** — the price of the two new
@@ -282,6 +283,54 @@ batch that changes the most was being described as the one that changed
 nothing. Documents are now items in their own right, so a project creation
 reads as `document +3`. `bench/probes/semantic_diff.yaml` is what surfaced it;
 the same shape is now pinned by a stdio test.
+
+### Phase E — evidence handles and validators
+
+Two additions on top of the semantic diff. The item-by-item detail moved behind
+a handle (`kicad://diff/N`, served over MCP `resources/read`), and `verify:
+"auto"` runs KiCAD's own ERC/DRC on every document a batch changed.
+
+| Metric | Phase E diff | + handles | + validators | Δ vs Phase D |
+|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | **18/18** | = |
+| EXTERNAL_TOKENS/task | 2 158 | 2 172 | **2 174** | +141 |
+| CATALOG_TOKENS/task | 0 | 0 | **0** | = |
+| MCP_CALLS median/task | 4 | 4 | **4** | = |
+| WALL_CLOCK_P50 (ms) | 64 | 61 | 73 | ≈ |
+| WALL_CLOCK_P95 (ms) | 870 | 886 | 885 | ≈ |
+| `tools/list` at startup | 1 952 | 1 952 | **1 998** | +86, once/session |
+| tests | 567 | 575 | **588** | +63 |
+
+The handle costs **+14 tokens/task** — the URI itself, on mutating batches — and
+nothing at startup. What it buys is that `diff: "changes"`'s `"... 25 more"` now
+has somewhere to point, and that the pack behind it can grow without the reply
+growing.
+
+`verify` costs **+46 startup tokens** (one schema property) and nothing per task
+on this suite, which does not use it. Its real cost is latency, and it is
+measured rather than estimated: `bench/probes/validators.yaml` shows the same
+batch at **7 ms without verification and ~1 100 ms with it**. That is the whole
+argument for `verify` being opt-in — paying a second on every placement to make
+the occasional checkpoint cheaper is the wrong trade.
+
+The probe also shows the baseline cache working end to end:
+
+```
+[1] verify: auto   erc errors 4   baseline "unknown"     1120 ms
+[2] verify: auto   erc errors 2   fixed 2                1093 ms
+```
+
+The second batch's baseline is the verdict the first one cached against that
+document's revision, so the delta comes for free rather than from a second ERC
+run. `fixed: 2` is two finding *ids* that disappeared, not a count that fell —
+the distinction matters because two fixed and two introduced also moves a count
+from 4 to 4.
+
+Running total against the targets: external tokens per task are **174 over** the
+≤ 2 000 target, and startup is **998 over** its ≤ ~1 000 target. Both stay
+recorded as missed. The 174 buys "mutations without an audit record: 0" and the
+handle that keeps the audit affordable; the startup figure is a once-per-session
+cost against a per-task saving of ~10 000.
 
 ### Where the baseline's tokens went
 
