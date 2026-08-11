@@ -243,3 +243,145 @@ fn full_design_loop_with_real_kicad() {
 
     eprintln!("E2E OK: project created, wired, ERC'd, {produced} gerber files, DRC'd");
 }
+
+/// E6 regression: add_power_symbol must snap to the schematic grid like every
+/// other placement tool (add_schematic_component, add_wire…), or a power
+/// symbol placed at the same nominal coordinate as a resistor pin lands up to
+/// 0.635mm off it and `kicad-cli sch erc` reports both as unconnected.
+///
+/// Reproduces the original failure: build a two-resistor probe divider, then
+/// place VCC/GND power symbols using an intentionally off-grid nominal
+/// coordinate near each free pin (as a caller unaware of grid-snapping
+/// would compute it) — not the pin's already-snapped coordinate. Asserts
+/// both that the tool reports the snap instead of hiding it, and that real
+/// eeschema ERC reports zero errors.
+#[test]
+#[ignore = "requires kicad-cli + symbol libraries; run via e2e workflow"]
+fn power_symbol_snaps_to_grid_like_components_e6() {
+    let Some(kicad_cli) = find_kicad_cli() else {
+        panic!("kicad-cli not found — set KICAD_CLI or install KiCAD (this test is e2e-only)");
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let base: std::path::PathBuf = match std::env::var("KONNECT_E2E_KEEP_DIR") {
+        Ok(d) => {
+            std::fs::create_dir_all(&d).unwrap();
+            d.into()
+        }
+        Err(_) => tmp.path().to_path_buf(),
+    };
+    let proj = base.join("e2e_e6");
+    let proj_s = proj.to_string_lossy().to_string();
+    let sch = proj.join("e2e_e6.kicad_sch");
+    let mut p = Mcp::spawn(&kicad_cli);
+
+    p.tool("create_project", json!({"name": "e2e_e6", "path": proj_s}));
+
+    p.load("sch_components");
+    p.load("sch_wiring");
+    p.load("sch_analysis");
+    p.load("sch_export");
+    p.load("verification");
+
+    // Probe divider: R1 top → VCC, R1.2–R2.1 in series, R2 bottom → GND.
+    p.tool(
+        "add_schematic_component",
+        json!({
+            "schematic": sch.to_string_lossy(), "lib_id": "Device:R",
+            "reference": "R1", "value": "10k", "x": 100.0, "y": 80.0
+        }),
+    );
+    p.tool(
+        "add_schematic_component",
+        json!({
+            "schematic": sch.to_string_lossy(), "lib_id": "Device:R",
+            "reference": "R2", "value": "10k", "x": 100.0, "y": 100.0
+        }),
+    );
+    p.tool(
+        "connect_pins",
+        json!({
+            "schematic": sch.to_string_lossy(),
+            "ref1": "R1", "pin1": "2",
+            "ref2": "R2", "pin2": "1"
+        }),
+    );
+
+    // Real, already-snapped pin coordinates for the two free pins.
+    let r1_pin1 = body(&p.tool(
+        "get_pin_connections",
+        json!({"schematic": sch.to_string_lossy(), "reference": "R1", "pin_number": "1"}),
+    ));
+    let r2_pin2 = body(&p.tool(
+        "get_pin_connections",
+        json!({"schematic": sch.to_string_lossy(), "reference": "R2", "pin_number": "2"}),
+    ));
+    let (r1x, r1y) = (
+        r1_pin1["pin_x"].as_f64().unwrap(),
+        r1_pin1["pin_y"].as_f64().unwrap(),
+    );
+    let (r2x, r2y) = (
+        r2_pin2["pin_x"].as_f64().unwrap(),
+        r2_pin2["pin_y"].as_f64().unwrap(),
+    );
+
+    // Off-grid nominal coordinates a caller unaware of grid-snapping would
+    // compute — offsets stay well under the half-grid radius (0.635mm) so
+    // they must snap back onto the exact pin position.
+    let vcc = p.tool(
+        "add_power_symbol",
+        json!({
+            "schematic": sch.to_string_lossy(), "power_net": "VCC",
+            "x": r1x - 0.3, "y": r1y - 0.29
+        }),
+    );
+    let gnd = p.tool(
+        "add_power_symbol",
+        json!({
+            "schematic": sch.to_string_lossy(), "power_net": "GND",
+            "x": r2x + 0.31, "y": r2y - 0.2
+        }),
+    );
+
+    // A plain #PWR symbol is an ERC "power input" pin, not an output — KiCad
+    // requires a PWR_FLAG (or an output-type power pin) on the net to accept
+    // it as driven. Unrelated to the snap defect; without this every power
+    // net here would ERC-fail regardless of the fix. Placed at the exact,
+    // already-snapped pin coordinate (add_schematic_component's own grid
+    // snap is not what's under test here).
+    p.tool(
+        "add_schematic_component",
+        json!({
+            "schematic": sch.to_string_lossy(), "lib_id": "power:PWR_FLAG",
+            "reference": "#FLG01", "x": r1x, "y": r1y
+        }),
+    );
+    p.tool(
+        "add_schematic_component",
+        json!({
+            "schematic": sch.to_string_lossy(), "lib_id": "power:PWR_FLAG",
+            "reference": "#FLG02", "x": r2x, "y": r2y
+        }),
+    );
+
+    let vcc_body = body(&vcc);
+    let gnd_body = body(&gnd);
+    // The tool must not lie about what it wrote: an off-grid request is
+    // reported, and the written x/y matches the pin exactly (not the
+    // off-grid request).
+    assert_eq!(vcc_body["snapped_to_grid"].as_bool(), Some(true));
+    assert_eq!(vcc_body["x"].as_f64(), Some(r1x));
+    assert_eq!(vcc_body["y"].as_f64(), Some(r1y));
+    assert_eq!(gnd_body["snapped_to_grid"].as_bool(), Some(true));
+    assert_eq!(gnd_body["x"].as_f64(), Some(r2x));
+    assert_eq!(gnd_body["y"].as_f64(), Some(r2y));
+
+    let erc = body(&p.tool("run_erc", json!({"schematic": sch.to_string_lossy()})));
+    assert_eq!(
+        erc["errors"].as_u64(),
+        Some(0),
+        "E6 regression: power symbols must land exactly on the resistor pins \
+         they were nominally placed at — got: {erc}"
+    );
+
+    eprintln!("E2E OK (E6): probe divider + power symbols snapped, 0 ERC errors");
+}

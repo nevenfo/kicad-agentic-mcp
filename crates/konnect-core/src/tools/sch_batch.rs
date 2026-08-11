@@ -881,6 +881,7 @@ async fn handle_connect_passthrough(
         Err(e) => return Ok(e),
     };
     let direction = opt_str(args, "direction").unwrap_or("right");
+    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
 
     // Stub is 2.54mm (2×1.27 grid units)
     let stub = 2.54_f64;
@@ -904,13 +905,18 @@ async fn handle_connect_passthrough(
     let new_content = apply_edits(content, edits);
     write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
 
-    Ok(CallToolResult::json(&json!({
+    let mut result = json!({
         "net": net_name,
         "stub_root": { "x": x, "y": y },
         "label_position": { "x": wire_end_x, "y": wire_end_y },
         "direction": direction,
         "label_rotation": label_rot
-    })))
+    });
+    if let Some(requested) = requested {
+        result["requested"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_add_schematic_text(
@@ -933,6 +939,10 @@ async fn handle_add_schematic_text(
     let size = args["size"].as_f64().unwrap_or(1.27);
     let rotation = args["rotation"].as_f64().unwrap_or(0.0);
     let uuid = new_uuid();
+    // Free-floating annotation text isn't electrically significant, but a
+    // tool must not write off-grid coordinates silently — snap it like every
+    // other schematic placement (E6).
+    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
 
     // Escape quotes in text content
     let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
@@ -949,13 +959,18 @@ async fn handle_add_schematic_text(
     let new_content = apply_edits(content, edits);
     write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
 
-    Ok(CallToolResult::json(&json!({
+    let mut result = json!({
         "added": text,
         "x": x, "y": y,
         "size": size,
         "rotation": rotation,
         "uuid": uuid
-    })))
+    });
+    if let Some(requested) = requested {
+        result["requested"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_get_layout(

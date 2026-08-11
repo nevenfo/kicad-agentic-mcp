@@ -369,6 +369,33 @@ pub fn blank_schematic_template() -> String {
     konnect_sexp::schematic::format_blank_schematic()
 }
 
+/// Snap `(x, y)` to the schematic grid (see [`konnect_sexp::geometry::SCHEMATIC_GRID_MM`])
+/// and report whether the snap moved the point.
+///
+/// Every tool that writes a placement coordinate into a `.kicad_sch` file
+/// (component, power symbol, label, junction, no-connect, sheet, sheet pin,
+/// text…) must go through this single helper — see E6: `add_power_symbol`
+/// used to write coordinates verbatim while `add_schematic_component` snapped
+/// to the 1.27mm grid, so a power symbol and a resistor placed at the same
+/// nominal (x, y) ended up up to 0.635mm apart, `kicad-cli sch erc` reporting
+/// "Pin not connected" with no tool ever flagging the mismatch.
+///
+/// A tool must not silently lie about what it wrote. When the input was
+/// already on-grid, snapping is a no-op and nothing needs reporting. When it
+/// moved the point, the returned `requested` value must be surfaced in the
+/// tool's JSON result (typically as a `"requested": {"x":.., "y":..}` field
+/// alongside the actually-written `x`/`y`) so the caller can see the point
+/// was moved instead of discovering it later as an ERC failure.
+pub fn snap_reporting(x: f64, y: f64) -> ((f64, f64), Option<serde_json::Value>) {
+    let (sx, sy) =
+        konnect_sexp::geometry::snap_point(x, y, konnect_sexp::geometry::SCHEMATIC_GRID_MM);
+    if (sx - x).abs() > 1e-9 || (sy - y).abs() > 1e-9 {
+        ((sx, sy), Some(serde_json::json!({ "x": x, "y": y })))
+    } else {
+        ((sx, sy), None)
+    }
+}
+
 /// Root UUID of a loaded schematic, assigning a fresh one when the file
 /// predates Konnect writing root UUIDs — the file is repaired on its next
 /// overwrite. Instance paths are built as "/<root-uuid>[/<sheet-uuid>…]".

@@ -177,7 +177,7 @@ Not covered by any tool:
 | `list_schematic_nets` | `sch_analysis` | `sexpr` | PARTIAL | bench | `bench/probes/divider.yaml` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_net_connections` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_net_connectivity` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_pin_connections` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_pin_connections` | `sch_analysis` | `sexpr` | NOT_TESTED | gated | `crates/konnect/tests/e2e_kicad.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_pin_net_name` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_component_nets` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_net_components` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
@@ -560,7 +560,7 @@ Not covered by any tool:
 | `list_schematic_labels` | `labels` | `sexpr` | none |
 | `get_net_connections` | `nets` | `sexpr` | none |
 | `get_net_connectivity` | `nets` | `sexpr` | none |
-| `get_pin_connections` | `nets` | `sexpr` | none |
+| `get_pin_connections` | `nets` | `sexpr` | gated — `crates/konnect/tests/e2e_kicad.rs` |
 | `get_pin_net_name` | `nets` | `sexpr` | none |
 | `get_component_nets` | `nets` | `sexpr` | none |
 | `get_net_components` | `nets` | `sexpr` | none |

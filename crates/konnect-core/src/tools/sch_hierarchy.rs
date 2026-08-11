@@ -1122,6 +1122,10 @@ async fn handle_add_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resul
         Ok(v) => v,
         Err(e) => return Ok(e),
     };
+    // A sheet pin is a connection point: the wire outside the sheet symbol
+    // must land exactly on it, or ERC sees the net as unconnected — same
+    // defect class as E6 (add_power_symbol not snapping).
+    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
 
     let before = read_consistent(&sch_path)?;
     let mut sch = cse::Schematic::load(&sch_path)?;
@@ -1151,13 +1155,18 @@ async fn handle_add_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resul
     ));
     commit_edited_sheet_item(&sch_path, &before, &sch, &sheet_uuid, "Add sheet pin")?;
 
-    Ok(CallToolResult::json(&json!({
+    let mut result = json!({
         "added_pin": pin_name,
         "sheet": sheet_name,
         "pin_type": pin_type,
         "x": x,
         "y": y
-    })))
+    });
+    if let Some(requested) = requested {
+        result["requested"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_edit_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Result<CallToolResult> {

@@ -26,10 +26,46 @@ committed, and closed **E8** on its way through.
 Next up is the decision that has been deferred twice: **Phase H**, the local
 model runtime, whose precondition set is now empty — a plan exists for a model
 to write, an anchor exists for it to be reminded by, a graph exists for it to
-ask instead of dumping, and a matrix exists that says which 107 tools it should
-not be handed.
+ask instead of dumping, a matrix exists that says which 107 tools it should not
+be handed, and **E6 is closed**, so the direct tool path no longer produces
+silently wrong geometry for a model to be measured on.
 
-## CURRENT TASK — a world model the model can ask, instead of a document it must read
+## CURRENT TASK — E6, closed as a class rather than as a symptom
+
+`add_power_symbol` wrote its coordinate verbatim while
+`add_schematic_component` snapped to the 1.27 mm grid, so a power symbol placed
+at the same nominal coordinate as a resistor landed 0.33 mm off the pin and ERC
+reported `Pin not connected` for both. No tool errored. The schematic was simply
+wrong — six ERC errors on the first divider probe.
+
+The fix is not the one tool. Every electrically meaningful `(at x y)` a
+schematic tool writes now goes through one `snap_reporting()` helper over
+`konnect_sexp::geometry::snap_point`, and the grid is a single
+`SCHEMATIC_GRID_MM` constant — `plan::ops` aliases it rather than restating it,
+because two grid literals drifting apart is E6 with extra steps. **Nine more
+tools were silently affected** and are fixed with it: `add_no_connect`,
+`add_net_label`, `add_junction`, `batch_add_junction`, `connect_passthrough`,
+`connect_to_net`, `add_schematic_text`, `add_sheet_pin`, and `apply_template` —
+whose 15 mm column spacing is not a multiple of 1.27, so it drifted off-grid
+even from an on-grid origin.
+
+**The tool does not lie about it.** An on-grid input is snapped silently and
+gains no field; an input that moved gets `requested: {x, y}` and
+`snapped_to_grid: true` in the reply, with `x`/`y` reporting what was actually
+written. A sheet body and `move_sheet` are deliberately left unsnapped: a sheet
+outline is not a connection point.
+
+**Verified by running it, not by reasoning about it** (E12's rule): a new
+`#[ignore]`d e2e places R1/R2 with VCC/GND power symbols at exactly the
+off-grid coordinates that produced E6, runs real `kicad-cli sch erc`, and
+asserts **0 errors**. Both e2e tests in the file pass.
+
+**758 tests**, `gate.ps1` green, golden suite **18/18 at 2 178 tk/task**, 4 MCP
+calls, P50 64 ms — placement changed, the benchmark did not.
+
+---
+
+## PREVIOUS TASK — a world model the model can ask, instead of a document it must read
 
 ProjectGraph is the last of Phase E. The point is not that a graph exists; it is
 that an agent can ask a *question* — which symbols carry this value, what sits
@@ -751,7 +787,7 @@ task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
 `cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → 606 →
-682 → 700 → 706 → **752 passed, 0 failed** on the fork, plus the `#[ignore]`d e2e
+682 → 700 → 706 → 752 → **758 passed, 0 failed** on the fork, plus the `#[ignore]`d e2e
 tests, of which `plan_postconditions_e2e` was run against a real KiCad 10 for
 this phase rather than only compiled. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
@@ -813,7 +849,7 @@ re-fetching `tools/list`, so `load_toolset`'s real cost was invisible. A real
 client has no such choice. `bench/mcp_client.py` now refreshes on notification
 and `CATALOG_TOKENS` is reported as its own line.
 
-### E6 — Grid snapping is inconsistent between placement tools (2026-08-10) — OPEN
+### E6 — Grid snapping is inconsistent between placement tools (2026-08-10) — FIXED
 
 `add_schematic_component` / `batch_place_components` snap to the 1.27 mm grid
 (100, 80 → 100.33, 80.01). `add_power_symbol` does **not** — it writes the
@@ -821,9 +857,26 @@ coordinate verbatim. Placing a power symbol at the same nominal coordinate as a
 resistor therefore leaves it 0.33 mm off the pin, and KiCad ERC reports
 `Pin not connected` for both. No tool errors; the schematic is simply wrong.
 
-Observed on the first divider probe: 6 ERC errors, all from this. Not yet fixed
-— the fix is to snap in one place for every placement tool, which belongs with
-the Phase D geometry work rather than as a spot patch.
+Observed on the first divider probe: 6 ERC errors, all from this.
+
+Fixed 2026-08-11, as a class. One `snap_reporting()` helper over
+`konnect_sexp::geometry::snap_point`, one `SCHEMATIC_GRID_MM` constant that
+`plan::ops` aliases instead of restating, and every electrically meaningful
+`(at x y)` a schematic tool writes routed through it. Looking for the other
+instances is what the fix was actually worth: **nine more tools had the same
+bug** — `add_no_connect`, `add_net_label`, `add_junction`,
+`batch_add_junction`, `connect_passthrough`, `connect_to_net`,
+`add_schematic_text`, `add_sheet_pin`, and `apply_template`, whose 15 mm column
+spacing is not a multiple of 1.27 and therefore drifted off-grid even from an
+on-grid origin. Only `add_power_symbol` had ever been observed failing.
+
+A snap that moves the coordinate is reported (`requested`, `snapped_to_grid`);
+one that changes nothing is silent. Sheet outlines and `move_sheet` are left
+unsnapped on purpose — not connection points.
+
+Proved by `power_symbol_snaps_to_grid_like_components_e6`, which reconstructs
+the original failing placement and asserts 0 errors from real `kicad-cli sch
+erc`. Run, not merely written.
 
 ### E7 — Konnect's own connectivity analysis disagrees with KiCad ERC (2026-08-10) — OPEN
 
@@ -978,18 +1031,15 @@ enumerated, refused before it starts if it cannot finish, expanded
 deterministically, run as one transaction, proved against KiCAD's own ERC, and
 questioned afterwards through an indexed graph instead of a document dump.
 
-Two open defects come first, because both are things a *model* will walk into on
-the direct tool path and both would corrupt a Phase H measurement rather than
-merely annoy a human:
+**E6 is closed** and took nine undiscovered instances of itself with it. One
+open defect remains before Phase H, and it is cheap:
 
-1. **E6 — `add_power_symbol` does not snap to the 1.27 mm grid.** The only open
-   defect that silently produces a wrong schematic: six ERC errors from a
-   placement that reported success. Unreachable through a plan since D23, fully
-   live everywhere else. Fix it in the placement path itself, one snap for every
-   tool, with an ERC assertion against real `kicad-cli`.
-2. **E7, remaining half — the advisory wording where an agent will read it.**
+1. **E7, remaining half — the advisory wording where an agent will read it.**
    The matrix labels fifteen in-process connectivity tools `ADVISORY`; their
-   `tool!` descriptions still say nothing, and a model reads descriptions.
+   `tool!` descriptions still say nothing, and a model reads descriptions, not
+   `docs/capability-matrix.md`. Put the disclaimer in the `tool!` description
+   itself, from the same manifest string the matrix renders, so the two cannot
+   drift.
 
 Then **Phase H**, whose precondition set is now empty. Everything it needs to be
 measured against exists and none of it has a local consumer yet: the plan is
@@ -1001,12 +1051,11 @@ one that decides whether any of this reduces
 `LLM_CALLS_PER_SUCCESSFUL_TASK` in practice. That metric is still unmeasured and
 still not claimed.
 
-Open defects to fold into later work rather than patch separately: **E6**
-(power symbols do not snap to the 1.27 mm grid) is now *unreachable through a
-plan* and still live on the direct tool path — the fix belongs in
-`add_power_symbol` itself, with the geometry pass; **E7** is three-quarters
-closed — the evidence path uses `kicad-cli` and the matrix labels the internal
-tools advisory, but their own descriptions still do not. **E8 is closed.**
+Open defects: **E6 and E8 are closed.** **E7** is three-quarters closed — the
+evidence path uses `kicad-cli` and the matrix labels the internal tools
+advisory, but their own descriptions still do not. **E10** (`MutexGuard` held
+across `await` in `sch_components.rs`) is still deferred to Phase L, and is a
+real correctness smell rather than a lint preference.
 
 Two limitations the current evidence inherits and does not hide:
 

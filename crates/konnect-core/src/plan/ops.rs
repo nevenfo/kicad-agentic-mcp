@@ -1,12 +1,14 @@
 //! The operations a plan may name, and what each expands to.
 
 use kam_plan::{ExpandError, Op, OpLibrary, StepSpec};
-use konnect_sexp::geometry::snap_to_grid;
+use konnect_sexp::geometry::{snap_to_grid, SCHEMATIC_GRID_MM};
 use serde_json::{json, Map, Value};
 
 /// KiCAD's schematic grid. Every coordinate an operation emits is a multiple
-/// of this before it reaches a tool.
-const GRID: f64 = 1.27;
+/// of this before it reaches a tool. Aliased from the one definition in
+/// `konnect_sexp::geometry` rather than restated: two grid literals that drift
+/// apart is E6 with extra steps.
+const GRID: f64 = SCHEMATIC_GRID_MM;
 
 /// Vertical offset from a `Device:C` origin to each of its pins. Pin 1 sits
 /// above the origin, pin 2 below.

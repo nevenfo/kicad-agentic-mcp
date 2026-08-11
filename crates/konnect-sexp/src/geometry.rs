@@ -129,6 +129,12 @@ pub fn transform_pad(
     )
 }
 
+/// KiCAD's default schematic grid, in mm (50 mil). Every tool that writes a
+/// placement coordinate into a `.kicad_sch` file must snap to this grid
+/// through [`snap_point`]/[`snap_to_grid`] — do not re-declare `1.27` as a
+/// local constant.
+pub const SCHEMATIC_GRID_MM: f64 = 1.27;
+
 /// Snap a coordinate to KiCAD's schematic grid (default 1.27 mm = 50 mil).
 pub fn snap_to_grid(value: f64, grid: f64) -> f64 {
     (value / grid).round() * grid
@@ -366,6 +372,34 @@ mod tests {
     fn snap_grid() {
         assert_eq!(snap_to_grid(1.3, 1.27), 1.27);
         assert_eq!(snap_to_grid(2.6, 1.27), 2.54);
+    }
+
+    #[test]
+    fn snap_point_off_grid_is_moved_to_nearest_grid_point() {
+        // E6 regression: nominal (100, 80) is what add_schematic_component
+        // snapped to (100.33, 80.01) — add_power_symbol used to keep the
+        // input verbatim instead, landing 0.33mm off the resistor's pin.
+        let (x, y) = snap_point(100.0, 80.0, SCHEMATIC_GRID_MM);
+        assert!((x - 100.33).abs() < 1e-9, "x={x}");
+        assert!((y - 80.01).abs() < 1e-9, "y={y}");
+    }
+
+    #[test]
+    fn snap_point_already_on_grid_is_unchanged() {
+        let (x, y) = snap_point(
+            100.0 * SCHEMATIC_GRID_MM,
+            -5.0 * SCHEMATIC_GRID_MM,
+            SCHEMATIC_GRID_MM,
+        );
+        assert_eq!(x, 100.0 * SCHEMATIC_GRID_MM);
+        assert_eq!(y, -5.0 * SCHEMATIC_GRID_MM);
+    }
+
+    #[test]
+    fn snap_point_negative_coordinate() {
+        let (x, y) = snap_point(-1.3, -2.6, SCHEMATIC_GRID_MM);
+        assert_eq!(x, -1.27);
+        assert_eq!(y, -2.54);
     }
 
     #[test]

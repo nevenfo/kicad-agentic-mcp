@@ -846,6 +846,9 @@ async fn handle_add_net_label(
     let rotation = opt_f64(args, "rotation").unwrap_or(0.0);
     let label_type = opt_str(args, "label_type").unwrap_or("net_label");
     let shape = opt_str(args, "shape").unwrap_or("input");
+    // E6 class: a label must land on the same grid point as the pin/wire it
+    // connects to, or ERC sees it as floating.
+    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
@@ -875,9 +878,12 @@ async fn handle_add_net_label(
 
     sch.overwrite()?;
 
-    Ok(CallToolResult::json(
-        &json!({ "added_label": net, "type": label_type, "x": x, "y": y }),
-    ))
+    let mut result = json!({ "added_label": net, "type": label_type, "x": x, "y": y });
+    if let Some(requested) = requested {
+        result["requested"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_delete_net_label(
@@ -1248,6 +1254,13 @@ async fn handle_add_power_symbol(
         Err(e) => return Ok(e),
     };
     let rotation = opt_f64(args, "rotation").unwrap_or(0.0);
+    // E6: add_schematic_component/batch_place_components snap to the 1.27mm
+    // grid; add_power_symbol used to write (x, y) verbatim, so a power
+    // symbol placed at the same nominal coordinate as a resistor landed up
+    // to 0.635mm off its pin — ERC then reported both as unconnected with
+    // no tool ever signalling the mismatch. Snap here too, through the same
+    // shared helper, and surface the move instead of hiding it.
+    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
@@ -1309,12 +1322,17 @@ async fn handle_add_power_symbol(
     // dot, or KiCad ERC reports it as not connected.
     let junctions_added = crate::tools::add_pin_midwire_junctions(&sch_path, &pwr_ref)?;
 
-    Ok(CallToolResult::json(&json!({
+    let mut result = json!({
         "added_power": power_net,
         "reference": pwr_ref,
         "x": x, "y": y,
         "junctions_added": junctions_added.iter().map(|(x, y)| json!({"x": x, "y": y})).collect::<Vec<_>>()
-    })))
+    });
+    if let Some(requested) = requested {
+        result["requested"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_add_no_connect(
@@ -1331,12 +1349,16 @@ async fn handle_add_no_connect(
         Err(e) => return Ok(e),
     };
 
+    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
     let mut sch = cse::Schematic::load(&sch_path)?;
     sch.add_no_connect(x, y);
     sch.overwrite()?;
-    Ok(CallToolResult::json(
-        &json!({ "added_no_connect": { "x": x, "y": y } }),
-    ))
+    let mut result = json!({ "added_no_connect": { "x": x, "y": y } });
+    if let Some(requested) = requested {
+        result["requested"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_delete_no_connect(
@@ -1459,12 +1481,16 @@ async fn handle_add_junction(
         Err(e) => return Ok(e),
     };
 
+    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
     let mut sch = cse::Schematic::load(&sch_path)?;
     sch.add_junction(x, y);
     sch.overwrite()?;
-    Ok(CallToolResult::json(
-        &json!({ "added_junction": { "x": x, "y": y } }),
-    ))
+    let mut result = json!({ "added_junction": { "x": x, "y": y } });
+    if let Some(requested) = requested {
+        result["requested"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_batch_add_junction(
@@ -1474,13 +1500,19 @@ async fn handle_batch_add_junction(
     let sch_path = get_path(args, "schematic")?;
     let positions = args["positions"].as_array().cloned().unwrap_or_default();
     let mut sch = cse::Schematic::load(&sch_path)?;
+    let mut snapped_any = false;
     for pos in &positions {
         let x = pos["x"].as_f64().unwrap_or(0.0);
         let y = pos["y"].as_f64().unwrap_or(0.0);
-        sch.add_junction(x, y);
+        let ((sx, sy), requested) = crate::tools::snap_reporting(x, y);
+        snapped_any |= requested.is_some();
+        sch.add_junction(sx, sy);
     }
     sch.overwrite()?;
-    Ok(CallToolResult::json(&json!({ "added": positions.len() })))
+    Ok(CallToolResult::json(&json!({
+        "added": positions.len(),
+        "snapped_to_grid": snapped_any
+    })))
 }
 
 async fn handle_connect_to_net(
@@ -1503,6 +1535,10 @@ async fn handle_connect_to_net(
     let direction = opt_str(args, "direction").unwrap_or("right");
     let stub_length = opt_f64(args, "stub_length").unwrap_or(2.54);
     let label_type = opt_str(args, "label_type").unwrap_or("net_label");
+    // pin_x/pin_y should already be on-grid (real pin positions come from
+    // snapped component placements), but don't trust callers blindly — same
+    // defect class as E6 if a caller derives this coordinate itself.
+    let ((pin_x, pin_y), requested) = crate::tools::snap_reporting(pin_x, pin_y);
 
     // Compute label endpoint and label rotation based on direction.
     // Label rotation follows KiCAD convention: 0° = text reads left-to-right,
@@ -1563,12 +1599,17 @@ async fn handle_connect_to_net(
 
     sch.overwrite()?;
 
-    Ok(CallToolResult::json(&json!({
+    let mut result = json!({
         "connected": net,
         "direction": direction,
         "wire": { "x1": pin_x, "y1": pin_y, "x2": label_x, "y2": label_y },
         "label": { "x": label_x, "y": label_y, "rotation": label_rot }
-    })))
+    });
+    if let Some(requested) = requested {
+        result["requested_pin"] = requested;
+        result["snapped_to_grid"] = json!(true);
+    }
+    Ok(CallToolResult::json(&result))
 }
 
 async fn handle_connect_pins(
@@ -2321,8 +2362,9 @@ mod power_symbol_tests {
             .find(|p| p.name == "Reference")
             .unwrap();
         let ref_sexp = cse::sexp::writer::write(&ref_prop.to_sexp());
+        // Input (100, 80) snaps to the 1.27mm grid (E6): (100.33, 80.01).
         assert!(
-            ref_sexp.contains("(at 100") && ref_sexp.contains("76.19"),
+            ref_sexp.contains("(at 100.33") && ref_sexp.contains("76.2"),
             "Reference must sit near the symbol, not sheet origin: {ref_sexp}"
         );
         let hide_at = ref_sexp
@@ -2336,7 +2378,7 @@ mod power_symbol_tests {
         let val_prop = sym.properties.iter().find(|p| p.name == "Value").unwrap();
         let val_sexp = cse::sexp::writer::write(&val_prop.to_sexp());
         assert!(
-            val_sexp.contains("(at 100") && val_sexp.contains("83.81"),
+            val_sexp.contains("(at 100.33") && val_sexp.contains("83.82"),
             "Value must sit near the symbol: {val_sexp}"
         );
         assert!(
@@ -2347,6 +2389,76 @@ mod power_symbol_tests {
             !after.contains("(property \"Reference\" \"#PWR001\")\n"),
             "must not write a bare Reference with no (at)"
         );
+    }
+
+    /// E6 regression: add_power_symbol must snap through the same shared
+    /// helper as add_schematic_component, and must not lie about it — an
+    /// off-grid request is reported back via `requested`/`snapped_to_grid`.
+    #[tokio::test]
+    async fn add_power_symbol_snaps_off_grid_input_and_reports_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("power.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 0 0))\n      (property \"Value\" \"GND\" (at 0 0 0))\n    )\n  )\n)\n",
+        )
+        .unwrap();
+
+        let result = handle_add_power_symbol(
+            &json!({
+                "schematic": path.display().to_string(),
+                "power_net": "GND",
+                "x": 100.0,
+                "y": 80.0
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected a text result");
+        };
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(value["x"].as_f64(), Some(100.33));
+        assert_eq!(value["y"].as_f64(), Some(80.01));
+        assert_eq!(value["snapped_to_grid"].as_bool(), Some(true));
+        assert_eq!(value["requested"]["x"].as_f64(), Some(100.0));
+        assert_eq!(value["requested"]["y"].as_f64(), Some(80.0));
+    }
+
+    /// Already-on-grid input must not be reported as snapped — a tool must
+    /// not manufacture a "requested" field for a coordinate it didn't move.
+    #[tokio::test]
+    async fn add_power_symbol_on_grid_input_is_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("power.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 0 0))\n      (property \"Value\" \"GND\" (at 0 0 0))\n    )\n  )\n)\n",
+        )
+        .unwrap();
+
+        let result = handle_add_power_symbol(
+            &json!({
+                "schematic": path.display().to_string(),
+                "power_net": "GND",
+                "x": 100.33,
+                "y": 80.01
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected a text result");
+        };
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(value["x"].as_f64(), Some(100.33));
+        assert_eq!(value["y"].as_f64(), Some(80.01));
+        assert!(value.get("snapped_to_grid").is_none());
+        assert!(value.get("requested").is_none());
     }
 }
 

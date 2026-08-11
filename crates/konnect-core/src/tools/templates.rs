@@ -441,8 +441,14 @@ async fn handle_apply_template(
             let reference = format!("{}{}", ref_prefix, counter);
             *counter += 1;
 
-            let x = base_x;
-            let y = base_y + (placed.len() as f64) * spacing_y;
+            // spacing_y (15mm) isn't a multiple of the 1.27mm grid, so every
+            // row after the first would otherwise drift off-grid even when
+            // base_x/base_y are on it — same defect class as E6.
+            let (x, y) = konnect_sexp::geometry::snap_point(
+                base_x,
+                base_y + (placed.len() as f64) * spacing_y,
+                konnect_sexp::geometry::SCHEMATIC_GRID_MM,
+            );
             let uuid = new_uuid();
 
             // Generate symbol S-expression
