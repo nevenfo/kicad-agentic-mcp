@@ -1,0 +1,34 @@
+[package]
+name = "kam-llm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+# Deliberately NOT the workspace AGPL licence, for the same reason as
+# kam-state/kam-plan/kam-evidence/kam-graph: this crate is clean-room,
+# contains no code derived from Konnect, and depends on no `konnect-*` type,
+# so it stays re-licensable and re-basable if the base ever changes
+# (plan.md, "License impact", D11). It knows what a chat-completion
+# provider is and nothing about what KiCAD is.
+license = "MIT OR Apache-2.0"
+description = "Local LLM provider abstraction, an OpenAI-compatible client (LM Studio / llama.cpp server), and a hardware probe for on-device inference."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+thiserror.workspace = true
+# Object-safe async trait methods for `Provider`: the router (Phase H, later
+# step) has to hold `Box<dyn Provider>` and swap backends without the domain
+# caller knowing which one, which native async-fn-in-trait cannot do without
+# this crate or hand-rolled `Pin<Box<dyn Future>>` boilerplate.
+async-trait = "0.1"
+
+[dev-dependencies]
+# Spins up a real loopback HTTP server per test so `openai_compat` is
+# exercised through actual `reqwest` requests against a fake backend, not a
+# hand-mocked transport. Already a workspace dependency for `konnect`'s own
+# HTTP transport, so this adds no new dependency to the workspace.
+axum.workspace = true
