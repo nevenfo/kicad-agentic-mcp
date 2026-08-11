@@ -1,0 +1,33 @@
+id: model_decoupling_bank
+title: "Decoupling bank, four capacitors on +3V3"
+project_name: bank
+category: schematic_macro
+# Derived from bench/plan_cost.py's `bank_plan` scenario, the macro the
+# `decouple` plan operation exists for.
+objective: |
+  Place a bank of four 100nF decoupling capacitors, referenced C10 through
+  C13, along the +3V3 rail, each grounded. The bank starts at
+  (120.65, 80.01) with 7.62mm pitch between capacitors. Work inside the
+  schematic at $SCH, in a project created at $WORK named $NAME.
+
+# hint level — see bench/model_tasks/01_divider.yaml for the definition of
+# full / minimal / none.
+hints:
+  full: |
+    This bank is a fragment with nothing driving the +3V3 rail, so a clean ERC
+    run is not the expectation here: bench/plan_cost.py measures this exact
+    fixture, built correctly, at ERC errors=2 (D29/D18's baseline machinery
+    does not apply — there is no source on the rail to begin with). The
+    invariant below is that measured number, not zero. Device:C pin 1 sits
+    3.81mm above the capacitor's own y, pin 2 sits 3.81mm below it. A
+    capacitor that sits "on a rail" (as opposed to being wired to an IC pin)
+    gets a power symbol on each of its two pins instead of a wire to anything.
+  minimal: |
+    The schematic grid is 1.27mm; every coordinate you write in a
+    place/power/label/wire/decouple operation is snapped to it. A coordinate
+    field must be a literal number, never a ${...} reference.
+  none: ""
+
+invariants:
+  components: ["C10", "C11", "C12", "C13"]
+  erc_max_errors: 2

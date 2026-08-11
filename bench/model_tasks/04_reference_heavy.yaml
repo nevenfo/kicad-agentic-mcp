@@ -1,0 +1,39 @@
+id: model_reference_chain
+title: "Pull-up resistor, chained through the project's own returned path"
+project_name: pullup
+category: schematic_reference
+# Deliberately forces a genuine ${op.field} reference: the schematic path is
+# never given as a literal, only as create_project's own reply.
+objective: |
+  Create a new KiCad project at $WORK named $NAME as the plan's first
+  operation, and give that operation the id "create". Every later operation
+  that needs a schematic path must reference ${create.schematic} rather than
+  writing the path again — the project-creation step is the only place that
+  knows the exact path it wrote, and the caller must not reconstruct it.
+  Then place a single pull-up resistor R1 (Device:R, 10k) at (101.6, 88.9),
+  anchor its pin 1 with a PWR_FLAG named #FLG01 and a +3V3 power symbol at
+  that same point, and label pin 2's net VPU.
+
+# hint level — see bench/model_tasks/01_divider.yaml for the definition of
+# full / minimal / none. The ${create.schematic} field name is stated in the
+# objective above regardless of hint level; hints only add/remove geometry.
+hints:
+  full: |
+    Device:R pins sit at (component_x, component_y - 3.81) for pin 1 and
+    (component_x, component_y + 3.81) for pin 2, so R1 at (101.6, 88.9) has
+    pin 1 at (101.6, 85.09) and pin 2 at (101.6, 92.71) — both already
+    multiples of the 1.27mm grid. create_project's own reply names the
+    schematic file it wrote under the field "schematic"; read that back with
+    ${create.schematic} in every subsequent operation's "schematic" argument
+    instead of writing $WORK/$NAME.kicad_sch by hand. A coordinate field may
+    never carry a ${...} reference — only the schematic path may.
+  minimal: |
+    The schematic grid is 1.27mm; every coordinate you write in a
+    place/power/label/wire/decouple operation is snapped to it. A coordinate
+    field must be a literal number, never a ${...} reference.
+  none: ""
+
+invariants:
+  components: ["R1"]
+  nets: ["VPU"]
+  erc_max_errors: 0
