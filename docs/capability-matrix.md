@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 166 | 44 | 6 | 107 | 4 | 5 | 27.3 % |
+| KiCAD domains | 166 | 45 | 5 | 107 | 4 | 5 | 28.0 % |
 | server's own | 37 | 15 | 0 | 22 | 0 | 0 | 40.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -64,7 +64,7 @@ Coverage is `(supported + external) / (entries − entries KiCAD has no API for)
 | [`rules`](#rules) | 5 | 0 | 0 | 5 | 0 | 0 | 0.0 % |
 | [`erc`](#erc) | 2 | 1 | 1 | 0 | 0 | 0 | 50.0 % |
 | [`drc`](#drc) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
-| [`bom`](#bom) | 1 | 0 | 1 | 0 | 0 | 0 | 0.0 % |
+| [`bom`](#bom) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`3d`](#3d) | 2 | 0 | 0 | 1 | 0 | 1 | 0.0 % |
 | [`simulation`](#simulation) | 1 | 0 | 0 | 0 | 0 | 1 | — |
 | [`manufacturing`](#manufacturing) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
@@ -377,7 +377,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `export_bom` | `pcb_export` | `cli` | PARTIAL | bench | `bench/tasks/05_manufacturing_exports.yaml` | registered in the `pcb_export` toolset while reading only schematic data (E8): an agent holding every schematic toolset still gets `toolset_not_loaded` |
+| `export_bom` | `sch_export` | `cli` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
 
 ### 3d
 

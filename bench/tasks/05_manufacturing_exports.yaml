@@ -2,11 +2,11 @@ id: manufacturing_exports
 title: BOM, netlist, ERC report and schematic SVG from a real design
 project_name: exports
 category: manufacturing
-# `pcb_export` is in the list because `export_bom` lives there despite taking a
-# `schematic` argument and reading only schematic data. Discovering that costs a
-# real agent a failed call plus a `load_toolset` round trip; it is recorded as a
-# taxonomy defect in progress.md, not silently worked around.
-toolsets: [project, sch_components, sch_wiring, sch_batch, sch_export, sch_analysis, pcb_export]
+# `pcb_export` used to be in this list purely because `export_bom` was registered
+# there while reading only schematic data (E8). The tool now lives in
+# `sch_export` next to the other schematic exports, so a schematic-only task
+# loads schematic-only toolsets.
+toolsets: [project, sch_components, sch_wiring, sch_batch, sch_export, sch_analysis]
 
 # Deliberately reuses the divider topology: this task measures the export path
 # (kicad-cli round trips), not the authoring path, so the design under it must

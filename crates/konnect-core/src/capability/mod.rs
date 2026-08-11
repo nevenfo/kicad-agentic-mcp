@@ -511,6 +511,7 @@ pub static MANIFEST: &[Capability] = &[
     ),
     cap("run_erc", Domain::Erc, Adapter::Cli),
     cap("fix_connectivity", Domain::Nets, Adapter::Sexpr),
+    cap("export_bom", Domain::Bom, Adapter::Cli),
     // ── sch_hierarchy ───────────────────────────────────────────────────────
     cap("add_hierarchical_sheet", Domain::Hierarchy, Adapter::Sexpr),
     cap("edit_sheet", Domain::Hierarchy, Adapter::Sexpr),
@@ -575,14 +576,6 @@ pub static MANIFEST: &[Capability] = &[
     cap("export_pdf", Domain::Export, Adapter::Cli),
     cap("export_svg", Domain::Export, Adapter::Cli),
     cap("export_3d", Domain::ThreeD, Adapter::Cli),
-    cap_lim(
-        "export_bom",
-        Domain::Bom,
-        Adapter::Cli,
-        Limitation::Partial(
-            "registered in the `pcb_export` toolset while reading only schematic data (E8): an agent holding every schematic toolset still gets `toolset_not_loaded`",
-        ),
-    ),
     cap("export_netlist", Domain::Export, Adapter::Cli),
     cap("export_position_file", Domain::PickPlace, Adapter::Cli),
     cap("export_dxf", Domain::Export, Adapter::Cli),

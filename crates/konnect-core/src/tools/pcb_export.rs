@@ -123,29 +123,6 @@ pub fn tools() -> Vec<ToolDef> {
             |args, ctx| async move { handle_export_3d(args, ctx).await }
         ),
         tool!(
-            "export_bom",
-            "Generate a Bill of Materials (BOM) CSV from the schematic's component data.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "schematic": { "type": "string", "description": "Path to .kicad_sch file (BOM uses schematic data)" },
-                    "output": { "type": "string", "description": "Output CSV file path" },
-                    "format": {
-                        "type": "string",
-                        "description": "BOM format passed to kicad-cli: 'csv' (default)",
-                        "default": "csv"
-                    },
-                    "exclude_dnp": {
-                        "type": "boolean",
-                        "description": "Exclude 'Do Not Place' components",
-                        "default": true
-                    }
-                },
-                "required": ["schematic", "output"]
-            }),
-            |args, ctx| async move { handle_export_bom(args, ctx).await }
-        ),
-        tool!(
             "export_netlist",
             "Export the PCB netlist to a file in KiCAD or IPC-D-356 format.",
             json!({
@@ -414,26 +391,6 @@ async fn handle_export_3d(
         serde_json::to_string(&json!({
             "success": true,
             "format": format,
-            "output": output.to_str().unwrap_or("")
-        }))
-        .unwrap(),
-    ))
-}
-
-async fn handle_export_bom(
-    args: &serde_json::Value,
-    ctx: &ToolContext,
-) -> anyhow::Result<CallToolResult> {
-    let schematic = get_path(args, "schematic")?;
-    let output = get_path(args, "output")?;
-    let format = args["format"].as_str().unwrap_or("csv");
-
-    let cli = &ctx.config.kicad_cli;
-    cli::export_bom(cli, &schematic, &output, format).await?;
-
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "success": true,
             "output": output.to_str().unwrap_or("")
         }))
         .unwrap(),

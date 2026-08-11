@@ -19,7 +19,8 @@ ALL modifications go through MCP tools — never edit project files directly.
 Before any manufacturing work, load the required toolsets:
 
 ```
-load_toolset('pcb_export')       # export_gerber, export_bom, export_position_file, get_drc_violations
+load_toolset('pcb_export')       # export_gerber, export_position_file, get_drc_violations
+load_toolset('sch_export')       # export_bom (reads the schematic, not the board)
 load_toolset('manufacturing')    # export_manufacturing_package, validate_for_manufacturing, estimate_cost
 ```
 

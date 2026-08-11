@@ -160,8 +160,8 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `batch_place_components` | Place multiple symbols from KiCAD libraries in a single file read/write cycle. Pass explicit references -- there is no auto-numbering; an omitted reference becomes '?' like an eeschema-unannotated symbol, same as `add_schematic_component`. |
 | `batch_connect_pins` | Connect multiple component pin pairs by reference and pin number, in a single file read/write cycle. |
 
-### `sch_export` · 6 tools
-**Purpose:** Export schematic to SVG/PDF/netlist, run ERC.
+### `sch_export` · 7 tools
+**Purpose:** Export schematic to SVG/PDF/netlist/BOM, run ERC.
 **Source:** [`crates/konnect-core/src/tools/sch_export.rs`](crates/konnect-core/src/tools/sch_export.rs)
 
 | Tool | Description |
@@ -172,6 +172,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `export_netlist_summary` | Return a human-readable JSON netlist summary (components, nets, pin counts). Does not require kicad-cli. |
 | `run_erc` | Run the Electrical Rules Check via kicad-cli and return violations filtered by severity. |
 | `fix_connectivity` | Scan for near-miss wire endpoints within `snap_tolerance` of a pin/label and snap them into place. Supports `dry_run`. |
+| `export_bom` | Generate a Bill of Materials (BOM) CSV from the schematic's component data. |
 
 ### `sch_hierarchy` · 12 tools
 **Purpose:** Hierarchical sheets: add/edit/move/delete/duplicate a sheet, hierarchy and page-numbering queries, import/add/edit/delete sheet pins, pin/label sync validation.
@@ -253,8 +254,8 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `assign_net_to_class` | Assign a net to an existing netclass in the PCB file (S-expression edit). |
 | `route_differential_pair` | Route a differential pair (two parallel traces with a specified gap). |
 
-### `pcb_export` · 13 tools
-**Purpose:** Gerber, PDF, SVG, 3D model, BOM, pick-and-place, DRC, DXF/GenCAD/IPC-2581/ODB++.
+### `pcb_export` · 12 tools
+**Purpose:** Gerber, PDF, SVG, 3D model, pick-and-place, DRC, DXF/GenCAD/IPC-2581/ODB++.
 **Source:** [`crates/konnect-core/src/tools/pcb_export.rs`](crates/konnect-core/src/tools/pcb_export.rs)
 
 | Tool | Description |
@@ -263,7 +264,6 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `export_pdf` | Export the PCB layout to a PDF file using kicad-cli. |
 | `export_svg` | Export the PCB layout to an SVG file using kicad-cli. |
 | `export_3d` | Export the PCB as a 3D model (STEP or VRML) using kicad-cli. |
-| `export_bom` | Generate a Bill of Materials (BOM) CSV from the schematic's component data. |
 | `export_netlist` | Export the PCB netlist in KiCAD or IPC-D-356 format. |
 | `export_position_file` | Generate a component placement (pick-and-place) position file for SMT assembly. |
 | `export_dxf` | Export the PCB to DXF, one file per layer, using kicad-cli. For mechanical CAD interchange. |

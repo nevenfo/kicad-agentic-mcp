@@ -20,9 +20,46 @@ idempotency, transactional batches and the error catalog; E shipped the semantic
 diff, evidence handles, independent verification and the Task State Manager, and
 still owes ProjectGraph. G has shipped the IR, the compiler, the KiCAD operation
 library and the `plan` toolset; the plan's own `validators` list is carried but
-not yet executed by the plan itself.
+not yet executed by the plan itself. The capability matrix is generated and
+committed, and closed **E8** on its way through.
 
-## CURRENT TASK
+## CURRENT TASK — the capability matrix, and the defect it forced
+
+`docs/capability-matrix.md` is rendered from `konnect-core::capability`, and the
+point of it is the rule rather than the table: `SUPPORTED` is not a field
+anybody sets. `capability::coverage` reads the repository's own tests and golden
+benchmark tasks and publishes the strongest proof it can find, so a tool nothing
+exercises reads `NOT_TESTED` however finished its code looks, and an `#[ignore]`d
+test counts as `gated` — shown, and not a claim. What KiCAD has no API for leaves
+the denominator, so the percentage separates "we didn't" from "KiCAD can't".
+Three tests keep it from becoming fiction: the manifest must name every
+registered tool, may name no tool that does not exist, and the committed markdown
+must match what the code renders (`KAM_UPDATE_MATRIX=1` regenerates it).
+
+The result is uncomfortable and that is the intended behaviour: **27.3 %** of
+KiCAD-domain entries at first render, 107 of 193 tools with no proof that runs,
+and the whole `pcb_components` / `pcb_routing` path resting on `#[ignore]`d tests
+because `ipc!` has no file fallback and needs a GUI session.
+
+**E8 closed by the same pass.** `export_bom` reads a `.kicad_sch` and nothing
+else and was registered in `pcb_export`; it now lives in `sch_export`. The matrix
+is what forced it — the tool published as `PARTIAL` with its own misplacement as
+the stated limitation on every render. Measured in `toolsets` mode, the only mode
+that can see it: `manufacturing_exports` used to pay **+1 757 catalogue tokens**
+over its schematic-only peers and now pays exactly what they pay (8 880). In
+`gateway` mode the fix is worth nothing, as expected — the catalogue is never
+refreshed there — and the column's 2 171 → 2 178 is inside the ±12 spread of
+repeated runs on one build. No saving is claimed there. `bom` coverage 0 % →
+100 %, KiCAD-domain coverage 27.3 % → **28.0 %**.
+
+**700 tests, 18/18, 4 MCP calls, startup 2 034 — unchanged**; `fmt`, `clippy` and
+the benchmark gate clean.
+
+Next: plan-owned postconditions, then ProjectGraph.
+
+---
+
+## PREVIOUS TASK — Phase G, the plan
 
 A change can now be described once instead of enumerated, and a description that
 cannot finish is refused before the first mutation:
@@ -51,8 +88,6 @@ request alone). Golden suite unchanged at **2 171 tk/task, 4 MCP calls, 18/18**;
 startup **2 034 — unchanged**; **682 tests**.
 
 `LLM_CALLS_PER_SUCCESSFUL_TASK` is still unmeasured and is not claimed.
-
-Next: the capability matrix, then ProjectGraph.
 
 ---
 
@@ -105,7 +140,7 @@ why it is opt-in.
 [x] Optimise progressive disclosure / tool retrieval       -> done + measured; retrieval is the weak link
 [x] Compress heavy tool schemas + shrink the starter kit    -> 3 698 -> 3 197 tk/task, startup 1 958 -> 1 454
 [x] Compact gateway (kicad_describe + kicad_invoke)         -> 1 995 tk/task, 4 calls, CATALOG_TOKENS = 0
-[ ] Map the scope gaps (capability matrix)
+[x] Map the scope gaps (capability matrix)                  -> generated from evidence, 27.3 % -> 28.0 %
 [x] Revisions + optimistic concurrency (base_revisions)     -> content-addressed, kam-state
 [x] Transactions / rollback / idempotency at the MCP layer  -> kicad_invoke, 2 033 tk/task, 18/18
 [x] Error catalog (TransientClass, stable io codes)         -> E9 closed, E11 stays fixed
@@ -388,6 +423,45 @@ macro dereferences away), and it writes each inner step to the observability log
 by hand — otherwise a plan would be a mutation without an audit record, which is
 a V1 success criterion at 0.
 
+### D26 — `SUPPORTED` is discovered, never declared (2026-08-11)
+
+The matrix could have carried a status field per capability, which is how most
+parity tables are built and why most of them are optimistic. It does not:
+`capability::coverage` scans `#[test]` names, `#[ignore]` attributes and the
+golden benchmark tasks for each tool and publishes the strongest proof it finds.
+A tool with no proof reads `NOT_TESTED` regardless of how finished its code is,
+and an `#[ignore]`d test — the ones needing a live KiCAD GUI — reads `gated`,
+which is displayed and supports no claim.
+
+The consequence is the point: the first render says **27.3 %**, and the whole
+`pcb_components` / `pcb_routing` path is unproved because `ipc!` has no file
+fallback. A hand-maintained table would have said "supported" for all of it and
+been wrong in the direction that costs a user a board.
+
+Capabilities KiCAD has no API for (`GUI_ONLY_NO_API`, `REQUIRES_CUSTOM_KICAD`)
+leave the denominator entirely, so the percentage never conflates "we did not
+build it" with "KiCAD cannot do it". `MISSING` carries what a tool-keyed matrix
+structurally cannot report — buses, a standalone drill export, IPC-D-356, the
+stackup write KiCad 10 declares and does not implement.
+
+### D27 — the matrix reports the defects it finds, then they get fixed (2026-08-11)
+
+`export_bom` published as `PARTIAL` with "registered in `pcb_export` while
+reading only schematic data" as its own limitation string. That is E8, sitting in
+a generated document, re-rendered on every build.
+
+It could have stayed that way — the tool works, and the workaround is one extra
+`load_toolset`. It did not, because a limitation that is a *taxonomy* mistake
+rather than a KiCAD one has no business in the denominator's numerator forever:
+moving one `tool!` registration is cheaper than every future agent discovering
+the same thing at run time. The benchmark task that documented the workaround in
+a comment lost both the comment and the toolset.
+
+Recorded honestly: the fix pays in `toolsets` mode only (−1 757 catalogue tokens
+of premium for that task) and is worth exactly nothing through the gateway,
+which never refreshes a catalogue. The general win is not tokens — it is one
+fewer `toolset_not_loaded` on a path an agent had no reason to expect one.
+
 ### D16 — an expired handle is not an unknown one (2026-08-11)
 
 The evidence store is bounded, so a handle can outlive its body. `get()` could
@@ -457,15 +531,22 @@ KiCAD knowledge already is.
 
 Full detail and method: **`docs/benchmark.md`**. Headline:
 
-| Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Fork, Phase G | Δ vs baseline |
-|---|---|---|---|---|---|---|
-| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | 18/18 | **18/18** | = |
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | 2 175 | **2 171** | **−82.5 %** |
-| CATALOG_TOKENS/task | 8 389 | 0 | 0 | 0 | **0** | −100 % |
-| MCP_CALLS median/task | 11 | 4 | 4 | 4 | **4** | −7 |
-| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 68 ms | 66 ms | ≈ |
-| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 854 ms | 877 ms | ≈ |
-| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 2 034 tk | **2 034 tk** | +354 (once per session) |
+| Metric | Konnect baseline | Fork, Phase F | Fork, Phase D | Fork, Phase E | Fork, Phase G | Fork, matrix | Δ vs baseline |
+|---|---|---|---|---|---|---|---|
+| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | 18/18 | 18/18 | **18/18** | = |
+| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | 2 175 | 2 171 | **2 178** | **−82.4 %** |
+| CATALOG_TOKENS/task | 8 389 | 0 | 0 | 0 | 0 | **0** | −100 % |
+| MCP_CALLS median/task | 11 | 4 | 4 | 4 | 4 | **4** | −7 |
+| WALL_CLOCK_P50 | 70 ms | 72 ms | 67 ms | 68 ms | 66 ms | 64 ms | ≈ |
+| WALL_CLOCK_P95 | 888 ms | 916 ms | 911 ms | 854 ms | 877 ms | 885 ms | ≈ |
+| `tools/list` at startup | 1 680 tk | 1 725 tk | 1 912 tk | 2 034 tk | 2 034 tk | **2 034 tk** | +354 (once per session) |
+
+The 2 171 → 2 178 in the last column is **not** a regression to explain: repeated
+runs of the same build spread ±12 on a single task (`sch_hierarchy` measures
+2 195 / 2 200 / 2 208 in one three-run set), so the two columns are the same
+number. The E8 fix that landed with the matrix pays in `toolsets` mode, where
+`manufacturing_exports` lost a **1 757-token catalogue premium** over its peers,
+and pays nothing through the gateway, which never refreshes a catalogue.
 
 The plan path is measured separately, by `bench/plan_cost.py`, because the
 golden suite is a scripted oracle: it already knows every call, so it can never
@@ -515,7 +596,7 @@ task of any session.
 
 Build/test baseline: `cargo build --release -p konnect` 81 s cold;
 `cargo test --workspace --lib --tests` 469 → 487 → 525 → 567 → 588 → 606 →
-**682 passed, 0 failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
+682 → **700 passed, 0 failed** on the fork. `cargo fmt --check` and `cargo clippy --workspace --locked -D
 warnings` are clean.
 
 ---
@@ -598,16 +679,34 @@ validator exists.**
 
 Partly addressed 2026-08-11: `kicad_invoke verify: "auto"` gets its verdict
 from `kicad-cli`, never from `find_single_pin_nets`, so the *evidence path* no
-longer depends on the internal analysis. Still open as a defect: the internal
-tools remain callable and still disagree, and nothing yet marks them as
-advisory in their own descriptions. Belongs with the capability matrix.
+longer depends on the internal analysis.
 
-### E8 — `export_bom` lives in the `pcb_export` toolset (2026-08-10) — OPEN
+Second half, same day: the capability matrix now labels all fifteen in-process
+connectivity tools with a shared `ADVISORY` limitation — "connectivity derived
+in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from
+run_erc / verify" — so none of them can publish as `SUPPORTED` and the disclaimer
+is rendered next to each.
+
+**Still open in the place that matters most:** an agent reads tool
+*descriptions*, not `docs/capability-matrix.md`. Until the advisory wording is in
+the `tool!` description itself, a model calling `find_single_pin_nets` still sees
+nothing that says the answer is not a verdict.
+
+### E8 — `export_bom` lives in the `pcb_export` toolset (2026-08-10) — FIXED
 
 `export_bom(schematic)` reads only schematic data but is registered under
 `pcb_export`. An agent that loaded every schematic toolset still gets
 `toolset_not_loaded` and pays a failed call plus a `load_toolset` round trip.
 Taxonomy defect; fix belongs with the capability matrix work.
+
+Fixed 2026-08-11, and the matrix is what forced it: the capability manifest had
+to state the misplacement as the tool's own `PARTIAL` limitation, printed on
+every render. The registration moved to `sch_export` (7 tools, `pcb_export` 12),
+`bench/tasks/05_manufacturing_exports.yaml` dropped `pcb_export` from its toolset
+list, and the skill and tool-directory docs that pointed at the old home were
+corrected. Measured in `toolsets` mode: that task's **+1 757 catalogue-token
+premium over its schematic-only peers is gone**. Worth nothing in `gateway` mode
+by construction. `bom` domain coverage 0 % → 100 %.
 
 ### E9 — Error messages leak the OS locale (2026-08-10) — FIXED
 
@@ -689,37 +788,35 @@ starts if it cannot finish, expanded deterministically, run as one transaction,
 and proved against KiCAD's own ERC. That is Phase G's spine. Continue in this
 order:
 
-1. **Capability matrix** (`docs/capability-matrix.md`, generated). Now the
-   oldest unticked TODO by a wide margin, and four open items are waiting on
-   it: **E7** (internal analysis disagrees with `kicad-cli` and nothing marks
-   it advisory), **E8** (`export_bom` in the wrong toolset), the unmeasured
-   question of whether a plan moves retrieval precision, and honest scope
-   reporting in general. Cheap, and it unblocks more than it costs.
-2. **ProjectGraph / World Model** — the last of Phase E, and still the least
-   urgent: the diff and the validators answer most of what an agent would ask
-   a graph for.
-3. **Plan-owned postconditions.** A plan carries a `validators` list and
+1. **Plan-owned postconditions.** A plan carries a `validators` list and
    nothing runs it; the verdict comes from the enclosing `kicad_invoke(verify:
    "auto")`. That is not wrong — it is the same validator either way — but it
    means a plan cannot yet declare "this is only done if ERC is clean" and be
    held to it. Small, and it closes the last gap between the IR as designed
    and the IR as implemented.
+2. **ProjectGraph / World Model** — the last of Phase E, and still the least
+   urgent: the diff and the validators answer most of what an agent would ask
+   a graph for.
+3. **The advisory wording where an agent will actually read it.** The matrix
+   labels the fifteen in-process connectivity tools `ADVISORY`; their `tool!`
+   descriptions still say nothing (E7, remaining half).
 
 Still do not start the local model runtime (H). Two things it needs now exist
 and neither has a local consumer: the ACTIVE TASK anchor is exercised only
 through an MCP reply, and the plan is written by hand rather than by a model.
 The question Phase H answers — does a small local model write a *valid* plan,
 and how often — is the one that decides whether any of this reduces
-`LLM_CALLS_PER_SUCCESSFUL_TASK` in practice. It is worth starting once the
-capability matrix says which operations a model would actually need.
+`LLM_CALLS_PER_SUCCESSFUL_TASK` in practice. The precondition set for it is now
+one item shorter: the capability matrix exists, so which operations are actually
+proved — and which 107 tools a model should not be handed as if they were — is a
+question with a written answer.
 
 Open defects to fold into later work rather than patch separately: **E6**
 (power symbols do not snap to the 1.27 mm grid) is now *unreachable through a
 plan* and still live on the direct tool path — the fix belongs in
-`add_power_symbol` itself, with the geometry pass; **E7** is half-closed — the
-evidence path uses `kicad-cli`, but the disagreeing internal tools are still
-callable and still unlabelled; **E8** (`export_bom` in the wrong toolset)
-belongs with the capability matrix.
+`add_power_symbol` itself, with the geometry pass; **E7** is three-quarters
+closed — the evidence path uses `kicad-cli` and the matrix labels the internal
+tools advisory, but their own descriptions still do not. **E8 is closed.**
 
 Two limitations the current evidence inherits and does not hide:
 

@@ -58,9 +58,9 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
     },
     ToolsetMeta {
         name: "sch_export",
-        description: "Export schematic to SVG/PDF/netlist, run ERC",
+        description: "Export schematic to SVG/PDF/netlist/BOM, run ERC",
         category: "schematic",
-        tool_count: 6,
+        tool_count: 7,
     },
     ToolsetMeta {
         name: "sch_hierarchy",
@@ -88,9 +88,9 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
     },
     ToolsetMeta {
         name: "pcb_export",
-        description: "Gerber, PDF, SVG, 3D model, BOM, pick-and-place, DRC, DXF/GenCAD/IPC-2581/ODB++",
+        description: "Gerber, PDF, SVG, 3D model, pick-and-place, DRC, DXF/GenCAD/IPC-2581/ODB++",
         category: "pcb",
-        tool_count: 13,
+        tool_count: 12,
     },
     ToolsetMeta {
         name: "library",

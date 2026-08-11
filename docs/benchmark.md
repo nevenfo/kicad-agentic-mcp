@@ -435,6 +435,42 @@ growth being re-sent on each `tools/list` refresh (+580 startup × one refresh),
 not this change — the golden suite never loads the plan toolset, which
 `bench/results/fork-phaseG-plan-tools.json` shows directly.
 
+### E8 — a taxonomy fix that only one load mode can see
+
+`export_bom` reads a `.kicad_sch` and nothing else, and was registered in the
+`pcb_export` toolset. It now lives in `sch_export`, next to the other schematic
+exports. The capability matrix is what forced the issue: the tool published as
+`PARTIAL` with the misplacement as its stated limitation, so the table carried
+the defect on every render until it was fixed.
+
+The cost of the defect is only visible where a client loads whole toolsets,
+which is exactly what every shipped skill does:
+
+| `toolsets` mode, catalogue tokens/task | before | after |
+|---|---|---|
+| `manufacturing_exports` | 9 920 | **8 880** |
+| the five other tasks (schematic-only) | 8 163 | 8 880 |
+
+Read the columns down, not across: the *before* numbers are from the step-2
+build and the five peers grew +717 since then from meta-tool growth, so the
+comparable statement is the premium. The manufacturing task used to pay
+**+1 757 catalogue tokens** over its peers for a schematic export — thirteen PCB
+tool schemas re-sent on the refresh — and now pays exactly what they pay.
+`bench/tasks/05_manufacturing_exports.yaml` lost the `pcb_export` entry from its
+toolset list, and with it the comment explaining why a schematic task loaded a
+PCB toolset.
+
+In `gateway` mode the fix is worth nothing and that is expected: the gateway
+never refreshes the catalogue, so a tool's toolset is not something the harness
+pays for. The gateway column moved 2 171 → **2 178** tokens per task, which is
+inside the ±12 spread of repeated runs on a single build (`sch_hierarchy` alone
+measures 2 195 / 2 200 / 2 208 in the same three-run set). No saving is claimed
+there.
+
+What the fix does buy on every path is one fewer failed call: an agent holding
+every schematic toolset previously got `toolset_not_loaded` from `export_bom`
+and paid a `load_toolset` round trip to recover.
+
 ### Where the baseline's tokens went
 
 From `bench/analyze.py` on the 18-run baseline:
