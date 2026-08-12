@@ -1,0 +1,3319 @@
+{
+  "model": "openai/gpt-oss-20b",
+  "base_url": "http://127.0.0.1:1234/v1",
+  "temperature": 0.2,
+  "repeat": 5,
+  "strict_json": false,
+  "reasoning_effort": "high",
+  "repair": 0,
+  "hint_levels": [
+    "full",
+    "minimal",
+    "none"
+  ],
+  "stable_prefix_tokens": 1969,
+  "tasks": {
+    "model_divider": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2499,
+          "local_output_tokens": 5693,
+          "local_reasoning_tokens": 5690,
+          "finish_reason": "length",
+          "ttft_ms": 628.7201000013738,
+          "tokens_per_second": 163.18772209173062,
+          "wall_clock_ms": 35514.923100003216,
+          "vram_peak_mib": 12155,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2498,
+          "local_output_tokens": 5694,
+          "local_reasoning_tokens": 5691,
+          "finish_reason": "length",
+          "ttft_ms": 150.9206000046106,
+          "tokens_per_second": 170.19959405634563,
+          "wall_clock_ms": 33605.75950000202,
+          "vram_peak_mib": 12155,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2506,
+          "local_output_tokens": 5686,
+          "local_reasoning_tokens": 5683,
+          "finish_reason": "length",
+          "ttft_ms": 188.6125999953947,
+          "tokens_per_second": 170.7858782773829,
+          "wall_clock_ms": 33481.76339999918,
+          "vram_peak_mib": 12155,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2502,
+          "local_output_tokens": 5690,
+          "local_reasoning_tokens": 5687,
+          "finish_reason": "length",
+          "ttft_ms": 169.731200003298,
+          "tokens_per_second": 170.19626908122862,
+          "wall_clock_ms": 33601.721400002134,
+          "vram_peak_mib": 12155,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2506,
+          "local_output_tokens": 5686,
+          "local_reasoning_tokens": 5683,
+          "finish_reason": "length",
+          "ttft_ms": 155.9419999975944,
+          "tokens_per_second": 167.3984066327199,
+          "wall_clock_ms": 34122.81249999796,
+          "vram_peak_mib": 12154,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2338,
+          "local_output_tokens": 5854,
+          "local_reasoning_tokens": 5851,
+          "finish_reason": "length",
+          "ttft_ms": 152.96410000155447,
+          "tokens_per_second": 168.76322298700953,
+          "wall_clock_ms": 34840.61639999709,
+          "vram_peak_mib": 12154,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2342,
+          "local_output_tokens": 5850,
+          "local_reasoning_tokens": 5847,
+          "finish_reason": "length",
+          "ttft_ms": 162.52869999880204,
+          "tokens_per_second": 167.88712185985952,
+          "wall_clock_ms": 35007.3693000013,
+          "vram_peak_mib": 12154,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2338,
+          "local_output_tokens": 5854,
+          "local_reasoning_tokens": 5850,
+          "finish_reason": "length",
+          "ttft_ms": 151.55300000333227,
+          "tokens_per_second": 167.19440626122685,
+          "wall_clock_ms": 35164.686100004474,
+          "vram_peak_mib": 12154,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2338,
+          "local_output_tokens": 5854,
+          "local_reasoning_tokens": 5850,
+          "finish_reason": "length",
+          "ttft_ms": 159.94909999426454,
+          "tokens_per_second": 161.86410959417384,
+          "wall_clock_ms": 36326.088800000434,
+          "vram_peak_mib": 12155,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2346,
+          "local_output_tokens": 5846,
+          "local_reasoning_tokens": 5843,
+          "finish_reason": "length",
+          "ttft_ms": 162.2166000015568,
+          "tokens_per_second": 156.92286407226086,
+          "wall_clock_ms": 37416.18870000093,
+          "vram_peak_mib": 12158,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2289,
+          "local_output_tokens": 5903,
+          "local_reasoning_tokens": 5900,
+          "finish_reason": "length",
+          "ttft_ms": 226.08839999884367,
+          "tokens_per_second": 153.1407842687018,
+          "wall_clock_ms": 38772.31909999682,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2289,
+          "local_output_tokens": 5503,
+          "local_reasoning_tokens": 5184,
+          "finish_reason": "stop",
+          "ttft_ms": 150.90210000198567,
+          "tokens_per_second": 156.9156967724583,
+          "wall_clock_ms": 35220.6886999993,
+          "vram_peak_mib": 12157,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 5,
+          "error": "erc errors=5 limit=0",
+          "raw_response": "{ \"ops\": [ { \"op\":\"create\", \"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-kv8wse29\",\"name\":\"divider\"} }, { \"op\":\"place\", \"with\":{\"schematic\":\"${create.schematic}\",\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\"},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\"}],\"at\":{\"x\":0,\"y\":0},\"pitch\":12.7,\"direction\":\"right\"} }, { \"op\":\"power\", \"with\":{\"schematic\":\"${create.schematic}\",\"symbols\":[{\"net\":\"+3V3\",\"x\":-12.7,\"y\":0},{\"net\":\"GND\",\"x\":25.4,\"y\":0}] } }, { \"op\":\"connect\", \"with\":{\"schematic\":\"${create.schematic}\",\"connections\":[{\"ref1\":\"R1\",\"pin1\":\"1\",\"net\":\"+3V3\"},{\"ref1\":\"R1\",\"pin1\":\"2\",\"net\":\"VOUT\"},{\"ref1\":\"R2\",\"pin1\":\"1\",\"net\":\"VOUT\"},{\"ref1\":\"R2\",\"pin1\":\"2\",\"net\":\"GND\"}] } }, { \"op\":\"label\", \"with\":{\"schematic\":\"${create.schematic}\",\"labels\":[{\"net\":\"VOUT\",\"x\":6.35,\"y\":0}] } } ] }",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-kv8wse29\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"schematic\": \"${create.schematic}\", \"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\"}, {\"lib_id\": \"Device:R\", \"reference\": \"R2\", \"value\": \"10k\"}], \"at\": {\"x\": 0, \"y\": 0}, \"pitch\": 12.7, \"direction\": \"right\"}}, {\"op\": \"power\", \"with\": {\"schematic\": \"${create.schematic}\", \"symbols\": [{\"net\": \"+3V3\", \"x\": -12.7, \"y\": 0}, {\"net\": \"GND\", \"x\": 25.4, \"y\": 0}]}}, {\"op\": \"connect\", \"with\": {\"schematic\": \"${create.schematic}\", \"connections\": [{\"ref1\": \"R1\", \"pin1\": \"1\", \"net\": \"+3V3\"}, {\"ref1\": \"R1\", \"pin1\": \"2\", \"net\": \"VOUT\"}, {\"ref1\": \"R2\", \"pin1\": \"1\", \"net\": \"VOUT\"}, {\"ref1\": \"R2\", \"pin1\": \"2\", \"net\": \"GND\"}]}}, {\"op\": \"label\", \"with\": {\"schematic\": \"${create.schematic}\", \"labels\": [{\"net\": \"VOUT\", \"x\": 6.35, \"y\": 0}]}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=5 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2293,
+          "local_output_tokens": 5899,
+          "local_reasoning_tokens": 5896,
+          "finish_reason": "length",
+          "ttft_ms": 178.95109999517445,
+          "tokens_per_second": 157.4604975948238,
+          "wall_clock_ms": 37642.315499993856,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2285,
+          "local_output_tokens": 3862,
+          "local_reasoning_tokens": 3732,
+          "finish_reason": "stop",
+          "ttft_ms": 161.27419999975245,
+          "tokens_per_second": 163.29733634816475,
+          "wall_clock_ms": 23811.384399996314,
+          "vram_peak_mib": 12157,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 4,
+          "error": "missing=['VOUT'] found=[]; erc errors=4 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-mvos0jgk\",\"name\":\"divider\"}},{\"op\":\"place\",\"with\":{\"schematic\":\"${create.schematic}\",\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":0,\"y\":0},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\",\"x\":12.7,\"y\":0}]}}],\"plan_id\":\"divider_plan\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-mvos0jgk\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"schematic\": \"${create.schematic}\", \"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 0, \"y\": 0}, {\"lib_id\": \"Device:R\", \"reference\": \"R2\", \"value\": \"10k\", \"x\": 12.7, \"y\": 0}]}}], \"plan_id\": \"divider_plan\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "invariant",
+            "message": "missing=['VOUT'] found=[]; erc errors=4 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "invariant"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2289,
+          "local_output_tokens": 5903,
+          "local_reasoning_tokens": 5900,
+          "finish_reason": "length",
+          "ttft_ms": 151.34949999628589,
+          "tokens_per_second": 159.70835085286365,
+          "wall_clock_ms": 37112.47249999724,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ]
+    },
+    "model_ldo": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2656,
+          "local_output_tokens": 5536,
+          "local_reasoning_tokens": 5533,
+          "finish_reason": "length",
+          "ttft_ms": 217.1809999999823,
+          "tokens_per_second": 161.64746612458237,
+          "wall_clock_ms": 34464.54739999899,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2653,
+          "local_output_tokens": 5539,
+          "local_reasoning_tokens": 5536,
+          "finish_reason": "length",
+          "ttft_ms": 212.45020000060322,
+          "tokens_per_second": 161.99838730445467,
+          "wall_clock_ms": 34404.148599998734,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2660,
+          "local_output_tokens": 5532,
+          "local_reasoning_tokens": 5529,
+          "finish_reason": "length",
+          "ttft_ms": 207.26790000480833,
+          "tokens_per_second": 162.0125373103385,
+          "wall_clock_ms": 34352.77350000251,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2664,
+          "local_output_tokens": 5528,
+          "local_reasoning_tokens": 5525,
+          "finish_reason": "length",
+          "ttft_ms": 226.6003000040655,
+          "tokens_per_second": 161.54337134291046,
+          "wall_clock_ms": 34446.51259999955,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2660,
+          "local_output_tokens": 5532,
+          "local_reasoning_tokens": 5529,
+          "finish_reason": "length",
+          "ttft_ms": 211.01729999645613,
+          "tokens_per_second": 161.52682159440494,
+          "wall_clock_ms": 34459.199400000216,
+          "vram_peak_mib": 12157,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2383,
+          "local_output_tokens": 5809,
+          "local_reasoning_tokens": 5806,
+          "finish_reason": "length",
+          "ttft_ms": 220.21829999721376,
+          "tokens_per_second": 160.36811176305324,
+          "wall_clock_ms": 36443.13030000194,
+          "vram_peak_mib": 12177,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2379,
+          "local_output_tokens": 5813,
+          "local_reasoning_tokens": 5810,
+          "finish_reason": "length",
+          "ttft_ms": 176.5677000003052,
+          "tokens_per_second": 163.7170563817548,
+          "wall_clock_ms": 35682.94759999844,
+          "vram_peak_mib": 12182,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2375,
+          "local_output_tokens": 5817,
+          "local_reasoning_tokens": 5814,
+          "finish_reason": "length",
+          "ttft_ms": 185.32029999914812,
+          "tokens_per_second": 161.27163647388667,
+          "wall_clock_ms": 36254.89910000033,
+          "vram_peak_mib": 12166,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2379,
+          "local_output_tokens": 5813,
+          "local_reasoning_tokens": 5810,
+          "finish_reason": "length",
+          "ttft_ms": 166.86639999534236,
+          "tokens_per_second": 161.33140097187263,
+          "wall_clock_ms": 36198.289699997986,
+          "vram_peak_mib": 12164,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2387,
+          "local_output_tokens": 5805,
+          "local_reasoning_tokens": 5801,
+          "finish_reason": "length",
+          "ttft_ms": 183.61070000537438,
+          "tokens_per_second": 162.03053981761389,
+          "wall_clock_ms": 36010.19010000164,
+          "vram_peak_mib": 12164,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2334,
+          "local_output_tokens": 5858,
+          "local_reasoning_tokens": 5855,
+          "finish_reason": "length",
+          "ttft_ms": 180.31219999829773,
+          "tokens_per_second": 160.21780869902048,
+          "wall_clock_ms": 36743.03919999511,
+          "vram_peak_mib": 12165,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2326,
+          "local_output_tokens": 5866,
+          "local_reasoning_tokens": 5863,
+          "finish_reason": "length",
+          "ttft_ms": 186.3840000005439,
+          "tokens_per_second": 161.8152673929826,
+          "wall_clock_ms": 36437.59869999485,
+          "vram_peak_mib": 12140,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2322,
+          "local_output_tokens": 5870,
+          "local_reasoning_tokens": 5866,
+          "finish_reason": "length",
+          "ttft_ms": 196.59430000319844,
+          "tokens_per_second": 161.5146026081453,
+          "wall_clock_ms": 36540.05740000139,
+          "vram_peak_mib": 12140,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2326,
+          "local_output_tokens": 5866,
+          "local_reasoning_tokens": 5863,
+          "finish_reason": "length",
+          "ttft_ms": 186.63170000218088,
+          "tokens_per_second": 161.44550188835476,
+          "wall_clock_ms": 36520.874099995126,
+          "vram_peak_mib": 12140,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2338,
+          "local_output_tokens": 5854,
+          "local_reasoning_tokens": 5851,
+          "finish_reason": "length",
+          "ttft_ms": 197.86159999785013,
+          "tokens_per_second": 160.74545824335132,
+          "wall_clock_ms": 36615.68679999618,
+          "vram_peak_mib": 12140,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ]
+    },
+    "model_decoupling_bank": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2492,
+          "local_output_tokens": 5700,
+          "local_reasoning_tokens": 5697,
+          "finish_reason": "length",
+          "ttft_ms": 186.64759999956004,
+          "tokens_per_second": 160.30760610938216,
+          "wall_clock_ms": 35743.28859999514,
+          "vram_peak_mib": 12140,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2492,
+          "local_output_tokens": 5700,
+          "local_reasoning_tokens": 5697,
+          "finish_reason": "length",
+          "ttft_ms": 176.0876999978791,
+          "tokens_per_second": 160.9892721861043,
+          "wall_clock_ms": 35582.173599999805,
+          "vram_peak_mib": 12140,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2500,
+          "local_output_tokens": 5327,
+          "local_reasoning_tokens": 5113,
+          "finish_reason": "stop",
+          "ttft_ms": 178.16859999584267,
+          "tokens_per_second": 160.05382134988406,
+          "wall_clock_ms": 33460.722899995744,
+          "vram_peak_mib": 12140,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 3,
+          "error": "erc errors=3 limit=2",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-8qzsq4fx\",\"name\":\"bank\"}},{\"op\":\"power\",\"with\":{\"schematic\":\"${create.schematic}\",\"symbols\":[{\"net\":\"+3V3\",\"x\":120.65,\"y\":90}]}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"${create.schematic}\",\"at\":{\"x\":120.65,\"y\":80.01},\"pitch\":7.62,\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\",\"value\":\"100nF\"},{\"reference\":\"C11\",\"rail\":\"+3V3\",\"value\":\"100nF\"},{\"reference\":\"C12\",\"rail\":\"+3V3\",\"value\":\"100nF\"},{\"reference\":\"C13\",\"rail\":\"+3V3\",\"value\":\"100nF\"}],\"ground\":\"GND\",\"lib_id\":\"Device:C\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-8qzsq4fx\", \"name\": \"bank\"}}, {\"op\": \"power\", \"with\": {\"schematic\": \"${create.schematic}\", \"symbols\": [{\"net\": \"+3V3\", \"x\": 120.65, \"y\": 90}]}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"${create.schematic}\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"pitch\": 7.62, \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\", \"value\": \"100nF\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\", \"value\": \"100nF\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\", \"value\": \"100nF\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\", \"value\": \"100nF\"}], \"ground\": \"GND\", \"lib_id\": \"Device:C\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=3 limit=2"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2493,
+          "local_output_tokens": 5699,
+          "local_reasoning_tokens": 5696,
+          "finish_reason": "length",
+          "ttft_ms": 165.08259999682195,
+          "tokens_per_second": 160.6088941040321,
+          "wall_clock_ms": 35648.79619999556,
+          "vram_peak_mib": 12140,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2496,
+          "local_output_tokens": 4389,
+          "local_reasoning_tokens": 4191,
+          "finish_reason": "stop",
+          "ttft_ms": 175.1317999951425,
+          "tokens_per_second": 160.67016789985774,
+          "wall_clock_ms": 27491.963899999973,
+          "vram_peak_mib": 12170,
+          "grade": 2,
+          "outcome": "not_applied",
+          "valid_json": true,
+          "compiles": true,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"error\": {\"candidates\": [\"power:+3V3\", \"power:+3V3_0_1\", \"power:+3V3_1_1\", \"power:-3V3\", \"power:-3V3_0_0\", \"power:-3V3_0_1\", \"Diode:BZV55B3V3\", \"Diode:BZV55C3V3\"], \"kind\": \"handler_error\", \"reason\": \"Library symbol 'power:3V3' not found in the installed KiCAD libraries. Did you mean: power:+3V3, power:+3V3_0_1, power:+3V3_1_1? (KiCAD 10 renamed several older symbol names)\", \"transient\":",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"id\":\"create1\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-vn4kxqa7\",\"name\":\"bank\"}},{\"op\":\"decouple\",\"id\":\"decouple1\",\"with\":{\"schematic\":\"${create1.schematic}\",\"at\":{\"x\":120.65,\"y\":80.01},\"pitch\":7.62,\"ground\":\"GND\",\"lib_id\":\"Device:C\",\"caps\":[{\"reference\":\"C10\",\"rail\":\"3V3\",\"value\":\"100nF\"},{\"reference\":\"C11\",\"rail\":\"3V3\",\"value\":\"100nF\"},{\"reference\":\"C12\",\"rail\":\"3V3\",\"value\":\"100nF\"},{\"reference\":\"C13\",\"rail\":\"3V3\",\"value\":\"100nF\"}]}}],\"plan_id\":\"decoupling_bank\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"id\": \"create1\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-vn4kxqa7\", \"name\": \"bank\"}}, {\"op\": \"decouple\", \"id\": \"decouple1\", \"with\": {\"schematic\": \"${create1.schematic}\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"pitch\": 7.62, \"ground\": \"GND\", \"lib_id\": \"Device:C\", \"caps\": [{\"reference\": \"C10\", \"rail\": \"3V3\", \"value\": \"100nF\"}, {\"reference\": \"C11\", \"rail\": \"3V3\", \"value\": \"100nF\"}, {\"reference\": \"C12\", \"rail\": \"3V3\", \"value\": \"100nF\"}, {\"reference\": \"C13\", \"rail\": \"3V3\", \"value\": \"100nF\"}]}}], \"plan_id\": \"decoupling_bank\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "decouple1/1",
+            "kind": "apply_failed",
+            "message": "{\"error\": {\"error\": {\"candidates\": [\"power:+3V3\", \"power:+3V3_0_1\", \"power:+3V3_1_1\", \"power:-3V3\", \"power:-3V3_0_0\", \"power:-3V3_0_1\", \"Diode:BZV55B3V3\", \"Diode:BZV55C3V3\"], \"kind\": \"handler_error\", \"reason\": \"Library symbol 'power:3V3' not found in the installed KiCAD libraries. Did you mean: power:+3V3, power:+3V3_0_1, power:+3V3_1_1? (KiCAD 10 renamed several older symbol names)\", \"transient\":"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "not_applied",
+              "failure_kind": "apply_failed"
+            }
+          ]
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2394,
+          "local_output_tokens": 5798,
+          "local_reasoning_tokens": 5795,
+          "finish_reason": "length",
+          "ttft_ms": 195.3843000010238,
+          "tokens_per_second": 161.05456462261566,
+          "wall_clock_ms": 36195.60579999961,
+          "vram_peak_mib": 12170,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2390,
+          "local_output_tokens": 5802,
+          "local_reasoning_tokens": 5799,
+          "finish_reason": "length",
+          "ttft_ms": 176.69320000277366,
+          "tokens_per_second": 153.75842963298354,
+          "wall_clock_ms": 37911.20970000338,
+          "vram_peak_mib": 12170,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2390,
+          "local_output_tokens": 4120,
+          "local_reasoning_tokens": 3908,
+          "finish_reason": "stop",
+          "ttft_ms": 155.89689999615075,
+          "tokens_per_second": 162.71063597761807,
+          "wall_clock_ms": 25476.92139999708,
+          "vram_peak_mib": 12170,
+          "grade": 2,
+          "outcome": "not_applied",
+          "valid_json": true,
+          "compiles": true,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"error\": {\"candidates\": [\"power:+3V3\", \"power:+3V3_0_1\", \"power:+3V3_1_1\", \"power:-3V3\", \"power:-3V3_0_0\", \"power:-3V3_0_1\", \"Diode:BZV55B3V3\", \"Diode:BZV55C3V3\"], \"kind\": \"handler_error\", \"reason\": \"Library symbol 'power:3V3' not found in the installed KiCAD libraries. Did you mean: power:+3V3, power:+3V3_0_1, power:+3V3_1_1? (KiCAD 10 renamed several older symbol names)\", \"transient\":",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-oamdelm0\",\"name\":\"bank\"}},{\"op\":\"power\",\"with\":{\"schematic\":\"${create.schematic}\",\"symbols\":[{\"net\":\"3V3\",\"x\":120.65,\"y\":90.17},{\"net\":\"GND\",\"x\":120.65,\"y\":70.0}]}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"${create.schematic}\",\"at\":{\"x\":120.65,\"y\":80.01},\"pitch\":7.62,\"caps\":[{\"reference\":\"C10\",\"rail\":\"3V3\"},{\"reference\":\"C11\",\"rail\":\"3V3\"},{\"reference\":\"C12\",\"rail\":\"3V3\"},{\"reference\":\"C13\",\"rail\":\"3V3\"}],\"ground\":\"GND\",\"lib_id\":\"Device:C\",\"value\":\"100n\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-oamdelm0\", \"name\": \"bank\"}}, {\"op\": \"power\", \"with\": {\"schematic\": \"${create.schematic}\", \"symbols\": [{\"net\": \"3V3\", \"x\": 120.65, \"y\": 90.17}, {\"net\": \"GND\", \"x\": 120.65, \"y\": 70.0}]}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"${create.schematic}\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"pitch\": 7.62, \"caps\": [{\"reference\": \"C10\", \"rail\": \"3V3\"}, {\"reference\": \"C11\", \"rail\": \"3V3\"}, {\"reference\": \"C12\", \"rail\": \"3V3\"}, {\"reference\": \"C13\", \"rail\": \"3V3\"}], \"ground\": \"GND\", \"lib_id\": \"Device:C\", \"value\": \"100n\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "op2/0",
+            "kind": "apply_failed",
+            "message": "{\"error\": {\"error\": {\"candidates\": [\"power:+3V3\", \"power:+3V3_0_1\", \"power:+3V3_1_1\", \"power:-3V3\", \"power:-3V3_0_0\", \"power:-3V3_0_1\", \"Diode:BZV55B3V3\", \"Diode:BZV55C3V3\"], \"kind\": \"handler_error\", \"reason\": \"Library symbol 'power:3V3' not found in the installed KiCAD libraries. Did you mean: power:+3V3, power:+3V3_0_1, power:+3V3_1_1? (KiCAD 10 renamed several older symbol names)\", \"transient\":"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "not_applied",
+              "failure_kind": "apply_failed"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2390,
+          "local_output_tokens": 5802,
+          "local_reasoning_tokens": 5799,
+          "finish_reason": "length",
+          "ttft_ms": 175.23200000141514,
+          "tokens_per_second": 161.0608376168122,
+          "wall_clock_ms": 36198.886699996365,
+          "vram_peak_mib": 12170,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2387,
+          "local_output_tokens": 4025,
+          "local_reasoning_tokens": 3866,
+          "finish_reason": "stop",
+          "ttft_ms": 228.20430000138003,
+          "tokens_per_second": 160.61143981059396,
+          "wall_clock_ms": 25288.685699997586,
+          "vram_peak_mib": 12170,
+          "grade": 1,
+          "outcome": "compile_failed",
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\"}",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-66_tyrc_\",\"name\":\"bank\"}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"${proj.schematic}\",\"at\":{\"x\":120.65,\"y\":80.01},\"pitch\":7.62,\"lib_id\":\"Device:C\",\"value\":\"100nF\",\"ground\":\"GND\",\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\"},{\"reference\":\"C11\",\"rail\":\"+3V3\"},{\"reference\":\"C12\",\"rail\":\"+3V3\"},{\"reference\":\"C13\",\"rail\":\"+3V3\"}]}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-66_tyrc_\", \"name\": \"bank\"}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"${proj.schematic}\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"pitch\": 7.62, \"lib_id\": \"Device:C\", \"value\": \"100nF\", \"ground\": \"GND\", \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\"}]}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "op2",
+            "kind": "invalid_argument",
+            "message": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\"}"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 1,
+              "outcome": "compile_failed",
+              "failure_kind": "invalid_argument"
+            }
+          ]
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2333,
+          "local_output_tokens": 5859,
+          "local_reasoning_tokens": 5856,
+          "finish_reason": "length",
+          "ttft_ms": 141.05829999607522,
+          "tokens_per_second": 161.10161853177732,
+          "wall_clock_ms": 36509.407999998075,
+          "vram_peak_mib": 12173,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2337,
+          "local_output_tokens": 5855,
+          "local_reasoning_tokens": 5852,
+          "finish_reason": "length",
+          "ttft_ms": 154.03730000252835,
+          "tokens_per_second": 161.16111621404593,
+          "wall_clock_ms": 36484.14060000505,
+          "vram_peak_mib": 12172,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2341,
+          "local_output_tokens": 5851,
+          "local_reasoning_tokens": 5848,
+          "finish_reason": "length",
+          "ttft_ms": 160.614300002635,
+          "tokens_per_second": 160.96022105960134,
+          "wall_clock_ms": 36511.21050000074,
+          "vram_peak_mib": 12172,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2349,
+          "local_output_tokens": 3863,
+          "local_reasoning_tokens": 3657,
+          "finish_reason": "stop",
+          "ttft_ms": 194.57410000177333,
+          "tokens_per_second": 162.90791617176387,
+          "wall_clock_ms": 23907.3567000014,
+          "vram_peak_mib": 12172,
+          "grade": 2,
+          "outcome": "not_applied",
+          "valid_json": true,
+          "compiles": true,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"errors\": [\"{\\\"error\\\":{\\\"candidates\\\":[\\\"Simulation_SPICE:0\\\",\\\"Device:C\\\",\\\"RF:CC1000\\\",\\\"Regulator_Switching:BD9001F\\\",\\\"Sensor_Optical:BP103BF\\\",\\\"Transistor_FET:BS170F\\\",\\\"RF:CC1200\\\",\\\"Interface_USB:CH330N\\\"],\\\"kind\\\":\\\"handler_error\\\",\\\"reason\\\":\\\"Library 'Capacitors_SMD' not found in the installed KiCAD symbol libraries (lib_id 'Capacitors_SMD:C_100nF'). Check the library name, ",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-5c4u0kbx\",\"name\":\"bank\"}},{\"op\":\"power\",\"with\":{\"schematic\":\"${create.schematic}\",\"symbols\":[{\"net\":\"+3V3\",\"x\":120.65,\"y\":78.74}]}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"${create.schematic}\",\"at\":{\"x\":120.65,\"y\":80.01},\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\"},{\"reference\":\"C11\",\"rail\":\"+3V3\"},{\"reference\":\"C12\",\"rail\":\"+3V3\"},{\"reference\":\"C13\",\"rail\":\"+3V3\"}],\"pitch\":7.62,\"ground\":\"GND\",\"lib_id\":\"Capacitors_SMD:C_100nF\",\"value\":\"100n\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-5c4u0kbx\", \"name\": \"bank\"}}, {\"op\": \"power\", \"with\": {\"schematic\": \"${create.schematic}\", \"symbols\": [{\"net\": \"+3V3\", \"x\": 120.65, \"y\": 78.74}]}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"${create.schematic}\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\"}], \"pitch\": 7.62, \"ground\": \"GND\", \"lib_id\": \"Capacitors_SMD:C_100nF\", \"value\": \"100n\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "op3/0",
+            "kind": "apply_failed",
+            "message": "{\"error\": {\"errors\": [\"{\\\"error\\\":{\\\"candidates\\\":[\\\"Simulation_SPICE:0\\\",\\\"Device:C\\\",\\\"RF:CC1000\\\",\\\"Regulator_Switching:BD9001F\\\",\\\"Sensor_Optical:BP103BF\\\",\\\"Transistor_FET:BS170F\\\",\\\"RF:CC1200\\\",\\\"Interface_USB:CH330N\\\"],\\\"kind\\\":\\\"handler_error\\\",\\\"reason\\\":\\\"Library 'Capacitors_SMD' not found in the installed KiCAD symbol libraries (lib_id 'Capacitors_SMD:C_100nF'). Check the library name, "
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "not_applied",
+              "failure_kind": "apply_failed"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2345,
+          "local_output_tokens": 3671,
+          "local_reasoning_tokens": 3523,
+          "finish_reason": "stop",
+          "ttft_ms": 332.0889000024181,
+          "tokens_per_second": 162.16562665900938,
+          "wall_clock_ms": 22969.43860000465,
+          "vram_peak_mib": 12172,
+          "grade": 1,
+          "outcome": "compile_failed",
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\"}",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-ssq8ngm8\",\"name\":\"bank\"}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"${proj.schematic}\",\"at\":{\"x\":120.65,\"y\":80.01},\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\"},{\"reference\":\"C11\",\"rail\":\"+3V3\"},{\"reference\":\"C12\",\"rail\":\"+3V3\"},{\"reference\":\"C13\",\"rail\":\"+3V3\"}],\"pitch\":7.62,\"ground\":\"GND\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-ssq8ngm8\", \"name\": \"bank\"}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"${proj.schematic}\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\"}], \"pitch\": 7.62, \"ground\": \"GND\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "op2",
+            "kind": "invalid_argument",
+            "message": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan\"}"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 1,
+              "outcome": "compile_failed",
+              "failure_kind": "invalid_argument"
+            }
+          ]
+        }
+      ]
+    },
+    "model_reference_chain": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2558,
+          "local_output_tokens": 5634,
+          "local_reasoning_tokens": 5631,
+          "finish_reason": "length",
+          "ttft_ms": 181.22320000111358,
+          "tokens_per_second": 161.14273711318816,
+          "wall_clock_ms": 35144.015200006834,
+          "vram_peak_mib": 12172,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2566,
+          "local_output_tokens": 5626,
+          "local_reasoning_tokens": 5623,
+          "finish_reason": "length",
+          "ttft_ms": 189.92920000164304,
+          "tokens_per_second": 161.13957725728113,
+          "wall_clock_ms": 35103.76040000119,
+          "vram_peak_mib": 12172,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2562,
+          "local_output_tokens": 5630,
+          "local_reasoning_tokens": 5537,
+          "finish_reason": "length",
+          "ttft_ms": 176.60700000124052,
+          "tokens_per_second": 160.92970790163906,
+          "wall_clock_ms": 35160.82509999978,
+          "vram_peak_mib": 12172,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"id\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-olqhja03\",\"name\":\"pullup\"}},{\"op\":\"place\",\"with\":{\"schematic\":\"${create.schematic}\",\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 278 (char 277)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2559,
+          "local_output_tokens": 5633,
+          "local_reasoning_tokens": 5630,
+          "finish_reason": "length",
+          "ttft_ms": 177.76020000019344,
+          "tokens_per_second": 161.16770035971152,
+          "wall_clock_ms": 35128.932100000384,
+          "vram_peak_mib": 12172,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2570,
+          "local_output_tokens": 5622,
+          "local_reasoning_tokens": 5619,
+          "finish_reason": "length",
+          "ttft_ms": 207.9955999943195,
+          "tokens_per_second": 159.71786155100855,
+          "wall_clock_ms": 35407.56529999635,
+          "vram_peak_mib": 12172,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2417,
+          "local_output_tokens": 5775,
+          "local_reasoning_tokens": 5772,
+          "finish_reason": "length",
+          "ttft_ms": 157.89139999833424,
+          "tokens_per_second": 163.169391870039,
+          "wall_clock_ms": 35550.55870000069,
+          "vram_peak_mib": 12151,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2420,
+          "local_output_tokens": 5772,
+          "local_reasoning_tokens": 5769,
+          "finish_reason": "length",
+          "ttft_ms": 157.331599999452,
+          "tokens_per_second": 164.9753369588333,
+          "wall_clock_ms": 35144.37940000062,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2414,
+          "local_output_tokens": 5778,
+          "local_reasoning_tokens": 5775,
+          "finish_reason": "length",
+          "ttft_ms": 188.76499999896623,
+          "tokens_per_second": 165.53516638327173,
+          "wall_clock_ms": 35093.73490000144,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2420,
+          "local_output_tokens": 5772,
+          "local_reasoning_tokens": 5769,
+          "finish_reason": "length",
+          "ttft_ms": 173.49009999452392,
+          "tokens_per_second": 165.22276558685024,
+          "wall_clock_ms": 35108.14319999918,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2417,
+          "local_output_tokens": 5775,
+          "local_reasoning_tokens": 5772,
+          "finish_reason": "length",
+          "ttft_ms": 142.59899999888148,
+          "tokens_per_second": 164.821040610544,
+          "wall_clock_ms": 35180.60129999503,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2364,
+          "local_output_tokens": 5828,
+          "local_reasoning_tokens": 5824,
+          "finish_reason": "length",
+          "ttft_ms": 163.19929999735905,
+          "tokens_per_second": 165.112823635049,
+          "wall_clock_ms": 35460.275999997975,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 0,
+          "local_output_tokens": 0,
+          "local_reasoning_tokens": 0,
+          "finish_reason": null,
+          "ttft_ms": 151.91610000329092,
+          "tokens_per_second": null,
+          "wall_clock_ms": 34003.54280000465,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "invalid_json",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "invalid_json",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2358,
+          "local_output_tokens": 5834,
+          "local_reasoning_tokens": 5829,
+          "finish_reason": "length",
+          "ttft_ms": 164.81840000051307,
+          "tokens_per_second": 159.83389723868765,
+          "wall_clock_ms": 36665.210999999545,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2361,
+          "local_output_tokens": 5831,
+          "local_reasoning_tokens": 5828,
+          "finish_reason": "length",
+          "ttft_ms": 175.1464999979362,
+          "tokens_per_second": 164.71687526477854,
+          "wall_clock_ms": 35575.28379999712,
+          "vram_peak_mib": 12142,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2361,
+          "local_output_tokens": 5831,
+          "local_reasoning_tokens": 5828,
+          "finish_reason": "length",
+          "ttft_ms": 137.10079999873415,
+          "tokens_per_second": 163.32751118795412,
+          "wall_clock_ms": 35838.37339999445,
+          "vram_peak_mib": 12164,
+          "grade": 0,
+          "outcome": "truncated",
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON",
+          "raw_response": "",
+          "raw_response_truncated": false,
+          "compiled_plan": null,
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "json_decode",
+            "message": "Expecting value: line 1 column 1 (char 0)"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 0,
+              "outcome": "truncated",
+              "failure_kind": "json_decode"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "aggregate": {
+    "by_task_hint": {
+      "model_divider": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 5,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2502,
+            "p95": 2506,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5690,
+            "p95": 5693,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5687,
+            "p95": 5690,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 169.731200003298,
+            "p95": 188.6125999953947,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 170.19626908122862,
+            "p95": 170.19959405634563,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 33605.75950000202,
+            "p95": 34122.81249999796,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12155,
+            "p95": 12155,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 5,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2338,
+            "p95": 2342,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5854,
+            "p95": 5854,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5850,
+            "p95": 5850,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 159.94909999426454,
+            "p95": 162.2166000015568,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 167.19440626122685,
+            "p95": 167.88712185985952,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 35164.686100004474,
+            "p95": 36326.088800000434,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12154,
+            "p95": 12155,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 3,
+            "1": 0,
+            "2": 2,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 3,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 2,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2289,
+            "p95": 2289,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5899,
+            "p95": 5903,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5896,
+            "p95": 5900,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 161.27419999975245,
+            "p95": 178.95109999517445,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 157.4604975948238,
+            "p95": 159.70835085286365,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 37112.47249999724,
+            "p95": 37642.315499993856,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12157,
+            "p95": 12157,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 4.5,
+            "p95": 4,
+            "n": 2
+          }
+        }
+      },
+      "model_ldo": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 5,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2660,
+            "p95": 2660,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5532,
+            "p95": 5536,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5529,
+            "p95": 5533,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 212.45020000060322,
+            "p95": 217.1809999999823,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 161.64746612458237,
+            "p95": 161.99838730445467,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 34446.51259999955,
+            "p95": 34459.199400000216,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12157,
+            "p95": 12157,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 5,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2379,
+            "p95": 2383,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5813,
+            "p95": 5813,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5810,
+            "p95": 5810,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 183.61070000537438,
+            "p95": 185.32029999914812,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 161.33140097187263,
+            "p95": 162.03053981761389,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 36198.289699997986,
+            "p95": 36254.89910000033,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12166,
+            "p95": 12177,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 5,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2326,
+            "p95": 2334,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5866,
+            "p95": 5866,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5863,
+            "p95": 5863,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 186.63170000218088,
+            "p95": 196.59430000319844,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 161.44550188835476,
+            "p95": 161.5146026081453,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 36540.05740000139,
+            "p95": 36615.68679999618,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12140,
+            "p95": 12140,
+            "n": 5
+          },
+          "erc_errors": null
+        }
+      },
+      "model_decoupling_bank": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 3,
+            "1": 0,
+            "2": 2,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 3,
+            "compile_failed": 0,
+            "not_applied": 1,
+            "applied_invalid": 1,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2493,
+            "p95": 2496,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5699,
+            "p95": 5700,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5696,
+            "p95": 5697,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 176.0876999978791,
+            "p95": 178.16859999584267,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 160.6088941040321,
+            "p95": 160.67016789985774,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 35582.173599999805,
+            "p95": 35648.79619999556,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12140,
+            "p95": 12140,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 3,
+            "p95": 3,
+            "n": 1
+          }
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 3,
+            "1": 1,
+            "2": 1,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 3,
+            "compile_failed": 1,
+            "not_applied": 1,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2390,
+            "p95": 2390,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5798,
+            "p95": 5802,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5795,
+            "p95": 5799,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 176.69320000277366,
+            "p95": 195.3843000010238,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 161.05456462261566,
+            "p95": 161.0608376168122,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 36195.60579999961,
+            "p95": 36198.886699996365,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12170,
+            "p95": 12170,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 3,
+            "1": 1,
+            "2": 1,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 3,
+            "compile_failed": 1,
+            "not_applied": 1,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2341,
+            "p95": 2345,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5851,
+            "p95": 5855,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5848,
+            "p95": 5852,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 160.614300002635,
+            "p95": 194.57410000177333,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 161.16111621404593,
+            "p95": 162.16562665900938,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 36484.14060000505,
+            "p95": 36509.407999998075,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12172,
+            "p95": 12172,
+            "n": 5
+          },
+          "erc_errors": null
+        }
+      },
+      "model_reference_chain": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 5,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2562,
+            "p95": 2566,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5630,
+            "p95": 5633,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5623,
+            "p95": 5630,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 181.22320000111358,
+            "p95": 189.92920000164304,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 161.13957725728113,
+            "p95": 161.14273711318816,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 35144.015200006834,
+            "p95": 35160.82509999978,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12172,
+            "p95": 12172,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 5,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2417,
+            "p95": 2420,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5775,
+            "p95": 5775,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5772,
+            "p95": 5772,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 157.89139999833424,
+            "p95": 173.49009999452392,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 164.9753369588333,
+            "p95": 165.22276558685024,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 35144.37940000062,
+            "p95": 35180.60129999503,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12142,
+            "p95": 12142,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 5,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 1,
+            "truncated": 4,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2361,
+            "p95": 2361,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 5831,
+            "p95": 5831,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 5828,
+            "p95": 5828,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 163.19929999735905,
+            "p95": 164.81840000051307,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 164.0221932263663,
+            "p95": 164.71687526477854,
+            "n": 4
+          },
+          "wall_clock_ms": {
+            "median": 35575.28379999712,
+            "p95": 35838.37339999445,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12142,
+            "p95": 12142,
+            "n": 5
+          },
+          "erc_errors": null
+        }
+      }
+    },
+    "by_hint": {
+      "full": {
+        "attempts": 20,
+        "graded": 20,
+        "success_rate": 0.0,
+        "grade_histogram": {
+          "0": 18,
+          "1": 0,
+          "2": 2,
+          "3": 0
+        },
+        "outcome_histogram": {
+          "invalid_json": 0,
+          "truncated": 18,
+          "compile_failed": 0,
+          "not_applied": 1,
+          "applied_invalid": 1,
+          "success": 0
+        },
+        "llm_calls": {
+          "median": 1.0,
+          "p95": 1,
+          "n": 20
+        },
+        "local_input_tokens": {
+          "median": 2532.0,
+          "p95": 2660,
+          "n": 20
+        },
+        "local_output_tokens": {
+          "median": 5631.5,
+          "p95": 5700,
+          "n": 20
+        },
+        "local_reasoning_tokens": {
+          "median": 5626.5,
+          "p95": 5697,
+          "n": 20
+        },
+        "ttft_ms": {
+          "median": 183.9354000003368,
+          "p95": 226.6003000040655,
+          "n": 20
+        },
+        "tokens_per_second": {
+          "median": 161.34726097705823,
+          "p95": 170.19959405634563,
+          "n": 20
+        },
+        "wall_clock_ms": {
+          "median": 34461.873399999604,
+          "p95": 35648.79619999556,
+          "n": 20
+        },
+        "vram_peak_mib": {
+          "median": 12157.0,
+          "p95": 12172,
+          "n": 20
+        },
+        "erc_errors": {
+          "median": 3,
+          "p95": 3,
+          "n": 1
+        }
+      },
+      "minimal": {
+        "attempts": 20,
+        "graded": 20,
+        "success_rate": 0.0,
+        "grade_histogram": {
+          "0": 18,
+          "1": 1,
+          "2": 1,
+          "3": 0
+        },
+        "outcome_histogram": {
+          "invalid_json": 0,
+          "truncated": 18,
+          "compile_failed": 1,
+          "not_applied": 1,
+          "applied_invalid": 0,
+          "success": 0
+        },
+        "llm_calls": {
+          "median": 1.0,
+          "p95": 1,
+          "n": 20
+        },
+        "local_input_tokens": {
+          "median": 2387.0,
+          "p95": 2420,
+          "n": 20
+        },
+        "local_output_tokens": {
+          "median": 5803.5,
+          "p95": 5854,
+          "n": 20
+        },
+        "local_reasoning_tokens": {
+          "median": 5800.0,
+          "p95": 5850,
+          "n": 20
+        },
+        "ttft_ms": {
+          "median": 170.17824999493314,
+          "p95": 220.21829999721376,
+          "n": 20
+        },
+        "tokens_per_second": {
+          "median": 162.37058789761596,
+          "p95": 167.88712185985952,
+          "n": 20
+        },
+        "wall_clock_ms": {
+          "median": 35616.75314999957,
+          "p95": 37416.18870000093,
+          "n": 20
+        },
+        "vram_peak_mib": {
+          "median": 12161.0,
+          "p95": 12177,
+          "n": 20
+        },
+        "erc_errors": null
+      },
+      "none": {
+        "attempts": 20,
+        "graded": 20,
+        "success_rate": 0.0,
+        "grade_histogram": {
+          "0": 16,
+          "1": 1,
+          "2": 3,
+          "3": 0
+        },
+        "outcome_histogram": {
+          "invalid_json": 1,
+          "truncated": 15,
+          "compile_failed": 1,
+          "not_applied": 1,
+          "applied_invalid": 2,
+          "success": 0
+        },
+        "llm_calls": {
+          "median": 1.0,
+          "p95": 1,
+          "n": 20
+        },
+        "local_input_tokens": {
+          "median": 2333.5,
+          "p95": 2361,
+          "n": 20
+        },
+        "local_output_tokens": {
+          "median": 5852.5,
+          "p95": 5903,
+          "n": 20
+        },
+        "local_reasoning_tokens": {
+          "median": 5849.5,
+          "p95": 5900,
+          "n": 20
+        },
+        "ttft_ms": {
+          "median": 169.98244999922463,
+          "p95": 226.08839999884367,
+          "n": 20
+        },
+        "tokens_per_second": {
+          "median": 161.16111621404593,
+          "p95": 164.71687526477854,
+          "n": 19
+        },
+        "wall_clock_ms": {
+          "median": 36496.77430000156,
+          "p95": 37642.315499993856,
+          "n": 20
+        },
+        "vram_peak_mib": {
+          "median": 12157.0,
+          "p95": 12172,
+          "n": 20
+        },
+        "erc_errors": {
+          "median": 4.5,
+          "p95": 4,
+          "n": 2
+        }
+      }
+    }
+  }
+}

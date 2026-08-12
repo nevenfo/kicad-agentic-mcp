@@ -309,6 +309,43 @@ def reset_env(env: dict[str, str]) -> None:
     work.mkdir(parents=True, exist_ok=True)
 
 
+def select_best_round(round_attempts: list[dict[str, Any]], totals: dict[str, int]) -> dict[str, Any]:
+    """Task H: a run must report the BEST-graded round, not the LAST one run.
+
+    Of 58 failed first rounds measured under `--repair`, 11 repairs made the
+    grade go DOWN — recording the last round means those are what a run
+    reports, which is a harness defect, not a model finding (D35). Ranks
+    `grade` 0-3 normally; a round with `grade is None` (backend error, e.g.
+    timeout) ranks below every real grade. Ties keep the EARLIER round: a
+    repair that only matches the best grade so far bought nothing.
+
+    Cost stays honest and separate from grading: `totals` — summed
+    local_input/output/reasoning_tokens over every round actually performed,
+    discarded or kept — overwrite the kept round's own (smaller) per-call
+    figures, because what a task cost is what it took, not what its kept
+    round cost (D34). `llm_calls` is the round count for the same reason.
+    TTFT and tokens_per_second are left untouched, i.e. the KEPT round's own
+    values, because they describe a single generation, not a set of them.
+    """
+    best_index = 0
+    best_rank = -1 if round_attempts[0].get("grade") is None else round_attempts[0]["grade"]
+    for i, a in enumerate(round_attempts):
+        rank = -1 if a.get("grade") is None else a["grade"]
+        if rank > best_rank:
+            best_rank = rank
+            best_index = i
+    kept = dict(round_attempts[best_index])
+    kept.update(totals)
+    kept["llm_calls"] = len(round_attempts)
+    kept["repair_rounds"] = len(round_attempts) - 1
+    # Which round was kept and how many ran, so a later analysis can tell a
+    # converted repair (kept_round > 0) from a discarded one (kept_round <
+    # rounds_run - 1, i.e. a later round ran but lost).
+    kept["kept_round"] = best_index
+    kept["rounds_run"] = len(round_attempts)
+    return kept
+
+
 def build_anchor(task: dict[str, Any]) -> str:
     inv = task.get("invariants", {})
     parts = [f"ACTIVE TASK ANCHOR — {task['title']}."]
@@ -351,6 +388,35 @@ PLAN_RESPONSE_SCHEMA = {
 }
 
 
+def probe_loaded_context(base_url: str, model: str) -> int | None:
+    """The context window the loaded instance actually has, or `None`.
+
+    E23: a run at `reasoning_effort: high` graded 0/60 with 51 attempts at
+    `finish_reason: length`, because LM Studio had the model loaded at 8 192 of
+    a possible 131 072. Nothing in the results file said so, which made a
+    configuration ceiling look like a model limit. Two runs in different windows
+    are not comparable, so the window is recorded with the run.
+
+    `/api/v0/models` is LM Studio's own endpoint and is not part of the
+    OpenAI-compatible surface. A backend that does not serve it — `llama-server`
+    — yields `None`, which is the honest answer: unknown, not assumed. Never
+    raises, for the same reason `hardware::probe` in `kam-llm` never panics.
+    """
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    try:
+        with urllib.request.urlopen(root + "/api/v0/models", timeout=5) as resp:
+            payload = json.load(resp)
+    except Exception:
+        return None
+    for entry in payload.get("data") or []:
+        if entry.get("id") == model:
+            value = entry.get("loaded_context_length")
+            return value if isinstance(value, int) else None
+    return None
+
+
 def call_backend(
     base_url: str,
     model: str,
@@ -359,6 +425,7 @@ def call_backend(
     temperature: float,
     timeout: float,
     strict_json: bool = False,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """One `/chat/completions` call, streamed exactly like
     `crates/kam-llm/src/openai_compat.rs::wire_request` builds it.
@@ -391,6 +458,16 @@ def call_backend(
         },
         "temperature": temperature,
     }
+    # E22: `reasoning_effort` is a measurement variable, not a default. Probing
+    # openai/gpt-oss-20b directly showed omitting the field is NOT neutral —
+    # it behaves like "low", and "low" itself 400s on this backend:
+    # `{"error":"Engine protocol predict stream returned an error:
+    # {\"code\":500,\"message\":\"The model produced output that does not
+    # match the expected peg-native format\"}"}`. So default None must omit
+    # the field (keeps every historical run's wire shape comparable), and any
+    # explicit choice must be sent verbatim — never silently coerced.
+    if reasoning_effort is not None:
+        body["reasoning_effort"] = reasoning_effort
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
@@ -845,6 +922,70 @@ def run_selftest(args: argparse.Namespace) -> None:
         if not is_raw_text and result.get("compiled_plan") is None:
             failures.append(f"{label}: compiled_plan missing for valid JSON")
 
+    # Task H: prove select_best_round without a model or backend call. A
+    # descending grade sequence (3 then 1 then 0) must keep round 0, and the
+    # summed token/llm_calls accounting must still count every round —
+    # discarded rounds cost real tokens even though their plan is thrown away.
+    descending = [
+        {"grade": 3, "outcome": "success"},
+        {"grade": 1, "outcome": "compile_failed"},
+        {"grade": 0, "outcome": "invalid_json"},
+    ]
+    descending_totals = {"local_input_tokens": 111, "local_output_tokens": 222, "local_reasoning_tokens": 33}
+    kept = select_best_round(descending, descending_totals)
+    ok = (
+        kept["grade"] == 3
+        and kept["kept_round"] == 0
+        and kept["rounds_run"] == 3
+        and kept["llm_calls"] == 3
+        and kept["repair_rounds"] == 2
+        and kept["local_input_tokens"] == 111
+        and kept["local_output_tokens"] == 222
+        and kept["local_reasoning_tokens"] == 33
+    )
+    status = "OK" if ok else "FAIL"
+    print(
+        f"  [{status}] select_best_round, descending grades [3, 1, 0]: expected kept_round=0 grade=3 "
+        f"rounds_run=3 tokens summed over all rounds, got kept_round={kept.get('kept_round')} "
+        f"grade={kept.get('grade')} rounds_run={kept.get('rounds_run')} "
+        f"tokens=({kept.get('local_input_tokens')}, {kept.get('local_output_tokens')}, "
+        f"{kept.get('local_reasoning_tokens')})"
+    )
+    if not ok:
+        failures.append("select_best_round: descending grades did not keep round 0")
+
+    # A tie must keep the EARLIER round: the repair bought nothing.
+    tied = [
+        {"grade": 1, "outcome": "compile_failed"},
+        {"grade": 2, "outcome": "not_applied"},
+        {"grade": 2, "outcome": "applied_invalid"},
+        {"grade": 0, "outcome": "invalid_json"},
+    ]
+    tied_kept = select_best_round(tied, {"local_input_tokens": 0, "local_output_tokens": 0, "local_reasoning_tokens": 0})
+    ok_tie = tied_kept["kept_round"] == 1 and tied_kept["outcome"] == "not_applied"
+    status_tie = "OK" if ok_tie else "FAIL"
+    print(
+        f"  [{status_tie}] select_best_round, tie at grade 2 (rounds 1 and 2): expected kept_round=1, "
+        f"got kept_round={tied_kept.get('kept_round')} outcome={tied_kept.get('outcome')}"
+    )
+    if not ok_tie:
+        failures.append("select_best_round: tie did not keep the earlier round")
+
+    # A backend-error round (grade None) must never outrank a graded one.
+    with_error = [
+        {"grade": None, "outcome": None},
+        {"grade": 2, "outcome": "applied_invalid"},
+    ]
+    error_kept = select_best_round(with_error, {"local_input_tokens": 0, "local_output_tokens": 0, "local_reasoning_tokens": 0})
+    ok_error = error_kept["kept_round"] == 1 and error_kept["grade"] == 2
+    status_error = "OK" if ok_error else "FAIL"
+    print(
+        f"  [{status_error}] select_best_round, backend error then grade 2: expected kept_round=1, "
+        f"got kept_round={error_kept.get('kept_round')} grade={error_kept.get('grade')}"
+    )
+    if not ok_error:
+        failures.append("select_best_round: a backend error outranked a graded round")
+
     if failures:
         raise SystemExit(f"\nSELFTEST FAILED: {failures}")
     print("\nSELFTEST PASSED — the oracle is proven before any model is measured.")
@@ -935,6 +1076,15 @@ def main() -> None:
         action="store_true",
         help="send response_format.json_schema.strict=true (constrained decoding when the backend supports it)",
     )
+    ap.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high"],
+        default=None,
+        help="send reasoning_effort in the request body. Default omits the field entirely — do "
+        "not read that as 'low': measured on gpt-oss-20b, omitting it behaves like low (both "
+        "400 on the same prompt), so an unset flag and an explicit low are different, comparable "
+        "runs, not the same one.",
+    )
     args = ap.parse_args()
 
     if args.selftest:
@@ -951,6 +1101,12 @@ def main() -> None:
         f"stable prefix: {tokens(prefix)} tk "
         f"(rules {tokens(IMMUTABLE_SYSTEM_RULES)} + schema {tokens(schema_block)} + "
         f"ops {tokens(op_block)})"
+    )
+    loaded_context = probe_loaded_context(args.base_url, args.model)
+    print(
+        f"run: model={args.model} temperature={args.temperature} strict_json={args.strict_json} "
+        f"reasoning_effort={args.reasoning_effort!r} repair={args.repair} "
+        f"loaded_context_length={loaded_context}"
     )
 
     tasks = load_model_tasks(args.tasks)
@@ -970,6 +1126,13 @@ def main() -> None:
         "temperature": args.temperature,
         "repeat": args.repeat,
         "strict_json": args.strict_json,
+        "reasoning_effort": args.reasoning_effort,
+        # E23: the window the run actually had. `high` once graded 0/60 with 51
+        # attempts at `finish_reason: length`, because the instance was loaded
+        # at 8 192 of a possible 131 072 — a result about our configuration
+        # reported as a result about the model. `None` when the backend does not
+        # expose it, which is honest about not knowing rather than assuming.
+        "loaded_context_length": loaded_context,
         "repair": args.repair,
         "hint_levels": hint_levels,
         "stable_prefix_tokens": tokens(prefix),
@@ -989,8 +1152,8 @@ def main() -> None:
                 user_text = build_dynamic_task(task, env, hint_level) + "\n\n" + build_anchor(task)
                 round_text = user_text
                 rounds: list[dict[str, Any]] = []
+                round_attempts: list[dict[str, Any]] = []
                 totals = {"local_input_tokens": 0, "local_output_tokens": 0, "local_reasoning_tokens": 0}
-                attempt: dict[str, Any] = {}
                 for round_index in range(args.repair + 1):
                     if round_index:
                         # Same paths, empty directory: a repair starts from the
@@ -1005,11 +1168,13 @@ def main() -> None:
                         args.temperature,
                         args.timeout,
                         args.strict_json,
+                        args.reasoning_effort,
                     )
                     if backend.get("backend_unreachable"):
                         backend_unreachable = backend["error"]
                         break
                     attempt = grade_backend_reply(args, task, env, backend)
+                    round_attempts.append(attempt)
                     for key in totals:
                         totals[key] += backend.get(key) or 0
                     rounds.append(
@@ -1029,13 +1194,11 @@ def main() -> None:
                 if backend_unreachable:
                     break
 
-                # Tokens are the sum over every round — the cost of a task is
-                # what it took, not what its last try took. TTFT and tok/s stay
-                # the final round's, because a median over rounds would describe
-                # no single generation.
-                attempt.update(totals)
-                attempt["llm_calls"] = len(rounds)
-                attempt["repair_rounds"] = len(rounds) - 1
+                # The record a run reports is the BEST-graded round, not the
+                # last one run (Task H / D35) — see select_best_round for why
+                # and how tokens/llm_calls stay a sum over every round while
+                # TTFT/tok/s stay the kept round's own.
+                attempt = select_best_round(round_attempts, totals)
                 attempt["rounds"] = rounds
                 attempts.append(attempt)
                 print(

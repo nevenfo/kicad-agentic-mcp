@@ -25,7 +25,7 @@ pub mod usage;
 pub use hardware::{GpuInfo, HardwareProfile, LocalBackend};
 pub use openai_compat::{ConfigError, OpenAiCompatConfig, OpenAiCompatProvider};
 pub use provider::{
-    CompletionRequest, CompletionResponse, FinishReason, Message, Provider, ProviderError, Role,
-    StructuredOutput, ToolCall, ToolDef,
+    CompletionRequest, CompletionResponse, FinishReason, Message, Provider, ProviderError,
+    ReasoningEffort, Role, StructuredOutput, ToolCall, ToolDef,
 };
 pub use usage::Usage;

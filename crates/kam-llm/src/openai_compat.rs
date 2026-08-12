@@ -220,6 +220,11 @@ fn wire_request(model: &str, req: &CompletionRequest) -> Value {
     if let Some(m) = req.max_tokens {
         body["max_tokens"] = json!(m);
     }
+    // See `CompletionRequest::reasoning_effort`: omitted, not defaulted to
+    // "low" — that equivalence was measured on gpt-oss-20b, not assumed here.
+    if let Some(effort) = req.reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
     body
 }
 
@@ -681,6 +686,38 @@ mod tests {
             matches!(err, ProviderError::Unreachable(_)),
             "expected Unreachable, got {err:?}"
         );
+    }
+
+    #[test]
+    fn reasoning_effort_is_omitted_from_the_wire_body_when_unset() {
+        // E22: unset must be an absent field, not a default of "low" — that
+        // equivalence was measured on gpt-oss-20b, not this crate's choice.
+        let req = CompletionRequest {
+            messages: vec![Message::text(Role::User, "hi")],
+            ..Default::default()
+        };
+        let body = wire_request("any-model", &req);
+        assert!(
+            body.get("reasoning_effort").is_none(),
+            "expected no reasoning_effort key, got {body}"
+        );
+    }
+
+    #[test]
+    fn reasoning_effort_is_sent_verbatim_when_set() {
+        for (effort, wire) in [
+            (crate::provider::ReasoningEffort::Low, "low"),
+            (crate::provider::ReasoningEffort::Medium, "medium"),
+            (crate::provider::ReasoningEffort::High, "high"),
+        ] {
+            let req = CompletionRequest {
+                messages: vec![Message::text(Role::User, "hi")],
+                reasoning_effort: Some(effort),
+                ..Default::default()
+            };
+            let body = wire_request("any-model", &req);
+            assert_eq!(body["reasoning_effort"], wire, "effort {effort:?}");
+        }
     }
 
     #[test]

@@ -1,0 +1,45 @@
+project_name: lookupcost
+toolsets: [project, sch_components]
+# E26 probe: how long does a FAILED symbol lookup take?
+#
+# The golden `recovery` task went from ~320 ms to 14 421 ms between the Phase G
+# measurement and the E24 gate run. It contains exactly three failing lib_id
+# lookups, and E21 changed the candidate search to enumerate every installed
+# KiCAD symbol library and fuzzy-match globally before giving up. Three failures
+# at ~4.7 s each is the whole regression, so this times each shape on its own.
+#
+# Step 0 places a real symbol first: the first successful lookup pays whatever
+# one-time library indexing exists, so the failures that follow are measured
+# against a warm state rather than blamed for it.
+steps:
+  - tool: create_project
+    args: { path: "$WORK", name: "$NAME" }
+
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "Device:R", reference: "R1", x: 100.33, y: 80.01 }
+
+  # 1. Library that does not exist at all.
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "NotALibrary:Nope", x: 100.33, y: 88.9 }
+    expect_error: true
+
+  # 2. Real library, symbol that does not exist — the shape that returns
+  #    candidates, and so does the most work.
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "Device:ThisSymbolDoesNotExist", x: 100.33, y: 88.9 }
+    expect_error: true
+
+  # 3. Malformed lib_id, no colon.
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "Device_R", x: 100.33, y: 88.9 }
+    expect_error: true
+
+  # 4. A second identical failure: if a global scan is cached, this is fast and
+  #    the cost is one-time; if it is not, this costs the same as step 2 again.
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "Device:ThisSymbolDoesNotExist", x: 100.33, y: 88.9 }
+    expect_error: true
+
+  # 5. A successful lookup after all of it, to show the warm path is unaffected.
+  - tool: add_schematic_component
+    args: { schematic: "$SCH", lib_id: "Device:C", reference: "C1", x: 110.49, y: 80.01 }

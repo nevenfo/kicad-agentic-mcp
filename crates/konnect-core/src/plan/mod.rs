@@ -32,4 +32,6 @@
 
 mod ops;
 
-pub use ops::{description as plan_description, op_names, KicadOps, OP_LIBRARY};
+pub use ops::{
+    description as plan_description, infer_omitted_schematics, op_names, KicadOps, OP_LIBRARY,
+};

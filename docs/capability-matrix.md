@@ -131,7 +131,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `add_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/tasks/06_recovery.yaml` |  |
+| `add_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/probes/symbol_lookup_cost.yaml` |  |
 | `delete_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
 | `edit_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
 | `get_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |

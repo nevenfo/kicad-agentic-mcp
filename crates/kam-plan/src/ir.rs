@@ -289,8 +289,26 @@ impl Plan {
             }
         };
 
+        // A model asked to fill this field sometimes writes the absence of a
+        // choice instead of leaving the field out: "", "none", "null",
+        // "default". Those four name "not set", not a fourth policy, so they
+        // resolve to the same default an absent field gets. Nothing else is
+        // forgiven here — "maybe" and every other spelling stay refused,
+        // because past these four every reading is a genuine guess at intent.
+        // The cost of being wrong about these four is bounded and visible: a
+        // plan that meant "never roll back" instead gets the atomic default,
+        // and only on failure — the reply already reports `rollback: true`,
+        // so the difference is observable, not silent.
         let rollback_policy = match optional_str(map, "rollback_policy")? {
             None => RollbackPolicy::default(),
+            Some(s)
+                if matches!(
+                    s.trim().to_ascii_lowercase().as_str(),
+                    "" | "none" | "null" | "default"
+                ) =>
+            {
+                RollbackPolicy::default()
+            }
             Some(s) => RollbackPolicy::parse(s).ok_or_else(|| PlanError::UnknownPolicy {
                 found: s.to_string(),
             })?,
@@ -543,6 +561,15 @@ mod tests {
         let err = Plan::from_json(&json!({"ops": [{"op": "x"}], "rollback_policy": "maybe"}))
             .unwrap_err();
         assert_eq!(err.code(), "plan_unknown_policy");
+    }
+
+    #[test]
+    fn the_four_spellings_of_unset_resolve_to_the_default() {
+        for spelling in ["", "none", "None", "NULL", "default", " Default "] {
+            let plan = Plan::from_json(&json!({"ops": [{"op": "x"}], "rollback_policy": spelling}))
+                .unwrap_or_else(|e| panic!("{spelling:?} should resolve, got {e}"));
+            assert_eq!(plan.rollback_policy, RollbackPolicy::Atomic);
+        }
     }
 
     #[test]

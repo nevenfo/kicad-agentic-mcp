@@ -621,6 +621,85 @@ measured, and removed.** It looked obviously correct — "symbols" should match
 
 ---
 
+### Model fit — grading a local model by compiling what it writes
+
+`bench/model_fit.py`. Method and design decisions are in `docs/local-agents.md`;
+this is the result table. 60 attempts per run (4 tasks × 3 hint levels × 5
+repeats), temperature 0.2, one-shot, `strict_json: false`. The grade is never
+read off the model's answer — every attempt is compiled and applied by the real
+built server on a 0–3 ladder.
+
+| run | grade 3 | compiled (≥2) | LLM calls/success | output tk | reasoning | wall P50 |
+|---|---|---|---|---|---|---|
+| `qwen3.5-9b`, default, window unrecorded | 4/60 | 50/60 | 15.0 | 122 600 | 66 % | 17 547 ms |
+| `gpt-oss-20b`, effort unset (= `low`), ctx 8k | 2/60 | 49/60 | 30.0 | 21 133 | 69 % | 1 961 ms |
+| `gpt-oss-20b`, `medium`, ctx 8k | 8/60 | 42/60 | 7.5 | 170 186 | 92 % | 16 255 ms |
+| `gpt-oss-20b`, `high`, ctx 8k | 0/60 | 6/60 | — | 328 617 | 99 % | 35 434 ms |
+| `gpt-oss-20b`, `high`, ctx 32k | 6/60 | 36/60 | 10.0 | 517 697 | 97 % | 45 052 ms |
+| `gpt-oss-20b`, `medium`, ctx 32k | 6/60 | 34/60 | 10.0 | 186 737 | 92 % | 16 143 ms |
+| `gpt-oss-20b`, `medium`, ctx 32k, E24 build | 11/60 | 54/60 | 5.5 | 171 793 | 92 % | 15 798 ms |
+| `qwen3.5-9b`, ctx 32k, E24 build (confounded) | 5/60 | 44/60 | 12.0 | 460 054 | 94 % | 18 251 ms |
+| **`gpt-oss-20b`, `medium`, ctx 32k, E26 build** | **12/60** | **54/60** | **5.0** | 171 045 | 93 % | 12 612 ms |
+| **`qwen3.5-9b`, ctx 32k, E26 build** | 3/60 | 49/60 | 20.0 | 325 400 | 64 % | 18 472 ms |
+
+Rows 2 and 4 are void as statements about a model and are kept because deleting
+them hides why the rest is shaped as it is: row 2 ran at the model's deliberation
+floor because the harness sent no `reasoning_effort` (`progress.md` E22), and
+row 4 inside an 8 192-token window it overran 51 times in 60 (E23). Both settings
+are now recorded per run.
+
+**The one controlled comparison is rows 6 and 7** — same model, same effort, same
+window, only the build differs:
+
+| | before E24 | after E24 |
+|---|---|---|
+| `compile_failed` | 26 | 6 |
+| compiled | 34/60 | 54/60 — Fisher exact **p = 0.0001** |
+| grade 3 | 6/60 | 11/60 — p = 0.295, not claimed |
+| LLM calls/success | 10.0 | **5.5** |
+
+E24 accepted four spellings of "I am not choosing a rollback policy" on a field
+that was already optional, and filled in a `schematic` the model had already
+named one operation earlier. Neither is a design decision; together they were a
+fifth of all attempts.
+
+`LLM_CALLS_PER_SUCCESSFUL_TASK` **15 → 5.5** across the phase, and the model was
+not what changed. See `progress.md` D37.
+
+**Not comparable, stated rather than smoothed over:** rows 1 and 8, the first two
+`qwen3.5-9b` runs. The baseline ran in a window nothing recorded, the re-run
+pinned 32 768, and the model's behaviour moved with it — output tokens
+122 600 → 460 054, reasoning 66 % → 94 %, truncations 4 → 12. No delta is claimed
+across that pair.
+
+**The model comparison is rows 9 and 10** (H.5.3) — both models on the E26 build,
+both in a declared 32 768 window, same tasks, same hint levels, same temperature,
+one-shot:
+
+| | `gpt-oss-20b` `medium` | `qwen3.5-9b` |
+|---|---|---|
+| grade 3 | 12/60 | 3/60 — Fisher exact **p = 0.0246** |
+| compiled (≥2) | 54/60 | 49/60 — p = 0.295, not claimed |
+| LLM calls/success | **5.0** | 20.0 |
+| output tk | 171 045 | 325 400 |
+| wall P50 | 12 612 ms | 18 472 ms |
+
+**`gpt-oss-20b` at `medium` is the chosen local model.** It writes a correct plan
+four times as often, at half the output tokens and 2.5× fewer calls per success.
+The earlier reading — no success difference, and the 9B compiling *better* — came
+from a pair that straddled two builds; on one build the compile-rate difference is
+not significant and the success difference is.
+
+The 9B's own E24 → E26 move is within noise (compiled 44 → 49, p = 0.382; grade 3
+5 → 3, p = 0.717). Its reasoning share fell 94 % → 64 % because truncations fell
+12 → 7, and a truncated attempt is ~30 000 tokens of almost pure deliberation —
+the ratio moved, the model did not.
+
+**E26 changed the harness's clock, not the model's answers.** Same 20B, same
+effort and window, E24 → E26: grade 3 11/60 → 12/60 (p = 1.0), compiled 54/60
+both times, wall P50 15 798 → 12 612 ms. That is what a cache is supposed to do,
+and it is the reason the E24 comparison above still stands.
+
 ## Reproducing
 
 ```powershell
@@ -633,7 +712,19 @@ python bench\runner.py  --server .\target\release\konnect.exe --label mine --rep
 python bench\analyze.py bench\results\latest-tasks.json
 python bench\probe.py   --server .\target\release\konnect.exe --script bench\probes\divider.yaml
 python bench\plan_cost.py --server .\target\release\konnect.exe --repeat 3
+
+# model fit — needs an OpenAI-compatible backend on loopback
+python bench\model_fit.py --server .\target\release\konnect.exe --selftest
+python bench\model_fit.py --server .\target\release\konnect.exe `
+    --model "openai/gpt-oss-20b" --reasoning-effort medium --repeat 5 `
+    --out bench\results\model-fit-mine.json
 ```
+
+`--selftest` runs no model and must print `SELFTEST PASSED` first: it proves all
+four rungs of the ladder and the best-round selection before any measurement is
+believed. Pin the backend's context window explicitly and check the
+`loaded_context_length` the run reports — two runs in different windows are not a
+comparison (E23).
 
 `bench/konnect.bench.toml` pins the `kicad-cli` path. Relying on `PATH` made
 `run_erc` fail with `Failed to spawn kicad-cli` while the task still reported
@@ -647,10 +738,18 @@ comparison is meaningless.
 
 ## Not yet measured
 
-* `LOCAL_*` tokens, `TTFT_LOCAL`, `VRAM_PEAK`, `KV_CACHE_PEAK` — no local model
-  runtime exists yet (Phase H).
-* `LLM_CALLS_PER_SUCCESSFUL_TASK` — the golden suite is a scripted oracle path
-  with no model in the loop. It measures the server, not an agent.
+* `KV_CACHE_PEAK` — `VRAM_PEAK` is sampled per attempt, but the KV cache is not
+  broken out from it.
+* `PREFIX_CACHE_HIT_RATE`, `CACHE_HIT_RATE` — the prompt is built as a stable
+  prefix plus a dynamic tail, and the prefix is asserted byte-identical across
+  every task and hint level (1 969 tk), but no backend hit rate is read back.
 * PCB tasks — they need KiCad running with the IPC API enabled. Only the
   schematic and export paths are covered, and both are file/CLI based.
-* `PREFIX_CACHE_HIT_RATE`, `CACHE_HIT_RATE` — no local inference yet.
+* A clean `qwen3.5-9b` before/after pair — see the model-fit section; its two
+  runs are in different context windows.
+
+Measured since this list was first written: `LOCAL_INPUT_TOKENS`,
+`LOCAL_OUTPUT_TOKENS`, `LOCAL_REASONING_TOKENS`, `TTFT_LOCAL`,
+`TOKENS_PER_SECOND_LOCAL`, `VRAM_PEAK` and `LLM_CALLS_PER_SUCCESSFUL_TASK`, all
+through `bench/model_fit.py` rather than the golden suite — the golden suite is a
+scripted oracle with no model in the loop and measures the server, not an agent.

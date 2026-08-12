@@ -1,6 +1,6 @@
 //! The operations a plan may name, and what each expands to.
 
-use kam_plan::{ExpandError, Op, OpLibrary, StepSpec};
+use kam_plan::{ExpandError, Op, OpLibrary, Plan, StepSpec};
 use konnect_sexp::geometry::{snap_to_grid, SCHEMATIC_GRID_MM};
 use serde_json::{json, Map, Value};
 
@@ -71,9 +71,66 @@ pub fn description() -> String {
          unless an earlier operation is also literally named N, in which case it is refused as \
          ambiguous. defaults:{{key:value,...}} fills that key into every \
          operation's 'with' that omits it — write defaults:{{schematic:<path>}} once instead of \
-         repeating 'schematic' in every operation.",
+         repeating 'schematic' in every operation. schematic? may be omitted after a single \
+         earlier create, whose output it then means.",
         operations.join("; ")
     )
+}
+
+/// Operations whose `with` names a `schematic:path` they read. `create` makes
+/// the schematic rather than reading one, and `call` is opaque — this module
+/// does not know what its arguments mean — so neither is in this list, and
+/// [`infer_omitted_schematics`] never touches either.
+const NEEDS_SCHEMATIC: &[&str] = &["place", "power", "label", "wire", "connect", "decouple"];
+
+/// Fill in a missing `schematic` with the reference a model should have
+/// written, when the plan leaves exactly one operation it could mean.
+///
+/// E24: 8 of 60 measured refusals were `schematic ... required` in a plan
+/// whose first operation was `create` — the model had already written the
+/// one fact `schematic` could name, one operation earlier, and did not repeat
+/// it. This resolves that shape by injecting the same `${op_id.schematic}`
+/// placeholder a model would write by hand, so [`kam_plan::compile`]'s
+/// reference checking (D22) runs over it unchanged, and no plan reaches the
+/// executor through a path that skips it.
+///
+/// Only injected when exactly one earlier `create` exists. Zero, or two or
+/// more, is genuine ambiguity — which one? — and is left alone, so the
+/// operation's own `required` error still fires, unchanged.
+///
+/// Called on the plan *before* [`kam_plan::compile`], so the injected value
+/// is indistinguishable from one the model wrote itself by the time the
+/// op library or the reference checker ever sees it.
+pub fn infer_omitted_schematics(plan: &mut Plan) {
+    for index in 0..plan.ops.len() {
+        if !NEEDS_SCHEMATIC.contains(&plan.ops[index].op.as_str()) {
+            continue;
+        }
+        let has_schematic = plan.ops[index]
+            .with
+            .as_object()
+            .is_some_and(|with| with.contains_key("schematic"));
+        if has_schematic {
+            continue;
+        }
+
+        let creator_id = {
+            let mut creators = plan.ops[..index].iter().filter(|op| op.op == "create");
+            match (creators.next(), creators.next()) {
+                (Some(only), None) => Some(only.id.clone()),
+                _ => None, // zero, or two-or-more: ambiguous, leave it be refused
+            }
+        };
+
+        if let Some(id) = creator_id {
+            if let Value::Object(with) = &mut plan.ops[index].with {
+                with.insert(
+                    "schematic".to_string(),
+                    Value::String(format!("${{{id}.schematic}}")),
+                );
+            }
+        }
+    }
 }
 
 impl OpLibrary for KicadOps {
@@ -150,7 +207,7 @@ fn expand_call(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 /// along `direction` at `pitch`. Either way the result is snapped, and the
 /// whole set becomes one `batch_place_components` — one file read/write cycle
 /// rather than one per symbol.
-const PLACE_SIGNATURE: &str = "place{schematic:path,components:[{lib_id:string,x?:number,\
+const PLACE_SIGNATURE: &str = "place{schematic?:path,components:[{lib_id:string,x?:number,\
      y?:number,reference?:string,value?:string,rotation?:number,unit?:number}],\
      at?:{x:number,y:number},pitch?:number,direction?:string} places symbols, snapped to the \
      1.27mm grid, in one call. Each component needs lib_id, plus either both x and y or neither \
@@ -223,7 +280,7 @@ fn expand_place(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 /// nominal position as a resistor lands 0.33 mm off its pin and ERC reports
 /// both as unconnected — with no tool error anywhere. Routing power symbols
 /// through a plan makes that unreachable.
-const POWER_SIGNATURE: &str = "power{schematic:path,symbols:[{net:string,x:number,y:number,\
+const POWER_SIGNATURE: &str = "power{schematic?:path,symbols:[{net:string,x:number,y:number,\
      rotation?:number}]} adds power symbols, snapped to the grid; each symbol needs net (or \
      power_net) plus x and y";
 
@@ -269,7 +326,7 @@ fn expand_power(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 }
 
 /// `label` — net labels, on the grid.
-const LABEL_SIGNATURE: &str = "label{schematic:path,labels:[{net:string,x:number,y:number,\
+const LABEL_SIGNATURE: &str = "label{schematic?:path,labels:[{net:string,x:number,y:number,\
      rotation?:number,label_type?:string,shape?:string}]} adds net labels, snapped to the grid; \
      each label needs net plus x and y";
 
@@ -316,7 +373,7 @@ fn expand_label(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 }
 
 /// `wire` — segments and their junctions, on the grid.
-const WIRE_SIGNATURE: &str = "wire{schematic:path,segments:[{x1:number,y1:number,x2:number,\
+const WIRE_SIGNATURE: &str = "wire{schematic?:path,segments:[{x1:number,y1:number,x2:number,\
      y2:number}],junctions?:[{x:number,y:number}]} adds snapped segments, and snapped junctions \
      where given";
 
@@ -381,7 +438,7 @@ fn expand_wire(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 /// never by trying both: a compact side with no `.` names a net, one with a
 /// `.` names `REF.PIN`; explicitly, `ref2` given without `pin2` cannot mean a
 /// pin (a pin always needs both), so it is read as the net name instead.
-const CONNECT_SIGNATURE: &str = "connect{schematic:path,connections:[{from:string,to:string}|\
+const CONNECT_SIGNATURE: &str = "connect{schematic?:path,connections:[{from:string,to:string}|\
      {ref1:string,pin1:string,ref2:string,pin2:string}|{ref1:string,pin1:string,net:string}]} \
      wires a pin to a pin or a pin to a net; 'from'/'to' are compact refs like 'R1.2' (a side \
      with no '.' names a net, not a pin), or give ref1+pin1 with either ref2+pin2 (a pin) or net \
@@ -530,7 +587,7 @@ fn pin_to_net_step(schematic: &str, reference: String, pin: String, net: String)
 /// What this does not do is decide whether the decoupling is *right*. Values,
 /// counts and placement quality are design questions; this is the mechanical
 /// half, and `verify` is what says whether the result holds.
-const DECOUPLE_SIGNATURE: &str = "decouple{schematic:path,ic?:string,at:{x:number,y:number},\
+const DECOUPLE_SIGNATURE: &str = "decouple{schematic?:path,ic?:string,at:{x:number,y:number},\
      caps:[{reference:string,pin:string|rail:string,value?:string}],pitch?:number,\
      ground?:string,lib_id?:string,value?:string} places a capacitor bank, wires each to its IC \
      pin and grounds it. Each cap needs reference plus exactly one of pin (wired to 'ic', which \
@@ -779,7 +836,7 @@ fn split_pin(value: &Value, field: &str) -> Result<(String, String), ExpandError
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kam_plan::{compile, Plan};
+    use kam_plan::compile;
     use serde_json::json;
 
     fn expand(op: &str, with: Value) -> Result<Vec<StepSpec>, ExpandError> {
@@ -1290,6 +1347,57 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.reason.contains("over the limit"));
+    }
+
+    #[test]
+    fn a_missing_schematic_resolves_when_exactly_one_create_precedes_it() {
+        let mut plan = Plan::from_json(&json!({"ops": [
+            {"id": "c", "op": "create", "with": {"path": "/p", "name": "a"}},
+            {"op": "place", "with": {
+                "components": [{"lib_id": "Device:R", "x": 100.33, "y": 80.01}]
+            }}
+        ]}))
+        .unwrap();
+        infer_omitted_schematics(&mut plan);
+        assert_eq!(
+            plan.ops[1].with["schematic"],
+            json!("${c.schematic}"),
+            "the injected reference should be the same form a model would write"
+        );
+        // And it must actually resolve: compile runs D22's reference checking
+        // over it unchanged.
+        let program = compile(&plan, &KicadOps).unwrap();
+        assert!(program.has_references());
+    }
+
+    #[test]
+    fn zero_creates_leaves_schematic_missing_and_still_refused() {
+        let mut plan = Plan::from_json(&json!({"ops": [
+            {"op": "place", "with": {
+                "components": [{"lib_id": "Device:R", "x": 100.33, "y": 80.01}]
+            }}
+        ]}))
+        .unwrap();
+        infer_omitted_schematics(&mut plan);
+        let err = compile(&plan, &KicadOps).unwrap_err();
+        assert_eq!(err.code(), "plan_expansion_failed");
+        assert!(err.to_string().contains("schematic"), "{err}");
+    }
+
+    #[test]
+    fn two_creates_is_genuine_ambiguity_and_stays_refused() {
+        let mut plan = Plan::from_json(&json!({"ops": [
+            {"id": "c1", "op": "create", "with": {"path": "/p", "name": "a"}},
+            {"id": "c2", "op": "create", "with": {"path": "/p", "name": "b"}},
+            {"op": "place", "with": {
+                "components": [{"lib_id": "Device:R", "x": 100.33, "y": 80.01}]
+            }}
+        ]}))
+        .unwrap();
+        infer_omitted_schematics(&mut plan);
+        let err = compile(&plan, &KicadOps).unwrap_err();
+        assert_eq!(err.code(), "plan_expansion_failed");
+        assert!(err.to_string().contains("schematic"), "{err}");
     }
 
     #[test]

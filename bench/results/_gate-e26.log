@@ -1,0 +1,1169 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s
+   Compiling konnect-schematic-editor v0.2.2 (C:\Users\FlowUP\kicad-agentic-mcp\konnect-agentic\crates\konnect-schematic-editor)
+   Compiling konnect-core v0.2.2 (C:\Users\FlowUP\kicad-agentic-mcp\konnect-agentic\crates\konnect-core)
+   Compiling konnect v0.2.2 (C:\Users\FlowUP\kicad-agentic-mcp\konnect-agentic\crates\konnect)
+warning: unused variable: `fp_y`
+  --> crates\konnect-core\tests\integration_test.rs:78:9
+   |
+78 |     let fp_y = fp_at.get_f64(2).unwrap();
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_fp_y`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `konnect-core` (test "integration_test") generated 1 warning (run `cargo fix --test "integration_test" -p konnect-core` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.03s
+     Running unittests src\lib.rs (target\debug\deps\kam_evidence-e62f31936baeccec.exe)
+
+running 31 tests
+test diff::tests::a_removed_item_is_reported_from_the_before_image ... ok
+test diff::tests::a_renamed_item_is_modified_not_added_and_removed ... ok
+test diff::tests::a_scalar_change_reads_as_a_delta ... ok
+test diff::tests::a_moved_symbol_reads_as_moved_not_as_two_coordinates ... ok
+test diff::tests::rendering_is_bounded_and_says_how_much_it_withheld ... ok
+test diff::tests::an_added_item_names_its_kind_and_label ... ok
+test finding::tests::an_unreadable_severity_is_an_error_not_an_omission ... ok
+test diff::tests::a_text_change_shows_both_sides ... ok
+test diff::tests::touched_labels_answers_what_did_you_touch ... ok
+test finding::tests::a_different_location_is_a_different_finding ... ok
+test finding::tests::a_fix_is_an_id_that_left_not_a_count_that_fell ... ok
+test diff::tests::an_unchanged_document_produces_no_changes ... ok
+test diff::tests::changes_are_ordered_the_same_way_every_run ... ok
+test finding::tests::field_boundaries_are_not_ambiguous ... ok
+test diff::tests::reformatted_coordinates_are_not_a_change ... ok
+test finding::tests::an_id_survives_a_reworded_message ... ok
+test finding::tests::info_findings_are_kept_but_not_counted ... ok
+test finding::tests::two_identical_findings_keep_separate_ids ... ok
+test model::tests::a_number_and_a_string_are_never_the_same_fact ... ok
+test model::tests::coordinates_that_only_differ_in_formatting_are_the_same_fact ... ok
+test model::tests::counts_by_kind_summarises_a_document ... ok
+test model::tests::floats_print_the_way_a_schematic_reads ... ok
+test model::tests::identity_is_kind_plus_key_so_kinds_cannot_collide ... ok
+test store::tests::a_uri_of_another_shape_is_malformed_not_unknown ... ok
+test store::tests::a_handle_round_trips ... ok
+test store::tests::an_evicted_handle_says_so_rather_than_denying_it_existed ... ok
+test store::tests::an_id_of_the_wrong_kind_is_not_the_same_handle ... ok
+test store::tests::ids_are_unique_across_kinds ... ok
+test store::tests::listing_is_newest_first ... ok
+test store::tests::the_byte_budget_evicts_before_the_count_does ... ok
+test diff::tests::the_summary_stays_one_short_line_however_big_the_change ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\kam_graph-01fb87eb1b260a63.exe)
+
+running 18 tests
+test graph::tests::a_region_query_without_a_spatial_index_is_an_explicit_error ... ok
+test graph::tests::an_unindexed_attribute_is_an_explicit_error_not_an_empty_result ... ok
+test graph::tests::an_indexed_attribute_matches_the_same_value_across_documents ... ok
+test graph::tests::identical_graphs_answer_the_same_query_in_the_same_order ... ok
+test graph::tests::a_document_filter_drops_the_document_field_from_each_result ... ok
+test graph::tests::get_finds_an_item_by_its_full_address ... ok
+test graph::tests::a_query_truncated_below_the_match_count_reports_the_real_total ... ok
+test graph::tests::neighbors_sorts_by_distance_then_breaks_ties_on_key ... ok
+test graph::tests::neighbors_excludes_the_target_itself ... ok
+test graph::tests::neighbors_never_crosses_into_another_document ... ok
+test graph::tests::neighbors_on_a_missing_item_is_an_explicit_error ... ok
+test graph::tests::neighbors_on_a_pointless_item_is_an_explicit_error ... ok
+test graph::tests::an_item_without_a_point_never_appears_in_a_region_query_or_in_neighbors ... ok
+test graph::tests::stats_counts_by_document_and_by_kind ... ok
+test query::tests::a_query_builder_chains_into_the_same_filter_a_caller_would_send_as_json ... ok
+test query::tests::a_region_includes_its_own_boundary ... ok
+test query::tests::an_unset_query_serializes_with_no_empty_fields ... ok
+test graph::tests::a_limit_past_the_hard_cap_is_brought_back_to_it ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\kam_llm-1b61d4329285f4da.exe)
+
+running 21 tests
+test openai_compat::tests::config_accepts_loopback_hosts ... ok
+test openai_compat::tests::allow_remote_bypasses_the_check_explicitly ... ok
+test hardware::tests::blank_line_is_not_a_gpu ... ok
+test openai_compat::tests::config_refuses_non_loopback_by_default ... ok
+test hardware::tests::unknown_backend_is_absent_not_a_panic ... ok
+test openai_compat::tests::reasoning_effort_is_omitted_from_the_wire_body_when_unset ... ok
+test openai_compat::tests::reasoning_effort_is_sent_verbatim_when_set ... ok
+test hardware::tests::parses_a_normal_nvidia_smi_line ... ok
+test usage::tests::no_completion_tokens_is_not_a_rate ... ok
+test usage::tests::no_ttft_is_not_a_rate ... ok
+test usage::tests::tokens_per_second_divides_generation_window_not_total ... ok
+test hardware::tests::absent_nvidia_smi_yields_empty_not_panic ... ok
+test hardware::tests::absent_powershell_yields_none_ram_not_panic ... ok
+test hardware::tests::absent_wmi_command_yields_empty_gpu_fallback_not_panic ... ok
+test openai_compat::tests::http_error_status_is_reported_not_swallowed ... ok
+test openai_compat::tests::nominal_call_returns_content_and_usage ... ok
+test openai_compat::tests::tool_call_is_reassembled_from_streamed_fragments ... ok
+test openai_compat::tests::structured_output_request_reaches_the_backend_unmodified ... ok
+test openai_compat::tests::slow_backend_times_out ... ok
+test hardware::tests::full_probe_never_panics ... ok
+test openai_compat::tests::absent_backend_is_unreachable_not_a_panic ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.03s
+
+     Running unittests src\lib.rs (target\debug\deps\kam_plan-be91bc938eab67b1.exe)
+
+running 63 tests
+test compile::tests::a_bare_zero_resolves_to_the_first_operation_by_position ... ok
+test compile::tests::a_bare_number_naming_no_earlier_operation_falls_through_unresolved ... ok
+test compile::tests::a_bare_number_resolves_when_only_one_reading_is_a_valid_earlier_operation ... ok
+test compile::tests::a_backward_reference_compiles ... ok
+test compile::tests::a_forward_reference_is_refused_before_anything_runs ... ok
+test compile::tests::a_unique_op_type_reference_resolves_to_its_id ... ok
+test compile::tests::a_macro_becomes_several_addressable_steps ... ok
+test compile::tests::a_macro_cannot_refer_to_its_own_steps ... ok
+test compile::tests::a_positional_reference_resolves_to_the_operation_at_that_index ... ok
+test compile::tests::a_reference_free_program_says_so ... ok
+test compile::tests::a_reference_to_nothing_is_named_differently_from_one_to_a_later_step ... ok
+test compile::tests::an_ambiguous_op_type_reference_names_both_candidates ... ok
+test compile::tests::a_bare_number_is_refused_when_both_readings_are_valid_earlier_operations ... ok
+test compile::tests::an_operation_cannot_refer_to_itself ... ok
+test compile::tests::an_unknown_operation_names_itself ... ok
+test compile::tests::a_plan_that_expands_to_nothing_is_refused ... ok
+test compile::tests::defaults_fill_a_key_the_operation_did_not_give ... ok
+test compile::tests::defaults_never_overwrite_a_key_the_operation_gave_even_an_explicit_null ... ok
+test compile::tests::one_operation_becomes_its_tool_call ... ok
+test compile::tests::one_step_of_a_macro_can_be_referenced_by_id ... ok
+test compile::tests::the_summary_says_what_expanded_into_what ... ok
+test execute::tests::a_failure_stops_the_run_under_the_default_policy ... ok
+test execute::tests::a_field_that_never_arrived_fails_its_own_step_by_name ... ok
+test execute::tests::a_macro_binds_its_operation_id_to_its_last_step ... ok
+test execute::tests::an_output_reaches_the_next_step_without_a_round_trip ... ok
+test execute::tests::asking_twice_without_recording_returns_the_same_step ... ok
+test execute::tests::continue_keeps_going_and_does_not_roll_back ... ok
+test execute::tests::recording_without_a_pending_step_is_ignored ... ok
+test execute::tests::steps_are_handed_out_in_order_and_the_run_ends ... ok
+test execute::tests::stop_on_error_halts_without_rolling_back ... ok
+test execute::tests::the_summary_is_short_when_nothing_went_wrong ... ok
+test ir::tests::a_future_dialect_is_refused_not_guessed_at ... ok
+test ir::tests::a_minimal_plan_parses ... ok
+test ir::tests::a_non_object_defaults_is_refused_before_any_mutation ... ok
+test ir::tests::a_plan_round_trips ... ok
+test ir::tests::an_empty_plan_is_an_error_not_a_no_op ... ok
+test ir::tests::an_id_that_would_break_a_reference_is_refused ... ok
+test ir::tests::an_operation_without_an_id_still_gets_an_address ... ok
+test ir::tests::an_unknown_rollback_policy_is_refused ... ok
+test ir::tests::defaults_round_trip ... ok
+test ir::tests::duplicate_ids_are_refused_rather_than_last_one_wins ... ok
+test ir::tests::errors_name_the_field_so_a_retry_can_be_targeted ... ok
+test ir::tests::policy_answers_the_two_questions_it_is_asked ... ok
+test ir::tests::the_four_spellings_of_unset_resolve_to_the_default ... ok
+test refs::tests::a_composite_can_be_a_whole_value ... ok
+test refs::tests::a_composite_cannot_be_embedded_in_a_sentence ... ok
+test refs::tests::a_malformed_body_is_refused ... ok
+test refs::tests::a_missing_path_is_distinguished_from_a_missing_operation ... ok
+test refs::tests::a_plain_string_is_untouched ... ok
+test refs::tests::a_positional_reference_scans_like_any_other ... ok
+test refs::tests::a_positional_target_parses_as_ops_bracket_n ... ok
+test refs::tests::a_reference_displays_as_it_was_written ... ok
+test refs::tests::a_whole_string_reference_keeps_the_value_s_type ... ok
+test refs::tests::an_embedded_reference_interpolates ... ok
+test refs::tests::an_escaped_dollar_brace_is_literal ... ok
+test refs::tests::an_unknown_operation_is_named_in_the_error ... ok
+test refs::tests::an_unterminated_reference_is_refused ... ok
+test refs::tests::array_indices_are_paths ... ok
+test refs::tests::nested_structures_are_resolved_throughout ... ok
+test refs::tests::rewrite_replaces_only_the_target_leaving_the_path_and_surrounding_text ... ok
+test refs::tests::rewrite_surfaces_a_parse_error_before_resolving_anything ... ok
+test refs::tests::rewrite_surfaces_the_caller_s_own_refusal ... ok
+test refs::tests::scan_finds_every_reference_without_needing_outputs ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\kam_state-772da7283bb4338d.exe)
+
+running 32 tests
+test ledger::tests::a_second_claim_before_completion_is_in_flight ... ok
+test ledger::tests::abandon_lets_a_retry_run ... ok
+test ledger::tests::capacity_evicts_completed_keys_oldest_first ... ok
+test ledger::tests::first_claim_is_fresh_and_replays_after_completion ... ok
+test ledger::tests::in_flight_keys_are_never_evicted ... ok
+test revision::tests::revision_is_deterministic_and_content_sensitive ... ok
+test revision::tests::token_carries_digest_and_length ... ok
+test revision::tests::same_length_different_content_differs ... ok
+test task::tests::a_hard_constraint_is_refused_rather_than_dropped ... ok
+test task::tests::a_revision_note_replaces_rather_than_accumulates ... ok
+test task::tests::an_identical_failure_is_not_recorded_twice ... ok
+test task::tests::an_open_task_is_the_one_still_expecting_work ... ok
+test task::tests::an_update_returns_the_task_as_it_now_is ... ok
+test task::tests::softer_lists_keep_the_newest_instead_of_refusing ... ok
+test revision::tests::missing_file_reads_as_absent ... ok
+test task::tests::the_anchor_is_rendered_from_the_record_not_from_a_copy ... ok
+test task::tests::the_anchor_stays_short_and_names_what_matters ... ok
+test task::tests::the_same_fact_twice_is_one_fact ... ok
+test task::tests::updating_an_unknown_task_is_an_error_not_a_new_task ... ok
+test task::tests::the_store_hands_out_stable_ids_and_bounds_itself ... ok
+test snapshot::tests::a_missing_root_captures_nothing_and_deletes_what_appears ... ok
+test revision::tests::file_state_follows_content ... ok
+test snapshot::tests::nested_roots_are_walked_once ... ok
+test snapshot::tests::the_byte_limit_refuses_instead_of_reading_everything ... ok
+test snapshot::tests::backup_directories_are_skipped ... ok
+test snapshot::tests::the_capture_is_readable_as_a_before_image ... ok
+test snapshot::tests::changed_reports_the_current_revision_of_each_touched_file ... ok
+test snapshot::tests::untracked_files_are_neither_captured_nor_deleted ... ok
+test snapshot::tests::restore_brings_back_a_deleted_file ... ok
+test snapshot::tests::the_file_limit_refuses_instead_of_reading_everything ... ok
+test snapshot::tests::restore_undoes_modification_and_creation ... ok
+test snapshot::tests::nested_sheets_are_captured ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\lib.rs (target\debug\deps\konnect_plugin-10f00a3894de9b24.exe)
+
+running 11 tests
+test config::tests::empty_ipc_address_falls_back_to_env_var_when_no_config_found ... ok
+test config::tests::missing_file_is_err ... ok
+test config::tests::empty_toml_yields_defaults ... ok
+test config::tests::empty_json_object_yields_defaults ... ok
+test config::tests::legacy_ipc_socket_path_alias_still_works ... ok
+test config::tests::partial_toml_overrides_only_named_fields ... ok
+test config::tests::unknown_extension_parses_as_toml ... ok
+test config::tests::json_wrong_field_types_are_err ... ok
+test config::tests::json_non_object_root_is_err_not_panic ... ok
+test config::tests::toml_garbage_is_err_not_panic ... ok
+test config::tests::explicit_empty_ipc_address_in_config_file_does_not_block_env_var ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\main.rs (target\debug\deps\konnect-77f23d0f8d651227.exe)
+
+running 13 tests
+test config::tests::empty_ipc_address_falls_back_to_env_var_when_no_config_found ... ok
+test transaction_cli::tests::exact_project_path_rejects_extra_arguments ... ok
+test config::tests::missing_file_is_err ... ok
+test transaction_cli::tests::abandon_requires_force ... ok
+test config::tests::empty_toml_yields_defaults ... ok
+test config::tests::empty_json_object_yields_defaults ... ok
+test config::tests::partial_toml_overrides_only_named_fields ... ok
+test config::tests::legacy_ipc_socket_path_alias_still_works ... ok
+test config::tests::unknown_extension_parses_as_toml ... ok
+test config::tests::explicit_empty_ipc_address_in_config_file_does_not_block_env_var ... ok
+test config::tests::json_non_object_root_is_err_not_panic ... ok
+test config::tests::toml_garbage_is_err_not_panic ... ok
+test config::tests::json_wrong_field_types_are_err ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\asset_references.rs (target\debug\deps\asset_references-da1028e1ff3f47f4.exe)
+
+running 2 tests
+test documented_toolsets_exist_in_the_registry ... ok
+test tools_listed_beside_a_toolset_belong_to_it ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\e2e_kicad.rs (target\debug\deps\e2e_kicad-134b54a64545c651.exe)
+
+running 2 tests
+test full_design_loop_with_real_kicad ... ignored, requires kicad-cli + symbol libraries; run via e2e workflow
+test power_symbol_snaps_to_grid_like_components_e6 ... ignored, requires kicad-cli + symbol libraries; run via e2e workflow
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\live_kicad_tools.rs (target\debug\deps\live_kicad_tools-7db5291554827081.exe)
+
+running 1 test
+test place_component_loads_real_library_geometry ... ignored, requires a running KiCad GUI, API socket, and standard footprint libraries
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\plan_postconditions_e2e.rs (target\debug\deps\plan_postconditions_e2e-2b3eaae1375a58c4.exe)
+
+running 1 test
+test erc_clean_fails_on_a_broken_schematic_and_passes_on_a_clean_one ... ignored, requires kicad-cli + symbol libraries; run via e2e workflow
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\protocol_http.rs (target\debug\deps\protocol_http-f1ea5d2839eace6b.exe)
+
+running 2 tests
+test streamable_http_conformance ... ok
+test sse_stream_delivers_tools_list_changed ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+
+     Running tests\protocol_stdio.rs (target\debug\deps\protocol_stdio-e8fbf2f7a5896581.exe)
+
+running 29 tests
+test kicad_describe_returns_schemas_without_loading_anything ... ok
+test an_unrecognised_verify_level_is_refused ... ok
+test a_plan_with_an_impossible_reference_applies_nothing ... ok
+test file_based_tool_roundtrip_in_temp_project ... ok
+test auto_load_toolsets_config_loads_and_executes_on_miss ... ok
+test kicad_invoke_batches_in_order_and_stops_on_error ... ok
+test a_validator_that_could_not_run_is_an_error_not_a_pass ... ok
+test a_task_collects_what_its_batches_did ... ok
+test a_continue_on_error_batch_is_not_rolled_back_by_default ... ok
+test kicad_invoke_runs_an_unloaded_tool_without_touching_the_catalogue ... ok
+test load_toolset_batch_total_failure_is_typed_error ... ok
+test load_toolset_batch_form_loads_all_and_notifies_once ... ok
+test kicad_invoke_keeps_partial_work_when_atomic_is_off ... ok
+test kicad_invoke_refuses_a_stale_base_revision_without_applying_anything ... ok
+test load_toolset_emits_list_changed_over_stdio ... ok
+test handshake_baseline_and_full_registry_loads ... ok
+test kicad_invoke_replays_an_operation_id_instead_of_applying_it_twice ... ok
+test structured_errors_guide_recovery ... ok
+test the_change_detail_lives_behind_a_handle_rather_than_in_the_reply ... ok
+test kicad_invoke_rolls_back_a_batch_that_fails_halfway ... ok
+test unknown_method_is_json_rpc_error_not_crash ... ok
+test the_plan_toolset_costs_nothing_until_it_is_used ... ok
+test kicad_invoke_reports_what_it_changed_in_design_terms ... ok
+test the_task_toolset_costs_nothing_until_it_is_used ... ok
+test the_graph_toolset_costs_nothing_until_it_is_used ... ok
+test unload_toolset_emits_list_changed_over_stdio ... ok
+test the_diff_detail_level_is_the_callers_choice ... ok
+test a_plan_builds_a_divider_that_erc_passes_from_off_grid_coordinates ... ok
+test verify_reports_a_real_erc_verdict_and_its_delta ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.54s
+
+     Running tests\transaction_cli.rs (target\debug\deps\transaction_cli-e1abe33829373197.exe)
+
+running 2 tests
+test transaction_help_is_advertised ... ok
+test malformed_journal_requires_force_and_can_be_abandoned ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\lib.rs (target\debug\deps\konnect_core-bab2416f280ba384.exe)
+
+running 367 tests
+test capability::coverage::tests::a_prefix_is_not_a_mention ... ok
+test capability::coverage::tests::a_comment_is_not_a_mention ... ok
+test capability::coverage::tests::benchmark_steps_are_read_from_yaml ... ok
+test capability::coverage::tests::the_ignore_flag_stops_at_the_next_function ... ok
+test capability::coverage::tests::an_ignored_test_does_not ... ok
+test capability::coverage::tests::a_running_test_proves_a_tool ... ok
+test capability::coverage::tests::the_strongest_proof_wins_and_the_source_is_stable ... ok
+test evidence::schematic::tests::a_label_is_named_by_its_text ... ok
+test evidence::schematic::tests::a_divider_extracts_its_symbols_wires_labels_and_junctions ... ok
+test evidence::schematic::tests::a_sheet_is_named_by_its_sheetname ... ok
+test evidence::pcb::tests::pads_are_counted_not_listed ... ok
+test evidence::pcb::tests::a_board_extracts_its_footprints_tracks_vias_zones_and_nets ... ok
+test evidence::schematic::tests::a_symbol_is_labelled_by_its_reference_and_carries_its_part ... ok
+test evidence::schematic::tests::a_wire_without_a_uuid_still_gets_a_stable_key ... ok
+test evidence::pcb::tests::reserialising_a_board_is_not_a_design_change ... ok
+test evidence::pcb::tests::renumbering_a_net_is_not_a_replacement ... ok
+test evidence::pcb::tests::adding_a_track_is_one_line ... ok
+test evidence::pcb::tests::a_net_that_gains_a_connection_says_so ... ok
+test evidence::pcb::tests::moving_a_footprint_reads_as_a_move ... ok
+test evidence::schematic::tests::a_swapped_part_behind_the_same_reference_is_visible ... ok
+test evidence::schematic::tests::an_empty_footprint_property_is_absence_not_a_value ... ok
+test evidence::tests::a_document_that_does_not_parse_is_not_described ... ok
+test evidence::tests::a_file_with_no_extractor_yields_no_diff_rather_than_a_wrong_one ... ok
+test evidence::tests::a_created_document_reports_its_items_as_added ... ok
+test evidence::tests::only_design_documents_have_an_extractor ... ok
+test evidence::schematic::tests::assigning_a_footprint_is_one_line_of_diff ... ok
+test evidence::validators::tests::clean_variants_share_the_check_with_their_delta_counterpart ... ok
+test evidence::validators::tests::only_documents_kicad_can_check_have_a_validator ... ok
+test evidence::schematic::tests::moving_a_symbol_reports_the_move_and_nothing_else ... ok
+test evidence::schematic::tests::reserialising_a_document_is_not_a_design_change ... ok
+test evidence::validators::tests::only_the_four_recognised_names_parse ... ok
+test evidence::validators::tests::a_verdict_belongs_to_one_revision_only ... ok
+test evidence::validators::tests::the_cache_is_bounded ... ok
+test mcp::error::tests::a_non_io_handler_error_is_not_given_a_class_it_has_not_earned ... ok
+test mcp::error::tests::a_locked_file_is_classified_as_worth_retrying ... ok
+test mcp::error::tests::io_failures_get_a_stable_code_and_keep_the_localized_text_as_detail ... ok
+test mcp::error::tests::plain_text_error_extracts_as_handler_error ... ok
+test mcp::error::tests::error_kind_round_trips_through_extract ... ok
+test mcp::error::tests::errors_carry_a_transient_class_and_a_retry_hint_where_waiting_helps ... ok
+test mcp::error::tests::short_code_matches_serialized_kind_field ... ok
+test mcp::error::tests::structured_fields_survive_the_transient_annotation ... ok
+test mcp::error::tests::success_result_extracts_as_none ... ok
+test plan::ops::tests::a_coordinate_from_a_previous_step_is_refused_rather_than_left_unsnapped ... ok
+test plan::ops::tests::a_capacitor_on_a_rail_gets_a_power_symbol_instead_of_a_wire ... ok
+test plan::ops::tests::a_missing_schematic_resolves_when_exactly_one_create_precedes_it ... ok
+test observability::tests::per_tool_stats_track_errors ... ok
+test plan::ops::tests::a_whole_divider_is_four_operations_and_five_calls ... ok
+test observability::tests::call_ids_are_unique ... ok
+test plan::ops::tests::an_unknown_operation_names_itself ... ok
+test observability::tests::ring_buffer_bounds_at_max ... ok
+test plan::ops::tests::call_passes_a_tool_through_unchanged ... ok
+test plan::ops::tests::connect_accepts_a_numeric_pin1_in_the_pin_to_net_form ... ok
+test plan::ops::tests::connect_accepts_a_pin_to_net_in_the_explicit_form ... ok
+test plan::ops::tests::connect_accepts_the_compact_form ... ok
+test plan::ops::tests::connect_accepts_the_explicit_form_and_a_numeric_pin ... ok
+test plan::ops::tests::connect_reads_a_dotless_compact_side_as_a_net_not_a_missing_pin ... ok
+test plan::ops::tests::connect_reads_a_ref2_with_no_pin2_as_a_net ... ok
+test plan::ops::tests::connect_refuses_a_compact_connection_naming_no_pin_at_all ... ok
+test plan::ops::tests::connect_refuses_an_incomplete_explicit_connection ... ok
+test plan::ops::tests::connect_splits_at_the_last_dot ... ok
+test graph::tests::a_missing_project_directory_is_an_empty_graph_not_an_error ... ok
+test plan::ops::tests::create_needs_both_path_and_name ... ok
+test plan::ops::tests::create_expands_to_one_call_to_create_project ... ok
+test plan::ops::tests::decouple_grounds_each_capacitor_at_its_own_pin_2 ... ok
+test graph::tests::project_dir_accepts_a_bare_directory ... ok
+test plan::ops::tests::decouple_refuses_a_capacitor_that_names_neither_a_pin_nor_a_rail ... ok
+test plan::ops::tests::decouple_places_once_then_wires_then_grounds ... ok
+test plan::ops::tests::an_operation_that_would_explode_is_refused ... ok
+test plan::ops::tests::decouple_still_needs_an_ic_when_a_capacitor_names_a_pin ... ok
+test plan::ops::tests::decouple_will_not_invent_a_reference_designator ... ok
+test graph::tests::project_dir_resolves_a_file_argument_to_its_parent ... ok
+test graph::tests::a_pcb_pad_net_is_indexed_as_a_fact_from_the_file ... ok
+test plan::ops::tests::place_becomes_one_call_however_many_symbols ... ok
+test plan::ops::tests::place_can_lay_out_downwards ... ok
+test plan::ops::tests::place_refuses_half_a_position ... ok
+test plan::ops::tests::place_lays_out_from_an_anchor_when_a_component_gives_no_position ... ok
+test plan::ops::tests::every_documented_signature_has_a_working_minimal_example ... ok
+test graph::tests::a_schematic_symbol_never_carries_a_net_attribute ... ok
+test plan::ops::tests::power_symbols_are_snapped_which_is_the_whole_point ... ok
+test plan::ops::tests::place_snaps_every_coordinate_it_is_given ... ok
+test plan::ops::tests::two_creates_is_genuine_ambiguity_and_stays_refused ... ok
+test graph::tests::an_unchanged_project_reuses_the_built_graph ... ok
+test plan::ops::tests::wire_snaps_both_ends_and_adds_junctions_as_a_second_call ... ok
+test plan::ops::tests::zero_creates_leaves_schematic_missing_and_still_refused ... ok
+test router::batch::tests::a_bare_filename_has_no_root_rather_than_the_working_directory ... ok
+test router::batch::tests::a_board_and_a_schematic_in_one_batch_share_one_root ... ok
+test graph::tests::points_are_indexed_for_neighbor_queries ... ok
+test router::batch::tests::a_non_path_value_under_a_directory_key_is_ignored ... ok
+test router::batch::tests::a_schematic_argument_yields_its_directory ... ok
+test router::batch::tests::explicit_documents_are_always_included ... ok
+test router::batch::tests::generated_output_paths_are_not_roots ... ok
+test router::batch::tests::nested_arguments_are_searched ... ok
+test router::batch::tests::the_root_count_is_bounded ... ok
+test graph::tests::a_project_graph_spans_both_documents_named_by_file_only ... ok
+test router::batch::tests::an_existing_directory_under_a_directory_key_is_a_root ... ok
+test graph::tests::an_unparsable_document_is_skipped_not_indexed_as_empty ... ok
+test router::tests::no_toolset_exceeds_max_size ... ok
+test router::tests::starter_kit_entries_are_all_valid_toolsets ... ok
+test graph::tests::editing_one_document_only_re_extracts_that_document ... ok
+test router::tests::no_toolset_has_duplicate_tool_names ... ok
+test router::tests::registry_tool_counts_match_reality ... ok
+test router::capability_search::tests::summary_is_much_smaller_than_the_full_description ... ok
+test tools::arg_helper_tests::require_f64_non_number_produces_structured_invalid_argument ... ok
+test tools::arg_helper_tests::require_str_missing_produces_structured_invalid_argument ... ok
+test router::tests::every_toolset_loads ... ok
+test router::tests::starter_kit_loads_expected_toolsets_and_nothing_more ... ok
+test tools::arg_helper_tests::require_str_present_returns_value ... ok
+test router::tests::starter_tool_entries_all_exist_in_the_registry ... ok
+test tools::cli::erc_parse_tests::empty_or_alien_reports_yield_no_violations ... ok
+test tools::cli::erc_parse_tests::parses_violations_nested_under_sheets ... ok
+test tools::config::dot_path_and_merge_tests::deep_merge_null_overlay_value_keeps_base ... ok
+test tools::config::dot_path_and_merge_tests::deep_merge_overlays_nested_object_keys ... ok
+test tools::config::dot_path_and_merge_tests::set_dot_path_errors_instead_of_panicking_on_non_object_root ... ok
+test tools::config::dot_path_and_merge_tests::set_dot_path_creates_missing_intermediate_objects ... ok
+test tools::config::dot_path_and_merge_tests::set_dot_path_overwrites_existing_nested_value ... ok
+test tools::config::dot_path_and_merge_tests::set_dot_path_replaces_scalar_intermediate_segment_with_object ... ok
+test tools::config::dot_path_and_merge_tests::set_dot_path_sets_top_level_key ... ok
+test router::capability_search::tests::empty_and_stop_word_only_queries_return_nothing ... ok
+test router::tests::tool_names_unique_across_toolsets ... ok
+test tools::graph::tests::a_missing_project_argument_is_a_structured_error ... ok
+test router::capability_search::tests::limit_is_respected ... ok
+test observability::tests::jsonl_append_roundtrip ... ok
+test router::capability_search::tests::natural_language_finds_the_right_authoring_tools ... ok
+test router::capability_search::tests::export_query_finds_bom_and_netlist ... ok
+test router::capability_search::tests::wiring_query_finds_pin_connection ... ok
+test router::tests::starter_tools_are_callable_without_their_toolset ... ok
+test tools::graph::tests::an_unrecognised_fields_value_is_invalid_argument_not_a_silent_default ... ok
+test router::tests::find_toolset_for_tool_resolves_unloaded_tools ... ok
+test tools::graph::tests::a_region_query_without_a_spatial_build_flag_still_works_since_at_is_always_indexed ... ok
+test tools::graph::tests::a_compact_key_is_still_accepted_by_graph_neighbors_with_no_round_trip ... ok
+test tools::graph::tests::a_schematic_symbol_never_reports_a_net_attribute ... ok
+test router::capability_search::tests::results_are_stable_across_repeated_searches ... ok
+test tools::graph::tests::an_unindexed_attribute_is_invalid_argument_not_an_empty_result ... ok
+test tools::integration::retry_backoff_tests::backoff_delay_doubles_each_attempt ... ok
+test tools::integration::retry_backoff_tests::backoff_delay_never_panics_on_zero_attempt ... ok
+test tools::graph::tests::compact_is_the_default_and_drops_geometry_but_keeps_indexed_attrs ... ok
+test tools::graph::tests::fields_full_keeps_the_geometry_compact_drops ... ok
+test tools::integration::retry_backoff_tests::not_transient_on_client_errors ... ok
+test tools::integration::retry_backoff_tests::not_transient_on_success ... ok
+test router::capability_search::tests::exact_tool_name_ranks_first ... ok
+test tools::graph::tests::compact_drops_kind_per_item_when_the_query_already_pinned_it ... ok
+test tools::integration::retry_backoff_tests::transient_on_rate_limit_and_server_errors ... ok
+test tools::graph::tests::graph_query_by_indexed_attribute_matches_the_value ... ok
+test tools::graph::tests::graph_neighbors_finds_the_other_resistor ... ok
+test tools::graph::tests::graph_neighbors_on_a_missing_item_is_a_structured_not_found ... ok
+test tools::graph::tests::graph_query_finds_symbols_and_drops_the_document_field_when_it_is_pinned ... ok
+test tools::library::tests::a_windows_drive_relative_path_is_not_a_library_id ... ok
+test tools::graph::tests::graph_stats_counts_documents_and_kinds ... ok
+test tools::library::tests::a_missing_footprint_path_names_itself ... ok
+test tools::library::tests::a_directory_is_not_a_footprint ... ok
+test tools::library::tests::chamfered_rect_cuts_the_pin1_corner ... ok
+test tools::library::tests::courtyard_clearance_follows_the_rule ... ok
+test tools::library::tests::an_absent_lib_table_is_not_an_error ... ok
+test tools::integration::retry_backoff_tests::get_with_backoff_does_not_retry_client_errors ... ok
+test tools::library::tests::an_existing_footprint_path_resolves_unchanged ... ok
+test tools::library::tests::an_unreadable_lib_table_is_an_error_not_an_empty_list ... ok
+test router::capability_search::tests::every_hit_names_a_real_tool_in_a_real_toolset ... ok
+test tools::library::tests::create_symbol_invalid_type_in_multi_unit_writes_nothing ... ok
+test tools::library::tests::create_symbol_rejects_dual_electrical_type ... ok
+test tools::library::tests::create_symbol_rejects_not_connected_with_suggestion ... ok
+test tools::library::tests::create_symbol_accepts_all_12_kicad_pin_types ... ok
+test tools::library::tests::create_symbol_emits_body_and_shows_pins ... ok
+test tools::library::tests::create_footprint_emits_courtyard_pin1_and_model ... ok
+test tools::library::tests::create_symbol_multi_unit_emits_units_and_common ... ok
+test tools::library::tests::create_symbol_single_unit_uses_unit_0_only ... ok
+test tools::library::tests::flatten_lib_table_follows_nested_table_entries ... ok
+test tools::library::tests::flatten_lib_table_stops_at_a_self_referencing_table ... ok
+test tools::integration::jlcpcb_cache_tests::get_jlcpcb_part_caches_repeated_lookup ... ok
+test tools::integration::jlcpcb_cache_tests::search_jlcpcb_parts_caches_repeated_query ... ok
+test tools::integration::jlcpcb_cache_tests::search_jlcpcb_parts_different_query_is_a_cache_miss ... ok
+test tools::integration::jlcpcb_cache_tests::suggest_alternatives_caches_repeated_query ... ok
+test tools::library::tests::glyph_falls_back_to_rectangle_on_incompatible_pins ... ok
+test tools::library::tests::glyph_opamp_draws_triangle_and_orders_inputs_top_to_bottom ... ok
+test tools::library::tests::glyph_default_applies_to_units_and_quad_nand_layout ... ok
+test tools::library::tests::is_lib_id_separates_library_ids_from_paths ... ok
+test tools::library::tests::glyph_opamp_with_power_splits_into_a_rect_power_unit ... ok
+test tools::library::tests::glyph_buffer_and_inverter_share_triangle ... ok
+test tools::library::tests::glyph_and_nand_share_body_and_differ_by_output_bubble ... ok
+test tools::library::tests::kiprjmod_resolves_against_the_tables_own_directory ... ok
+test tools::library::tests::list_footprint_libraries_reports_an_unreadable_table ... ok
+test tools::library::tests::model_sexp_only_with_path ... ok
+test tools::library::tests::pads_bbox_covers_pad_extents ... ok
+test tools::library::tests::parse_lib_table_reads_kicad10_crlf_tab_format ... ok
+test tools::library::tests::parse_lib_table_still_reads_two_space_indentation ... ok
+test tools::library::tests::pin1_index_prefers_pad_numbered_one ... ok
+test tools::library::tests::pin_root_is_on_the_body_side_of_the_connection ... ok
+test tools::library::tests::list_symbols_parses_kicad10_crlf_tab_format ... ok
+test tools::library::tests::list_footprint_libraries_reads_a_table_kicad_wrote ... ok
+test tools::library::tests::resolve_symbol_pins_derived_shadows_base ... ok
+test tools::library::tests::resolve_symbol_pins_follows_multilevel_chain ... ok
+test tools::library::tests::resolve_symbol_pins_handles_cycle ... ok
+test tools::library::tests::resolve_symbol_pins_inherits_from_base ... ok
+test tools::library::tests::resolve_symbol_pins_missing_base_falls_back ... ok
+test tools::library::tests::search_lib_symbols_matches_underscore_names_and_skips_units ... ok
+test tools::library::tests::symbol_body_rect_touches_side_pins_and_spaces_the_ends ... ok
+test tools::library::tests::table_root_element_matches_the_table_kind ... ok
+test tools::pcb_board::svg_logo_tests::format_gr_poly_contains_layer_fill_and_points ... ok
+test tools::library::tests::glyph_schmitt_has_hysteresis_mark_and_optional_bubble ... ok
+test tools::library::tests::registering_a_symbol_library_scaffolds_a_sym_root ... ok
+test tools::library::tests::glyph_pin_names_use_the_smaller_font_numbers_stay_default ... ok
+test tools::pcb_board::svg_logo_tests::import_svg_logo_missing_width_mm_returns_error ... ok
+test tools::pcb_components::field_placement_tests::field_anchors_come_from_the_library_footprint ... ok
+test tools::pcb_components::field_placement_tests::missing_fields_leave_defaults ... ok
+test tools::pcb_components::tests::a_board_edit_must_stay_one_kicad_pcb_form ... ok
+test tools::pcb_components::tests::a_bare_pads_only_footprint_extracts_no_graphics ... ok
+test tools::library::tests::pin_style_applies_on_glyph_and_rectangle ... ok
+test tools::pcb_board::svg_logo_tests::import_svg_logo_rejects_svg_with_no_fillable_paths ... ok
+test tools::library::tests::a_missing_library_error_names_the_nickname_and_attempted_locations ... ok
+test tools::library::tests::glyph_or_and_xor_differ_by_the_extra_back_arc ... ok
+test tools::pcb_components::tests::back_side_placement_is_rejected_not_string_swapped ... ok
+test tools::pcb_board::svg_logo_tests::import_svg_logo_file_fallback_places_polygon ... ok
+test tools::pcb_components::tests::extracts_all_drawable_graphics_with_layers_and_widths ... ok
+test tools::library::tests::get_symbol_info_resolves_extends_pins ... ok
+test tools::pcb_components::tests::indent_block_reimposes_one_line_ending ... ok
+test tools::pcb_components::tests::name_span_covers_the_quoted_header_name ... ok
+test tools::pcb_components::tests::pad_angles_absorb_the_footprint_rotation ... ok
+test tools::library::tests::get_symbol_info_parses_kicad10_pins_and_props ... ok
+test tools::pcb_components::tests::prepares_complete_front_footprint ... ok
+test tools::pcb_components::tests::place_component_rejects_back_copper_and_creates_nothing ... ok
+test tools::pcb_components::tests::pretty_suffix_matching_ignores_case ... ok
+test tools::pcb_components::tests::reference_substitution_targets_the_reference_property_only ... ok
+test tools::pcb_components::tests::rejects_non_outer_copper_layer ... ok
+test tools::pcb_components::tests::rotate_at_block_rejects_non_positional_at ... ok
+test tools::pcb_components::tests::sexp_strings_are_escaped_and_quoted ... ok
+test tools::pcb_components::tests::text_angles_are_kept_readable_in_file_fallback ... ok
+test tools::pcb_components::tests::zero_rotation_is_written_without_an_angle ... ok
+test tools::pcb_export::new_export_format_tests::export_dxf_fails_gracefully_without_kicad_cli ... ok
+test tools::pcb_export::new_export_format_tests::export_dxf_missing_board_returns_error ... ok
+test tools::pcb_export::new_export_format_tests::export_gencad_fails_gracefully_without_kicad_cli ... ok
+test tools::pcb_export::new_export_format_tests::export_gencad_missing_output_returns_error ... ok
+test tools::pcb_export::new_export_format_tests::export_ipc2581_fails_gracefully_without_kicad_cli ... ok
+test tools::pcb_export::new_export_format_tests::export_ipc2581_missing_board_returns_error ... ok
+test tools::pcb_export::new_export_format_tests::export_odb_fails_gracefully_without_kicad_cli ... ok
+test tools::pcb_export::new_export_format_tests::export_odb_missing_output_returns_error ... ok
+test tools::plan::tests::a_failed_step_sets_is_error_so_an_atomic_batch_rolls_back ... ok
+test tools::plan::tests::a_malformed_plan_names_its_field ... ok
+test tools::plan::tests::a_missing_plan_is_an_invalid_argument_not_a_panic ... ok
+test tools::library::tests::expand_lib_uri_expands_a_kicad_env_var ... ok
+test tools::library::tests::an_unregistered_nickname_falls_back_to_the_conventional_pretty_dir ... ok
+test tools::plan::tests::a_plan_that_cannot_compile_is_refused_with_the_operation_named ... ok
+test tools::plan::tests::an_unknown_validator_name_is_refused_by_build ... ok
+test tools::plan::tests::every_operation_the_library_implements_is_documented_in_the_schema ... ok
+test tools::plan::tests::an_unknown_validator_name_stops_apply_plan_before_any_step_runs ... ok
+test tools::plan::tests::the_toolset_registers_two_tools ... ok
+test tools::project::tests::blank_kicad_pcb_declares_core_layers ... ok
+test tools::plan::tests::preview_plan_lists_validators_and_their_documents_without_running_them ... ok
+test tools::project::tests::blank_kicad_pro_is_valid_json_with_name ... ok
+test tools::project::tests::blank_kicad_sch_has_expected_header ... ok
+test tools::project::tests::create_project_missing_name_returns_structured_error ... ok
+test tools::plan::tests::a_plan_with_no_validators_never_calls_kicad_cli ... ok
+test tools::project::tests::create_project_writes_all_three_files ... ok
+test tools::library::tests::a_project_registered_library_resolves ... ok
+test tools::project::tests::get_project_info_missing_file_returns_file_not_found ... ok
+test tools::query_cache_tests::miss_on_unknown_key ... ok
+test tools::query_cache_tests::put_overwrites_existing_entry ... ok
+test tools::library::tests::list_footprint_libraries_expands_a_nested_table_of_env_var_uris ... ok
+test tools::query_cache_tests::put_then_get_roundtrips ... ok
+test tools::project::tests::blank_kicad_sch_has_root_uuid ... ok
+test tools::project::tests::get_project_info_reports_existing_sibling_files ... ok
+test tools::pcb_components::tests::a_reachable_kicad_that_rejects_never_touches_the_file ... ok
+test tools::sch_batch::batch_delete_tests::batch_delete_uuid_is_tab_indentation_safe_and_deduplicated ... ok
+test tools::sch_batch::batch_delete_tests::batch_delete_uuid_removes_top_level_text_but_preserves_structure ... ok
+test tools::sch_batch::midwire_pin_tests::midwire_pin_connects_with_junction_only ... ok
+test tools::sch_batch::batch_place_and_connect_tests::batch_connect_pins_dedupes_junction_and_collects_errors ... ok
+test tools::query_cache_tests::entry_expires_after_ttl ... ok
+test tools::sch_batch::batch_place_and_connect_tests::batch_place_components_dedupes_lib_symbols ... ok
+test tools::pcb_components::tests::a_truncated_board_is_refused_rather_than_rewritten ... ok
+test tools::pcb_components::tests::a_crlf_board_stays_crlf ... ok
+test tools::pcb_components::tests::an_lf_board_stays_lf ... ok
+test tools::pcb_components::tests::board_lib_id_never_yields_a_filesystem_path ... ok
+test tools::pcb_components::tests::fallback_placement_rotation_reaches_the_pads ... ok
+test tools::sch_components::tests::add_schematic_component_hides_power_reference ... ok
+test tools::sch_components::tests::pin_locations_error_on_extends_stub_with_zero_pins ... ok
+test tools::sch_components::tests::pin_locations_error_when_definition_not_embedded ... ok
+test tools::sch_components::tests::create_schematic_writes_root_uuid ... ok
+test tools::pcb_components::tests::a_path_like_declared_name_falls_back_to_the_file_stem ... ok
+test tools::pcb_components::tests::unreachable_ipc_falls_back_to_writing_the_board_file ... ok
+test tools::sch_hierarchy::tests::add_hierarchical_sheet_creates_child_file_and_links_it ... ok
+test tools::sch_hierarchy::tests::add_hierarchical_sheet_rejects_duplicate_name ... ok
+test tools::sch_hierarchy::tests::add_sheet_pin_rejects_duplicate_name ... ok
+test tools::sch_hierarchy::tests::delete_sheet_not_found_errors ... ok
+test tools::sch_hierarchy::tests::add_sheet_pin_rejects_invalid_pin_type ... ok
+test tools::sch_hierarchy::tests::delete_sheet_pin_not_found_errors ... ok
+test tools::sch_hierarchy::tests::delete_sheet_pin_removes_it ... ok
+test tools::sch_hierarchy::tests::delete_sheet_removes_reference_but_keeps_child_file ... ok
+test tools::sch_hierarchy::tests::duplicate_sheet_copies_file_independently ... ok
+test tools::sch_hierarchy::tests::duplicate_sheet_refuses_to_overwrite_existing_file ... ok
+test tools::sch_hierarchy::tests::edit_sheet_pin_renames_and_retypes ... ok
+test tools::sch_hierarchy::tests::edit_sheet_pin_with_no_fields_errors ... ok
+test tools::sch_hierarchy::tests::edit_sheet_renames_and_resizes ... ok
+test tools::sch_hierarchy::tests::edit_sheet_with_no_fields_errors ... ok
+test tools::sch_hierarchy::tests::get_sheet_hierarchy_reports_missing_child_file ... ok
+test tools::sch_hierarchy::tests::get_sheet_hierarchy_returns_nested_tree ... ok
+test tools::sch_hierarchy::tests::import_sheet_pins_creates_matching_pins_from_labels ... ok
+test tools::sch_hierarchy::tests::import_sheet_pins_skips_already_imported_names ... ok
+test tools::sch_hierarchy::tests::move_sheet_updates_position_only ... ok
+test tools::sch_hierarchy::tests::linking_existing_file_with_symbols_patches_instance_paths ... ok
+test tools::sch_hierarchy::tests::second_sheet_gets_next_free_page ... ok
+test tools::sch_hierarchy::tests::renumber_sheet_pages_closes_gap_after_delete ... ok
+test tools::sch_hierarchy::tests::validate_sheet_pins_reports_mismatches ... ok
+test tools::sch_wiring::label_tests::a_net_name_appearing_in_a_property_does_not_confuse_the_match ... ok
+test tools::sch_wiring::label_tests::deletes_the_plain_label_the_add_tool_writes ... ok
+test tools::sch_wiring::label_tests::global_and_hierarchical_labels_are_deletable_by_exact_position ... ok
+test tools::sch_wiring::label_tests::move_labels_by_offset_actually_moves_every_matching_label ... ok
+test tools::sch_wiring::label_tests::move_labels_by_offset_errors_on_unknown_net ... ok
+test tools::sch_wiring::label_tests::plain_labels_keep_the_bottom_alignment_eeschema_writes ... ok
+test tools::sch_wiring::label_tests::rotate_adds_justify_to_an_effects_block_that_lacks_one ... ok
+test tools::sch_wiring::label_tests::rotate_creates_the_effects_block_when_absent ... ok
+test tools::sch_wiring::label_tests::rotate_reports_real_positions_when_coordinates_miss ... ok
+test tools::sch_wiring::label_tests::rotate_replaces_an_existing_justify_and_keeps_the_font ... ok
+test tools::sch_hierarchy::tests::validate_sheet_pins_reports_no_issues_when_synced ... ok
+test tools::sch_wiring::label_tests::unknown_net_name_is_an_error ... ok
+test tools::sch_wiring::label_tests::wrong_coordinates_delete_nothing_and_report_the_real_positions ... ok
+test tools::sch_wiring::label_tests::rotating_back_to_zero_restores_left ... ok
+test tools::sch_wiring::label_tests::same_name_label_of_another_kind_elsewhere_is_not_collateral ... ok
+test tools::sch_wiring::no_connect_delete_tests::batch_delete_counts_only_what_it_removed ... ok
+test tools::sch_wiring::no_connect_delete_tests::deleting_a_missing_no_connect_reports_an_error ... ok
+test tools::sch_wiring::no_connect_delete_tests::delete_no_connect_removes_a_multiline_block ... ok
+test tools::sch_wiring::power_symbol_tests::add_power_symbol_on_grid_input_is_silent ... ok
+test tools::sch_wiring::power_symbol_tests::add_power_symbol_places_hidden_reference_near_the_symbol ... ok
+test tools::sch_wiring::power_symbol_tests::add_power_symbol_snaps_off_grid_input_and_reports_it ... ok
+test tools::sch_wiring::wire_delete_tests::batch_delete_wire_fails_closed_when_nothing_matches ... ok
+test tools::sch_wiring::unit_aware_wiring_tests::add_wire_over_pin_inserts_junction ... ok
+test tools::sch_wiring::wire_delete_tests::delete_wire_matches_reversed_endpoint_coordinates ... ok
+test tools::sch_wiring::wire_delete_tests::batch_delete_wire_handles_tabs_and_duplicate_requests ... ok
+test tools::sch_wiring::unit_aware_wiring_tests::connect_pins_uses_the_instance_unit ... ok
+test tools::schematic_builder::tests::elements_are_ordered_correctly ... ok
+test tools::schematic_builder::tests::empty_builder_produces_valid_structure ... ok
+test tools::sch_wiring::wire_delete_tests::delete_wire_preserves_tab_indented_schematic_and_neighbors ... ok
+test tools::schematic_builder::tests::parse_and_reserialize_preserves_elements ... ok
+test tools::svg_import::tests::cubic_bezier_points_starts_near_control_and_ends_at_p3 ... ok
+test tools::svg_import::tests::extract_polygons_empty_svg_has_no_polygons ... ok
+test tools::svg_import::tests::extract_polygons_handles_curved_path ... ok
+test tools::svg_import::tests::extract_polygons_parses_simple_rect_path ... ok
+test tools::svg_import::tests::extract_polygons_rejects_invalid_svg ... ok
+test tools::svg_import::tests::flatten_subpaths_curve_expands_into_many_points ... ok
+test tools::svg_import::tests::flatten_subpaths_drops_degenerate_lone_moveto ... ok
+test tools::svg_import::tests::flatten_subpaths_single_closed_triangle ... ok
+test tools::svg_import::tests::flatten_subpaths_two_separate_subpaths ... ok
+test tools::svg_import::tests::quad_to_cubic_produces_control_points_between_endpoints_and_control ... ok
+test tools::svg_import::tests::scale_and_place_scales_uniformly_and_offsets ... ok
+test tools::schematic_builder::tests::new_builder_save_refuses_to_replace_an_existing_file ... ok
+test tools::svg_import::tests::scale_and_place_zero_width_falls_back_to_identity_scale ... ok
+test tools::symbol_block_tests::finds_instance_in_space_indented_file ... ok
+test tools::symbol_block_tests::finds_instance_in_tab_indented_file ... ok
+test tools::symbol_block_tests::library_definition_is_not_mistaken_for_an_instance ... ok
+test tools::symbol_block_tests::reference_prefix_does_not_match_longer_designator ... ok
+test tools::symbol_block_tests::unknown_reference_is_none ... ok
+test tools::task::tests::a_refused_constraint_is_reported_not_swallowed ... ok
+test tools::task::tests::a_task_survives_the_call_that_created_it ... ok
+test tools::task::tests::an_unknown_status_is_refused_rather_than_ignored ... ok
+test tools::task::tests::an_unknown_task_is_a_structured_error ... ok
+test tools::task::tests::an_update_appends_and_returns_only_the_anchor ... ok
+test tools::sch_wiring::wire_delete_tests::split_wire_without_uuid_deletes_by_complete_endpoints ... ok
+test tools::integration::retry_backoff_tests::get_with_backoff_recovers_after_transient_failures ... ok
+test tools::sch_batch::batch_place_and_connect_tests::batch_place_components_collects_per_item_errors ... ok
+test tools::lib_symbol_not_found_error_tests::error_kind_is_unchanged_by_adding_candidates ... ok
+test tools::sch_batch::batch_place_and_connect_tests::batch_place_components_total_failure_sets_is_error ... ok
+test tools::lib_symbol_not_found_error_tests::invented_library_error_carries_the_plausible_real_lib_id has been running for over 60 seconds
+test tools::sch_components::tests::add_component_rejects_out_of_range_unit has been running for over 60 seconds
+test tools::sch_components::tests::add_component_repairs_legacy_file_without_root_uuid has been running for over 60 seconds
+test tools::sch_components::tests::add_component_with_nonexistent_lib_id_errors_with_suggestion has been running for over 60 seconds
+test tools::sch_components::tests::add_component_with_unknown_library_says_so has been running for over 60 seconds
+test tools::sch_components::tests::add_component_writes_eeschema_style_instance_path has been running for over 60 seconds
+test tools::sch_components::tests::add_component_writes_requested_unit has been running for over 60 seconds
+test tools::sch_components::tests::pin_locations_are_unit_aware has been running for over 60 seconds
+test tools::sch_components::tests::replace_component_sets_validated_unit has been running for over 60 seconds
+test tools::lib_symbol_not_found_error_tests::invented_library_error_carries_the_plausible_real_lib_id ... ok
+test tools::sch_components::tests::add_component_rejects_out_of_range_unit ... ok
+test tools::sch_components::tests::add_component_repairs_legacy_file_without_root_uuid ... ok
+test tools::sch_components::tests::add_component_with_nonexistent_lib_id_errors_with_suggestion ... ok
+test tools::sch_components::tests::add_component_with_unknown_library_says_so ... ok
+test tools::sch_components::tests::add_component_writes_eeschema_style_instance_path ... ok
+test tools::sch_components::tests::add_component_writes_requested_unit ... ok
+test tools::sch_components::tests::pin_locations_are_unit_aware ... ok
+test tools::sch_components::tests::replace_component_sets_validated_unit ... ok
+
+test result: ok. 367 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 160.60s
+
+     Running tests\capability_matrix.rs (target\debug\deps\capability_matrix-b8eb75d8717e52ec.exe)
+
+running 12 tests
+test a_kicad_limitation_survives_a_passing_test ... ok
+test every_limitation_carries_its_reason ... ok
+test every_domain_is_reachable_from_the_manifest_or_the_gap_list ... ok
+test supported_requires_a_proof_that_runs ... ok
+test only_kicad_limits_leave_the_denominator ... ok
+test the_ipc_adapter_is_declared_as_needing_a_gui ... ok
+test no_tool_is_classified_twice ... ok
+test advisory_tools_and_only_advisory_tools_carry_the_caveat_in_their_description ... ok
+test the_manifest_names_no_tool_that_does_not_exist ... ok
+test the_manifest_covers_every_registered_tool ... ok
+test the_scan_finds_the_benchmark_and_the_tests ... ok
+test the_committed_matrix_is_up_to_date ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+     Running tests\conformance_test.rs (target\debug\deps\conformance_test-7dcafd27e5b4a237.exe)
+
+running 3 tests
+test demo_files_survive_edit_cycle ... ok
+test demo_corpus_structural_extraction ... ok
+test every_installed_demo_schematic_parses ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\integration_test.rs (target\debug\deps\integration_test-8b253c0276f556a2.exe)
+
+running 10 tests
+test structured_error_round_trips_through_extract ... ok
+test pcb_nets_parsed ... ok
+test parse_pcb_finds_footprints ... ok
+test parse_schematic_finds_symbols ... ok
+test router_loads_all_toolsets ... ok
+test pcb_pad_board_position ... ok
+test observability_meta_tools_surface_recorded_calls ... ok
+test insert_sexp_before_close ... ok
+test atomic_write_roundtrip ... ok
+test delete_sexp_block ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\lib.rs (target\debug\deps\konnect_ipc-0fcc442f3c3d0180.exe)
+
+running 23 tests
+test builders::tests::arc_start_mid_end_populated ... ok
+test builders::tests::polygon_empty_outlines_produces_empty_polyset ... ok
+test builders::tests::polygon_builds_one_polygon_with_holes_per_outline ... ok
+test builders::tests::polygon_nodes_carry_point_coordinates_in_nanometers ... ok
+test builders::tests::via_is_a_through_via_with_position_drill_size_and_net ... ok
+test builders::tests::text_carries_position_size_layer_and_rotation ... ok
+test builders::tests::circle_radius_point_is_center_plus_radius ... ok
+test client::footprint_graphics_tests::text_angles_are_kept_readable ... ok
+test client::footprint_graphics_tests::pad_stacks_are_unpackable_on_both_sides ... ok
+test builders::tests::rectangle_variant_and_filled_flag ... ok
+test client::document_path_tests::bare_kicad_filename_is_not_enough_to_authorize_an_absolute_request ... ok
+test client::footprint_graphics_tests::circle_center_rotates_and_radius_is_preserved ... ok
+test client::footprint_graphics_tests::non_cardinal_rotation_emits_rect_as_polygon ... ok
+test builders::tests::segment_populates_start_end_and_layer ... ok
+test transform::tests::non_cardinal_rotation_turns_rectangle_into_polygon ... ok
+test client::footprint_graphics_tests::rotation_90_pretransforms_graphics_to_absolute_board_space ... ok
+test client::document_path_tests::relative_board_filename_is_resolved_against_project_path ... ok
+test transform::tests::rotate_90_matches_kicad_convention ... ok
+test transform::tests::model_and_group_items_pass_through_untouched ... ok
+test transform::tests::cardinal_rotation_keeps_rectangle_a_rectangle ... ok
+test transform::tests::rotate_angle_normalizes_to_plus_minus_180 ... ok
+test transform::tests::translate_shifts_pads_fields_and_graphics ... ok
+test transform::tests::unknown_item_type_is_rejected_not_corrupted ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\footprint_transform_test.rs (target\debug\deps\footprint_transform_test-49e71b8b056ecc36.exe)
+
+running 2 tests
+test move_footprint_translates_pads_graphics_and_fields ... ok
+test rotate_footprint_rotates_children_around_anchor ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\live_kicad_test.rs (target\debug\deps\live_kicad_test-cf8f4cb7c3be9f7b.exe)
+
+running 2 tests
+test adding_a_via_actually_creates_it_on_the_board ... ignored, requires a running KiCad GUI with its IPC API enabled
+test moving_and_rotating_footprint_preserves_child_geometry ... ignored, requires a running KiCad GUI with its IPC API enabled
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\mock_server_test.rs (target\debug\deps\mock_server_test-86d3e70de3eabbc8.exe)
+
+running 21 tests
+test an_unconfigured_socket_classifies_as_unreachable ... ok
+test empty_socket_path_is_configuration_error ... ok
+test ping_roundtrips_through_mock ... ok
+test failed_multi_step_commit_is_dropped ... ok
+test an_empty_deletion_result_list_is_not_a_failure ... ok
+test create_items_requires_a_typed_response_payload ... ok
+test a_created_item_counts ... ok
+test an_empty_result_list_still_reports_failure ... ok
+test explicit_kicad_token_is_sent_in_request_header ... ok
+test kicad_error_status_maps_to_err ... ok
+test a_live_kicad_that_says_no_classifies_as_rejected ... ok
+test delete_items_surfaces_per_item_failure ... ok
+test a_mixed_response_counts_only_the_successes ... ok
+test a_rejected_item_is_not_counted_as_created ... ok
+test a_defaulted_status_counts_only_when_an_item_came_back ... ok
+test wedged_server_times_out_instead_of_hanging ... ignored, takes ~30s (full recv timeout) by design
+test placement_targets_the_named_board_among_several_open ... ok
+test place_footprint_sends_graphics_children ... ok
+test update_items_rejects_missing_per_item_results ... ok
+test unreachable_endpoint_errors_fast ... ok
+test a_dead_endpoint_classifies_as_unreachable ... ok
+
+test result: ok. 20 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.04s
+
+     Running unittests src\lib.rs (target\debug\deps\konnect_schematic_editor-9fc952c3c6d353a4.exe)
+
+running 21 tests
+test kicad_paths::tests::env_suffix_covers_the_three_library_kinds ... ok
+test library::suggestion_tests::edit_distance_basics ... ok
+test kicad_paths::tests::share_roots_is_not_empty ... ok
+test kicad_paths::tests::newer_majors_outrank_older_ones_across_every_prefix ... ok
+test kicad_paths::tests::windows_roots_include_the_per_user_winget_prefix ... ok
+test library::suggestion_tests::stylized_match_covers_the_kicad10_renames ... ok
+test library::suggestion_tests::rank_candidates_close_typo_and_cap ... ok
+test library::suggestion_tests::rank_candidates_surfaces_the_renamed_symbol ... ok
+test library::suggestion_tests::suggest_lib_ids_never_offers_an_unrelated_symbol_from_the_right_library ... ok
+test library::suggestion_tests::suggest_lib_ids_reaches_the_standard_device_symbol_across_libraries ... ok
+test schematic::sheet::tests::new_sheet_has_no_pins_or_instances ... ok
+test schematic::sheet::tests::new_sheet_places_name_and_file_near_the_box ... ok
+test library::suggestion_tests::suggest_lib_ids_offers_the_plausible_real_library_for_an_invented_one ... ok
+test schematic::sheet::tests::pin_lifecycle ... ok
+test schematic::sheet::tests::multi_instance_sheet_keeps_separate_pages_per_path ... ok
+test schematic::sheet::tests::set_page_adds_then_updates ... ok
+test schematic::symbol::tests::move_to_carries_property_text_along ... ok
+test schematic::sheet::tests::sheet_round_trips_through_sexp ... ok
+test library::suggestion_tests::ensure_lib_symbol_reports_failure_for_bogus_lib_id ... ok
+test library::suggestion_tests::ensure_lib_symbol_flattens_extends_chain ... ok
+test library::suggestion_tests::ensure_lib_symbol_resolves_a_known_good_lib_id_without_touching_candidates ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\integration.rs (target\debug\deps\integration-d9320b536989d63e.exe)
+
+running 28 tests
+test parse_quoted_string ... ok
+test changeset_display ... ok
+test parse_escaped_string ... ok
+test parse_nested ... ok
+test parse_simple_list ... ok
+test load_wire_count ... ok
+test spatial_within_rectangle ... ok
+test reference_startswith_filter ... ok
+test load_label_count ... ok
+test load_junction_count ... ok
+test spatial_within_circle ... ok
+test set_all_dnp ... ok
+test writer_round_trip ... ok
+test load_symbol_count ... ok
+test symbol_booleans ... ok
+test symbol_by_reference ... ok
+test diff_detects_value_change ... ok
+test symbol_position ... ok
+test overwrite_rejects_a_stale_loaded_revision ... ok
+test symbol_properties ... ok
+test wire_properties ... ok
+test wire_touches ... ok
+test save_as_refuses_to_replace_an_existing_document ... ok
+test mutate_property_round_trips ... ok
+test overwrite_still_rejects_an_external_change_after_a_successful_save ... ok
+test repeated_overwrites_advance_the_owned_revision_baseline ... ok
+test add_wire_and_save ... ok
+test add_label_and_save ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\lib.rs (target\debug\deps\konnect_sexp-9957074abbdf8c6f.exe)
+
+running 93 tests
+test command::tests::document_revision_is_deterministic_and_content_sensitive ... ok
+test geometry::tests::eeschema_ground_truth_mirrors ... ok
+test geometry::tests::eeschema_ground_truth_rotations ... ok
+test geometry::tests::mirror_applies_after_rotation ... ok
+test geometry::tests::no_transform ... ok
+test geometry::tests::pad_transform_kicad_ground_truth ... ok
+test geometry::tests::pad_transform_rejects_textbook_rotation ... ok
+test geometry::tests::rotation_180 ... ok
+test geometry::tests::snap_grid ... ok
+test geometry::tests::rotation_90_pin_on_x_axis ... ok
+test geometry::tests::snap_point_already_on_grid_is_unchanged ... ok
+test geometry::tests::snap_point_negative_coordinate ... ok
+test geometry::tests::snap_point_off_grid_is_moved_to_nearest_grid_point ... ok
+test geometry::tests::t_junction_detection ... ok
+test geometry::tests::y_negation ... ok
+test parser::tests::atom ... ok
+test parser::tests::nested ... ok
+test parser::tests::quoted_string ... ok
+test parser::tests::quoted_uuid ... ok
+test parser::tests::simple_list ... ok
+test schematic::label_justify_tests::formatted_label_carries_justify_matching_its_rotation ... ok
+test schematic::label_justify_tests::justify_follows_the_rotation_eeschema_pairs_it_with ... ok
+test schematic::label_justify_tests::rotation_is_normalized ... ok
+test schematic::label_tag_tests::extract_labels_sees_plain_labels_written_by_eeschema ... ok
+test schematic::label_tag_tests::format_bus_emits_a_parseable_uuid_line ... ok
+test schematic::label_tag_tests::format_bus_entry_uses_typed_direction_and_parseable_geometry ... ok
+test command::tests::symbol_instance_patch_is_targeted_parseable_and_idempotent ... ok
+test schematic::label_tag_tests::format_net_label_emits_kicad_label_tag ... ok
+test schematic::label_tag_tests::format_net_label_escapes_user_text ... ok
+test schematic::label_tag_tests::format_hierarchical_sheet_positions_fields_and_escapes_metadata ... ok
+test schematic::label_tag_tests::format_net_label_round_trips_through_extract_labels ... ok
+test schematic::pin_endpoint_tests::endpoint_is_the_electrical_tip_not_the_body_end ... ok
+test schematic::label_tag_tests::format_no_connect_emits_a_parseable_uuid_item ... ok
+test schematic::label_tag_tests::format_sheet_pin_uses_a_typed_direction_and_escapes_its_name ... ok
+test schematic::pin_endpoint_tests::endpoint_respects_rotation ... ok
+test schematic::unit_pin_tests::underscored_base_names_parse_their_unit_suffix ... ok
+test schematic::unit_pin_tests::for_unit_keeps_own_and_common_pins_only ... ok
+test schematic::unit_pin_tests::unit_agnostic_extraction_still_returns_everything ... ok
+test transaction::tests::forceful_abandonment_can_quarantine_a_malformed_journal ... ok
+test transaction::tests::abandon_refuses_a_safely_recoverable_transaction ... ok
+test transaction::tests::abandon_unwedges_a_divergent_transaction_without_touching_targets ... ok
+test command::tests::same_item_stale_command_reports_item_conflict ... ok
+test command::tests::end_insertion_uses_sibling_indentation_and_preserves_root_closing_indent ... ok
+test command::tests::strict_command_refuses_an_unrelated_document_change ... ok
+test command::tests::delete_and_inverse_restore_original_order ... ok
+test command::tests::before_footer_anchor_keeps_items_ahead_of_instance_tables ... ok
+test writer::atomic_write_tests::a_bare_filename_lands_in_the_current_directory ... ok
+test command::tests::nested_sheet_pin_insert_and_inverse_restore_exact_source ... ok
+test writer::atomic_write_tests::a_non_unicode_file_name_survives_intact ... ok
+test writer::atomic_write_tests::a_projects_files_do_not_share_a_scratch_path ... ok
+test command::tests::insert_and_inverse_remove_only_inserted_item ... ok
+test command::tests::multi_delete_inverse_restores_adjacent_items_before_footer_in_order ... ok
+test command::tests::disjoint_stale_commands_rebase_safely ... ok
+test transaction::tests::transaction_rejects_targets_outside_the_journal_root ... ok
+test transaction::tests::stale_precondition_changes_nothing_and_leaves_no_journal ... ok
+test writer::atomic_write_tests::a_taken_scratch_name_is_exchanged_for_another ... ok
+test command::tests::inverse_command_undoes_without_reverting_unrelated_change ... ok
+test command::tests::property_command_preserves_item_format_and_escapes_value ... ok
+test writer::atomic_write_tests::identical_names_in_one_directory_still_get_distinct_scratch_paths ... ok
+test command::tests::indented_formatter_insertion_has_an_exact_inverse ... ok
+test transaction::tests::recovery_preserves_divergent_content_and_journal ... ok
+test writer::atomic_write_tests::lock_identity_length_prefixes_windows_native_components ... ok
+test writer::atomic_write_tests::a_failed_write_leaves_no_scratch_file ... ok
+test transaction::tests::inspection_reports_redacted_target_states ... ok
+test writer::atomic_write_tests::repeated_writes_to_one_file_get_distinct_scratch_paths ... ok
+test writer::atomic_write_tests::the_scratch_file_is_a_sibling_of_its_destination ... ok
+test writer::block_start_tests::direct_children_ignore_indentation_and_nested_blocks ... ok
+test writer::atomic_write_tests::lock_identity_accepts_a_non_unicode_new_filename ... ok
+test writer::block_start_tests::enclosing_block_is_the_innermost_match ... ok
+test writer::block_start_tests::enclosing_block_spans_the_whole_block_from_tab_indented_input ... ok
+test writer::block_start_tests::enclosing_direct_child_selects_wire_not_root_or_neighbor ... ok
+test writer::block_start_tests::finds_block_starts_at_any_indentation ... ok
+test writer::block_start_tests::matches_inside_quoted_strings_are_ignored ... ok
+test writer::block_start_tests::no_enclosing_block_when_position_is_outside ... ok
+test writer::block_start_tests::tag_match_requires_a_delimiter ... ok
+test writer::tests::apply_edits_reverse_order ... ok
+test writer::tests::find_balanced_block_nested ... ok
+test writer::tests::find_balanced_block_quoted_paren ... ok
+test writer::tests::find_balanced_block_simple ... ok
+test writer::atomic_write_tests::lock_identity_is_stable_and_separates_equal_filenames ... ok
+test writer::atomic_write_tests::a_successful_write_leaves_no_scratch_file ... ok
+test writer::atomic_write_tests::conditional_write_rejects_a_stale_revision ... ok
+test writer::atomic_write_tests::opening_a_scratch_file_refuses_an_existing_path ... ok
+test writer::atomic_write_tests::reading_a_document_never_creates_a_project_sidecar ... ok
+test writer::atomic_write_tests::atomic_create_never_overwrites_an_existing_file ... ok
+test writer::atomic_write_tests::concurrent_conditional_writes_have_exactly_one_winner ... ok
+test transaction::tests::targeted_recovery_only_recovers_the_selected_journal ... ok
+test writer::atomic_write_tests::conditional_write_commits_a_matching_revision ... ok
+test transaction::tests::recovery_finishes_a_partially_applied_transaction ... ok
+test transaction::tests::hierarchy_link_and_inverse_restore_both_files_exactly ... ok
+test transaction::tests::transaction_replaces_and_creates_files_together ... ok
+test writer::atomic_write_tests::a_schematic_and_a_board_do_not_overwrite_each_other ... ok
+test writer::atomic_write_tests::concurrent_writers_never_interleave ... ok
+
+test result: ok. 93 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests\proptest_parser.rs (target\debug\deps\proptest_parser-bf39f5815bf45dd6.exe)
+
+running 8 tests
+test strategy_shape_smoke ... ok
+test apply_edits_order_independent ... ok
+test parse_never_panics_on_arbitrary_input ... ok
+test parse_never_panics_on_bracket_soup ... ok
+test parse_is_deterministic ... ok
+test generated_sexp_always_parses ... ok
+test accessors_never_panic ... ok
+test apply_edits_length_invariant ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+   Doc-tests kam_evidence
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kam_graph
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kam_llm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kam_plan
+
+running 1 test
+test crates\kam-plan\src\lib.rs - (line 32) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+   Doc-tests kam_state
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests konnect_plugin
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests konnect_core
+
+running 2 tests
+test crates\konnect-core\src\tools\mod.rs - tools::tool (line 250) ... ignored
+test crates\konnect-core\src\tools\mod.rs - tools::try_arg (line 289) ... ignored
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests konnect_ipc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests konnect_schematic_editor
+
+running 1 test
+test crates\konnect-schematic-editor\src\schematic\mod.rs - schematic::Schematic (line 52) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Doc-tests konnect_sexp
+
+running 3 tests
+test crates\konnect-sexp\src\writer.rs - writer (line 10) ... ignored
+test crates\konnect-sexp\src\geometry.rs - geometry::transform_pad (line 108) ... ok
+test crates\konnect-sexp\src\geometry.rs - geometry::transform_pin (line 53) ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+    Finished `release` profile [optimized] target(s) in 0.25s
+label: fork-9d515d3-toolsets   tasks: 6   runs: 18   load-mode: toolsets
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              3/   3     11       59     640     2140     9284    11424
+sch_ldo                  3/   3     11       72     902     2302     9284    11586
+sch_template_stm32       3/   3      6       21     210     2299     6249     8548
+sch_hierarchy            3/   3     11       69     599     2002     7498     9500
+manufacturing_exports    3/   3     12      897     802     1935     9284    11219
+recovery                 3/   3     14     7165     846     2546     9284    11830
+
+SUCCESS_RATE             18/18 = 100.0%
+MCP_CALLS median/task    11
+WALL_CLOCK_P50 (ms)      70
+WALL_CLOCK_P95 (ms)      7165
+RESPONSE_TOKENS/task     2220
+CATALOG_TOKENS/task      9284
+EXTERNAL_TOKENS/task     11320   <- what the harness actually eats
+
+wrote bench\results\latest-toolsets.json
+label: fork-9d515d3-tools   tasks: 6   runs: 18   load-mode: tools
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              3/   3     10       53     637      884     2882     3766
+sch_ldo                  3/   3     10       70     910     1050     2682     3732
+sch_template_stm32       3/   3      5       17     201     1166     2536     3702
+sch_hierarchy            3/   3     10       74     585      844     3018     3862
+manufacturing_exports    3/   3     11      876     810      682     3126     3808
+recovery                 3/   3     13     7167     833     1280     2867     4147
+
+SUCCESS_RATE             18/18 = 100.0%
+MCP_CALLS median/task    10
+WALL_CLOCK_P50 (ms)      72
+WALL_CLOCK_P95 (ms)      7167
+RESPONSE_TOKENS/task     966
+CATALOG_TOKENS/task      2874
+EXTERNAL_TOKENS/task     3792   <- what the harness actually eats
+
+wrote bench\results\latest-tools.json
+label: fork-9d515d3-gateway   tasks: 6   runs: 18   load-mode: gateway
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              3/   3      5       51     705     2193        0     2193
+sch_ldo                  3/   3      4       62     963     2137        0     2137
+sch_template_stm32       3/   3      3       16     239     2040        0     2040
+sch_hierarchy            3/   3      2       61     626     2218        0     2218
+manufacturing_exports    3/   3      3      869     835     2176        0     2176
+recovery                 3/   3      4     7145     886     2568        0     2568
+
+SUCCESS_RATE             18/18 = 100.0%
+MCP_CALLS median/task    4
+WALL_CLOCK_P50 (ms)      62
+WALL_CLOCK_P95 (ms)      7145
+RESPONSE_TOKENS/task     2188
+CATALOG_TOKENS/task      0
+EXTERNAL_TOKENS/task     2188   <- what the harness actually eats
+
+wrote bench\results\latest-gateway.json
+label: fork-9d515d3-search   tasks: 6   runs: 6   load-mode: search
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              1/   1     16       57     935     3175     8219    11394
+sch_ldo                  1/   1     15       69    1160     2968     7630    10598
+sch_template_stm32       1/   1      8       23     345     2262     5727     7989
+sch_hierarchy            1/   1     14       67     728     2412     5275     7687
+manufacturing_exports    1/   1     16      863    1054     2568     7883    10451
+recovery                 1/   1     19     7166    1125     3577     8323    11900
+
+SUCCESS_RATE             6/6 = 100.0%
+MCP_CALLS median/task    16
+WALL_CLOCK_P50 (ms)      68
+WALL_CLOCK_P95 (ms)      863
+RESPONSE_TOKENS/task     2768
+CATALOG_TOKENS/task      7756
+EXTERNAL_TOKENS/task     10524   <- what the harness actually eats
+
+RETRIEVAL_RECALL         100.0%   (needed tools the search surfaced)
+RETRIEVAL_PRECISION      22.5%   (loaded tools that were needed)
+
+wrote bench\results\latest-search.json
+label            : fork-9d515d3
+server           : {'name': 'konnect', 'version': '0.2.2'}
+protocol         : 2025-06-18
+toolsets         : 21
+baseline tools   :    18  tokens=   2034  wire=    9176B
+full catalog     :   206  tokens=  26868  wire=  113323B
+disclosure ratio : 0.076  (baseline / full)
+top 10 heaviest tools:
+   1077  create_symbol
+    959  apply_plan
+    940  preview_plan
+    662  graph_query
+    519  create_footprint
+    459  kicad_invoke
+    308  update_task
+    301  graph_neighbors
+    285  add_hierarchical_sheet
+    240  apply_template
+
+wrote bench\results\latest-surface.json

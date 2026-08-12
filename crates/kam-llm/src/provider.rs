@@ -107,6 +107,21 @@ pub struct StructuredOutput {
     pub strict: bool,
 }
 
+/// How much test-time reasoning a backend should spend, on backends that
+/// support `reasoning_effort` in the OpenAI-compatible wire format (e.g.
+/// gpt-oss served by LM Studio).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    /// Least deliberation, cheapest and fastest.
+    Low,
+    /// Balanced.
+    Medium,
+    /// Most deliberation, most tokens spent on `reasoning_content` before an
+    /// answer.
+    High,
+}
+
 /// A completion request: the whole point of going through [`Provider`] is
 /// that this same request works whichever backend implements it.
 #[derive(Debug, Clone, Default)]
@@ -123,6 +138,16 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     /// Generation cap. `None` defers to the backend's default.
     pub max_tokens: Option<u32>,
+    /// Test-time reasoning effort (`reasoning_effort` on the wire). `None`
+    /// omits the field — do not read that as "low". Measured directly
+    /// against openai/gpt-oss-20b on LM Studio: an omitted field and an
+    /// explicit `"low"` both fail the same request with the same HTTP 400
+    /// (`"The model produced output that does not match the expected
+    /// peg-native format"`), while `"medium"`/`"high"` succeed. So this is a
+    /// measurement variable a caller must set deliberately, never a default
+    /// this crate silently picks (D31: a generation setting is a config
+    /// change, not a code change).
+    pub reasoning_effort: Option<ReasoningEffort>,
     /// Per-call request timeout override. `None` uses the provider's
     /// configured default.
     pub timeout: Option<Duration>,

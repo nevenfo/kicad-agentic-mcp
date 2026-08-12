@@ -1,365 +1,951 @@
-# plan.md — KiCad Agentic MCP
+# PLAN — KiCad Agentic MCP
 
-Living plan for turning an existing KiCad MCP server into an **agentic control
-layer**: many internal capabilities, a small external MCP surface, local agents
-that absorb operational work, a deterministic engine that does everything that
-does not need generative reasoning, and independent verification against KiCad
-itself.
+Strategic source of truth: final target, invariants, full roadmap, dependencies
+and validation criteria. Operational state lives in `progress.md`; measurements
+live in `docs/benchmark.md`, `docs/local-agents.md`, `docs/capability-matrix.md`
+and `bench/results/`; history lives in Git.
 
-Status keys: `TODO` / `WIP` / `DONE` / `BLOCKED` / `DROPPED`.
+**Identifier convention.** Phase letters (`A`…`M`) are the historical phase
+names. Lots and tasks are dotted — `D.4`, `H.5.3` — so they never collide with
+this project's decision records (`D31`) and defect records (`E24`), which are a
+separate namespace referenced from code comments, commit messages and `docs/`.
+Look a task up with `rg "H\.5\.3" plan.md`; do not read this file whole.
 
----
+## Objectif final
 
-## Gate 0 — Base selection
-
-### Decision
-
-```
-BASE_SELECTED   = mixelpixx/Konnect  (fork at commit 5cd6454, v0.2.2, 2026-08-05)
-WHY             = see "Evidence" below
-LICENSE         = AGPL-3.0-only (workspace-wide, crates/*/Cargo.toml inherit)
-WORKSPACE       = C:\Users\FlowUP\kicad-agentic-mcp\konnect-agentic  (branch agentic/main)
-REFERENCE CLONES= C:\Users\FlowUP\kicad-agentic-mcp\_gate0\{konnect,kicad-mcp-pro,kicad-mcp-server-legacy}
-```
-
-### Candidates measured
-
-| Repo | License | Language / size | KiCad access | Verdict |
-|---|---|---|---|---|
-| `mixelpixx/Konnect` | **AGPL-3.0-only** | Rust, 86 files / 43 283 lines + 12 `.proto` | NNG+protobuf IPC (PCB) · nom S-expr engine (schematic) · `kicad-cli` (export/ERC/DRC) | **BASE** |
-| `oaslananka/kicad-mcp-pro` v3.30.1 | MIT | Python ≥3.13, 251 src files / 79 642 lines + 382 test files / 72 475 lines | `kicad-cli` · `kipy` IPC · `kicad-sch-api` (3rd-party, corrupts `global_label` on save) | **IDEA + CODE DONOR** |
-| `mixelpixx/KiCAD-MCP-Server` | MIT | TS 13 979 + Python 69 914 lines | TypeScript → Python → SWIG `pcbnew` | **ANTI-PATTERN REFERENCE** |
-
-### Evidence for Konnect
-
-Measured locally, not assumed:
-
-* **Builds and passes clean.** `cargo build --release -p konnect` → 81 s cold.
-  `cargo test --workspace --lib --tests` → **469 passed, 0 failed, 5 ignored**.
-* **Single-process Rust runtime, single binary.** No TS→Python→SWIG hop. The
-  legacy server's chain is exactly what Konnect removed; re-introducing it would
-  be a regression.
-* **Progressive disclosure already exists and works.** `router/registry.rs`
-  `STARTER_KIT = ["project", "config"]`; 18 toolsets, 187 domain tools + 6
-  meta-tools. Measured with `bench/surface.py`:
-
-  | metric | value |
-  |---|---|
-  | `tools/list` at startup | 19 tools · **1 680 tokens** · 7 567 B |
-  | `tools/list` all toolsets loaded | 193 tools · **22 329 tokens** · 94 748 B |
-  | disclosure ratio | **0.075** |
-
-* **Transactions already exist.** `konnect-sexp/src/transaction.rs` (1 131
-  lines) + `konnect transaction status|recover|abandon` CLI + atomic writes
-  (`writer.rs`, `fs4` locking, scratch-file cleanup test).
-* **Observability already exists.** `konnect-core/src/observability.rs` (335
-  lines), JSONL call log, `get_recent_calls`, `server_stats`.
-* **Registry invariants are test-enforced** (`tool_count` truth, no duplicate
-  tool names, ≤20 tools/toolset). Good soil for a capability matrix.
-* **Correct KiCad strategy for v10** — confirmed against KiCad sources, see
-  "KiCad 10 ground truth" below: PCB over IPC, schematic over S-expressions.
-  That is not a shortcut, it is the only thing that works on 10.0.
-
-### What is reused / refactored / not copied
+Turn the `mixelpixx/Konnect` fork into a KiCad **agentic control layer**: a large
+internal capability surface, a small external MCP surface, local LLM agents that
+absorb operational work, a deterministic engine for everything that does not need
+generative reasoning, task state and evidence held outside any model's context,
+and verification that comes from KiCad rather than from an agent's own opinion.
 
 ```
-WHAT_IS_REUSED      = konnect-sexp (parser/writer/transaction/geometry),
-                      konnect-ipc (NNG+prost client, board protos),
-                      konnect-schematic-editor (typed schematic model),
-                      konnect-core tools/* (187 tools = the capability inventory),
-                      transport/{stdio,http}, observability, install/packaging, CI.
-WHAT_IS_REFACTORED  = MCP surface (187 tools -> ~7 external verbs + internal capability
-                      index), tool dispatch (add Plan IR + deterministic executor between
-                      MCP and tools), revision/snapshot/idempotency layer on top of the
-                      existing transaction engine, error catalog, evidence/resources,
-                      Task State + Context/Attention manager, local agent runtime.
-WHAT_IS_NOT_COPIED  = anything from KiCAD-MCP-Server's TS->Python->SWIG chain;
-                      kicad-mcp-pro source code verbatim into AGPL crates without an
-                      explicit MIT attribution header (MIT -> AGPL is legal one-way, but
-                      it must be labelled, so default to clean-room reimplementation).
+WORKSPACE  C:\Users\FlowUP\kicad-agentic-mcp\konnect-agentic   branch agentic/main
+BASE       mixelpixx/Konnect @ 5cd6454 (v0.2.2), AGPL-3.0-only, workspace-wide
+KICAD      10.0.3, C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe
+HARDWARE   RTX 5080 16 303 MiB VRAM · Ryzen 7 9800X3D · 32 GiB RAM · LM Studio
 ```
 
-### License impact — recorded, not ignored
+16 GB VRAM is the hard budget for any local model: it must hold the model, the
+KV cache and whatever KiCad's GUI is using.
 
-* Konnect is **AGPL-3.0-only** and its `COMMERCIAL.md` advertises a separate
-  commercial licence. A fork is a derivative work.
-* For **personal / local use** there is no distribution, so no AGPL obligation
-  is triggered today. Work proceeds unblocked.
-* **If distributed or offered as a network service**, the whole fork must ship
-  its complete corresponding source under AGPL-3.0.
-* MIT code from `kicad-mcp-pro` **may** be absorbed (MIT → AGPL is compatible
-  one-way) provided the MIT copyright notice travels with it. The reverse is
-  forbidden: nothing AGPL may be pushed back into an MIT project.
-* **Mitigation for a future re-licence**: keep every generic subsystem
-  (Task State, Context/Attention manager, Plan IR, local model router, evidence
-  store, benchmark harness) in **new crates with no AGPL-derived code**, so they
-  can be re-licensed or re-based without rewriting them. Enforced by rule:
-  new `kam-*` crates must not `use konnect_*` types that were copied from
-  upstream — they depend on traits we define.
+## Invariants
 
-### Why not `kicad-mcp-pro` as the base
+Rules that survive every phase. Breaking one is a defect, not a trade-off.
 
-It is the more *feature-complete* project (380 tools vs 187, generated parity
-matrix, 2 852 tests, evals harness) and its ideas are worth more than its code.
-It is not the base because:
+- **INV1 — the verdict is KiCad's.** A design is declared sound by `kicad-cli`
+  ERC/DRC, never by Konnect's own analysis and never by a model. A validator that
+  could not run is a failure, never zero findings.
+- **INV2 — generic subsystems stay re-licensable.** New `kam-*` crates are
+  clean-room, `MIT OR Apache-2.0`, and depend on no `konnect-*` type. The KiCAD
+  half of each lives in `konnect-core::<same name>`. AGPL never flows into them;
+  absorbed MIT code travels with its notice.
+- **INV3 — no mutation without an audit record**, and every change carries its
+  own proof (semantic diff on by default, evidence handles, call log).
+- **INV4 — refuse before the first mutation.** Compile-time reference checking,
+  `base_revisions`, unknown validator names and unrecognised `verify` values are
+  all rejected before anything is written. A caller who believes a check ran when
+  it did not is the worst failure mode this project has shipped.
+- **INV5 — one grid, one place.** Every electrically meaningful `(at x y)` goes
+  through the single snapping helper over `SCHEMATIC_GRID_MM` (1.27 mm). A
+  guarantee that holds *usually* is the bug it is meant to prevent.
+- **INV6 — a target that is missed is recorded as missed**, never moved to match
+  the result, and no win is netted off against it. A number that cannot be
+  reproduced from the repository is not a result.
+- **INV7 — advisory analysis says so at the call site**, in the tool description
+  an agent actually reads, not only in a generated document.
+- **INV8 — accept what a model writes only when it has exactly one meaning.**
+  Genuine ambiguity stays refused; a widened acceptance must never turn a
+  previously compiling input into a failure.
+- **INV9 — the local inference backend is loopback-only** unless a named
+  constructor says otherwise. Exposing it to the network must be something
+  somebody typed.
+- **INV10 — the KiCad access strategy is fixed by KiCad 10, not by preference:**
+  PCB over IPC, schematic over the S-expression engine, validation and export
+  over `kicad-cli`. Do not fork KiCad; re-evaluate at KiCad 11 (Phase I).
+- **INV11 — a checkbox in this file means proof**, not intention: targeted tests,
+  integration, gate, or a benchmark run whose artefact is committed.
 
-* **Its schematic writer is a liability.** Writes go through the third-party
-  `kicad-sch-api >=0.5.0,<0.6`, which **drops `global_label` nodes on save**.
-  The mitigation is a round-trip guard that *refuses the write* and raises
-  `SCHEMATIC_WRITE_UNSAFE` — so `sch_modify_property` is permanently `partial`.
-  Konnect's own nom-based S-expression engine with atomic writes has no such
-  dependency. This is the single strongest argument for a Rust base.
-* **Profiles are start-up-time, not runtime.** `PROFILE_CATEGORIES` is chosen
-  when the process boots; the server does not emit
-  `notifications/tools/list_changed` and cannot change profile hot — switching
-  requires reconnecting the MCP client. Konnect's router already loads and
-  unloads toolsets live. We need *live* disclosure, not a boot flag.
-* **Cold-start latency is a known hot spot.** 251 Python modules force deferred
-  background tool registration with a 30 s budget and a `SERVER_INITIALIZING`
-  error for requests that arrive too early; `tools/list` can trigger a cached
-  IPC capability probe (network I/O on a list call).
-* **Three build systems** (`uv`/`hatchling` + `pnpm` + `cargo`/Tauri), 17 direct
-  runtime deps including OpenTelemetry. One Rust binary deletes all of it.
-* **~4 000 lines of closed-form SI/PI/EMC heuristics** (`analysis` domain sits
-  at 23.1 % coverage, all advisory, blocked for release sign-off). Low
-  value-per-line; explicitly not ported.
+## Plateforme — KiCad 10 ground truth
 
-### Ideas adopted from `kicad-mcp-pro` (MIT — reimplemented clean-room)
+Verified against KiCad sources, 2026-08-10. These are constraints, not opinions.
 
-| # | Idea | Where it lands |
-|---|---|---|
-| 1 | **Profile × operating mode as orthogonal axes** — profile controls *discovery*, mode (`READONLY`/`WRITE`/`MANUFACTURING`/`EXPERIMENTAL`) controls *execution risk*. Loading a toolset must not grant permission to mutate. | `kam-state` + gateway |
-| 2 | **`TransientClass` on every error** (`none`/`network`/`timeout`/`lock`/`state`) + `retry_after_ms`, instead of a bare `retryable: bool`. `state` means "reconcile first, blind retry is useless". | error catalog (Phase D) |
-| 3 | **`stable_finding_id` = truncated SHA-256 of (rule + location)**. A finding keeps its ID across runs, so a fix is proven by diffing IDs, not by re-reading prose. Build it in the finding constructor so it cannot be forgotten. | `kam-evidence` |
-| 4 | **Parity matrix with `gui-only-no-api` excluded from the denominator**, plus a test asserting every referenced tool name really exists. Separates "we didn't" from "KiCad can't". | `docs/capability-matrix.md` (generated) |
-| 5 | **Serialised IPC command queue with idempotency keys** — the lock matters less than the guarantee that a retry never double-applies. Natural fit for an `mpsc` + worker task. | Phase D |
-| 6 | **Append-only JSONL run journal** with `pre_snapshot_path` / `post_snapshot_path` / `rollback_token` per entry. Buys replay, rollback and eval material for ~170 lines. | `kam-evidence` |
-| 7 | **Content-addressed plan + `plan → preview → apply → verify → rollback`** instead of a per-tool `dry_run: bool`. | `kam-plan` (Plan IR) |
-| 8 | **Committed evidence snapshot of catalogue token cost, CI-gated.** Turns "we think it's lighter" into a failing test. | `bench/surface.py` + snapshot test |
-| 9 | **Adapter matrix**: for each capability, which concrete backend actually runs (`ipc` / `cli` / `sexpr-file`). Makes fallbacks observable instead of implicit. | generated doc |
-| 10 | **`FailureMode` on verdicts** (`design` / `environment` / `configuration` / `manual_review`) + a `MANUAL_STEP_REQUIRED` error that names the exact GUI step. A broken env and a broken design must drive opposite agent loops. | error catalog + evidence |
-
-Their eval design is also worth copying: cases carry `expected_tools`,
-`allowed_tools`, `forbidden_tools`, a `safety` tier checked against the
-capability registry (so a `read_only` case rejects *any* write tool, not just
-listed ones), `max_calls`, and an **instability rate** across repeated runs.
-Release thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
-`max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`.
-
-Reference numbers to beat (their `docs/evidence/progressive-disclosure-profile-snapshot.json`):
-`expert` profile 380 tools ≈ **54 719 tokens**; `default` 24 tools ≈ 2 344 tokens.
-Konnect baseline is already better at 1 680 / 22 329.
-
----
-
-## KiCad 10 ground truth (verified against KiCad sources, 2026-08-10)
-
-Installed here: **KiCad 10.0.3**, `C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe`.
-
-| Fact | Consequence for us |
+| Fact | Consequence |
 |---|---|
-| IPC = NNG REQ/REP + protobuf `ApiRequest`/`ApiResponse` envelope, `kicad_token` header | Konnect's `konnect-ipc` design is correct |
-| Socket via `KICAD_API_SOCKET`, token via `KICAD_API_TOKEN`; API **disabled by default** (Preferences → Plugins → "Enable KiCad API") | `doctor` command must check this and say so |
-| **No protocol version number**; only `GetVersion` → `{major,minor,patch}` | Capability probing must be behavioural, not version-string-based |
-| **No async events / no pub-sub.** Only `KINNG_REQUEST_SERVER` | Event journal must be **ours**: internal revisions + targeted diffing + file watching. Do not promise push notifications |
-| Server is single-threaded and runs on the UI thread | Serialize IPC access, own the timeout/retry policy, expect `AS_BUSY` |
-| `BeginCommit` / `EndCommit(id, action)` exist on `API_HANDLER_EDITOR` (PCB **and** SCH) | Real transaction primitive to build atomicity on |
-| **PCB coverage is complete** (stackup r/o, layers, nets, `GetConnectedItems`, `GetItemsByNetClass`, `RefillZones`, `HitTest`, `InteractiveMoveItems`, DRC injection, …) | PCB path = IPC |
-| **Schematic IPC is effectively empty on 10.0**: `schematic_commands.proto` has no commands; `api_handler_sch.cpp` registers only `GetOpenDocuments`; `getItemFromDocument()` returns `std::nullopt` (TODO) | Schematic path = S-expression engine. This is a KiCad limitation, not a Konnect one. **Feeds the Custom-KiCad gate.** |
-| `UpdateBoardStackup` declared but not implemented on 10.0 | Capability matrix entry: `GAP` |
-| `kicad-python` 0.7.1 (KiCad 10) has **no** `schematic.py`; schematic support lands in 0.8.0 targeting KiCad 11 + `kicad-cli api-server` headless | Headless schematic IPC is a **KiCad 11** feature. Do not fork KiCad 10 for it |
-| `kicad-cli` 10.0 verbs: `fp`, `jobset`, `pcb`, `sch`, `sym`, `version`; `sch erc`, `pcb drc`, full export matrix; `hpgl` non-functional | Deterministic validators + exports go through `kicad-cli` |
-| S-expr versions on branch 10.0: board `20260206`, schematic `20260306`, symbol lib `20251024` | Parser/writer compat matrix |
+| IPC = NNG REQ/REP + protobuf envelope, `KICAD_API_SOCKET` / `KICAD_API_TOKEN`, API disabled by default | `doctor` must check and say so |
+| No protocol version, only `GetVersion` | capability probing is behavioural |
+| **No async events, no pub/sub** | the event journal is ours: revisions + targeted diffing + file watching. Never advertise push notifications |
+| Server is single-threaded on the UI thread | serialise IPC, own timeout/retry, expect `AS_BUSY` |
+| `BeginCommit` / `EndCommit` exist on PCB **and** SCH handlers | the real transaction primitive for the IPC path |
+| PCB coverage complete over IPC | PCB path = IPC |
+| **Schematic IPC is empty on 10.0** (`schematic_commands.proto` has no commands, `getItemFromDocument()` returns `nullopt`) | schematic path = S-expression engine |
+| `kicad-python` 0.8.0 + `kicad-cli api-server` target **KiCad 11** | headless schematic IPC is upstream work; do not fork KiCad 10 |
+| S-expr versions on 10.0: board `20260206`, schematic `20260306`, symbol lib `20251024` | parser/writer compat matrix |
 
-**Consequence for the Custom-KiCad gate:** the one blocker that would justify a
-KiCad fork (live schematic IPC) is *already being solved upstream for KiCad 11*.
-Default position: **do not fork KiCad**; re-evaluate against KiCad 11 instead.
-
----
-
-## Architecture target
+## Architecture cible
 
 ```
 harness (Claude Code / Codex / AGY)
         │  EXECUTION PATH: delegate            AUDIT PATH: query / verify / evidence
         ▼
 ┌──────────────────────────┐
-│ MCP GATEWAY (small)      │  ~7 external verbs, stable, cacheable, annotated
+│ MCP GATEWAY (small)      │  kicad_describe + kicad_invoke                SHIPPED
 ├──────────────────────────┤
-│ TASK STATE MANAGER       │  objective / constraints / verified facts / failed attempts
+│ TASK STATE MANAGER       │  objective / constraints / facts / failures   SHIPPED
 ├──────────────────────────┤
-│ CONTEXT + ATTENTION MGR  │  budgets, compaction, retrieval, ACTIVE TASK anchor
+│ CONTEXT + ATTENTION MGR  │  anchor SHIPPED · budgets/compaction OPEN (E.6)
 ├──────────────────────────┤
-│ AGENT ROUTER             │  NO_LLM | SMALL | MEDIUM | LARGE | ESCALATE
+│ AGENT ROUTER             │  NO_LLM | SMALL | MEDIUM | LARGE | ESCALATE   OPEN (H.6)
 ├──────────────────────────┤
-│ LOCAL AGENT RUNTIME      │  supervisor / schematic / pcb / verification
+│ LOCAL AGENT RUNTIME      │  supervisor / schematic / pcb / verification  OPEN (H.7)
 ├──────────────────────────┤
-│ PLAN COMPILER + PLAN IR  │  typed, versioned, precondition-checked, batched
+│ PLAN COMPILER + PLAN IR  │  typed, reference-checked, batched            SHIPPED
 ├──────────────────────────┤
-│ DETERMINISTIC ENGINE     │  187 existing capabilities + revisions + transactions
+│ DETERMINISTIC ENGINE     │  ~190 capabilities + revisions + transactions SHIPPED
 ├──────────────────────────┤
 │ KiCad: IPC (PCB) · S-expr (SCH) · kicad-cli (validate/export)
 ├──────────────────────────┤
-│ VALIDATION + EVIDENCE    │  ERC/DRC/connectivity, semantic diff, evidence packs
+│ VALIDATION + EVIDENCE    │  ERC/DRC, semantic diff, evidence packs       SHIPPED
 └──────────────────────────┘
 ```
 
-Crate plan (new crates are clean-room, no upstream-derived code):
+Crates (new ones obey INV2):
 
 ```
-crates/konnect-*         existing, AGPL, refactored in place
-crates/kam-state         revisions, idempotency, rollback snapshots and the
-                         Task State Manager + ACTIVE TASK anchor  (SHIPPED,
-                         MIT OR Apache-2.0, no konnect-* dependency; the MCP
-                         skin is konnect-core::tools::task)
-crates/kam-context       Context Manager: budgets, compaction, retrieval (new;
-                         the attention half already lives in kam-state::task)
-crates/kam-plan          Plan IR + compiler + reference resolution + execution
-                         state machine  (SHIPPED, MIT OR Apache-2.0, no
-                         konnect-* dependency; the KiCAD operation library is
-                         konnect-core::plan and the MCP skin is
-                         konnect-core::tools::plan)
-crates/kam-llm           local provider abstraction + router (new)
-crates/kam-evidence      semantic diff over an abstract ItemSet, the bounded
-                         handle store, and findings with stable ids  (SHIPPED,
-                         MIT OR Apache-2.0, no konnect-* dependency; the KiCAD
-                         extractors and the kicad-cli validator runner live in
-                         konnect-core::evidence)
-crates/kam-bench         benchmark runner + metrics schema (new)
+crates/konnect-*      existing, AGPL, refactored in place
+crates/kam-state      revisions, idempotency, snapshots, Task State + anchor      SHIPPED
+crates/kam-evidence   semantic diff over an abstract ItemSet, handle store,
+                      findings with stable ids                                    SHIPPED
+crates/kam-plan       Plan IR, compiler, reference resolution, execution FSM      SHIPPED
+crates/kam-graph      indexed store + query/neighbour language                    SHIPPED
+crates/kam-llm        local provider abstraction (+ router, not built)            PARTIAL
+crates/kam-context    budgets, compaction, retrieval                              NOT BUILT
+crates/kam-bench      benchmark runner + metrics schema                           NOT BUILT (Python harness in bench/ does the job today)
 ```
+
+## Critères globaux de réussite (V1)
+
+Current values: `docs/benchmark.md`. Targets are never moved (INV6).
+
+- [x] `SUCCESS_RATE` ≥ baseline — 18/18 golden, held across every phase
+- [x] median `MCP_CALLS` per task ≤ 5 — **4**
+- [x] `WALL_CLOCK_P50` ≤ baseline — 65 ms against 70 ms
+- [x] silent corruption / silent stale-state write = **0** — refused by `base_revisions`
+- [x] mutations without an audit record = **0**
+- [ ] external tokens/task ≤ 2 000 — **~2 185**, missed by ~185 in deliberate
+      trades (diff on by default, task filing, verification); recorded as missed
+- [ ] `tools/list` at startup ≤ ~1 000 — **2 034**, missed; only reachable by
+      retiring the toolset-loading path, which would break every shipped skill
+- [ ] retrieval precision @8 ≥ 60 % — **22.4 %** (recall @8 100 %) — see F.5
+- [ ] `LLM_CALLS_PER_SUCCESSFUL_TASK` materially below baseline — measured
+      **15 → 5.5** inside the model-fit harness, but **no baseline for this
+      metric was ever measured**, so the criterion is not claimed met
+- [ ] `CAPABILITY_COVERAGE` > baseline — KiCad-domain **28.6 %** and rising; the
+      comparison target is undefined and needs one (J.2)
 
 ---
 
-## Phases
+# Phase A — Bootstrap — DONE
 
-| Phase | Goal | Status |
-|---|---|---|
-| **A** Bootstrap | clean workspace, fork, build, tests, run real MCP | **DONE** |
-| **B** Cartography | map transport / registry / IPC / sexp / validation / errors | **DONE** |
-| **C** Baseline benchmark | golden projects + metrics, measured before any refactor | **DONE** — `docs/benchmark.md` |
-| **F** Compact MCP surface | capability index, tool-granular loading, schema compression, gateway | **DONE** — −83.9 % external tokens, 4 MCP calls/task |
-| **D** Domain stabilisation | stable IDs, revisions, snapshots, idempotency, error catalog | **PARTIAL** — revisions, idempotency, atomic batches and the error catalog shipped (`kam-state`, `kicad_invoke`); stable IDs and snapshot handles remain |
-| **E** World model / task state / evidence | ProjectGraph, Task State, handles, deltas | **DONE** — semantic diff, evidence handles (`kicad://diff/N`, `kicad://evidence/N` over MCP resources), independent verification (`kicad_invoke verify=`, stable finding ids, revision-keyed baselines), the Task State Manager (`kam-state::task`, `task` toolset, ACTIVE TASK anchor) and ProjectGraph (`kam-graph` + `konnect-core::graph`, `graph` toolset, revision-keyed cache) shipped. Deltas (`changes_since`) are deferred to the event-journal item, which D4 already scopes as ours to build |
-| **G** Plan IR + deterministic executor | batching, preconditions, postconditions, rollback | **DONE** — `kam-plan` (IR, compile-time reference checking, execution state machine), the KiCAD operation library (`call`/`place`/`power`/`label`/`wire`/`connect`/`decouple`, every coordinate grid-snapped), the `plan` toolset (`preview_plan`, `apply_plan`) and plan-owned postconditions (`erc`/`drc`, `erc_clean`/`drc_clean`, failure rolls the batch back) shipped; measured at −48.4 % external tokens on the divider and −61.1 % on a decoupling bank |
-| **H** Local AI runtime | provider abstraction, hardware probe, model bench, router | **WIP** — `kam-llm` (`Provider` trait, OpenAI-compatible backend refusing non-loopback hosts, `Usage` feeding the local-token KPIs, non-panicking hardware probe) and `bench/model_fit.py` (grades a model's plan by compiling it through the real server, 0–3 ladder, oracle imported from `runner.py`) shipped. The measurement has **not** run, so no model is chosen and the router does not exist |
-| **I** Custom KiCad gate | only if a measured blocker survives KiCad 11 | TODO |
-| **J** Scope expansion | fill the highest-value capability gaps | TODO |
-| **K** Multi-harness | Claude Code, Codex, AGY | TODO |
-| **L** Hardening | fuzzing, failure injection, concurrent user edits | TODO |
-| **M** Final benchmark | baseline vs direct mode vs agent mode | TODO |
+## A.1 — Base selection (Gate 0)
 
----
+### Objectif
+Choose the base repository on measured evidence and record the licence posture.
 
-## Hardware (probed 2026-08-10)
+### Dépendances
+None.
 
-```
-GPU   NVIDIA GeForce RTX 5080 — 16 303 MiB VRAM, driver 591.86 (CUDA-capable)
-CPU   AMD Ryzen 7 9800X3D, 8 cores / 16 threads
-RAM   32 GiB (33 346 146 304 B)
-Disk  C: 1 240 GB free
-Local runtimes present: LM Studio (`lms`), only `nomic-embed-text-v1.5` (84 MB) installed
-```
+### Tâches
+- [x] A.1.1 Compare `Konnect` / `kicad-mcp-pro` / legacy `KiCAD-MCP-Server`
+- [x] A.1.2 Verify licences and choose officially → Konnect, AGPL-3.0-only
+- [x] A.1.3 Clone into a clean workspace, branch `agentic/main`
 
-16 GB VRAM is the hard budget for the local model router: it must fit a
-tool-calling model **plus** KV cache **plus** whatever KiCad's GUI is using.
-That rules out unquantised 30B+ and drives the SMALL/MEDIUM/LARGE tiers.
+### Validation
+`cargo test --workspace --lib --tests` → 469 passed on the untouched fork.
+Full comparison and rationale: `git show HEAD:plan.md` (Gate 0 sections, before
+this file was migrated) and decisions D1/D2.
 
----
+**Why not `kicad-mcp-pro` as the base** (still the reason not to migrate): its
+schematic writer depends on `kicad-sch-api`, which drops `global_label` nodes on
+save, so its own mitigation refuses the write; profiles are boot-time only; three
+build systems; 251 Python modules force deferred registration. Its *ideas* were
+adopted clean-room and are tracked as tasks (D.6, D.7, D.8, D.9, J.5, M.1).
 
-## Success criteria (V1)
+## A.2 — Build, tests, real MCP session — DONE
 
-| Metric | Target |
-|---|---|
-| `SUCCESS_RATE` | ≥ baseline, target ≥ 95 % on the standard suite |
-| external `tools/list` tokens | ≪ 22 329 (full catalog); target ≤ ~1 000 fixed |
-| median `MCP_CALLS` per delegated task | ≤ 5 |
-| `LLM_CALLS_PER_SUCCESSFUL_TASK` | materially below baseline via Plan IR |
-| `WALL_CLOCK_P50` | ≤ baseline on standard tasks |
-| `CAPABILITY_COVERAGE` | > baseline |
-| silent corruption / silent stale-state write | **0** |
-| mutations without an audit record | **0** |
+### Tâches
+- [x] A.2.1 Build and test the fork on this machine (`protoc` provisioned, E1)
+- [x] A.2.2 Run the server against a real harness over stdio
+- [x] A.2.3 `gate.ps1` mirrors the upstream CI gate
 
-Anything not achieved gets written down as not achieved. No benchmark rigging.
+### Validation
+`gate.ps1` green; per-user KiCad installs discovered (E3).
 
 ---
 
-## Open questions
+# Phase B — Cartography — DONE
 
-* Which local model fits 16 GB VRAM with reliable tool-calling + structured
-  output? Must be benchmarked, not assumed.
-* Does KiCad 10.0.3 on Windows expose `KICAD_API_SOCKET` reliably enough for
-  unattended E2E, or do PCB E2E tests need a GUI session? This currently blocks
-  PCB benchmark coverage entirely.
-* Does a compiled plan move retrieval precision? A plan names its own
-  capabilities instead of searching per step, which was the argument for
-  expecting it to help, but a caller still has to find `apply_plan` once. Not
-  measured; belongs with the capability matrix.
-* ~~Tool-granular loading bottoms out at 3 698 external tokens per task. Does the
-  ~7-verb gateway have to land before Phase H?~~ **Answered 2026-08-10: yes.**
-  Schema compression and a smaller starter kit took it to 3 197, and 2 281 of
-  that is catalogue churn no per-tool work can touch. The gateway is the only
-  remaining lever of that size.
+## B.1 — Map the base
 
-## Measured state (2026-08-10)
+### Tâches
+- [x] B.1.1 Map transport, registry, IPC, S-expression engine, validation, errors
+- [x] B.1.2 Verify the KiCad 10 ground truth against KiCad's own sources
 
-See `docs/benchmark.md` for method and full tables.
+### Validation
+The ground-truth table above; every claim traced to a KiCad source file.
 
-| | baseline | Phase F | Phase D | Phase E | now, Phase G | target |
-|---|---|---|---|---|---|---|
-| EXTERNAL_TOKENS/task | 12 373 | 1 995 | 2 033 | 2 175 | **2 171** | ≤ 2 000 ✗ (by 171) |
-| SUCCESS_RATE | 18/18 | 18/18 | 18/18 | 18/18 | **18/18** | ≥ baseline ✓ |
-| MCP_CALLS median/task | 11 | 4 | 4 | 4 | **4** | ≤ 5 ✓ |
-| CATALOG_TOKENS/task | 8 389 | 0 | 0 | 0 | **0** | — |
-| `tools/list` at startup | 1 680 | 1 725 | 1 912 | 2 034 | **2 034** | ≤ ~1 000 ✗ |
-| full catalogue | 22 329 | 22 461 | 22 648 | 23 411 | 24 082 | — |
-| silent stale-state write | possible | possible | refused | refused | **refused** | 0 ✓ |
-| partial batch left on failure | yes | yes | rolled back | rolled back | **rolled back** | 0 ✓ |
-| mutation without an audit record | yes | yes | yes | no | **no** | 0 ✓ |
-| a change verified against KiCAD itself | no | no | no | on request | **on request** | — |
-| retrieval recall @8 | — | 100 % | 100 % | 100 % | 100 % | ≥ 98 % ✓ |
-| retrieval precision @8 | — | 22.4 % | 22.4 % | 22.4 % | 22.4 % | ≥ 60 % ✗ |
-| one design step, as a batch vs as a plan | — | — | — | — | **2 180 → 1 124 tk** | — |
-| a nine-call decoupling bank | — | — | — | — | **2 265 → 882 tk** | — |
+---
 
-| the objective survives a compaction | no | no | no | **yes** | — |
+# Phase C — Baseline benchmark — DONE
 
-The token target is missed by 175, in deliberate trades. Phase D's +38 buys the
-stale-write refusal ("silent stale-state write: 0"); Phase E's +125 buys the
-semantic diff, which is what moves "mutations without an audit record" to 0;
-+14 more buys the handle that keeps the audit affordable as it grows. Each is a
-V1 success criterion in its own right. No target is moved to match the result:
-they are marked failed and the reason is recorded next to them.
+## C.1 — Golden suite and metrics
 
-Independent verification is `on request` rather than `yes` on purpose:
-`verify: "auto"` costs ~1.1 s per batch against 7 ms without it (measured,
-`bench/probes/validators.yaml`), so making it unconditional would trade a
-per-task latency KPI for a guarantee most batches do not need. What is
-unconditional is that the verdict, when asked for, comes from `kicad-cli` and
-never from Konnect's own analysis (E7).
+### Objectif
+Measure the untouched base before any refactor, so every later claim has a floor.
 
-Startup missed its target and the gateway is why: 10 always-visible meta-tools
-cost 1 725 tokens. It is now a **once-per-session** cost rather than a per-task
-one, so it stopped being the number that matters — but it is not what was aimed
-for, and it is only reachable by retiring the toolset-loading path (D5), which
-would break every shipped skill.
+### Dépendances
+A.2.
 
-Retrieval precision is still the open weakness: 22.4 % at the recall needed to
-succeed. The gateway does not fix it, it only makes each wrong guess cheaper.
-Plan IR was expected to help, because a compiled plan names its own capabilities
-instead of searching for them per step — but the golden suite cannot show that
-(it is a scripted oracle, so it never searches) and the number has not moved.
-It stays 22.4 % and stays open.
+### Tâches
+- [x] C.1.1 Golden projects + task set (6 tasks × 3 load modes = 18)
+- [x] C.1.2 Metrics schema: tokens, calls, latency, success
+- [x] C.1.3 Baseline recorded
 
-The last two rows are the only measurement of the plan path, and they come from
-`bench/plan_cost.py` rather than the golden suite, for a reason worth writing
-down: the suite already knows the exact calls for every task, so it can never
-pay the cost of not knowing them, and a plan's whole value is in the payload a
-caller who does not know them would have had to write. Both shapes are checked
-to produce the same semantic diff and the same ERC verdict before the tokens are
-compared; a divergence voids the run.
+### Validation
+`docs/benchmark.md`, `bench/results/*baseline*.json`: 12 373 external tokens/task,
+11 MCP calls, 18/18.
 
-`LLM_CALLS_PER_SUCCESSFUL_TASK` is still **unmeasured**. What Phase G shows is
-that a nine-call sequence can be emitted as one operation and that the payload
-either way is between a half and a third of the size — the mechanism by which
-the call count would fall, not the fall itself. That needs a model in the loop,
-which is Phase H.
+---
+
+# Phase F — Compact MCP surface — DONE except F.5
+
+## F.1 — Capability index and tool-granular loading
+
+### Tâches
+- [x] F.1.1 `find_capabilities` + `load_tools` beside `list_toolboxes` / `load_toolset`
+- [x] F.1.2 Keep both loading paths (D5: removing one breaks every shipped skill)
+
+### Validation
+Retrieval recall @8 = 100 %; measured in `docs/benchmark.md`.
+
+## F.2 — Schema compression and starter kit
+
+### Tâches
+- [x] F.2.1 Compress heavy inlined schemas — no `$defs`/`$ref` (D7: client chain
+      mangles them; several upstream issues recommend inlining instead)
+- [x] F.2.2 Shrink the starter kit — `config` leaves, two tools re-admitted
+      individually (D8), checked against `find_capabilities` on their own intents
+
+### Validation
+3 698 → 3 197 tk/task, startup 1 958 → 1 454 at the time.
+
+## F.3 — The gateway
+
+### Objectif
+A catalogue that never has to be refreshed: `CATALOG_TOKENS` → 0.
+
+### Tâches
+- [x] F.3.1 `kicad_describe` + `kicad_invoke` — **two** verbs, not seven (D9)
+- [x] F.3.2 Batch semantics: `stop_on_error`, and `atomic` follows it unless set
+      explicitly (D10 — found by the benchmark, not by review)
+
+### Validation
+1 995 tk/task, 4 MCP calls, `CATALOG_TOKENS` 0, 18/18.
+
+## F.4 — Capability matrix
+
+### Tâches
+- [x] F.4.1 `docs/capability-matrix.md` generated from `konnect-core::capability`
+- [x] F.4.2 `SUPPORTED` is discovered from tests and golden tasks, never declared
+      (D26); `#[ignore]`d tests read `gated`; what KiCad has no API for leaves the
+      denominator
+- [x] F.4.3 Three tests: manifest names every registered tool, names no tool that
+      does not exist, committed markdown equals what the code renders
+
+### Validation
+`KAM_UPDATE_MATRIX=1` regenerates; the equality test fails if it drifts. First
+render 27.3 %, now 28.6 %. Note: `bench/probes` counts as evidence as well as
+`bench/tasks`, so adding a probe can move the number.
+
+## F.5 — Retrieval precision — OPEN
+
+### Objectif
+22.4 % precision @8 at the recall needed to succeed. The gateway made each wrong
+guess cheap; it did not make the guess right.
+
+### Dépendances
+None. Plural stemming was implemented, measured and **rejected** (D6): recall
+100 % → 98.2 % at 8 results. Do not re-attempt it.
+
+### Tâches
+- [ ] F.5.1 Find a retrieval change that raises precision without costing recall
+- [ ] F.5.2 Answer whether a compiled plan moves precision at all — the golden
+      suite is a scripted oracle and can never show it (it never searches)
+
+### Validation
+Precision @8 ≥ 60 % with recall @8 ≥ 98 %, measured by the existing retrieval
+probe, before/after on the same build.
+
+---
+
+# Phase D — Domain stabilisation — PARTIAL
+
+## D.1 — Revisions and optimistic concurrency — DONE
+
+### Tâches
+- [x] D.1.1 Content-addressed revisions in `kam-state`
+- [x] D.1.2 `base_revisions` refuses a batch whose document moved
+
+### Validation
+Silent stale-state write: possible → **refused**, asserted by test.
+
+## D.2 — Transactions, rollback, idempotency — DONE
+
+### Tâches
+- [x] D.2.1 `kicad_invoke` batches: snapshot, rollback, idempotency key
+- [x] D.2.2 Rollback is file-level, not KiCad's undo stack (D12) — complete for
+      the S-expression path, **not** an undo for anything applied over IPC to a
+      running KiCad; the IPC path needs `BeginCommit`/`EndCommit` (see D.9)
+
+### Validation
+2 033 tk/task, 18/18, partial batch on failure: yes → **rolled back**.
+
+## D.3 — Error catalog — DONE (first pass)
+
+### Tâches
+- [x] D.3.1 `TransientClass` (`none`/`network`/`timeout`/`lock`/`state`) +
+      `retry_after_ms` instead of a bare `retryable` flag
+- [x] D.3.2 Stable io codes, locale-independent messages (E9)
+- [x] D.3.3 Structured errors are serialised, not `Debug`-formatted (E11)
+
+### Validation
+Error-shape tests; E9 and E11 stay closed.
+
+## D.4 — Stable IDs — TODO
+
+### Objectif
+Address items by UUID rather than by path + coordinates, so a reference survives
+a move and two agents cannot mean different things by the same address.
+
+### Dépendances
+D.1 (revisions). The graph already keys on KiCad's own UUIDs, so the extraction
+side exists (`konnect-core::graph`).
+
+### Tâches
+- [ ] D.4.1 UUID-addressed item handles across the schematic tools
+- [ ] D.4.2 Keep the existing path+coordinate forms accepted (INV8)
+
+### Validation
+A tool call that names a UUID still resolves after the item moved; targeted tests
+plus one probe on a real project.
+
+## D.5 — Snapshots as first-class handles — TODO
+
+### Objectif
+`kicad://snapshot/N` beside `kicad://diff/N` and `kicad://evidence/N`.
+
+### Dépendances
+D.2 (snapshots exist internally), E.2 (the handle store and its resource route).
+
+### Tâches
+- [ ] D.5.1 Issue a handle per snapshot, resolvable over MCP `resources/read`
+- [ ] D.5.2 An expired handle is not an unknown one (D16), same discrimination as
+      the evidence store
+
+### Validation
+Round-trip test over `resources/read`; eviction returns the expired shape.
+
+## D.6 — Error-catalog completeness, retries, recovery policy — TODO
+
+### Dépendances
+D.3.
+
+### Tâches
+- [ ] D.6.1 Cover the remaining error paths with catalogued codes
+- [ ] D.6.2 Retry policy driven by `TransientClass` (`state` means reconcile
+      first — a blind retry is useless)
+- [ ] D.6.3 `FailureMode` on verdicts (`design` / `environment` / `configuration`
+      / `manual_review`) + `MANUAL_STEP_REQUIRED` naming the exact GUI step — a
+      broken environment and a broken design must drive opposite agent loops
+
+### Validation
+Failure-injection cases resolve to the right class and the right agent loop.
+
+## D.7 — Event journal / deltas — TODO
+
+### Objectif
+`changes_since(rev)`. KiCad has no pub/sub, so this is ours to build.
+
+### Dépendances
+D.1 (revisions), E.1 (semantic diff).
+
+### Tâches
+- [ ] D.7.1 Append-only JSONL run journal with `pre_snapshot_path`,
+      `post_snapshot_path`, `rollback_token` per entry
+- [ ] D.7.2 `changes_since(rev)` from targeted diffing + file watching
+- [ ] D.7.3 Never advertise push notifications over MCP
+
+### Validation
+A journal replay reconstructs the same semantic diff the batch reported.
+
+## D.8 — Operating mode, orthogonal to discovery — TODO
+
+### Objectif
+Profile controls *discovery*; mode (`READONLY` / `WRITE` / `MANUFACTURING` /
+`EXPERIMENTAL`) controls *execution risk*. Loading a toolset must not grant
+permission to mutate.
+
+### Dépendances
+F.3 (gateway), `kam-state`.
+
+### Tâches
+- [ ] D.8.1 Mode held in `kam-state`, enforced at the gateway
+- [ ] D.8.2 A `read_only` context refuses *any* write tool, by capability class
+      rather than by a listed set
+
+### Validation
+A write tool called under `READONLY` is refused before the first mutation (INV4).
+
+## D.9 — Serialised IPC command queue — TODO
+
+### Objectif
+KiCad's API server is single-threaded on the UI thread. The lock matters less
+than the guarantee that a retry never double-applies.
+
+### Dépendances
+D.3 (idempotency keys already exist), PCB path only.
+
+### Tâches
+- [ ] D.9.1 `mpsc` + worker task serialising IPC access, own timeout/retry policy
+- [ ] D.9.2 `BeginCommit`/`EndCommit` for atomicity on the IPC path (D12's gap)
+
+### Validation
+Concurrent callers cannot interleave; a replayed idempotency key applies once.
+Blocked in CI by the same GUI-session question as J.3.
+
+---
+
+# Phase E — World model, task state, evidence — DONE except E.6
+
+## E.1 — Semantic diff — DONE
+
+### Tâches
+- [x] E.1.1 `kam-evidence::diff` matches items by stable key, format-agnostic on
+      purpose (D15) — a second document format costs an extractor, not an engine
+- [x] E.1.2 KiCAD extractors in `konnect-core::evidence`, keyed on KiCad's UUIDs
+- [x] E.1.3 A document is itself an item, so a creation reads `document +3`
+      instead of "no design change" (D14)
+
+### Validation
+`bench/probes/semantic_diff.yaml` on a real project; 2 158 tk/task.
+
+**Recorded limit:** the diff reports objects, not connectivity. A schematic has
+no netlist in the document, and deriving one would re-implement the connectivity
+that E7 already shows disagreeing with `kicad-cli`.
+
+## E.2 — Handles, resources, evidence packs — DONE
+
+### Tâches
+- [x] E.2.1 Bounded handle store; `kicad://diff/N` and `kicad://evidence/N`
+- [x] E.2.2 Resolve over MCP `resources/read`
+- [x] E.2.3 An expired handle is distinguished from an unknown one (D16)
+
+### Validation
+Round-trip over `resources/read`; +14 tk/task, +0 startup.
+
+## E.3 — Independent verification — DONE
+
+### Tâches
+- [x] E.3.1 `kicad_invoke(verify:)` runs `kicad-cli` ERC/DRC (INV1)
+- [x] E.3.2 Findings identified by `validator + rule + location` hashed to a
+      12-hex id, never by prose (D19); identical findings get an ordinal
+- [x] E.3.3 Verdicts cached against the content revision they describe (D18); the
+      first verification of a session reports `baseline: "unknown"` rather than
+      implying zero
+- [x] E.3.4 `verify` is opt-in and a typo is refused (D17) — 7 ms against
+      ~1 100 ms per batch is why it is opt-in, and silence is why a misspelling
+      cannot be tolerated
+
+### Validation
+`bench/probes/validators.yaml`: batch 1 `errors: 4, baseline: unknown`, batch 2
+`errors: 2, fixed: 2`.
+
+**Recorded limit:** `verify` only checks documents the batch changed. A read-only
+batch gets no verdict; a bare check is still `run_erc`.
+
+## E.4 — Task State Manager — DONE
+
+### Tâches
+- [x] E.4.1 `kam-state::task`: objective, constraints, verified facts, failed
+      attempts, evidence handles, held outside any model's context
+- [x] E.4.2 The ACTIVE TASK anchor is **rendered** from the record on every read,
+      never stored (D21) — a cached anchor could disagree with what it describes
+- [x] E.4.3 Hard constraints are refused at the bound rather than evicted
+- [x] E.4.4 Four tools as a toolset, not gateway verbs (D20) — **0** startup
+      tokens, asserted by a stdio test on both halves
+- [x] E.4.5 `kicad_invoke(task_id=…)` files revisions, evidence and failures by
+      itself; an unknown `task_id` does not fail an already-applied batch
+
+### Validation
+2 175 tk/task, 18/18; startup +36, all of it the `task_id` property.
+
+## E.5 — ProjectGraph — DONE
+
+### Tâches
+- [x] E.5.1 `kam-graph`: indexed store + filter/neighbour/count query language
+- [x] E.5.2 `konnect-core::graph`: KiCAD extractors + a cache keyed on the
+      content revision, so a query on an unmoved document rebuilds nothing
+- [x] E.5.3 `graph_query` / `graph_neighbors` / `graph_stats` as a toolset — 0
+      startup tokens, asserted
+- [x] E.5.4 `fields` projection (`compact` default) — unfiltered 525 → 340 tk
+
+### Validation
+18/18 at 2 174 tk/task, startup unchanged, 752 tests at the time.
+
+**Recorded limit (D30):** an unfiltered `graph_query` still costs 340 tk against
+310 for the plain dump. The graph wins on filtering (109 tk against 310) and on
+adjacency, not on serialisation, and its description says so. Shortening the key
+was rejected: the key is the address `graph_neighbors` takes.
+
+## E.6 — Context Manager — TODO
+
+### Objectif
+`crates/kam-context`: budgets, compaction, retrieval. The attention half already
+exists as the anchor (E.4.2); the budget half does not exist at all.
+
+### Dépendances
+E.4, and the local-token accounting from H.2 (`Usage`, reasoning split).
+
+### Tâches
+- [ ] E.6.1 Token budgets per context, measured against real local runs
+- [ ] E.6.2 Compaction that preserves the objective (already true of the anchor)
+      and the verified facts
+- [ ] E.6.3 Retrieval into the context, budget-aware
+
+### Validation
+A compaction cycle on a real session loses no hard constraint and no verified
+fact; measured against a local run rather than asserted.
+
+---
+
+# Phase G — Plan IR and deterministic executor — DONE
+
+## G.1 — The IR and the compiler
+
+### Tâches
+- [x] G.1.1 `kam-plan`: `ir`, `refs` (`${op.field}`), `compile`, `execute` as a
+      state machine the async host drives (no runtime in the crate)
+- [x] G.1.2 A plan is refused at compile time, never discovered at step 4 (D22);
+      unknown and forward references are separate errors because one is fixed by
+      renaming and the other by reordering
+- [x] G.1.3 What the compiler deliberately does not check: whether a referenced
+      *field* will exist at run time — that stays a step failure with the
+      reference named
+
+### Validation
+46 tests in `kam-plan`.
+
+## G.2 — The KiCAD operation library
+
+### Tâches
+- [x] G.2.1 `call`, `place`, `power`, `label`, `wire`, `connect`, `decouple`
+- [x] G.2.2 Every emitted coordinate is snapped before it reaches a tool, which
+      makes E6 unreachable inside a plan
+- [x] G.2.3 A coordinate must be a number, never a `${ref}` (D23) — the snap
+      happens at compile time and the reference resolves at run time
+- [x] G.2.4 `decouple` places and wires; it has no opinion on whether the design
+      is right, and says so in its own documentation (D24)
+
+### Validation
+E2E against real `kicad-cli`: the off-grid input that produced six ERC errors
+produces none.
+
+## G.3 — The plan toolset
+
+### Tâches
+- [x] G.3.1 `preview_plan` (compile, list, change nothing) and `apply_plan`
+- [x] G.3.2 Runs **inside** `kicad_invoke` (D25), inheriting snapshot, rollback,
+      `base_revisions`, diff, `verify` and task filing; each inner step is written
+      to the call log by hand, since `apply_plan` cannot use the `tool!` macro
+
+### Validation
+`bench/plan_cost.py`, same design built both ways, void unless the semantic diff
+and the ERC verdict match: divider 2 180 → **1 124** tk (−48.4 %), decoupling bank
+2 265 → **882** tk (−61.1 %). Golden suite unchanged, 0 startup tokens.
+
+## G.4 — Plan-owned postconditions
+
+### Tâches
+- [x] G.4.1 `erc` / `drc` = no new finding by stable id; `erc_clean` / `drc_clean`
+      = zero errors, absolutely (D29 — one name would have been ambiguous)
+- [x] G.4.2 An unrecognised validator name is refused in `build()` (INV4)
+- [x] G.4.3 A failed postcondition returns `is_error`, so the atomic
+      `kicad_invoke` rolls the plan back (D28); the plan never chooses what clean
+      means — the verdict is `kicad-cli`'s
+- [x] G.4.4 `Postcondition` lives in `konnect-core::evidence::validators`, keeping
+      `kam-plan` ignorant of KiCAD (INV2)
+
+### Validation
+Measured on the divider: no validators 48 ms, `erc_clean` 1 114 ms, `erc`
+2 182 ms; the reply is byte-identical, so a passing postcondition costs no tokens.
+E2E run against real `kicad-cli`, not merely written (E12's rule).
+
+---
+
+# Phase H — Local AI runtime — WIP
+
+## H.1 — Backend and shortlist — DONE
+
+### Objectif
+Answer the backend question from primary sources and refuse to pick a model by
+reputation.
+
+### Tâches
+- [x] H.1.1 Backend = OpenAI-compatible HTTP (D31). `vLLM` has no native Windows
+      support; `llama.cpp` needs a source build for Blackwell `sm_120`; LM Studio
+      wraps `llama.cpp` and exposes tools + `response_format: json_schema`
+- [x] H.1.2 Shortlist `Qwen3.5-9B` and `openai/gpt-oss-20b`, both Apache-2.0 with
+      documented tool calling; `Qwen3.5-27B` ruled out at ~16.5 GB before KV cache
+- [x] H.1.3 Recorded so it is not re-asked: **there is no EDA-specialised
+      open-weight model.** The electronics competence stays in the deterministic
+      engine and the validators
+
+### Validation
+`docs/local-agents.md`; every claim traced to a primary source.
+
+## H.2 — The seam, `crates/kam-llm` — DONE
+
+### Tâches
+- [x] H.2.1 `provider::Provider` — one `async fn complete`, object-safe so the
+      router can hold `Box<dyn Provider>` and a backend swap is a config change
+- [x] H.2.2 Vocabulary shaped like MCP's own tool definitions, so a tool catalogue
+      crosses untranslated
+- [x] H.2.3 `openai_compat` refuses a non-loopback base URL in `new`; the override
+      is a separate named constructor (INV9)
+- [x] H.2.4 `usage::Usage` so the local-token KPIs are a field at the call site;
+      a backend reporting no counts leaves them at 0 rather than estimating
+- [x] H.2.5 `hardware::probe` never panics and never guesses — `nvidia-smi` first,
+      a Windows fallback that reports names and **not** VRAM
+      (`Win32_VideoController.AdapterRAM` misreports modern cards), a backend
+      probe that checks `PATH` and opens no socket
+- [x] H.2.6 `ReasoningEffort` on `CompletionRequest`, unset = absent field
+
+### Validation
+19 tests in the crate; it ranks, chooses and routes nothing.
+
+## H.3 — The oracle, `bench/model_fit.py` — DONE
+
+### Objectif
+Grade a local model's plan by compiling it through the real server, never by
+reading it.
+
+### Dépendances
+G.3 (`apply_plan`), C.1 (`runner.py`).
+
+### Tâches
+- [x] H.3.1 0–3 ladder: 0 not schema-valid JSON, 1 `preview_plan` refuses,
+      2 applies but breaks an invariant or the ERC budget, 3 applies clean
+- [x] H.3.2 `check_assertion` and `GatewayClient` **imported** from
+      `bench/runner.py`, never reimplemented — a harness with its own compiler
+      would refuse a plan for a reason it invented
+- [x] H.3.3 Prompt = four blocks in fixed order; the schema and operation-library
+      blocks are pulled from `kicad_describe(["apply_plan"])` against the running
+      server, so a copied schema cannot drift
+- [x] H.3.4 Four tasks: `01_divider`, `02_ldo`, `03_decoupling_bank`,
+      `04_reference_heavy`
+- [x] H.3.5 `--repair N`: a repair round gets its own previous plan and the
+      server's **verbatim** refusal, nothing else (D34); the work directory is
+      emptied between rounds and the paths stay the same
+- [x] H.3.6 `select_best_round` — a repair that lowers the grade is discarded, not
+      recorded; ties keep the earlier round; tokens and `llm_calls` stay summed
+      over every round performed
+
+### Validation
+Selftest, 8 rungs, three of them proving round selection with no model involved.
+The stable prefix is byte-identical across all tasks and hint levels — the
+property a prefix cache needs.
+
+## H.4 — Make the measurement measure the model, not the harness — DONE
+
+### Objectif
+Every run in this phase first measured one of our own defects. Walk the ladder
+from the bottom until the residue is the model's.
+
+### Dépendances
+H.3.
+
+### Tâches
+- [x] H.4.1 Item shapes documented in the operation library (E14)
+- [x] H.4.2 A failed plan must not report success, and the oracle must not read a
+      failed check as a passing one (E15)
+- [x] H.4.3 One placeholder notation, not two a character apart (E16)
+- [x] H.4.4 Every scalar carries a type; `create{path,name}` is an operation
+      because three independent failure shapes asked for it (E17, D32)
+- [x] H.4.5 Accept the reference spellings that have exactly one meaning
+      (E18, E19 — the source of INV8)
+- [x] H.4.6 A symbol error names candidates (E21)
+- [x] H.4.7 `finish_reason` + `reasoning_tokens` recorded; `truncated` is a sixth
+      outcome beside the ladder, never a renumbered grade (E20)
+- [x] H.4.8 `reasoning_effort` recorded on both sides — a setting the benchmark
+      can select and the runtime cannot send makes the measurement unusable (E22)
+- [x] H.4.9 `loaded_context_length` recorded per run, after a `high` run graded
+      0/60 inside an 8 192-token window it overran 51 times (E23)
+- [x] H.4.10 Optional `rollback_policy` spellings that name the absence of a
+      choice, and a `schematic` inferred when exactly one candidate exists (E24)
+- [x] H.4.11 Cache the symbol library index — a failed lookup cost 7.2 s and
+      nothing cached it (E26)
+
+### Validation
+Compile rate 6/60 → 54/60 across the run; E24 alone 34/60 → 54/60 at Fisher exact
+**p = 0.0001**, `LLM_CALLS_PER_SUCCESSFUL_TASK` 10.0 → 5.5. E26: failed lookup
+7.2 s → 43 ms warm / 1 642 ms cold, suite `WALL_CLOCK_P95` back to 890 ms.
+`gate.ps1 -Bench`: 815 tests, 18/18, startup unchanged.
+
+**The general result is D37, and it governs the rest of the phase: before
+attributing a number to a model, check that the failures are not ours.** The
+cheapest place to look is the failure histogram — one refusal string repeated is
+ours, a spread across many is the model's.
+
+## H.5 — Measurement runs — PARTIAL
+
+### Objectif
+Two models with valid numbers, measured on the same build in the same declared
+window, before any threshold is fitted to either.
+
+### Dépendances
+H.4 (a run before its defects are fixed measures us, not the model).
+
+### Tâches
+- [x] H.5.1 `qwen3.5-9b` measured across the E14–E21 ladder
+- [x] H.5.2 `gpt-oss-20b` measured at effort unset / `medium` / `high`, contexts
+      8k and 32k, and again on the E24 build
+- [x] H.5.3 Re-measure `qwen3.5-9b` on the current build in a **declared 32 768
+      window**. Its E24-build run is confounded — its baseline ran in a window
+      nothing recorded, and the model's behaviour moved with the window (output
+      tokens 122 600 → 460 054). The two are not a before/after pair. Done on the
+      E26 build, and `gpt-oss-20b` `medium` re-run beside it so the pair sits on
+      one build rather than straddling E24 and E26
+- [ ] H.5.4 Re-run the `--strict-json` comparison, now that `finish_reason` can
+      state the mechanism instead of leaving it inferred (D33 decided the setting
+      on outcome counts alone; it stays **off** until a run says otherwise)
+
+### Validation
+A committed `bench/results/model-fit-*.json` per run carrying
+`loaded_context_length` and `reasoning_effort`, compared on the compile rate and
+on grade 3 with Fisher exact. Headline table: `docs/benchmark.md` § Model fit.
+
+**Standing results** (detail in `docs/benchmark.md`, do not restate elsewhere):
+the chosen local model is `gpt-oss-20b`, `medium`, ctx 32 768, one-shot — 12/60 at
+grade 3, 54/60 compiling, 5.0 LLM calls per success on the E26 build. `high` is
+dominated by `medium` at 2.8× the cost. Deliberation is 92–97 % of local output
+tokens, so any budget reading only the answer is wrong by more than 10×. Against
+`qwen3.5-9b` measured on the same build in the same window, the 20B reaches grade
+3 four times as often (12/60 vs 3/60, p = 0.0246) at half the output tokens; the
+compile-rate difference is not significant (54/60 vs 49/60, p = 0.295). The
+earlier verdict — no success difference, 9B compiling better — came from a pair
+that straddled two builds.
+
+## H.6 — The router — TODO, deliberately blocked
+
+### Objectif
+`NO_LLM | SMALL | MEDIUM | LARGE | ESCALATE`, with thresholds fitted to measured
+data rather than to n = 60 noise.
+
+### Dépendances
+H.5.3 — done, and it removes one of the two tiers: on one build the 9B costs more
+per success than the 20B (D38), so there is no cheap tier to route *to*. What is
+left is D37's point: routing between *no LLM* and an LLM buys the whole call.
+
+### Tâches
+- [ ] H.6.1 **NO_LLM first** — extend the deterministic operation library wherever
+      a measurement shows an LLM call can be removed entirely. The next such fix
+      must come from a new measurement: after E24 no refusal string dominates the
+      residue any more (E25)
+- [ ] H.6.2 Tiers and escalation thresholds, each traceable to a measured number
+- [ ] H.6.3 Direct mode / Agent mode split at the gateway
+
+### Validation
+`LLM_CALLS_PER_SUCCESSFUL_TASK` and success rate measured with the router on and
+off, same tasks, same build, same declared window.
+
+## H.7 — Local agent runtime — TODO
+
+### Objectif
+Supervisor / schematic / pcb / verification agents over the router.
+
+### Dépendances
+H.6, E.6 (budgets), E.4 (task state).
+
+### Tâches
+- [ ] H.7.1 Supervisor loop driven by task state, not by conversation
+- [ ] H.7.2 Verification agent whose verdict is `kicad-cli`'s (INV1)
+
+### Validation
+An end-to-end task completed with no external model call, measured against the
+same golden tasks.
+
+---
+
+# Phase I — Custom KiCad gate — TODO (default: NO)
+
+## I.1 — Re-evaluate at KiCad 11
+
+### Objectif
+The one blocker that would justify forking KiCad — live schematic IPC — is being
+solved upstream for KiCad 11. Default position stays **do not fork** (D3).
+
+### Dépendances
+KiCad 11 / `kicad-python` 0.8.0 / `kicad-cli api-server` being available here.
+
+### Tâches
+- [ ] I.1.1 Re-run the ground-truth check against KiCad 11 sources
+- [ ] I.1.2 Decide: keep the S-expression engine, or move the schematic path to
+      IPC. Only a measured blocker that survives KiCad 11 reopens the fork option
+
+### Validation
+A written decision with the same evidence standard as D3, or the gate stays shut.
+
+---
+
+# Phase J — Scope expansion — TODO
+
+## J.1 — Close E7
+
+### Objectif
+Konnect's in-process connectivity analysis disagrees with `kicad-cli` ERC — it
+has returned `single_pin_net_count: 0` while `kicad-cli` found six unconnected
+pins. The **disclosure** is closed (fifteen tools carry the advisory suffix at the
+call site, from the same manifest the matrix renders, INV7); the defect is not.
+
+### Dépendances
+None.
+
+### Tâches
+- [ ] J.1.1 Reproduce the disagreement as a committed probe
+- [ ] J.1.2 Fix the analysis, or narrow what those tools claim to answer
+- [ ] J.1.3 Only then consider removing the advisory suffix — the equality test
+      between suffix and manifest must keep holding
+
+### Validation
+The probe's in-process answer equals `kicad-cli`'s on the case that fails today,
+and the suffix/manifest equality test still passes.
+
+## J.2 — Raise capability coverage
+
+### Dépendances
+F.4 (the matrix is the instrument).
+
+### Tâches
+- [ ] J.2.1 Define the coverage comparison target the V1 criterion needs
+- [ ] J.2.2 Fill the highest-value gaps — `MISSING` names buses, a standalone
+      drill export, IPC-D-356, and the stackup write KiCad 10 declares and does
+      not implement
+- [ ] J.2.3 Prove the 107-ish tools that have no test that runs
+
+### Validation
+`docs/capability-matrix.md` regenerated; the percentage moves for the right
+reason (a test that runs, not a denominator change).
+
+## J.3 — PCB E2E without a GUI session
+
+### Objectif
+Open question, and it currently blocks PCB benchmark coverage entirely: does
+KiCad 10.0.3 on Windows expose `KICAD_API_SOCKET` reliably enough for unattended
+E2E, or does the PCB path need a live GUI session?
+
+### Dépendances
+None. Blocks D.9's validation and most of J.2's PCB half.
+
+### Tâches
+- [ ] J.3.1 Determine it by experiment, not by reading
+- [ ] J.3.2 If a GUI session is required, record it as a platform constraint and
+      keep the `#[ignore]`d tests reading `gated` in the matrix (D26)
+
+### Validation
+Either an unattended PCB E2E in the gate, or a written constraint with evidence.
+
+## J.4 — Adapter matrix
+
+### Objectif
+For each capability, which concrete backend actually runs (`ipc` / `cli` /
+`sexpr-file`), so fallbacks are observable instead of implicit.
+
+### Dépendances
+F.4.
+
+### Tâches
+- [ ] J.4.1 Generate it from the same manifest the capability matrix uses
+
+### Validation
+Generated, committed, and equality-tested like the capability matrix.
+
+---
+
+# Phase K — Multi-harness — TODO
+
+## K.1 — Claude Code, Codex, AGY
+
+### Objectif
+The handoff must be harness-agnostic: another agent, notably Codex, resumes from
+`plan.md`, `progress.md`, Git and the tests without any Claude transcript.
+
+### Dépendances
+F.3 (the gateway is the whole external surface).
+
+### Tâches
+- [ ] K.1.1 Run the golden suite through each harness
+- [ ] K.1.2 Adopt the eval design: `expected_tools`, `allowed_tools`,
+      `forbidden_tools`, a `safety` tier checked against the capability registry
+      (a `read_only` case rejects *any* write tool), `max_calls`, and an
+      instability rate across repeated runs
+
+### Validation
+Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
+`max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`.
+
+---
+
+# Phase L — Hardening — TODO
+
+## L.1 — Known debt
+
+### Tâches
+- [ ] L.1.1 E10 — `MutexGuard` held across `await` in `sch_components.rs`. A real
+      correctness smell, not a lint preference; upstream CI never linted test code
+      so it never fired
+- [ ] L.1.2 The operation-library anti-drift test checks examples rather than
+      parsing signatures. Strengthen it so a signature change cannot pass
+- [ ] L.1.3 The persistent symbol index is keyed on directory mtime and entry
+      count: a symbol added inside an existing library directory without touching
+      its mtime is not seen. Blast radius is a did-you-mean list, never a wrong
+      resolution — revisit only if that changes
+
+### Validation
+`cargo clippy --workspace --locked --all-targets -- -D warnings` clean.
+
+## L.2 — Failure injection and concurrency
+
+### Tâches
+- [ ] L.2.1 Fuzz the S-expression parser/writer round trip
+- [ ] L.2.2 Inject failures per `TransientClass` and assert the recovery policy
+- [ ] L.2.3 Concurrent user edits: a GUI holding the same file open is outside
+      the file-level rollback (D12); prove `base_revisions` catches it
+
+### Validation
+Silent corruption stays 0 under injection; no partial batch survives a failure.
+
+---
+
+# Phase M — Final benchmark — TODO
+
+## M.1 — Baseline vs direct mode vs agent mode
+
+### Dépendances
+H.6, H.7, K.1.
+
+### Tâches
+- [ ] M.1.1 Comparison table across the three modes on the same golden suite
+- [ ] M.1.2 Every V1 criterion re-measured, missed ones recorded as missed (INV6)
+
+### Validation
+`docs/benchmark.md` final table, reproducible from committed artefacts.

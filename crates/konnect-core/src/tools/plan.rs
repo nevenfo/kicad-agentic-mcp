@@ -116,7 +116,7 @@ fn build(args: &Value) -> Result<kam_plan::Program, CallToolResult> {
         ));
     };
 
-    let plan = Plan::from_json(document).map_err(|e| {
+    let mut plan = Plan::from_json(document).map_err(|e| {
         CallToolResult::error_kind(
             ToolErrorKind::InvalidArgument {
                 field: e.field().unwrap_or("plan").to_string(),
@@ -125,6 +125,13 @@ fn build(args: &Value) -> Result<kam_plan::Program, CallToolResult> {
             format!("The plan was refused before anything ran: {e}"),
         )
     })?;
+
+    // E24: a `schematic` an operation omitted is filled in with the
+    // `${op_id.schematic}` reference a model should have written, but only
+    // when exactly one earlier `create` makes the ambiguity go away. See
+    // `crate::plan::infer_omitted_schematics` for why this is safe to do
+    // before `compile` rather than resolving a path here.
+    crate::plan::infer_omitted_schematics(&mut plan);
 
     let program = compile(&plan, &KicadOps).map_err(|e| {
         CallToolResult::error_kind(
