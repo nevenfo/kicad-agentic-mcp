@@ -641,6 +641,7 @@ built server on a 0–3 ladder.
 | `qwen3.5-9b`, ctx 32k, E24 build (confounded) | 5/60 | 44/60 | 12.0 | 460 054 | 94 % | 18 251 ms |
 | **`gpt-oss-20b`, `medium`, ctx 32k, E26 build** | **12/60** | **54/60** | **5.0** | 171 045 | 93 % | 12 612 ms |
 | **`qwen3.5-9b`, ctx 32k, E26 build** | 3/60 | 49/60 | 20.0 | 325 400 | 64 % | 18 472 ms |
+| `gpt-oss-20b`, `medium`, ctx 32k, E26 build, `strict_json` | 9/60 | 58/60 | 6.7 | 154 927 | 92 % | 12 595 ms |
 
 Rows 2 and 4 are void as statements about a model and are kept because deleting
 them hides why the rest is shaped as it is: row 2 ran at the model's deliberation
@@ -699,6 +700,15 @@ the ratio moved, the model did not.
 effort and window, E24 → E26: grade 3 11/60 → 12/60 (p = 1.0), compiled 54/60
 both times, wall P50 15 798 → 12 612 ms. That is what a cache is supposed to do,
 and it is the reason the E24 comparison above still stands.
+
+**`strict_json` stays off** (H.5.4, rows 9 and 11). Constrained decoding changes
+nothing that is measurably broken: grade 3 12/60 → 9/60 (p = 0.632), compiled
+54/60 → 58/60 (p = 0.272), `compile_failed` 6 → 2 (p = 0.272). The failure it
+exists to prevent is already absent — `invalid_json` is 0/60 in both runs, and
+`finish_reason` is `stop` on all 120 attempts, so nothing was cut off either.
+D33 decided this on outcome counts alone and inferred the mechanism; the
+mechanism now reads directly off the field and says the same thing. The setting
+would buy a dependency on backend support for a difference no run can see.
 
 ## Reproducing
 

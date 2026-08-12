@@ -706,7 +706,7 @@ attributing a number to a model, check that the failures are not ours.** The
 cheapest place to look is the failure histogram — one refusal string repeated is
 ours, a spread across many is the model's.
 
-## H.5 — Measurement runs — PARTIAL
+## H.5 — Measurement runs — DONE
 
 ### Objectif
 Two models with valid numbers, measured on the same build in the same declared
@@ -725,9 +725,12 @@ H.4 (a run before its defects are fixed measures us, not the model).
       tokens 122 600 → 460 054). The two are not a before/after pair. Done on the
       E26 build, and `gpt-oss-20b` `medium` re-run beside it so the pair sits on
       one build rather than straddling E24 and E26
-- [ ] H.5.4 Re-run the `--strict-json` comparison, now that `finish_reason` can
+- [x] H.5.4 Re-run the `--strict-json` comparison, now that `finish_reason` can
       state the mechanism instead of leaving it inferred (D33 decided the setting
-      on outcome counts alone; it stays **off** until a run says otherwise)
+      on outcome counts alone; it stays **off** until a run says otherwise). Run
+      on the chosen model on the E26 build: no difference anywhere it could
+      matter, `invalid_json` 0/60 both ways, `finish_reason: stop` on all 120
+      attempts. It stays off
 
 ### Validation
 A committed `bench/results/model-fit-*.json` per run carrying
