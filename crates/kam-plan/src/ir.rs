@@ -97,6 +97,13 @@ pub struct Plan {
     /// Preconditions on document state — `path -> revision`. Checked by the
     /// host, which is the only party that knows how to read a revision.
     pub base_revisions: BTreeMap<String, String>,
+    /// Values filled into every operation's `with` for whatever top-level key
+    /// that operation did not itself give — never overwriting a key the
+    /// operation supplied, an explicit `null` included. Generic: this crate
+    /// does not know or care what any key means, only that "absent" and
+    /// "present" are different things. The common use is one path repeated
+    /// across every operation, written once instead of in each `with`.
+    pub defaults: Map<String, Value>,
     /// The operations, in order.
     pub ops: Vec<Op>,
     /// Free-text invariants the plan must not break. Carried, not enforced:
@@ -271,6 +278,17 @@ impl Plan {
             }
         };
 
+        let defaults = match map.get("defaults") {
+            None | Some(Value::Null) => Map::new(),
+            Some(Value::Object(entries)) => entries.clone(),
+            Some(_) => {
+                return Err(PlanError::WrongType {
+                    field: "defaults".to_string(),
+                    expected: "an object",
+                })
+            }
+        };
+
         let rollback_policy = match optional_str(map, "rollback_policy")? {
             None => RollbackPolicy::default(),
             Some(s) => RollbackPolicy::parse(s).ok_or_else(|| PlanError::UnknownPolicy {
@@ -357,6 +375,7 @@ impl Plan {
             ir_version,
             documents,
             base_revisions,
+            defaults,
             ops,
             constraints,
             validators,
@@ -382,6 +401,9 @@ impl Plan {
                 .map(|(k, v)| (k.clone(), Value::String(v.clone())))
                 .collect();
             map.insert("base_revisions".to_string(), Value::Object(revs));
+        }
+        if !self.defaults.is_empty() {
+            map.insert("defaults".to_string(), Value::Object(self.defaults.clone()));
         }
         map.insert(
             "ops".to_string(),
@@ -521,6 +543,27 @@ mod tests {
         let err = Plan::from_json(&json!({"ops": [{"op": "x"}], "rollback_policy": "maybe"}))
             .unwrap_err();
         assert_eq!(err.code(), "plan_unknown_policy");
+    }
+
+    #[test]
+    fn a_non_object_defaults_is_refused_before_any_mutation() {
+        for bad in [json!("schema.kicad_sch"), json!(3), json!([1, 2])] {
+            let err = Plan::from_json(&json!({"ops": [{"op": "x"}], "defaults": bad})).unwrap_err();
+            assert_eq!(err.code(), "plan_wrong_type");
+            assert_eq!(err.field(), Some("defaults"));
+        }
+    }
+
+    #[test]
+    fn defaults_round_trip() {
+        let source = json!({
+            "ops": [{"op": "call"}],
+            "defaults": {"schematic": "/p/a.kicad_sch"}
+        });
+        let plan = Plan::from_json(&source).unwrap();
+        assert_eq!(plan.defaults["schematic"], json!("/p/a.kicad_sch"));
+        let again = Plan::from_json(&plan.to_json()).unwrap();
+        assert_eq!(plan, again);
     }
 
     #[test]

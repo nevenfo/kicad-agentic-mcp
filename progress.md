@@ -14,6 +14,20 @@ verification that comes from KiCad rather than from the agent's own opinion.
 
 ## CURRENT PHASE
 
+**H, in progress.** The seam (`kam-llm`) and the oracle (`bench/model_fit.py`)
+are built, and the measurement has now run four times on `qwen3.5-9b`: 240
+attempts, **0 at grade 3**. No model is selected and
+`LLM_CALLS_PER_SUCCESSFUL_TASK` remains unmeasured — there is no successful task
+to divide by.
+
+What the four runs have measured so far is **our own prompt and our own
+operation library**, not the model. Each run removed one defect of ours and
+exposed the next: E14 (item shapes undocumented), E15 (a failed plan reporting
+success, and an oracle that read a failed check as a passing one), E16 (two
+placeholder notations one character apart), and now E17 — scalars documented
+without a type, and no operation that can create a project. That is the honest
+state: the model has not yet been given a library it can write against.
+
 **E closed, G closed.** A (bootstrap), B (cartography), C (baseline benchmark)
 and F (compact surface) were already done; D shipped revisions, idempotency,
 transactional batches and the error catalog, and still owes stable IDs and
@@ -30,7 +44,96 @@ ask instead of dumping, a matrix exists that says which 107 tools it should not
 be handed, and **E6 is closed**, so the direct tool path no longer produces
 silently wrong geometry for a model to be measured on.
 
-## CURRENT TASK — E7, closed where an agent will actually read it
+## CURRENT TASK — E17, the library the model was asked to write against
+
+The E16 run (60 attempts, placeholders expanded, `strict: false`) is recorded in
+ERROR HISTORY with its full outcome breakdown and local KPIs. Its two remaining
+failure modes are both ours and both in `crates/konnect-core/src/plan/ops.rs`:
+a scalar field documented without a type is read as a boolean (`"schematic":
+true`, 24/60), and no operation in the library can create the project the task
+asks for (17/60, in three distinct shapes converging on the same gap).
+
+In flight: type every scalar in the `*_SIGNATURE` constants, and add a `create`
+operation expanding to the existing `create_project` tool — whose result already
+carries `schematic` and `pcb`, which is what makes the `${create.schematic}` that
+seven attempts guessed resolve. Both single-sourced next to their expander, both
+covered by the anti-drift test that builds a minimal document out of nothing but
+the documented signature. Then the same 60 attempts again, comparable because the
+tasks, hints and ladder do not move.
+
+Queued behind it, one variable at a time: `--strict-json`, which now exists on
+`model_fit.py` and was `false` for all four runs.
+
+---
+
+## PREVIOUS TASK — Phase H, the seam and the oracle, before any model
+
+Phase H's first two commits deliberately produce **no verdict about any model**.
+They build the two things a verdict would otherwise be invented from.
+
+**`crates/kam-llm` — the seam** (clean-room, MIT OR Apache-2.0, no `konnect-*`
+dependency, D11's rule for the fifth time). `provider::Provider` is the whole
+contract: one `async fn complete`, object-safe on purpose so the router can
+hold `Box<dyn Provider>` and swap backends without a caller changing. The
+vocabulary around it — `Message`, `ToolDef`, `ToolCall`, `StructuredOutput` —
+is shaped like MCP's own tool definitions, so a tool catalogue can be handed
+across untranslated.
+
+* `openai_compat` is the one concrete backend, because D31 already ruled that
+  LM Studio and `llama-server` both speak it and `vLLM` has no native Windows
+  path. It **refuses a non-loopback base URL** in `OpenAiCompatConfig::new`
+  and makes the override a separate named constructor, so exposing a local
+  inference backend to the network is a decision somebody typed rather than a
+  default they inherited.
+* `usage::Usage` exists so `LOCAL_INPUT_TOKENS`, `LOCAL_OUTPUT_TOKENS`,
+  `TTFT_LOCAL` and `TOKENS_PER_SECOND_LOCAL` are a field read at the call site
+  instead of a second instrumentation pass. A backend that reports no counts
+  leaves them at `0` rather than estimating one.
+* `hardware::probe` never panics and never guesses: `nvidia-smi` first, a
+  Windows display-adapter fallback that reports names and **not** VRAM
+  (`Win32_VideoController.AdapterRAM` is a 32-bit field that misreports modern
+  cards, so it is not read rather than read wrong), and a backend probe that
+  checks `PATH` presence and says so — a capability probe, not a liveness
+  check, so it opens no socket.
+
+19 tests in the crate. It ranks nothing, chooses nothing and routes nothing;
+that is the next step and it depends on a measurement that has not run.
+
+**`bench/model_fit.py` — the oracle.** The grade never comes from reading the
+model's answer. Every attempt goes through the real built server on a 0–3
+ladder: `0` not schema-valid JSON, `1` valid JSON that `preview_plan` refuses,
+`2` compiles and applies but breaks a task invariant or the ERC budget, `3`
+applies clean. `check_assertion` and `GatewayClient` are **imported from
+`bench/runner.py`**, not reimplemented, so the model is judged by the same path
+that is already proved against real `kicad-cli` — a harness with its own
+compiler would refuse a plan for a reason it invented.
+
+The prompt is four blocks in fixed order, the first three byte-identical across
+every task and every model so a prefix cache can hold them, and the schema and
+operation-library blocks are pulled from `kicad_describe(["apply_plan"])`
+against the running server rather than hand-typed, because a copied schema
+drifts from `kam-plan` silently.
+
+Four tasks: `01_divider`, `02_ldo`, `03_decoupling_bank`, `04_reference_heavy`.
+
+**The oracle is proved; the model is not.** The selftest passes on all four
+rungs — a correct divider plan grades 3, an unknown operation grades 1 with the
+compiler's own refusal (`unknown_op: 'levitate' is not a known plan operation`),
+floating pins grade 2 at 4 ERC errors against a budget of 0, and malformed JSON
+grades 0. The stable prefix measures **800 tk** (255 rules + 329 schema + 216
+operation library) and is byte-identical across all four tasks and all three
+hint levels, which is the property a prefix cache needs.
+
+**The first real run measured nothing, and the reason is recorded as E13:** the
+LM Studio runtime cannot load `qwen3.5-9b` at all — `unknown model
+architecture: 'qwen35'` — so all 60 attempts failed before reaching the model
+and `bench/results/model-fit-qwen3.5-9b.json` carries `null` grades throughout.
+That is D31's stated risk arriving rather than a surprise, and it leaves the
+shortlist at zero runnable candidates until `gpt-oss-20b` is in place.
+
+---
+
+## PREVIOUS TASK — E7, closed where an agent will actually read it
 
 The matrix had labelled fifteen in-process connectivity tools `ADVISORY` since
 the capability pass, and it changed nothing for the one reader that matters: a
@@ -314,7 +417,13 @@ why it is opt-in.
 [x] Deterministic executor + operation library + batching   -> plan toolset, -48.4 % / -61.1 %
 [x] Plan-owned postconditions                               -> erc/drc + erc_clean/drc_clean, rollback on failure
 [ ] Direct mode / Agent mode split
-[ ] Local model provider, hardware probe, model benchmark, router
+[x] Local model provider abstraction + hardware probe               -> kam-llm, loopback-only, 19 tests
+[x] Model-fit benchmark harness (grade a plan by compiling it)      -> bench/model_fit.py, 4 tasks, 0-3 ladder
+[x] Run the model-fit measurement                                   -> 6 runs, 360 attempts on qwen3.5-9b; grade 3 = 4/60 one-shot, 46/60 compile
+[x] Repair loop measured (--repair 1)                               -> 0 of 58 failures converted; LLM_CALLS/success 15 -> 59 (D35)
+[ ] Measure a second model (gpt-oss-20b) before any router threshold
+[ ] Discard a repair that lowers the grade (11 of 58 were kept anyway)
+[ ] Local model router NO_LLM/SMALL/MEDIUM/LARGE/ESCALATE
 [ ] Error catalog completeness, retries, recovery policy
 [ ] Event journal / deltas
 [ ] Custom KiCad gate  (default: NO — see D3)
@@ -662,6 +771,156 @@ projects that look like one (`kicad-llm-plugin`, `circuit-synth`, `tscircuit`,
 not re-asked: the local model will be a general one, and the electronics
 competence has to come from the deterministic engine and the validators, which
 is what this architecture already assumes.
+
+### D35 — one repair round costs double and converts nothing, and the wall is now ERC (2026-08-12)
+
+D34 built the repair round to test the architecture's own claim: the compiler and
+the validators say exactly what is wrong, so a second call should fix it without
+anyone being clever. Measured, same 60 attempts, `--repair 1`, only that changed:
+
+| | round 0 | after one repair |
+|---|---|---|
+| `truncated` | 9 | 5 |
+| `compile_failed` | 5 | 6 |
+| `not_applied` | 25 | 23 |
+| `applied_invalid` | 19 | **24** |
+| `success` | 2 | **2** |
+
+**Of 58 failed first rounds, the repair converted 0 to success.** It moved 22 up
+the ladder, left 25 where they were and pushed 11 **down** — the harness keeps
+the last plan, so a repair that is worse than what it replaced is what the run
+records. `LLM_CALLS_PER_SUCCESSFUL_TASK` therefore went from **15 one-shot to
+59** (118 calls, 2 successes). The 4/60 → 2/60 difference in successes is
+sampling noise at temperature 0.2 and is not claimed as a regression; **0
+conversions out of 58** is not noise, and it is the finding.
+
+The candidates from E21 are used, and that is worth separating from the verdict:
+of the 24 attempts whose first round failed at apply — nearly all of them
+inventing a library — **11 repairs wrote a real `Device:` symbol**. So an
+actionable error does change the model's next plan about half the time. It just
+lands one rung higher instead of at the top, because what is left is not a format
+error.
+
+**What is left is ERC.** 24 of 60 final attempts apply cleanly and fail the
+budget: `erc errors=1 limit=0` (8), `2 limit=0` (5), `4 limit=0` (3). A message
+saying "one pin is not connected" does not teach a 9B where the wire goes, and
+this is the boundary this project always said it would find — the electronics
+competence has to come from the deterministic engine and the validators, not from
+the local model (D31).
+
+Two consequences recorded rather than acted on yet:
+
+* **A repair that makes the design worse should be discarded, not kept.** The
+  machinery to decide that already exists — semantic diff, ERC verdict, rollback,
+  revisions — and the harness simply does not use it. That is a product change,
+  not a benchmark one.
+* **72 % of every generated token is deliberation**: 177 695 reasoning tokens of
+  247 994 output. Any budget claim about the local model that ignores the split
+  is wrong by a factor of three.
+
+### D34 — the repair round gets the error and nothing else (2026-08-12)
+
+`LLM_CALLS_PER_SUCCESSFUL_TASK` is 15 one-shot (4/60), and the architecture's
+answer to that has always been the deterministic engine: the compiler and the
+validators already say exactly what is wrong, so a second call should be able to
+fix it without anyone being clever. `bench/model_fit.py --repair N` measures
+whether that is true instead of assuming it.
+
+A repair round is given its own previous plan and the server's **verbatim**
+refusal. No advice, no restated rules, no extra hint, no worked example —
+anything else would measure the hint rather than the error message, and the
+error message is the thing under test. The block is appended *after* the dynamic
+task so the stable prefix stays byte-identical and a prefix cache still holds
+across rounds.
+
+Between rounds the work directory is emptied and the **paths stay the same**. A
+fresh `mkdtemp` per round would move `$SCH` under the model's feet and recreate
+E16 one round apart; wiping the contents means a repair starts from the state
+round 0 started from, and the paths in its own previous plan remain valid.
+
+Cost accounting: tokens are summed across rounds, because what a task cost is
+what it took and not what its last try took. TTFT and tok/s stay the final
+round's — a median across rounds would describe no single generation. `llm_calls`
+is now an aggregated metric, so one-shot and repaired runs are compared on the
+number that matters rather than on success rate alone.
+
+### D33 — constrained decoding is off, measured, and it is not the setting it looked like (2026-08-12)
+
+E15 queued `response_format.json_schema.strict` as its own run, on the theory
+that a best-effort grammar explained the ~17 % invalid-JSON residue. It was run
+against the E18 build, one variable changed and nothing else:
+
+| | `strict: false` | `strict: true` |
+|---|---|---|
+| `invalid_json` | 7 | **16** |
+| `compile_failed` | 30 | 19 |
+| `not_applied` | 14 | 16 |
+| `applied_invalid` | 5 | 8 |
+| `success` | **4** | **1** |
+
+Constrained decoding made it **worse on both ends**, so it stays off.
+
+**The mechanism is not "the grammar produces bad JSON", and that matters more
+than the setting.** Twelve of the sixteen failures returned an **empty**
+`content` while billing ~6 000 completion tokens. Probed directly against the
+backend: `qwen3.5-9b` is a reasoning model whose deliberation arrives as
+`delta.reasoning_content` and is billed inside `completion_tokens` —
+1 388 of 1 460 tokens on a trivial probe. So what the strict run most likely
+measured is a model deliberating until it hit a generation cap, never reaching
+its answer.
+
+*Likely*, because the harness could not tell: it recorded neither
+`finish_reason` nor `reasoning_tokens`, so "the reply never finished" and "the
+reply is malformed" were the same row. That gap is E20, and the strict
+comparison is worth re-running once the instrumentation can state the cause
+instead of inferring it. Until then the setting decision stands on the outcome
+counts, which need no mechanism to be true.
+
+### E20 — a reply cut off at the token cap was counted as a reply the model got wrong (2026-08-12) — FIXED
+
+`bench/model_fit.py` collected `delta.content` and `completion_tokens` and
+nothing else, so an attempt that spent its whole budget on `reasoning_content`
+and produced no answer landed in `invalid_json` — blaming the model for our
+token budget. Same class as E15: a thing that could not run, scored as a thing
+that ran and failed.
+
+Fixed: `finish_reason` and `completion_tokens_details.reasoning_tokens` are
+captured and persisted per attempt, `local_reasoning_tokens` joins the aggregated
+metrics, and a **sixth outcome** — `truncated` — separates `finish_reason:
+length` from malformed JSON. The grade stays 0 either way: `outcome` is
+categorical beside the ladder and never renumbers it (E15's rule). Selftest
+green on all five existing rungs, so the split changed no historical grade.
+
+The reasoning split is a KPI in its own right, not bookkeeping: a task whose
+answer is 300 tokens and whose deliberation is 6 000 costs what the 6 000 costs,
+and `LOCAL_OUTPUT_TOKENS` alone never said so.
+
+### D32 — a scalar carries its type, and `create` is an operation because three failure shapes asked for it (2026-08-12)
+
+Two changes to the operation library, both decided by the E16 run rather than by
+taste.
+
+**Every scalar in a signature now carries a type** (`schematic:path`,
+`pitch?:number`, `tool:string`). The notation already typed compound fields, so
+a bare name was the one thing in it that looked like a flag — and 24 of 60
+attempts wrote `"schematic": true`. The vocabulary is deliberately three words
+(`path`, `string`, `number`) with no `enum(...)` form: the prose after each
+signature already lists `direction`'s values, and the library is paid on every
+prompt that carries it.
+
+**`create{path,name}` is an operation, not a `call`.** It expands to exactly one
+`create_project`, which is what `call` would have done — the difference is that
+the model can find it. The prompt hands over an operation library and no tool
+catalogue, so `create_project` was unguessable from what the model was given,
+and it showed: 7 attempts referenced `${create.schematic}`, 10 targeted a
+schematic nothing had created, 1 wrote `op: create_project`. Three independent
+shapes converging on one missing operation is evidence for adding it; hinting
+harder would have taught the benchmark, not the tool.
+
+The rejected alternative was to pre-create the project in `fresh_env`. It would
+have removed the failure and measured a task nobody performs: a real delegation
+starts from an empty directory, and the golden suite's own tasks create their
+projects through tools.
 
 ### D30 — the graph wins on filtering and adjacency, not on serialisation (2026-08-11)
 
@@ -1088,6 +1347,670 @@ Worth keeping in mind for Phase H: a plausible-looking schematic that a model
 would call finished is ERC-*error* territory in KiCad 10 as soon as one pin is
 left alone. `erc_clean` is a stricter promise than it sounds.
 
+### E13 — the first model-fit run measured nothing: the runtime cannot load the model (2026-08-11) — RESOLVED
+
+The harness ran to completion, exit 0, and produced
+`bench/results/model-fit-qwen3.5-9b.json` with **every** `grade` at `null` and
+`success_rate: null`. All 60 attempts (4 tasks × 3 hint levels × 5 repeats)
+failed identically, before the model was ever reached:
+
+```
+backend HTTP 400 at http://127.0.0.1:1234/v1/chat/completions:
+{"error":{"message":"Failed to load model \"qwen3.5-9b\". Error: Failed to load model",...}}
+```
+
+`/v1/models` lists the model, and 14 984 MiB of the RTX 5080's 16 303 MiB were
+free, so it is neither absent nor a VRAM ceiling. The cause is one line, from
+`lms load qwen3.5-9b` rather than from the HTTP layer, which hides it:
+
+```
+error loading model: error loading model architecture: unknown model architecture: 'qwen35'
+```
+
+The selected runtime is `llama.cpp-win-x86_64-nvidia-cuda12-avx2@1.104.2`, and
+`lms runtime update` answers *"All matching runtime extensions are already
+up-to-date"* — so this is not a stale install that an update fixes.
+
+**This is the risk D31 wrote down, arriving — but not in the shape it expected.**
+D31 recorded that `llama.cpp`'s support for Qwen3.5's hybrid Gated DeltaNet
+architecture was "suggested by the existence of community GGUFs and confirmed by
+nobody". Checked against primary sources, upstream **does** support it:
+`LLM_ARCH_QWEN35` and `LLM_ARCH_QWEN35MOE` are in `src/llama-arch.cpp` on
+`master` and both are listed in `llm_arch_is_hybrid()`; the merge is
+[PR #19468](https://github.com/ggml-org/llama.cpp/pull/19468) (2026-02-10, after
+[#19435](https://github.com/ggml-org/llama.cpp/pull/19435) was merged and
+reverted two days earlier), with `GATED_DELTA_NET` backend coverage landing
+per-backend since.
+
+So the defect is **local and one version deep**: this machine runs LM Studio
+**0.3.39**, and LM Studio's own 0.4.0 release note (2026-01-28) says the engine
+"graduates to version 2.0.0" and the CLI switches from semver to commit hashes.
+A runtime still numbered `1.104.2` is therefore on the pre-0.4.0 channel, which
+predates the 2026-02-10 merge — which is exactly why `lms runtime update` can
+say "already up-to-date" and still not know the architecture. (The version
+mapping is not documented by LM Studio; the chain above is an inference from
+their release note, and it is labelled as one.)
+
+Two ways out, and they are not equivalent:
+
+* **Update LM Studio past 0.4.0.** This is the only path that makes the D31
+  shortlist's first candidate runnable at all. It is a desktop-app update on the
+  user's machine, so it is theirs to make, not something to do to them silently.
+* **Use a model the installed runtime already knows.** `gpt-oss-20b` (llama.cpp
+  [PR #15091](https://github.com/ggml-org/llama.cpp/pull/15091), native MXFP4)
+  and `Qwen3-14B-GGUF` (arch `qwen3`, official Qwen repo) both predate this
+  runtime by a wide margin. This is the unblocked path and is the one taken.
+
+The VRAM figures matter for which of the two: llama.cpp's own gpt-oss guide
+([discussion #15396](https://github.com/ggml-org/llama.cpp/discussions/15396))
+puts it at 12.0 GB of model data and **~14.9 GB at 8 192 tokens of context**,
+against 14 984 MiB free here — a margin of essentially zero, so a partial
+offload is likely and the measurement must report it rather than assume it.
+`Qwen3-14B` at `Q5_K_M` is 10.5 GB and leaves room for KV cache, which makes it
+the fallback if gpt-oss spills.
+
+**Resolved the same evening, and by the first branch rather than the second.**
+LM Studio updated itself mid-session — 0.3.39 → **0.4.20** — which killed the
+`gpt-oss-20b` download in flight (WebSocket closed, a 5.39 GB `.part` left
+behind, then `spawn ... LM Studio.exe ENOENT` while the app restarted) and
+switched the engine channel. `lms runtime ls` now selects
+`llama.cpp-win-x86_64-nvidia-cuda12-avx2@**2.28.2**`, and:
+
+```
+Model loaded successfully in 6.84s. (7.71 GiB)
+```
+
+So the inference in the paragraph above is confirmed rather than merely
+plausible: the blocker was the application's version, not the model, not the
+GGUF, and not upstream. 7.71 GiB resident leaves real headroom on 16 303 MiB,
+unlike the gpt-oss estimate, and the D31 shortlist's first candidate is
+measurable after all. `gpt-oss-20b` stays worth having as the second data point
+and its download has to be restarted.
+
+Two things this does **not** invalidate: the oracle passed its selftest before
+any model was involved (grades 3/1/2/0, expected = obtained), and the stable
+prompt prefix measured **800 tk**, identical across all four tasks and all three
+hint levels. What is unmeasured is everything about a model.
+
+One harness defect found on the way and fixed in the invocation rather than in
+the code: `.\target\release\konnect.exe` passed through a `bash` layer loses its
+backslashes and becomes `.targetreleasekonnect.exe` (`FileNotFoundError WinError
+2`). Forward slashes work. Worth knowing before blaming the harness for the next
+`WinError 2`.
+
+### E14 — the plan's operation library documents field names, not field shapes (2026-08-11) — FIXED
+
+The first real model-fit run, once E13 was out of the way: `qwen3.5-9b`, 60
+attempts (4 tasks × 3 hint levels × 5 repeats), **0 at grade 3, 0 at grade 2,
+ceiling grade 1**. Not one plan compiled. One failure dominates:
+
+```
+invalid_argument (components[0].lib_id): required
+```
+
+34 of 60, on the `place` operation, across every task and every hint level.
+
+**It is our defect, not the model's.** `PLAN_DESCRIPTION`
+(`crates/konnect-core/src/tools/plan.rs:46`) is the only thing an agent reads
+about the operation library — `bench/model_fit.py` builds its OPERATION LIBRARY
+block from `schema.properties.plan.description`, exactly as any MCP client
+would. It says:
+
+```
+place{schematic,components,at?,pitch?,direction?}
+```
+
+It names `components`. It never says what an item of `components` contains, and
+the string `lib_id` appears nowhere in it — while
+`crates/konnect-core/src/plan/ops.rs:100` makes it required. A model cannot
+guess a field name the tool documents nowhere, and neither can Claude. The same
+gap explains the secondary failures: `at` must be a complete `{x, y}` (`ops.rs`
+`need_point` / `optional_point`, and the test `place_refuses_half_a_position`
+proves the halves are refused), and nothing says so.
+
+This is E7's class one level in: the description at the call site is the only
+documentation that gets read, and it did not carry what the call requires.
+
+**What the run therefore measured is the schema, not the model.** The grades
+above are not evidence about `qwen3.5-9b` and are not being recorded as such.
+The honest statements are: the harness works end to end against a real local
+model (60/60 attempts completed, no HTTP failure), throughput is **99–104
+tok/s** at **95–543 ms** TTFT, the model fits entirely on the GPU
+(**9 020–9 109 MiB** peak of 16 303, no spill), and `model_fit.py` produces
+every local KPI the metric list asks for — `local_input_tokens`,
+`local_output_tokens`, `ttft_ms`, `tokens_per_second`, `wall_clock_ms`,
+`vram_peak_mib`.
+
+The fix is to the tool, never to the benchmark: the operation signatures must
+state their item shapes, by a mechanism that cannot drift from the expander
+that enforces them — E6's single-constant rule and E7's single-`MANIFEST` rule,
+applied again. The tasks, hints and grading ladder stay untouched so the re-run
+is comparable, and the comparison will be labelled as what it is: **a
+documentation defect being fixed, not a model improving.**
+
+**Fixed 2026-08-11, and measured on the same 60 attempts.** A `*_SIGNATURE`
+constant sits directly above each `expand_*` in `plan/ops.rs`, `OP_LIBRARY`
+pairs them with their names, and `plan::description()` assembles the one string
+both `preview_plan` and `apply_plan` publish. The anti-drift link is a test, not
+a promise: `every_documented_signature_has_a_working_minimal_example` holds a
+minimal document per operation, checks the set against `OP_LIBRARY` by name and
+order so no operation can be added without one, and expands each — so an
+expander requiring a field its example does not carry fails the build. Nothing
+was relaxed — `lib_id` is still required and `at` is still a complete `{x, y}`.
+
+**Corrected 2026-08-12, having claimed more than the code does.** This paragraph
+originally said the document was built "out of nothing but its documented
+signature". It is not: the examples are hand-written JSON, and nothing parses the
+`*_SIGNATURE` strings. The test therefore catches an expander that drifts from
+its *example*, and catches an example that drifts from its *signature* only as
+far as a human transcribed it faithfully — which is weaker than claimed, and is
+the guarantee both E14 and E17 rest on. Found while implementing E17, by looking
+for the parser the prose implied and not finding one.
+
+| | before | after |
+|---|---|---|
+| `components[*].lib_id: required` | **34/60** | **1/60** |
+| grade ≥ 2 (the plan compiles and applies) | **0/60** | **23/60 (38.3 %)** |
+| grade 3 | 0/60 | **0/60** |
+| local input tokens (mean) | 1 175 | 1 667 |
+| stable prefix | 800 tk | 1 285 tk |
+| TTFT / tok/s / VRAM peak | 178 ms / 102.9 / 9 031 MiB | 168 ms / 101.9 / 9 038 MiB |
+
+The +492 measured input delta matches the +485 the prefix grew by, so the cost
+is exactly the documentation and nothing else. Startup catalogue is **2 034 —
+unchanged**, because `plan` is still a lazy toolset; the full catalogue grows
+25 642 → 26 130. Golden suite **18/18 unchanged**, gate green at **779 tests**.
+
+Neither of the two failure modes this run was instrumented to catch appeared:
+no `${op_id.field}` in a coordinate, and no plan over `MAX_STEPS_PER_OP`. Both
+gaps stay undocumented on purpose until a measurement points at them.
+
+**Grade 3 is still zero and the wall has moved rather than fallen.** The new
+dominant failure is 23 attempts at grade 2 reporting `applies: true`,
+`erc_errors: 0` and `found=[]` — a plan that applies, an ERC that says clean,
+and a `list_schematic_components` that sees nothing. That is E4's shape, and
+diagnosing it produced E15.
+
+### E15 — a totally failed plan reports success, and a failed check reads as clean (2026-08-12) — FIXED
+
+Reproduced live, outside the model, by replaying one captured grade-2 plan. The
+symptom is a chain of three, and only the first belongs to the model:
+
+**The model's part.** It writes `"schematic": "$SCH"` — the *literal* notation
+from the DYNAMIC TASK block, never substituted for the path the same block
+defines two lines later. Every operation then targets a file that does not
+exist.
+
+**Ours, first half — the tool.** `handle_apply_plan`
+(`crates/konnect-core/src/tools/plan.rs:502`) returns
+`Ok(CallToolResult::json(&body))` unconditionally. Replaying the plan returns
+top-level `isError=False` while the body says
+`"ok":0, "failed_at":0, "not_run":7, "rollback":true, "error":"IO error: … introuvable"`.
+A plan that applied nothing and rolled everything back is presented to the agent
+as a success. This is inconsistent with the project's own D28, which already
+makes a *postcondition* failure set `is_error`: the **step** failure path never
+learned the same thing.
+
+**Ours, second half — the oracle, and this one is worse.**
+`bench/runner.py:139-166` `check_assertion` parses the JSON of `run_erc`,
+`list_schematic_components` and `list_schematic_nets` without ever looking at
+`isError`. Measured live: `run_erc({"schematic":"$SCH"})` answers `isError=True`
+with `{"error":"kicad-cli exited with 3: Échec du chargement…"}`, the assertion
+reads a defaulted `violations=[]`, and concludes **0 ERC errors**. A check that
+could not run scores as a check that passed — the exact failure E4 named on day
+one, sitting inside the thing that grades everything else.
+`bench/model_fit.py:384-389` has the same hole one level up: it tests only the
+top-level error, so a full rollback counts as `applies: true`.
+
+The consequence is not confined to Phase H. **Any `erc_max_errors` assertion
+whose call fails passes**, so every golden-suite number resting on one is
+unproven until this is fixed and the suite is re-run. That re-run is expected to
+be able to lower 18/18, and if it does, the lower number is the true one and
+stays.
+
+The evidence file has its own gap, recorded for the next harness change:
+`bench/results/*.json` never persists the model's raw plan text, which is why
+this needed a live replay instead of a query over the results already on disk.
+
+**Fixed 2026-08-12, in all three places.** `handle_apply_plan` sets
+`is_error: report.failed_at.is_some()` with the report body untouched, so the
+caller still learns exactly what ran; `kicad_invoke`'s `entry["ok"] =
+!result.is_error` then makes an atomic batch roll a failed plan back the same
+way a failed postcondition already did. `bench/runner.py` grew `_call_failed` /
+`_call_error_detail` — the same test `step_errors` was already using — and they
+now guard `erc_max_errors`, `components_present`, `nets_present` **and
+`no_single_pin_nets`**, a fourth case with the identical hole that the
+diagnosis had not named. `bench/model_fit.py` additionally reads `failed_at` /
+`rollback` out of the body, so a future regression on the Rust side cannot
+silently restore `applies: true`. A test named for what it protects —
+`a_failed_step_sets_is_error_so_an_atomic_batch_rolls_back` — locks the first
+half.
+
+**The golden suite was re-run against the stricter oracle and still scores
+18/18** at 2 194 tk/task, 4 MCP calls, P50 64 ms. That is the answer to the
+question the fix raised: the suite's passes were real, not artefacts of failed
+calls reading as empty. Gate green.
+
+**Re-measured on the same 60 attempts, and the headline did not move:**
+`{0:10, 1:27, 2:23, 3:0}` against `{0:11, 1:26, 2:23, 3:0}` before the fix.
+Grade ≥ 2 is 38.3 % either way, and **grade 3 is 0 across all 180 attempts of
+the three runs**.
+
+What changed is what the failures *say*. The dominant mode is now explicit —
+**22 of 60** report `IO error: Le chemin d'accès spécifié est introuvable.
+(os error 3)`, failing at `op1` before any step that could create the document —
+where the same attempts previously showed a silent `found=[]`. That is the fix
+working: the failure was always there, and it is now named.
+
+It also exposes a defect in the **grading ladder itself**: grade 2 currently
+covers two opposite outcomes — "the plan applied and the design is wrong" and
+"the plan did not apply at all". While they share a rung, the headline number
+means nothing, and that is being fixed in the harness before any model is
+compared to another.
+
+Two further measurements from the same run, both about our own prompt rather
+than the model:
+
+* **8 of 60 emit an unsubstituted `${…}`** — `${SCH}` twice,
+  `${create.schematic}` six times. The benchmark's DYNAMIC TASK block writes
+  `$SCH = <path>` while the Plan IR uses `${op_id.field}` as its reference
+  syntax, so a model that reads `$SCH` as a plan reference is confusing two
+  notations **we** put side by side. All eight are correctly refused at compile
+  time — no false grade 3 comes out of it — but the collision is ours.
+* **10 of 60 are not valid JSON**, which should be impossible: `model_fit.py`'s
+  own docstring claims it sends `response_format: {type: json_schema}`. Either
+  it does not, or the backend ignores it. That contradiction is being resolved
+  as a fact before anything is changed on the strength of it.
+
+**The ladder now separates the two, and re-counting the three runs on disk says
+what E15 was worth.** `outcome` is a categorical field beside `grade`, never a
+renumbering, so the historical grades stay comparable: `invalid_json`,
+`compile_failed`, `not_applied`, `applied_invalid`, `success`. Re-counted from
+fields the runs already persisted:
+
+| run | invalid_json | compile_failed | not_applied | applied_invalid | success |
+|---|---|---|---|---|---|
+| before E14 | 10 | 50 | 0 | 0 | 0 |
+| after E14 | 11 | 26 | 0 | **23** | 0 |
+| after E15 | 10 | 27 | **23** | 0 | 0 |
+
+The 23 moving from `applied_invalid` to `not_applied` is **not a regression and
+is not the model changing** — it is the same 23 plans, correctly relabelled.
+Before E15 they claimed `applies: true` while having rolled back in full; that
+claim was the defect, and the new column is what was true all along.
+
+`raw_response`, `compiled_plan` and a structured `failure` (operation, kind,
+verbatim message) are now persisted per attempt, truncated at 4 000 chars with
+an explicit flag — the instrumentation gap that forced two live replays costs
+about +150–250 KB per 60-attempt run.
+
+**The JSON contradiction is resolved, and it is neither of the obvious
+answers.** The harness *does* send `response_format`, captured verbatim:
+
+```json
+{"response_format":{"type":"json_schema","json_schema":{"name":"kicad_plan","schema":{…},"strict":false}}}
+```
+
+`strict` is hard-coded **false**, while `kam-llm`'s own `openai_compat` exposes
+it as a caller parameter and its test uses `true`. A best-effort grammar is
+consistent with a ~17 % residue of invalid JSON. Turning it on is a change to
+the measurement setup, so it is queued as its own run rather than folded in —
+one variable at a time.
+
+One place is deliberately left as it is: `bench/runner.py:322`
+(`find_capabilities` during `search`-mode setup) still reads its result without
+an error check, because a tool the search misses is *supposed* to surface as a
+failed step — that is how retrieval is scored, and it is a comment in the code
+rather than an oversight.
+
+### E16 — two placeholder notations, one character apart, both ours (2026-08-12) — FIXED
+
+The benchmark's DYNAMIC TASK block wrote `$SCH = <path>` while the Plan IR's
+reference syntax is `${op_id.field}`. Measured on the run after E15: **32 of 60**
+attempts tripped over the collision — 22 copied `"$SCH"` verbatim into an
+argument and failed at `op1` with `IO error: … (os error 3)`, and 10 promoted it
+to a plan reference (`${SCH}`, `${create.schematic}`) on a plan that has no such
+operation. Two notations one character apart, side by side in a prompt we wrote,
+is our defect and not the model's.
+
+Fixed in `bench/model_fit.py`: `$WORK` / `$NAME` / `$SCH` / `$PCB` are expanded
+in the objective and in the hints **before** the model sees them, so the prompt
+carries literal paths only. `${create.schematic}` survives untouched — it is a
+genuine plan reference, and `04_reference_heavy` exists to measure whether the
+model writes one.
+
+**Measured on the same 60 attempts** (`qwen3.5-9b`, temperature 0.2,
+`strict: false`, stable prefix **1 285 tk unchanged**), against the post-E15 run:
+
+| | after E15 | after E16 |
+|---|---|---|
+| `$…`-style placeholder in the raw reply | 32/60 | **0/60** |
+| `invalid_json` | 12 | 10 |
+| `compile_failed` | 25 | **40** |
+| `not_applied` | 23 | **10** |
+| `success` (grade 3) | 0 | **0** |
+
+The fix did what it was aimed at and nothing more: the literal `$SCH` is gone
+from every reply, and the `io` failures fell 22 → 10. The ten that remain carry a
+**different** error — `os error 2` (file not found) where the old ones were
+`os error 3` (path not found) — because they name the right path in a directory
+where nothing was ever created. That is a second defect, not a residue of this
+one, and it is E17.
+
+Hint level barely moves any of it: `full` (complete geometry, pin offsets,
+PWR_FLAG) fails 14 compile / 4 not-applied / 2 invalid-JSON against `none`'s
+13 / 4 / 3. What the model gets wrong is the IR's own encoding, not the
+electronics — which is the useful finding, because encoding is ours to document.
+
+Local KPIs from the run, all measured rather than estimated: TTFT median
+**185 ms**, **102.6 tok/s**, local input median **1 684 tk**, output median
+**1 866 tk**, VRAM peak **9 077 MiB** of 16 303 (no spill), wall clock median
+**18.4 s** per attempt.
+
+**Grade 3 is 0 across all 240 attempts of the four runs.** No model is chosen,
+and `LLM_CALLS_PER_SUCCESSFUL_TASK` stays unmeasured: there is no successful task
+to divide by.
+
+One measurement variable was still hard-coded while this ran:
+`response_format.json_schema.strict` was `false`, which E15 recorded as a likely
+explanation for the ~17 % invalid-JSON residue. It is now `--strict-json` on
+`model_fit.py` and written into the results file, to be run as its own
+comparison — one variable at a time.
+
+### E17 — the operation library documents names without shapes, and cannot create a project (2026-08-12) — FIXED
+
+Diagnosing E16's remainder produced two defects of the same class as E14: what
+the model gets wrong is what the tool never told it.
+
+**24 of 60 emitted `"schematic": true`** — a boolean where a path belongs. The
+signature notation types every compound field (`components:[{lib_id,x?,y?,…}]`,
+`at?:{x,y}`) and leaves scalars bare (`place{schematic,components:[…],…}`), so in
+that notation a bare name reads as a flag. E14 gave the *items* their shapes and
+left the *scalars* without one; this is the half that was missed.
+
+**17 of 60 could not create the project.** The task's work directory is a fresh
+empty `mkdtemp` and the objective says to create the project there, and none of
+the seven operations can: 7 attempts referenced `${create.schematic}`, 10
+targeted a schematic nothing had created (`os error 2` at `op1`), and 1 wrote
+`op: create_project` — the right tool name in the wrong slot. The `call` escape
+hatch cannot rescue it, because the prompt hands the model an operation library
+and no tool catalogue, so `create_project` is unguessable from what it was given.
+Three independent failure shapes converging on the same missing operation is
+evidence for adding it, not for hinting harder.
+
+Both fixes belong to the tool and neither to the benchmark: the tasks, hints and
+grading ladder stay untouched so the re-run is comparable, and the comparison
+will be labelled as what it is — **a library defect being fixed, not a model
+improving.**
+
+**Fixed and measured the same day**, on the same 60 attempts. Every scalar in
+all eight `*_SIGNATURE` constants now carries a type (`schematic:path`,
+`pitch?:number`, `tool:string`; three words only, because the prose after each
+signature already lists `direction`'s values), and `create{path:path,name:string}`
+heads `OP_LIBRARY`, expanding to one `create_project` — the tool whose result
+already carried `schematic` and `pcb`. **782 tests**, gate green.
+
+| | after E16 | after E17 |
+|---|---|---|
+| `"schematic": true` (a boolean where a path belongs) | 24/60 | **0/60** |
+| cannot create the project (`io` at `op1`) | 10/60 | **0/60** |
+| `invalid_json` | 10 | 10 |
+| `compile_failed` | 40 | 44 |
+| `not_applied` | 10 | 5 |
+| `applied_invalid` | 0 | **1** |
+| `success` (grade 3) | 0 | **0** |
+| stable prefix | 1 285 tk | **1 549 tk** (+264) |
+
+Both targets went to zero and neither came back in another form. The +264 tokens
+are the types and the new operation, paid on every prompt that carries the
+library — the same trade E14 made, recorded rather than netted off.
+
+Grade 3 is still 0, and the headline number barely moved, but the *kind* of
+failure did, in a way that is worth more than the number: **one attempt applied a
+real design end to end** and failed only its ERC budget (`erc errors=3 limit=2`
+on the decoupling bank, at hint level `none`). That is the first plan in 300
+attempts to reach KiCAD's own validator on its merits rather than on a
+mislabelled rollback.
+
+Two new classes surfaced underneath, both previously masked:
+
+* **36 of 60 now fail on how to *name* an earlier operation** — `${0.schematic}`
+  (25), `${create.schematic}` (8), `${ops[0].schematic}` (2), `${create0.…}` (1).
+  That is E18, and it is not a documentation defect: the rule is stated
+  explicitly in the prompt.
+* **4 of 60 invent a symbol library** — `Resistor_Small`, `Resistor_SMD`,
+  `Resistor`, `Linear_Regulator` — where KiCAD wants `Device:R`. Only at hint
+  levels that do not name it: the `full` hint does. The product answer is a
+  symbol-search step before placement, not a longer prompt, and it is recorded
+  here rather than fixed, because no measurement yet says how often it matters.
+
+Local KPIs, unchanged within noise despite the longer prefix: TTFT median
+**172 ms**, **102.3 tok/s**, local input median **1 952 tk**, output **1 730 tk**,
+VRAM peak **9 120 MiB**, wall clock median **17.4 s**.
+
+### E18 — the model will not name an operation the way the rule says, and three of its four guesses are unambiguous (2026-08-12) — IN PROGRESS
+
+With E17's walls gone, one failure dominates: 36 of 60 attempts cannot say
+*which* operation produced the schematic they want to write to.
+
+```
+25  operation 'op2' refers to ${0.schematic}, but no operation '0' exists in this plan
+ 8  refers to ${create.schematic}, but no operation 'create' exists
+ 2  '${ops[0].schematic}' is not a reference; expected ${op_id.field}
+ 1  ${create0.schematic}
+```
+
+**This one is not a documentation defect, and saying so matters.** The prompt
+already states the rule verbatim — *"The id is whatever you gave that operation;
+if you gave none, it is 'op1', 'op2', … by position"* — and the model does not
+comply with it. Writing the rule more loudly would be teaching the benchmark.
+
+What can be fixed deterministically is the engine's tolerance, because three of
+the four guesses have exactly one possible meaning:
+
+* `${ops[N].field}` — explicit, zero-based, cannot collide with an id.
+* `${create.schematic}` — an operation named by its **type**, unambiguous when
+  exactly one operation in the plan has that type; two candidates is an error
+  that names both.
+* A **plan-level `defaults`** object, filling any field an operation omits, so
+  the common case needs no reference at all: `defaults:{schematic:<path>}` once
+  instead of the same absolute path in every operation. Generic in `kam-plan` —
+  no field is special-cased, because that crate may not learn the word
+  `schematic` (D11).
+
+**`${0.field}` stays refused**, and that is the deliberate half. Auto-assigned
+ids are one-based (`op1`, `op2`), so a bare `${1.field}` may mean the first
+operation or the second, and resolving it would be a coin flip that writes to a
+real file. The refusal instead lists the ids that do exist, which is what a
+repair pass or a retry actually needs. The measured consequence is that the 25
+positional references stay failures until the model or a repair loop fixes
+them — recorded, not hidden.
+
+**Shipped, and the resolution happens at compile time rather than at run time.**
+`refs::rewrite` normalises `${ops[N].field}` and a unique-type `${create.field}`
+into the canonical id *while the plan compiles*, so `execute.rs` and `Outputs`
+never learn the new spellings and keep seeing ids only — one place to be wrong
+instead of two. `Plan::defaults` merges key by key in `compile()` immediately
+before `expand()`, never over a key the operation already gave (an explicit
+`null` included), and a non-object `defaults` is refused in `Plan::from_json`
+before any mutation. `kam-plan` still does not contain the word `schematic`
+(D11): nothing is special-cased, the KiCAD half is one documentation string in
+`konnect-core::plan::ops::description()`.
+
+The two new refusals say what to do instead, verbatim:
+
+```
+operation 'op2' refers to ${0.schematic} with a bare number, which is ambiguous
+between a position and an id; write ${ops[N].field} for position N (zero-based),
+or name an id — ids in this plan: op1, op2
+operation 'op2' refers to ${place.x} by type 'place', but 2 operations have that
+type (op1, op3); name one of them by id instead
+```
+
+`kam-plan` 46 → **59 tests**, `konnect-core` 357, gate green.
+
+**Measured on the same 60 attempts — and this is the first run that produced a
+grade 3.**
+
+| | after E17 | after E18 |
+|---|---|---|
+| `invalid_json` | 10 | 7 |
+| `compile_failed` | 44 | **30** |
+| `not_applied` | 5 | 14 |
+| `applied_invalid` | 1 | 5 |
+| **`success` (grade 3)** | 0 | **4** |
+| stable prefix | 1 549 tk | **1 802 tk** (+253) |
+
+**4 of 60**, i.e. `LLM_CALLS_PER_SUCCESSFUL_TASK ≈ 15` for a one-shot 9B with no
+repair loop. That is a poor number and it is the first honest one this project
+has: three successes at hint `full`, one at `none`, none at `minimal`; by task,
+three on the decoupling bank and one on the LDO.
+
+**The lever was not the one that was documented loudest.** The model used
+`defaults` in **0** of 60 attempts and `${ops[N].field}` in **0** — both new,
+both written into the description, both ignored. What moved the number is the
+unique-op-type reference: `${create.schematic}`, which the model was already
+writing before it was legal, now resolves. Documentation the model does not read
+buys nothing; accepting what it already writes buys everything. Worth
+remembering before the next fix is written as a paragraph.
+
+The bare numeric refusal held as designed and is now the largest single failure
+at **17 of 60**. Counted across the raw replies, the two spellings are **`${0.…}`
+90 times and `${1.…}` 6 times**, which changes the ambiguity argument: `${0.…}`
+has exactly one possible meaning, because auto ids start at `op1` and no
+operation is ever named `0`. Only `${1.…}` is genuinely two-headed. That is E19.
+
+Also newly visible, now that plans reach the file system: **9 of 60 invent a
+symbol library** (`Resistor_SMD` 7, `Resistor` 2) and **9 of 60 write a
+pin-to-net connection** the `connect` operation cannot express —
+`{ref1: "R1", pin1: "2", ref2: "+3V3"}`, a pin wired to a rail, which KiCAD does
+support through `connect_to_net` and the operation library does not. Some also
+write `pin1: 1` as a number where the signature says string. All three are E19.
+
+Local KPIs: TTFT median **161 ms**, **103.0 tok/s**, local input median
+**2 209 tk**, output **1 694 tk**, VRAM peak **9 052 MiB**, wall clock median
+**16.8 s**.
+
+### E19 — accept what the model already writes, when it has exactly one meaning (2026-08-12) — FIXED
+
+E18's lesson, applied deliberately: the three levers here are all forms the model
+writes today and the engine refused, and none of them requires guessing.
+
+**The bare numeric reference resolves by elimination** (17/60). `${N.field}` has
+two candidate meanings — the operation at zero-based position N, and an operation
+whose id is literally `N` — and each is only a candidate if it exists *and* runs
+strictly before the referring operation. Exactly one survivor resolves; two
+survivors keep the `AmbiguousNumericReference` refusal; none falls through to the
+unchanged unknown/forward/self errors. So `${0.…}` (90 occurrences in the last
+run) resolves, because no operation is ever named `0`, and `${1.…}` (6) is
+refused only when both readings are genuinely live. D23 is untouched: a `${...}`
+in a coordinate is still refused, one level up in `ops.rs::coordinate()`.
+
+**`connect` accepts a pin wired to a rail** (9/60): `{ref1,pin1,net}` explicitly,
+`{ref1,pin1,ref2}` with no `pin2` — which is what the model actually writes, and
+a `ref2` without a `pin2` cannot mean a pin — and the compact `{from,to}` where a
+side containing `.` is `REF.PIN` and a side without one is a net. The decision is
+syntactic and documented as such: no document is read to make it, and zero dots
+on both sides is still refused. It expands to `batch_connect_to_net` rather than
+`connect_to_net`, because the latter wants coordinates that do not exist while a
+plan is still compiling.
+
+**A numeric pin is coerced to its decimal string**, reusing the existing
+`pin_field()` helper and extended to no other field.
+
+`kam-plan` 59 → **62 tests**, `konnect-core` 357 → **362**, gate green, and
+`docs/capability-matrix.md` regenerated rather than hand-edited —
+`batch_connect_to_net` moves to `SUPPORTED` on the strength of the new tests.
+
+**One existing test was replaced, and that is a behaviour change rather than a
+test fix:** `connect_refuses_a_pin_it_cannot_find` asserted that `"from": "U1"`
+is refused, which the new syntactic rule contradicts — a dotless side is now a
+net name. It is replaced by tests for both new readings plus the case that is
+still an error (neither side carries a dot). Recorded because a deleted
+assertion is the cheapest place to hide a regression.
+
+**Measured, and the compile wall fell:**
+
+| | after E18 | after E19 |
+|---|---|---|
+| `invalid_json` | 7 | 2 |
+| `truncated` (new in E20, was inside `invalid_json`) | — | 4 |
+| **`compile_failed`** | 30 | **6** |
+| `not_applied` | 14 | 29 |
+| `applied_invalid` | 5 | 17 |
+| `success` (grade 3) | 4 | **4** |
+| stable prefix | 1 802 tk | 1 969 tk (+167) |
+
+**46 of 60 plans now compile and reach the file system**, against 24 before, and
+grade 3 did not move. The failures moved wholesale from "the plan is not
+well-formed" to "the plan is well-formed and the design is wrong", which is the
+harder half and the one the project actually wants to be measuring.
+
+Two things now dominate, and only one of them is ours:
+
+* **20 of 60 invent a KiCAD library identifier** — `Resistor` 8,
+  `Resistor_SMD` 6, plus `Resistor_Small`, `LinearRegulator`, `Regulator_LDO`,
+  `Capacitor_SMD`, `AMS1117-3.3`, `Device_R`, `resistor`, and two invented power
+  symbols (`power:#FLG01`, `power:+GND`, where KiCAD has `power:PWR_FLAG` and
+  `power:GND`). **This happens at hint level `full` too** — 10 of the 20 — where
+  the task text names `Device:R` in the same prompt, two paragraphs above. It is
+  not a documentation gap and no wording will close it.
+* **15 of 60 apply cleanly and fail the ERC budget** (`erc errors=4 limit=2`,
+  `3 limit=0`), plus 2 that lose components outright
+  (`missing=['C1','C2'] found=['#PWR001',…,'U1']`). That is design competence,
+  measured against KiCAD's own validator — the thing this benchmark exists to
+  find out.
+
+`finish_reason` earned its keep immediately: **4 of 60 are `length`**, correctly
+labelled `truncated` rather than blamed on the model as malformed JSON, and
+median reasoning is **1 070 of 1 797 output tokens** — 60 % of the generation
+budget is deliberation the plan never uses.
+
+### E21 — the failure that names candidates, and the candidates that were worse than none (2026-08-12) — FIXED
+
+`Library 'Resistor' not found in the installed KiCAD symbol libraries` named
+what was wrong and nothing about what would be right, so neither a human nor a
+repair round could act on it without a separate search. The error now carries a
+deterministic `candidates` list — capped at 8, deduplicated, computed **only on
+the failure path**, and never substituted for what the caller asked for. The
+`kind` is unchanged, so anything matching on it keeps working.
+
+**The first build of it was actively misleading, and running it is what showed
+that.** Measured live during the repair smoke test:
+
+```
+"reason":"Library symbol 'Sensor:R_0805' not found … Did you mean:
+          Sensor:MAX30102, Sensor:RPR-0521RS?"
+"candidates":["Sensor:MAX30102","Sensor:RPR-0521RS"]
+```
+
+`R_0805` is a resistor; `MAX30102` is a pulse oximeter. When the named library
+*existed* and only the symbol was missing, the lookup searched inside that
+library and never looked outside it — so `Device:R` was unreachable by
+construction, and the two symbols that happen to live in `Sensor` were the only
+possible answers. A repair round fed those would have followed them: worse than
+the bare message it replaced.
+
+Fixed in two parts. The search is now three capped passes that run whether or
+not the library exists — an exact case-insensitive symbol-name match across
+**all** installed libraries first, then a fuzzy match ranked **globally** rather
+than within one library, then library-name proximity only when the named library
+does not exist. And the similarity floor was too permissive to reject nonsense:
+`ceil(m·2/3)` let `R_0805`→`MAX30102` through at distance 6, so it is now
+`ceil(m/2)` — at least half the characters must actually agree — checked against
+the existing shortcuts (`cp`→`C_Polarized`, `r_pot_trim`→`R_Potentiometer_Trim`)
+which match at distance 1 and are unaffected. `Sensor:R_0805` now returns exactly
+`["Device:R"]`, and nothing plausible returns an omitted field rather than a
+filler.
+
+A pre-existing test race was found and fixed on the way: two tests set
+`KICAD10_SYMBOL_DIR` without sharing a lock, which could have failed an already
+green test at random. The lock is now shared.
+
+`konnect-schematic-editor` 17 → **21 tests**, `konnect-core` 361 → **364**, gate
+green. Golden suite re-run after E17–E21: **6/6, 2 183 tk/task, 4 MCP calls,
+P50 63 ms** — inside the ±12 noise band, no regression.
+
 ### E10 — Pre-existing clippy debt under `--all-targets` (2026-08-10) — DEFERRED
 
 Upstream CI runs `cargo clippy --workspace --locked -- -D warnings` (no
@@ -1120,7 +2043,51 @@ not silently accumulate more.
 
 ---
 
-## NEXT ACTION
+## NEXT ACTION (2026-08-12, Phase H)
+
+**Phase H has its first real numbers, and they are not good news for the local
+model.** `qwen3.5-9b`, six 60-attempt runs, every defect between the model and
+the compiler removed one at a time and measured separately:
+
+```
+grade 3 one-shot            4/60      LLM_CALLS_PER_SUCCESSFUL_TASK  15
+grade 3 with one repair     2/60      LLM_CALLS_PER_SUCCESSFUL_TASK  59
+plans that compile         46/60      (was 6/60 before E17)
+plans that apply and fail ERC  24/60
+```
+
+The ladder was walked from the bottom and every rung was ours until the last
+one: item shapes (E14), a plan that lied about applying (E15), two placeholder
+notations (E16), scalars documented without a type and no way to create a project
+(E17), reference spellings the engine refused (E18/E19), a token cap counted as a
+model error (E20), a symbol error with no candidates (E21). Fixing all of them
+took plans-that-compile from 6/60 to 46/60 and left grade 3 at 4/60, because the
+remaining failure is **ERC correctness**, which no error message and no schema
+teaches.
+
+Three next actions, in order of what the evidence supports:
+
+1. **Measure a second model before concluding anything about size.** `gpt-oss-20b`
+   is the D31 shortlist's other candidate and its download was interrupted by
+   E13. The whole point of the harness is that it grades by compiling, so a
+   second model costs one run and no new code. Nothing about the router should be
+   built until at least two models have a number.
+2. **Discard a repair that makes the design worse.** D35's measurement: 11 of 58
+   repairs lowered the grade and were kept anyway. The semantic diff, the ERC
+   verdict and rollback already exist; keeping the better of two attempts is a
+   deterministic decision this repo can make without a model.
+3. **Do not build the escalation router on one model's numbers.** The router is
+   the next TODO item, and its thresholds would currently be fitted to a single
+   9B on four tasks.
+
+Still open and unchanged: **E7**'s underlying disagreement between the in-process
+connectivity analysis and `kicad-cli` (disclosed everywhere, Phase J to fix),
+**E10**'s `MutexGuard` held across `await` (Phase L), the anti-drift test that
+checks examples rather than parsing signatures (corrected in the E14 record, not
+yet strengthened), and the strict-JSON comparison that deserves a re-run now that
+`finish_reason` can state the mechanism instead of inferring it.
+
+## NEXT ACTION (superseded — kept for the record)
 
 **Phases E and G are closed.** A change can be described once rather than
 enumerated, refused before it starts if it cannot finish, expanded

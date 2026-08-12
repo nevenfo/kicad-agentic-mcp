@@ -10,9 +10,37 @@ Nothing here reimplements the compiler or ERC parsing; `check_assertion` and
 
     0 = the reply is not schema-valid JSON
     1 = valid JSON, but `preview_plan` refuses it (compile failure)
-    2 = it compiles and `apply_plan` runs, but a task invariant or the ERC
-        budget fails
+    2 = it compiles, but the batch did not end in a correct design — see
+        `outcome` below, because grade 2 alone conflates two opposite
+        failures
     3 = it applies, every invariant holds, and ERC is within budget
+
+Grade 2 is not one failure mode, it is two, and confusing them makes the
+histogram unreadable: a plan that genuinely applied and produced a wrong
+design is not the same bug as a plan that never applied at all (rolled
+back at op1, schematic left empty). Every graded attempt therefore also
+carries `outcome`, one of:
+
+    invalid_json      — grade 0, the reply finished and is not valid JSON
+    truncated         — grade 0, the reply never finished: the backend
+                        reported `finish_reason: length`, so the generation
+                        hit a cap. Split out because blaming the model for
+                        our token budget is the same error as E15's
+                        "a check that could not run reads as a check that
+                        passed"
+    compile_failed    — grade 1
+    not_applied       — grade 2, `apply_plan` rolled the whole batch back
+                        (`isError`, `failed_at` set, or `rollback: true`);
+                        the design on disk is whatever existed before this
+                        attempt, i.e. nothing changed
+    applied_invalid   — grade 2, the batch committed but a task invariant
+                        or the ERC budget failed; the design on disk is the
+                        model's, and it is wrong
+    success           — grade 3
+
+`grade` is kept exactly as before (never renumbered) so old comparisons
+still hold; `outcome` is the field to count "didn't apply" separately
+from "applied wrong".
 
 The backend is OpenAI-compatible HTTP (`POST {base_url}/chat/completions`),
 the same contract `crates/kam-llm/src/openai_compat.rs` implements: streamed
@@ -43,6 +71,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -154,18 +183,130 @@ def task_hint(task: dict[str, Any], hint_level: str) -> str:
     return (task.get("hints") or {}).get(hint_level, "")
 
 
+# The task files were written with `$WORK` / `$NAME` / `$SCH` / `$PCB`
+# placeholders, and the Plan IR's own reference syntax is `${op_id.field}`.
+# Two notations one character apart, side by side in the same prompt, is our
+# collision and not the model's: measured, 32 of 60 attempts either copied
+# `"$SCH"` verbatim into an argument (22, every one failing at op1 with
+# `IO error: ... introuvable`) or promoted it to a plan reference such as
+# `${SCH}` / `${create.schematic}` on a plan that has no such operation (10).
+# See E16.
+#
+# The placeholder is therefore expanded *before* the model ever sees it: the
+# prompt carries literal paths only. `${create.schematic}` survives untouched
+# — it is a genuine plan reference, and `04_reference_heavy` exists to measure
+# whether the model writes one.
+_PLACEHOLDER = re.compile(r"\$(WORK|NAME|SCH|PCB)\b")
+
+
+def substitute_env(text: str, env: dict[str, str]) -> str:
+    return _PLACEHOLDER.sub(lambda m: env[m.group(1)], text)
+
+
 def build_dynamic_task(task: dict[str, Any], env: dict[str, str], hint_level: str) -> str:
-    lines = [f"TASK: {task['title']}", "", task["objective"].strip()]
+    lines = [f"TASK: {task['title']}", "", substitute_env(task["objective"].strip(), env)]
     hint_text = task_hint(task, hint_level)
     if hint_text:
-        lines += ["", "NOTES:", hint_text.strip()]
+        lines += ["", "NOTES:", substitute_env(hint_text.strip(), env)]
     lines += [
         "",
-        f"$WORK = {env['WORK']}",
-        f"$NAME = {env['NAME']}",
-        f"$SCH  = {env['SCH']}",
+        "Paths, already literal above and repeated here verbatim:",
+        f"work directory  {env['WORK']}",
+        f"project name    {env['NAME']}",
+        f"schematic file  {env['SCH']}",
     ]
-    return "\n".join(lines)
+    block = "\n".join(lines)
+    # A placeholder that survives into the prompt is the defect this function
+    # exists to remove, so it fails the run rather than being measured again.
+    leftover = _PLACEHOLDER.search(block)
+    if leftover is not None:
+        raise SystemExit(f"unsubstituted placeholder {leftover.group(0)!r} in the prompt for {task['id']}")
+    return block
+
+
+REPAIR_LIMIT = 1200
+
+
+def grade_backend_reply(
+    args: argparse.Namespace, task: dict[str, Any], env: dict[str, str], backend: dict[str, Any]
+) -> dict[str, Any]:
+    """One backend reply, graded and stamped with that call's own metrics."""
+    attempt: dict[str, Any] = {
+        "llm_calls": 1,
+        "local_input_tokens": backend.get("local_input_tokens"),
+        "local_output_tokens": backend.get("local_output_tokens"),
+        "local_reasoning_tokens": backend.get("local_reasoning_tokens"),
+        "finish_reason": backend.get("finish_reason"),
+        "ttft_ms": backend.get("ttft_ms"),
+        "tokens_per_second": backend.get("tokens_per_second"),
+        "wall_clock_ms": backend.get("wall_clock_ms"),
+        "vram_peak_mib": backend.get("vram_peak_mib"),
+    }
+    if backend.get("error"):
+        attempt.update(
+            grade=None,
+            outcome=None,
+            valid_json=False,
+            compiles=False,
+            applies=False,
+            invariants_pass=False,
+            erc_errors=None,
+            error=backend["error"],
+            raw_response="",
+            raw_response_truncated=False,
+            compiled_plan=None,
+            compiled_plan_truncated=False,
+            failure={"op": None, "kind": "backend_error", "message": backend["error"]},
+        )
+        return attempt
+
+    attempt.update(grade_plan_text(args.server, args.config, task, env, backend["content"]))
+    # A reply cut off at the generation cap is not a reply the model got
+    # wrong: `finish_reason: length` means it never finished writing.
+    # Recorded as its own outcome so it can never be counted as
+    # `invalid_json`, which would blame the model for our token budget. The
+    # grade stays 0 — E15's rule that `outcome` is categorical beside the
+    # ladder, never a renumbering of it.
+    if attempt.get("outcome") == "invalid_json" and backend.get("finish_reason") == "length":
+        attempt["outcome"] = "truncated"
+    return attempt
+
+
+def build_repair_block(previous_plan: str, failure_message: str) -> str:
+    """What a repair round adds, and nothing more.
+
+    The whole architecture claims a model should not need to be clever about
+    failures because the deterministic engine already says exactly what went
+    wrong. A repair round is the cheapest possible test of that claim: the
+    model gets its own previous plan and the engine's verbatim refusal, with
+    no advice, no restated rules and no hint — anything else would be measuring
+    the hint instead of the error message.
+
+    It is appended AFTER the dynamic task so the stable prefix is byte-identical
+    across rounds and a prefix cache still holds.
+    """
+    return (
+        "\n\nYOUR PREVIOUS PLAN FAILED. This is your plan:\n"
+        f"{previous_plan[:REPAIR_LIMIT]}\n\n"
+        "This is the server's verbatim error:\n"
+        f"{failure_message[:REPAIR_LIMIT]}\n\n"
+        "The design on disk was rolled back, so write the COMPLETE corrected "
+        "plan from scratch, not a patch. Same output rules as before."
+    )
+
+
+def reset_env(env: dict[str, str]) -> None:
+    """Empty the work directory between repair rounds, keeping the paths.
+
+    A fresh `mkdtemp` per round would change `$SCH` under the model's feet and
+    reproduce E16 — two notations for the same file, one round apart. Wiping
+    the contents instead means a repair starts from the same empty state as
+    round 0 and the paths in its previous plan stay valid.
+    """
+    work = Path(env["WORK"])
+    if work.exists():
+        shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True, exist_ok=True)
 
 
 def build_anchor(task: dict[str, Any]) -> str:
@@ -211,7 +352,13 @@ PLAN_RESPONSE_SCHEMA = {
 
 
 def call_backend(
-    base_url: str, model: str, system_text: str, user_text: str, temperature: float, timeout: float
+    base_url: str,
+    model: str,
+    system_text: str,
+    user_text: str,
+    temperature: float,
+    timeout: float,
+    strict_json: bool = False,
 ) -> dict[str, Any]:
     """One `/chat/completions` call, streamed exactly like
     `crates/kam-llm/src/openai_compat.rs::wire_request` builds it.
@@ -229,9 +376,18 @@ def call_backend(
         ],
         "stream": True,
         "stream_options": {"include_usage": True},
+        # `strict` decides whether the backend *constrains* generation to the
+        # schema or merely asks for it. It is a measurement variable, not a
+        # setting: a best-effort grammar is consistent with the ~17 % residue
+        # of invalid JSON measured after E15, and turning it on is its own run
+        # so the two are comparable. Recorded in the results file either way.
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "kicad_plan", "schema": PLAN_RESPONSE_SCHEMA, "strict": False},
+            "json_schema": {
+                "name": "kicad_plan",
+                "schema": PLAN_RESPONSE_SCHEMA,
+                "strict": strict_json,
+            },
         },
         "temperature": temperature,
     }
@@ -245,7 +401,15 @@ def call_backend(
     t0 = time.perf_counter()
     ttft_ms: float | None = None
     parts: list[str] = []
-    usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    # `reasoning_tokens` is billed inside `completion_tokens` and its text
+    # arrives as `delta.reasoning_content`, which this harness deliberately
+    # discards — a plan is the answer, not the deliberation. It is counted
+    # anyway: a reply whose whole budget went to reasoning and produced no
+    # content is a different failure from a malformed one, and telling them
+    # apart needs the split. `finish_reason` is what proves it: `length`
+    # means the generation hit a cap, not that the model wrote bad JSON.
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0}
+    finish_reason: str | None = None
 
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -264,10 +428,16 @@ def call_backend(
                     usage["completion_tokens"] = (
                         chunk["usage"].get("completion_tokens", 0) or usage["completion_tokens"]
                     )
+                    details = chunk["usage"].get("completion_tokens_details") or {}
+                    usage["reasoning_tokens"] = (
+                        details.get("reasoning_tokens", 0) or usage["reasoning_tokens"]
+                    )
                 for choice in chunk.get("choices") or []:
                     delta = choice.get("delta") or {}
                     if delta.get("content"):
                         parts.append(delta["content"])
+                    if choice.get("finish_reason"):
+                        finish_reason = choice["finish_reason"]
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:300]
         return {"error": f"backend HTTP {e.code} at {url}: {detail}", "backend_unreachable": False}
@@ -288,6 +458,8 @@ def call_backend(
         "content": "".join(parts),
         "local_input_tokens": usage["prompt_tokens"],
         "local_output_tokens": usage["completion_tokens"],
+        "local_reasoning_tokens": usage["reasoning_tokens"],
+        "finish_reason": finish_reason,
         "ttft_ms": ttft_ms,
         "wall_clock_ms": wall_ms,
         "tokens_per_second": tps,
@@ -332,6 +504,20 @@ def call_backend_with_vram(*args: Any, **kwargs: Any) -> dict[str, Any]:
 # ── grading: the oracle path, never reimplemented ───────────────────────────
 
 
+# Two diagnostics ("did $SCH survive as a literal ${...}?" / "what did the
+# compiled plan actually contain?") were blocked twice before because
+# neither the model's raw text nor the parsed plan args were kept — only
+# the graded outcome was. Cap each at RAW_TEXT_LIMIT chars so one verbose
+# attempt cannot blow up results/*.json; truncation is recorded, never silent.
+RAW_TEXT_LIMIT = 4000
+
+
+def _truncated(text: str, limit: int = RAW_TEXT_LIMIT) -> tuple[str, bool]:
+    if len(text) <= limit:
+        return text, False
+    return text[:limit] + f"...[truncated, {len(text) - limit} more chars]", True
+
+
 def build_assert_specs(task: dict[str, Any]) -> list[dict[str, Any]]:
     inv = task.get("invariants", {})
     specs = []
@@ -348,25 +534,53 @@ def grade_plan_text(server: str, config: str, task: dict[str, Any], env: dict[st
     compiler or ERC directly — `preview_plan`/`apply_plan` do the compiling,
     `check_assertion` (imported from `runner.py`) does the invariant reading.
     """
+    raw_response, raw_response_truncated = _truncated(raw_text)
     result: dict[str, Any] = {
         "grade": None,
+        "outcome": None,
         "valid_json": False,
         "compiles": False,
         "applies": False,
         "invariants_pass": False,
         "erc_errors": None,
         "error": None,
+        # the model's literal text, verbatim (e.g. a literal "${...}" or
+        # "$SCH" where a coordinate/path was expected) — truncated, never
+        # silently: see raw_response_truncated.
+        "raw_response": raw_response,
+        "raw_response_truncated": raw_response_truncated,
+        # the parsed plan document itself (the value of the `plan` argument
+        # sent to preview_plan/apply_plan), re-serialized; only set once the
+        # reply parses as JSON.
+        "compiled_plan": None,
+        "compiled_plan_truncated": False,
+        # structured failure reason: which op (by 'id', 'op1'-style position,
+        # or None), what kind, and the verbatim message. None once grade 3.
+        "failure": None,
     }
 
     try:
         parsed = json.loads(raw_text)
-    except (json.JSONDecodeError, TypeError):
-        result.update(grade=0, error="reply is not valid JSON")
+    except (json.JSONDecodeError, TypeError) as e:
+        result.update(
+            grade=0,
+            outcome="invalid_json",
+            error="reply is not valid JSON",
+            failure={"op": None, "kind": "json_decode", "message": str(e)},
+        )
         return result
     if not isinstance(parsed, dict):
-        result.update(grade=0, error="reply JSON is not an object")
+        result.update(
+            grade=0,
+            outcome="invalid_json",
+            error="reply JSON is not an object",
+            failure={"op": None, "kind": "not_an_object", "message": f"top-level type is {type(parsed).__name__}"},
+        )
         return result
     result["valid_json"] = True
+    compiled_text, compiled_truncated = _truncated(json.dumps(parsed))
+    result["compiled_plan"] = compiled_text
+    result["compiled_plan_truncated"] = compiled_truncated
 
     proc_env = dict(os.environ)
     proc_env.setdefault("RUST_LOG", "warn")
@@ -377,14 +591,49 @@ def grade_plan_text(server: str, config: str, task: dict[str, Any], env: dict[st
         preview = client.tools_call("preview_plan", {"plan": parsed})
         preview_failed = bool(preview.error) or bool((preview.result or {}).get("isError"))
         if preview_failed:
-            result.update(grade=1, error=(text_of(preview.result) or str(preview.error))[:400])
+            detail = text_of(preview.result) or str(preview.error)
+            op, kind = None, None
+            try:
+                err = json.loads(detail).get("error", {})
+                op, kind = err.get("field"), err.get("kind")
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                pass
+            result.update(
+                grade=1,
+                outcome="compile_failed",
+                error=detail[:400],
+                failure={"op": op, "kind": kind or "compile_failed", "message": detail[:400]},
+            )
             return result
         result["compiles"] = True
 
         apply = client.tools_call("apply_plan", {"plan": parsed})
         apply_failed = bool(apply.error) or bool((apply.result or {}).get("isError"))
-        if apply_failed:
-            result.update(grade=2, error=(text_of(apply.result) or str(apply.error))[:400])
+        # `isError` is the primary signal (D28/D-step-error), but `applies` is
+        # graded on whether the plan actually applied, not on a flag alone: a
+        # rolled-back batch (`failed_at` set, or `rollback: true`) never counts
+        # as applied even if some future regression left `isError` false — the
+        # exact class of bug this grader exists to catch (E4).
+        try:
+            apply_body = json.loads(text_of(apply.result))
+        except (json.JSONDecodeError, TypeError):
+            apply_body = {}
+        rolled_back = apply_body.get("failed_at") is not None or apply_body.get("rollback") is True
+        if apply_failed or rolled_back:
+            # The batch never committed — `outcome="not_applied"` — as
+            # opposed to committing and being wrong (`"applied_invalid"`,
+            # set below). Same grade 2, opposite failure.
+            detail = text_of(apply.result) or str(apply.error)
+            result.update(
+                grade=2,
+                outcome="not_applied",
+                error=detail[:400],
+                failure={
+                    "op": apply_body.get("failed_step"),
+                    "kind": apply_body.get("error_kind") or "apply_failed",
+                    "message": detail[:400],
+                },
+            )
             return result
         result["applies"] = True
 
@@ -399,8 +648,14 @@ def grade_plan_text(server: str, config: str, task: dict[str, Any], env: dict[st
     ok = all(a.ok for a in assertions)
     result["invariants_pass"] = ok
     result["grade"] = 3 if ok else 2
+    result["outcome"] = "success" if ok else "applied_invalid"
     if not ok:
         result["error"] = "; ".join(a.detail for a in assertions if not a.ok)
+        result["failure"] = {
+            "op": None,
+            "kind": "invariant" if any(a.kind != "erc_max_errors" for a in assertions if not a.ok) else "erc_budget",
+            "message": result["error"],
+        }
     return result
 
 
@@ -498,6 +753,17 @@ def fixture_grade2(env: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def fixture_grade2_not_applied(env: dict[str, str]) -> dict[str, Any]:
+    """Compiles (`preview_plan` does not check tool existence for `call`),
+    but `apply_plan` rolls the whole batch back at op1 because the tool
+    named does not exist — the same shape as the dominant real failure this
+    outcome distinction exists to separate from `applied_invalid`."""
+    return {
+        "plan_id": "selftest-not-applied",
+        "ops": [{"op": "call", "with": {"tool": "definitely_not_a_real_tool", "args": {}}}],
+    }
+
+
 FIXTURE_GRADE0_TEXT = '{"ops": [ this is not valid json'
 
 
@@ -547,24 +813,37 @@ def run_selftest(args: argparse.Namespace) -> None:
     for level in HINT_LEVELS:
         print(f"  hint={level:<7} dynamic+anchor: {tokens(users_by_hint[level]):>4} tk")
 
+    # Grade 2 is deliberately split into two fixtures here: `applied_invalid`
+    # (fixture_grade2 — committed, invariant fails) and `not_applied`
+    # (fixture_grade2_not_applied — rolled back at op1). Same grade, opposite
+    # `outcome`; both must be provable before either is trusted in a real run.
     checks = [
-        ("grade 3 (correct divider plan)", fixture_grade3, 3, False),
-        ("grade 1 (unknown operation)", fixture_grade1, 1, False),
-        ("grade 2 (floating pins, E12)", fixture_grade2, 2, False),
-        ("grade 0 (malformed JSON)", None, 0, True),
+        ("grade 3 (correct divider plan)", fixture_grade3, 3, "success", False),
+        ("grade 1 (unknown operation)", fixture_grade1, 1, "compile_failed", False),
+        ("grade 2 applied_invalid (floating pins, E12)", fixture_grade2, 2, "applied_invalid", False),
+        ("grade 2 not_applied (unknown tool via 'call')", fixture_grade2_not_applied, 2, "not_applied", False),
+        ("grade 0 (malformed JSON)", None, 0, "invalid_json", True),
     ]
 
     print("\nselftest — grading path only, no model involved:")
     failures = []
-    for label, fixture_fn, expected, is_raw_text in checks:
+    for label, fixture_fn, expected_grade, expected_outcome, is_raw_text in checks:
         env = fresh_env(SELFTEST_TASK)
         raw = FIXTURE_GRADE0_TEXT if is_raw_text else json.dumps(fixture_fn(env))
         result = grade_plan_text(args.server, args.config, SELFTEST_TASK, env, raw)
-        got = result["grade"]
-        status = "OK" if got == expected else "FAIL"
-        print(f"  [{status}] {label}: expected grade {expected}, got {got}  ({result.get('error') or 'no error'})")
-        if got != expected:
+        got_grade, got_outcome = result["grade"], result["outcome"]
+        ok = got_grade == expected_grade and got_outcome == expected_outcome
+        status = "OK" if ok else "FAIL"
+        print(
+            f"  [{status}] {label}: expected grade={expected_grade} outcome={expected_outcome}, "
+            f"got grade={got_grade} outcome={got_outcome}  ({result.get('error') or 'no error'})"
+        )
+        if not ok:
             failures.append(label)
+        if result.get("raw_response") != raw:
+            failures.append(f"{label}: raw_response not persisted verbatim")
+        if not is_raw_text and result.get("compiled_plan") is None:
+            failures.append(f"{label}: compiled_plan missing for valid JSON")
 
     if failures:
         raise SystemExit(f"\nSELFTEST FAILED: {failures}")
@@ -574,8 +853,13 @@ def run_selftest(args: argparse.Namespace) -> None:
 # ── aggregation and reporting ────────────────────────────────────────────────
 
 NUMERIC_METRICS = [
+    "llm_calls",
     "local_input_tokens",
     "local_output_tokens",
+    # billed inside local_output_tokens, reported separately: a run where the
+    # answer is 300 tokens and the deliberation is 6 000 costs what the 6 000
+    # costs, and only the split says so.
+    "local_reasoning_tokens",
     "ttft_ms",
     "tokens_per_second",
     "wall_clock_ms",
@@ -589,14 +873,29 @@ def _p95(values: list[float]) -> float:
     return s[int(0.95 * (len(s) - 1))]
 
 
+OUTCOME_KEYS = (
+    "invalid_json",
+    "truncated",
+    "compile_failed",
+    "not_applied",
+    "applied_invalid",
+    "success",
+)
+
+
 def aggregate_attempts(attempts: list[dict[str, Any]]) -> dict[str, Any]:
     graded = [a for a in attempts if a.get("grade") is not None]
     histogram = {g: sum(1 for a in graded if a["grade"] == g) for g in (0, 1, 2, 3)}
+    outcome_histogram = {k: sum(1 for a in graded if a.get("outcome") == k) for k in OUTCOME_KEYS}
     out: dict[str, Any] = {
         "attempts": len(attempts),
         "graded": len(graded),
         "success_rate": (histogram[3] / len(graded)) if graded else None,
         "grade_histogram": histogram,
+        # splits grade 2 honestly: "not_applied" (rolled back, nothing
+        # written) vs "applied_invalid" (committed, wrong) — see the
+        # module docstring's grade/outcome table.
+        "outcome_histogram": outcome_histogram,
     }
     for metric in NUMERIC_METRICS:
         values = [a[metric] for a in attempts if a.get(metric) is not None]
@@ -624,6 +923,18 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--out", default=None)
     ap.add_argument("--selftest", action="store_true", help="prove the grading path; no model involved")
+    ap.add_argument(
+        "--repair",
+        type=int,
+        default=0,
+        help="extra LLM calls allowed after a failure, each fed the previous plan and the "
+        "server's verbatim error (default 0 = one-shot)",
+    )
+    ap.add_argument(
+        "--strict-json",
+        action="store_true",
+        help="send response_format.json_schema.strict=true (constrained decoding when the backend supports it)",
+    )
     args = ap.parse_args()
 
     if args.selftest:
@@ -658,6 +969,8 @@ def main() -> None:
         "base_url": args.base_url,
         "temperature": args.temperature,
         "repeat": args.repeat,
+        "strict_json": args.strict_json,
+        "repair": args.repair,
         "hint_levels": hint_levels,
         "stable_prefix_tokens": tokens(prefix),
         # tasks[task_id][hint_level] -> list of per-attempt records. Never
@@ -674,38 +987,61 @@ def main() -> None:
             for i in range(args.repeat):
                 env = fresh_env(task)
                 user_text = build_dynamic_task(task, env, hint_level) + "\n\n" + build_anchor(task)
-                backend = call_backend_with_vram(
-                    args.base_url, args.model, prefix, user_text, args.temperature, args.timeout
-                )
-                if backend.get("backend_unreachable"):
-                    backend_unreachable = backend["error"]
+                round_text = user_text
+                rounds: list[dict[str, Any]] = []
+                totals = {"local_input_tokens": 0, "local_output_tokens": 0, "local_reasoning_tokens": 0}
+                attempt: dict[str, Any] = {}
+                for round_index in range(args.repair + 1):
+                    if round_index:
+                        # Same paths, empty directory: a repair starts from the
+                        # state round 0 started from, never from a half-applied
+                        # design.
+                        reset_env(env)
+                    backend = call_backend_with_vram(
+                        args.base_url,
+                        args.model,
+                        prefix,
+                        round_text,
+                        args.temperature,
+                        args.timeout,
+                        args.strict_json,
+                    )
+                    if backend.get("backend_unreachable"):
+                        backend_unreachable = backend["error"]
+                        break
+                    attempt = grade_backend_reply(args, task, env, backend)
+                    for key in totals:
+                        totals[key] += backend.get(key) or 0
+                    rounds.append(
+                        {
+                            "round": round_index,
+                            "grade": attempt.get("grade"),
+                            "outcome": attempt.get("outcome"),
+                            "failure_kind": (attempt.get("failure") or {}).get("kind"),
+                        }
+                    )
+                    if attempt.get("outcome") == "success":
+                        break
+                    failure = attempt.get("failure") or {}
+                    message = failure.get("message") or attempt.get("error") or "(no message)"
+                    round_text = user_text + build_repair_block(attempt.get("raw_response") or "", message)
+
+                if backend_unreachable:
                     break
 
-                attempt: dict[str, Any] = {
-                    "llm_calls": 1,
-                    "local_input_tokens": backend.get("local_input_tokens"),
-                    "local_output_tokens": backend.get("local_output_tokens"),
-                    "ttft_ms": backend.get("ttft_ms"),
-                    "tokens_per_second": backend.get("tokens_per_second"),
-                    "wall_clock_ms": backend.get("wall_clock_ms"),
-                    "vram_peak_mib": backend.get("vram_peak_mib"),
-                }
-                if backend.get("error"):
-                    attempt.update(
-                        grade=None,
-                        valid_json=False,
-                        compiles=False,
-                        applies=False,
-                        invariants_pass=False,
-                        erc_errors=None,
-                        error=backend["error"],
-                    )
-                else:
-                    attempt.update(grade_plan_text(args.server, args.config, task, env, backend["content"]))
+                # Tokens are the sum over every round — the cost of a task is
+                # what it took, not what its last try took. TTFT and tok/s stay
+                # the final round's, because a median over rounds would describe
+                # no single generation.
+                attempt.update(totals)
+                attempt["llm_calls"] = len(rounds)
+                attempt["repair_rounds"] = len(rounds) - 1
+                attempt["rounds"] = rounds
                 attempts.append(attempt)
                 print(
                     f"  {task['id']} hint={hint_level} [{i + 1}/{args.repeat}] "
-                    f"grade={attempt.get('grade')} error={attempt.get('error')}"
+                    f"calls={attempt['llm_calls']} grade={attempt.get('grade')} "
+                    f"outcome={attempt.get('outcome')} error={attempt.get('error')}"
                 )
 
             results["tasks"][task["id"]][hint_level] = attempts
@@ -737,12 +1073,18 @@ def main() -> None:
             for level, agg in by_hint_agg.items():
                 sr = agg["success_rate"]
                 sr_s = f"{sr:.1%}" if sr is not None else "n/a"
-                print(f"  {tid:<24} hint={level:<7} success={sr_s}  histogram={agg['grade_histogram']}")
+                print(
+                    f"  {tid:<24} hint={level:<7} success={sr_s}  histogram={agg['grade_histogram']}"
+                    f"  outcomes={agg['outcome_histogram']}"
+                )
         print()
         for level, agg in by_hint.items():
             sr = agg["success_rate"]
             sr_s = f"{sr:.1%}" if sr is not None else "n/a"
-            print(f"  ACROSS TASKS hint={level:<7} success={sr_s}  histogram={agg['grade_histogram']}")
+            print(
+                f"  ACROSS TASKS hint={level:<7} success={sr_s}  histogram={agg['grade_histogram']}"
+                f"  outcomes={agg['outcome_histogram']}"
+            )
 
     slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", args.model).strip("-")
     out = Path(args.out) if args.out else RESULTS_DIR / f"model-fit-{slug}.json"

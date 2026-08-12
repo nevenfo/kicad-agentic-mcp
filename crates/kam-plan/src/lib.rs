@@ -77,4 +77,7 @@ pub use compile::{compile, CompileError, ExpandError, OpLibrary};
 pub use execute::{Execution, ExecutionReport, Next, ResolvedStep, StepResult};
 pub use ir::{is_valid_op_id, Op, Plan, PlanError, RollbackPolicy, IR_VERSION};
 pub use program::{Expansion, Program, Step, StepSpec};
-pub use refs::{is_valid_ref_target, Outputs, RefError, Reference, Segment};
+pub use refs::{
+    is_valid_ref_target, position_target, rewrite, Outputs, RefError, Reference, RewriteError,
+    Segment,
+};

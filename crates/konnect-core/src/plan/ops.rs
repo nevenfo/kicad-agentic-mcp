@@ -32,14 +32,54 @@ const MAX_STEPS_PER_OP: usize = 200;
 /// is what makes `preview_plan` show exactly what `apply_plan` will run.
 pub struct KicadOps;
 
-/// Every operation name, in the order they are documented.
-pub const OP_NAMES: &[&str] = &[
-    "call", "place", "power", "label", "wire", "connect", "decouple",
+/// Every operation's exact argument shape, next to the signature constants
+/// below — this is the one place that pairs a name with its documentation,
+/// so `plan::description()` and the per-operation example test in this
+/// module's own `tests` block both read from it rather than retyping it.
+pub const OP_LIBRARY: &[(&str, &str)] = &[
+    ("create", CREATE_SIGNATURE),
+    ("call", CALL_SIGNATURE),
+    ("place", PLACE_SIGNATURE),
+    ("power", POWER_SIGNATURE),
+    ("label", LABEL_SIGNATURE),
+    ("wire", WIRE_SIGNATURE),
+    ("connect", CONNECT_SIGNATURE),
+    ("decouple", DECOUPLE_SIGNATURE),
 ];
+
+/// Every operation name, in the order they are documented. Derived from
+/// [`OP_LIBRARY`] rather than restated: a second list of the same names is
+/// exactly the divergence this module exists to rule out.
+pub fn op_names() -> impl Iterator<Item = &'static str> {
+    OP_LIBRARY.iter().map(|(name, _)| *name)
+}
+
+/// The `plan.description` schema text `preview_plan` and `apply_plan` share
+/// (`tools/plan.rs::tools`), assembled from [`OP_LIBRARY`] so an operation's
+/// documented shape and its expander's actual requirements are the same
+/// strings, never a schema description hand-typed once and an expander
+/// written separately from it.
+pub fn description() -> String {
+    let operations: Vec<&str> = OP_LIBRARY.iter().map(|(_, doc)| *doc).collect();
+    format!(
+        "A plan document: {{ops: [{{op, with, id?}}], plan_id?, documents?, rollback_policy?, \
+         defaults?}}. Operations: {}. A later operation reads an earlier one's output as \
+         ${{op_id.field}} — ids default to op1, op2, ... by position when not given. \
+         ${{ops[N].field}} names the operation at position N instead (0-based); \
+         ${{op_type.field}} (e.g. ${{create.schematic}}) names the one operation of that type, \
+         when the plan has only one; a bare number such as ${{0.field}} is read as position N \
+         unless an earlier operation is also literally named N, in which case it is refused as \
+         ambiguous. defaults:{{key:value,...}} fills that key into every \
+         operation's 'with' that omits it — write defaults:{{schematic:<path>}} once instead of \
+         repeating 'schematic' in every operation.",
+        operations.join("; ")
+    )
+}
 
 impl OpLibrary for KicadOps {
     fn expand(&self, op: &Op) -> Result<Vec<StepSpec>, ExpandError> {
         let steps = match op.op.as_str() {
+            "create" => expand_create(&op.with)?,
             "call" => expand_call(&op.with)?,
             "place" => expand_place(&op.with)?,
             "power" => expand_power(&op.with)?,
@@ -65,12 +105,37 @@ impl OpLibrary for KicadOps {
 
 // ─── The operations ──────────────────────────────────────────────────────────
 
+/// `create` — a new project, from nothing.
+///
+/// The only operation a plan can open with when the work directory is empty:
+/// every other operation needs a `schematic` that already exists. Wraps the
+/// existing `create_project` tool under a name this library documents, since
+/// `call` cannot rescue a model that never saw a tool catalogue (E17) — it can
+/// only invoke a tool name it already knows, and `create_project` is not one
+/// this library ever mentions elsewhere. Its result carries `schematic` and
+/// `pcb`, so a later operation reaches them as `${op_id.schematic}`.
+const CREATE_SIGNATURE: &str = "create{path:path,name:string} creates a project: a .kicad_pro, \
+     empty .kicad_sch and .kicad_pcb, at 'path' named 'name'; the result's 'schematic' and 'pcb' \
+     fields are then available to later operations as ${op_id.schematic} / ${op_id.pcb}";
+
+fn expand_create(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
+    let path = need_str(with, "path")?;
+    let name = need_str(with, "name")?;
+    Ok(vec![StepSpec {
+        tool: "create_project".to_string(),
+        args: json!({ "path": path, "name": name }),
+    }])
+}
+
 /// `call` — one tool, verbatim.
 ///
 /// The escape hatch, and the reason a plan is never less expressive than the
 /// batch it replaces: anything `kicad_invoke` can call, a plan can call. It is
 /// also the only operation that does no arithmetic, so a coordinate passed
 /// through it is the caller's responsibility.
+const CALL_SIGNATURE: &str = "call{tool:string,args?} runs any tool verbatim: 'tool' is \
+     required, 'args' defaults to {}";
+
 fn expand_call(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     let tool = need_str(with, "tool")?;
     Ok(vec![StepSpec {
@@ -85,6 +150,13 @@ fn expand_call(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 /// along `direction` at `pitch`. Either way the result is snapped, and the
 /// whole set becomes one `batch_place_components` — one file read/write cycle
 /// rather than one per symbol.
+const PLACE_SIGNATURE: &str = "place{schematic:path,components:[{lib_id:string,x?:number,\
+     y?:number,reference?:string,value?:string,rotation?:number,unit?:number}],\
+     at?:{x:number,y:number},pitch?:number,direction?:string} places symbols, snapped to the \
+     1.27mm grid, in one call. Each component needs lib_id, plus either both x and y or neither \
+     of them — a component that gives neither is laid out from 'at' (then required, as {x,y}) \
+     along 'direction' (right|left|down|up, default right) at 'pitch' (default 12.7mm)";
+
 fn expand_place(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     let schematic = need_str(with, "schematic")?;
     let components = need_array(with, "components")?;
@@ -151,6 +223,10 @@ fn expand_place(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 /// nominal position as a resistor lands 0.33 mm off its pin and ERC reports
 /// both as unconnected — with no tool error anywhere. Routing power symbols
 /// through a plan makes that unreachable.
+const POWER_SIGNATURE: &str = "power{schematic:path,symbols:[{net:string,x:number,y:number,\
+     rotation?:number}]} adds power symbols, snapped to the grid; each symbol needs net (or \
+     power_net) plus x and y";
+
 fn expand_power(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     let schematic = need_str(with, "schematic")?;
     let symbols = need_array(with, "symbols")?;
@@ -193,6 +269,10 @@ fn expand_power(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 }
 
 /// `label` — net labels, on the grid.
+const LABEL_SIGNATURE: &str = "label{schematic:path,labels:[{net:string,x:number,y:number,\
+     rotation?:number,label_type?:string,shape?:string}]} adds net labels, snapped to the grid; \
+     each label needs net plus x and y";
+
 fn expand_label(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     let schematic = need_str(with, "schematic")?;
     let labels = need_array(with, "labels")?;
@@ -236,6 +316,10 @@ fn expand_label(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 }
 
 /// `wire` — segments and their junctions, on the grid.
+const WIRE_SIGNATURE: &str = "wire{schematic:path,segments:[{x1:number,y1:number,x2:number,\
+     y2:number}],junctions?:[{x:number,y:number}]} adds snapped segments, and snapped junctions \
+     where given";
+
 fn expand_wire(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     let schematic = need_str(with, "schematic")?;
     let segments = need_array(with, "segments")?;
@@ -286,11 +370,23 @@ fn expand_wire(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     Ok(steps)
 }
 
-/// `connect` — pin-to-pin wiring.
+/// `connect` — pin-to-pin or pin-to-net wiring.
 ///
-/// Accepts `{"from": "R1.2", "to": "R2.1"}` as well as the four-field form.
-/// The compact form is not sugar: a plan is text a model writes, and half the
-/// keys of a connection carry no information.
+/// Accepts `{"from": "R1.2", "to": "R2.1"}` as well as the explicit field
+/// form. The compact form is not sugar: a plan is text a model writes, and
+/// half the keys of a connection carry no information.
+///
+/// A pin may also go to a net rather than another pin — `{"from": "R1.2",
+/// "to": "+3V3"}`, or `{ref1, pin1, net}` explicitly. Decided syntactically,
+/// never by trying both: a compact side with no `.` names a net, one with a
+/// `.` names `REF.PIN`; explicitly, `ref2` given without `pin2` cannot mean a
+/// pin (a pin always needs both), so it is read as the net name instead.
+const CONNECT_SIGNATURE: &str = "connect{schematic:path,connections:[{from:string,to:string}|\
+     {ref1:string,pin1:string,ref2:string,pin2:string}|{ref1:string,pin1:string,net:string}]} \
+     wires a pin to a pin or a pin to a net; 'from'/'to' are compact refs like 'R1.2' (a side \
+     with no '.' names a net, not a pin), or give ref1+pin1 with either ref2+pin2 (a pin) or net \
+     (a net) — ref2 alone, with no pin2, is read as net; pin numbers may be given as numbers";
+
 fn expand_connect(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     let schematic = need_str(with, "schematic")?;
     let connections = need_array(with, "connections")?;
@@ -300,29 +396,123 @@ fn expand_connect(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
         .enumerate()
         .map(|(index, item)| {
             let field = |name: &str| format!("connections[{index}].{name}");
-            let (ref1, pin1, ref2, pin2) = match (item.get("from"), item.get("to")) {
-                (Some(from), Some(to)) => {
-                    let (r1, p1) = split_pin(from, &field("from"))?;
-                    let (r2, p2) = split_pin(to, &field("to"))?;
-                    (r1, p1, r2, p2)
-                }
-                _ => (
-                    pin_field(item, "ref1", &field("ref1"))?,
-                    pin_field(item, "pin1", &field("pin1"))?,
-                    pin_field(item, "ref2", &field("ref2"))?,
-                    pin_field(item, "pin2", &field("pin2"))?,
-                ),
-            };
-            Ok(StepSpec {
-                tool: "connect_pins".to_string(),
-                args: json!({
-                    "schematic": schematic,
-                    "ref1": ref1, "pin1": pin1,
-                    "ref2": ref2, "pin2": pin2,
-                }),
-            })
+            match (item.get("from"), item.get("to")) {
+                (Some(from), Some(to)) => expand_compact_connection(schematic, from, to, &field),
+                _ => expand_explicit_connection(schematic, item, &field),
+            }
         })
         .collect()
+}
+
+/// The `{from, to}` compact form. A side with a `.` is `REF.PIN`; a side
+/// without one is a net name — decided by that shape alone, never by which
+/// side happens to resolve, so a plan is checkable before anything runs.
+fn expand_compact_connection(
+    schematic: &str,
+    from: &Value,
+    to: &Value,
+    field: &dyn Fn(&str) -> String,
+) -> Result<StepSpec, ExpandError> {
+    let from_s = from
+        .as_str()
+        .ok_or_else(|| ExpandError::invalid(field("from"), "must be a string"))?;
+    let to_s = to
+        .as_str()
+        .ok_or_else(|| ExpandError::invalid(field("to"), "must be a string"))?;
+
+    match (from_s.contains('.'), to_s.contains('.')) {
+        (true, true) => {
+            let (ref1, pin1) = split_pin(from, &field("from"))?;
+            let (ref2, pin2) = split_pin(to, &field("to"))?;
+            Ok(pin_to_pin_step(schematic, ref1, pin1, ref2, pin2))
+        }
+        (true, false) => {
+            let (reference, pin) = split_pin(from, &field("from"))?;
+            Ok(pin_to_net_step(schematic, reference, pin, to_s.to_string()))
+        }
+        (false, true) => {
+            let (reference, pin) = split_pin(to, &field("to"))?;
+            Ok(pin_to_net_step(
+                schematic,
+                reference,
+                pin,
+                from_s.to_string(),
+            ))
+        }
+        (false, false) => Err(ExpandError::invalid(
+            field("to"),
+            "neither 'from' nor 'to' names a pin as 'REF.PIN'; one side must",
+        )),
+    }
+}
+
+/// The explicit-fields form: `ref1`/`pin1` always name the first pin; what
+/// they connect to is either `ref2`+`pin2` (another pin), or a net — given as
+/// `net`, or as `ref2` alone, since a `ref2` with no `pin2` cannot address a
+/// pin.
+fn expand_explicit_connection(
+    schematic: &str,
+    item: &Value,
+    field: &dyn Fn(&str) -> String,
+) -> Result<StepSpec, ExpandError> {
+    let ref1 = pin_field(item, "ref1", &field("ref1"))?;
+    let pin1 = pin_field(item, "pin1", &field("pin1"))?;
+
+    if let Some(net) = item.get("net") {
+        let net = net
+            .as_str()
+            .ok_or_else(|| ExpandError::invalid(field("net"), "must be a string"))?;
+        return Ok(pin_to_net_step(schematic, ref1, pin1, net.to_string()));
+    }
+
+    match (item.get("ref2"), item.get("pin2")) {
+        (Some(_), Some(_)) => {
+            let ref2 = pin_field(item, "ref2", &field("ref2"))?;
+            let pin2 = pin_field(item, "pin2", &field("pin2"))?;
+            Ok(pin_to_pin_step(schematic, ref1, pin1, ref2, pin2))
+        }
+        (Some(_), None) => {
+            // No pin2: ref2 cannot name a component pin, so it names a net.
+            let net = pin_field(item, "ref2", &field("ref2"))?;
+            Ok(pin_to_net_step(schematic, ref1, pin1, net))
+        }
+        (None, _) => Err(ExpandError::invalid(
+            field("ref2"),
+            "required — give ref2 with pin2 (a pin), or a net (via 'net', or 'ref2' alone)",
+        )),
+    }
+}
+
+fn pin_to_pin_step(
+    schematic: &str,
+    ref1: String,
+    pin1: String,
+    ref2: String,
+    pin2: String,
+) -> StepSpec {
+    StepSpec {
+        tool: "connect_pins".to_string(),
+        args: json!({
+            "schematic": schematic,
+            "ref1": ref1, "pin1": pin1,
+            "ref2": ref2, "pin2": pin2,
+        }),
+    }
+}
+
+/// Expands to `batch_connect_to_net` with one pin: the tool named
+/// `connect_to_net` takes a resolved pin coordinate, which this operation
+/// cannot produce without reading the schematic, so the by-reference tool is
+/// the one a stateless expansion can target.
+fn pin_to_net_step(schematic: &str, reference: String, pin: String, net: String) -> StepSpec {
+    StepSpec {
+        tool: "batch_connect_to_net".to_string(),
+        args: json!({
+            "schematic": schematic,
+            "net_name": net,
+            "pins": [{"reference": reference, "pin_number": pin}],
+        }),
+    }
 }
 
 /// `decouple` — a bank of capacitors placed, wired and grounded.
@@ -340,6 +530,12 @@ fn expand_connect(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
 /// What this does not do is decide whether the decoupling is *right*. Values,
 /// counts and placement quality are design questions; this is the mechanical
 /// half, and `verify` is what says whether the result holds.
+const DECOUPLE_SIGNATURE: &str = "decouple{schematic:path,ic?:string,at:{x:number,y:number},\
+     caps:[{reference:string,pin:string|rail:string,value?:string}],pitch?:number,\
+     ground?:string,lib_id?:string,value?:string} places a capacitor bank, wires each to its IC \
+     pin and grounds it. Each cap needs reference plus exactly one of pin (wired to 'ic', which \
+     is then required) or rail (given a power symbol); at is required, as {x,y}";
+
 fn expand_decouple(with: &Value) -> Result<Vec<StepSpec>, ExpandError> {
     let schematic = need_str(with, "schematic")?;
     let caps = need_array(with, "caps")?;
@@ -603,6 +799,24 @@ mod tests {
     }
 
     #[test]
+    fn create_expands_to_one_call_to_create_project() {
+        let steps = calls("create", json!({"path": "/p", "name": "divider"}));
+        assert_eq!(
+            steps,
+            vec![json!({
+                "tool": "create_project",
+                "args": {"path": "/p", "name": "divider"}
+            })]
+        );
+    }
+
+    #[test]
+    fn create_needs_both_path_and_name() {
+        let err = expand("create", json!({"path": "/p"})).unwrap_err();
+        assert_eq!(err.field.as_deref(), Some("name"));
+    }
+
+    #[test]
     fn call_passes_a_tool_through_unchanged() {
         let steps = calls(
             "call",
@@ -754,13 +968,82 @@ mod tests {
     }
 
     #[test]
-    fn connect_refuses_a_pin_it_cannot_find() {
-        let err = expand(
+    fn connect_reads_a_dotless_compact_side_as_a_net_not_a_missing_pin() {
+        // "U1" has no '.', so it names a net — decided by shape alone, never
+        // by trying to look U1 up as a component.
+        let steps = calls(
             "connect",
             json!({"schematic": "/p/a.kicad_sch", "connections": [{"from": "U1", "to": "C1.1"}]}),
+        );
+        assert_eq!(steps[0]["tool"], json!("batch_connect_to_net"));
+        assert_eq!(steps[0]["args"]["net_name"], json!("U1"));
+        assert_eq!(steps[0]["args"]["pins"][0]["reference"], json!("C1"));
+        assert_eq!(steps[0]["args"]["pins"][0]["pin_number"], json!("1"));
+    }
+
+    #[test]
+    fn connect_refuses_a_compact_connection_naming_no_pin_at_all() {
+        let err = expand(
+            "connect",
+            json!({"schematic": "/p/a.kicad_sch", "connections": [{"from": "GND", "to": "+3V3"}]}),
         )
         .unwrap_err();
-        assert_eq!(err.field.as_deref(), Some("connections[0].from"));
+        assert_eq!(err.field.as_deref(), Some("connections[0].to"));
+    }
+
+    #[test]
+    fn connect_accepts_a_pin_to_net_in_the_explicit_form() {
+        let steps = calls(
+            "connect",
+            json!({
+                "schematic": "/p/a.kicad_sch",
+                "connections": [{"ref1": "R1", "pin1": "2", "net": "+3V3"}]
+            }),
+        );
+        assert_eq!(steps[0]["tool"], json!("batch_connect_to_net"));
+        assert_eq!(steps[0]["args"]["net_name"], json!("+3V3"));
+        assert_eq!(steps[0]["args"]["pins"][0]["reference"], json!("R1"));
+        assert_eq!(steps[0]["args"]["pins"][0]["pin_number"], json!("2"));
+    }
+
+    #[test]
+    fn connect_reads_a_ref2_with_no_pin2_as_a_net() {
+        // Exactly what models write: a rail in 'ref2', no 'pin2' — a ref2
+        // without a pin2 cannot address a component pin.
+        let steps = calls(
+            "connect",
+            json!({
+                "schematic": "/p/a.kicad_sch",
+                "connections": [{"ref1": "R1", "pin1": "2", "ref2": "+3V3"}]
+            }),
+        );
+        assert_eq!(steps[0]["tool"], json!("batch_connect_to_net"));
+        assert_eq!(steps[0]["args"]["net_name"], json!("+3V3"));
+    }
+
+    #[test]
+    fn connect_accepts_a_numeric_pin1_in_the_pin_to_net_form() {
+        let steps = calls(
+            "connect",
+            json!({
+                "schematic": "/p/a.kicad_sch",
+                "connections": [{"ref1": "R1", "pin1": 2, "net": "+3V3"}]
+            }),
+        );
+        assert_eq!(steps[0]["args"]["pins"][0]["pin_number"], json!("2"));
+    }
+
+    #[test]
+    fn connect_refuses_an_incomplete_explicit_connection() {
+        let err = expand(
+            "connect",
+            json!({
+                "schematic": "/p/a.kicad_sch",
+                "connections": [{"ref1": "R1", "pin1": "2"}]
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(err.field.as_deref(), Some("connections[0].ref2"));
     }
 
     #[test]
@@ -918,6 +1201,76 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.field.as_deref(), Some("symbols[0].x"));
         assert!(err.reason.contains("'call'"));
+    }
+
+    #[test]
+    fn every_documented_signature_has_a_working_minimal_example() {
+        // One example per operation, built from nothing but the signature
+        // constant next to its expander above. If an expander ever starts
+        // requiring a field its signature does not mention — the bug this
+        // module exists to close — the missing field makes `expand` fail
+        // here, not silently in a model's hands.
+        let examples: &[(&str, Value)] = &[
+            ("create", json!({"path": "/p", "name": "a"})),
+            (
+                "call",
+                json!({"tool": "run_erc", "args": {"schematic": "/p/a.kicad_sch"}}),
+            ),
+            (
+                "place",
+                json!({
+                    "schematic": "/p/a.kicad_sch",
+                    "components": [{"lib_id": "Device:R", "x": 100.33, "y": 80.01}]
+                }),
+            ),
+            (
+                "power",
+                json!({
+                    "schematic": "/p/a.kicad_sch",
+                    "symbols": [{"net": "GND", "x": 100.33, "y": 80.01}]
+                }),
+            ),
+            (
+                "label",
+                json!({
+                    "schematic": "/p/a.kicad_sch",
+                    "labels": [{"net": "VOUT", "x": 100.33, "y": 80.01}]
+                }),
+            ),
+            (
+                "wire",
+                json!({
+                    "schematic": "/p/a.kicad_sch",
+                    "segments": [{"x1": 0.0, "y1": 0.0, "x2": 12.7, "y2": 0.0}]
+                }),
+            ),
+            (
+                "connect",
+                json!({
+                    "schematic": "/p/a.kicad_sch",
+                    "connections": [{"from": "R1.2", "to": "R2.1"}]
+                }),
+            ),
+            (
+                "decouple",
+                json!({
+                    "schematic": "/p/a.kicad_sch",
+                    "ic": "U1",
+                    "at": {"x": 100.33, "y": 80.01},
+                    "caps": [{"reference": "C1", "pin": "1"}]
+                }),
+            ),
+        ];
+        assert_eq!(
+            examples.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+            OP_LIBRARY.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+            "an example above is missing, extra, or out of order relative to OP_LIBRARY"
+        );
+        for (name, with) in examples {
+            expand(name, with.clone()).unwrap_or_else(|e| {
+                panic!("{name}: its own documented signature's example did not compile: {e}")
+            });
+        }
     }
 
     #[test]

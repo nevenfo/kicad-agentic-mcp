@@ -824,7 +824,19 @@ pub fn lib_symbol_not_found_error(lib_id: &str) -> CallToolResult {
             suggestions.join(", ")
         ));
     }
-    CallToolResult::error(msg)
+    // Structured candidates, capped small, for a repair pass or the LLM to act
+    // on directly — a deterministic lookup over the installed libraries, never
+    // a guess: nothing here is auto-substituted for the lib_id the caller
+    // asked for. Computed only here, on the failure path; a successful
+    // placement never calls this.
+    let candidates = konnect_schematic_editor::library::suggest_lib_ids(lib_id, 8);
+    CallToolResult::error_kind(
+        crate::mcp::error::ToolErrorKind::HandlerError {
+            reason: msg.clone(),
+            candidates,
+        },
+        msg,
+    )
 }
 
 /// Insert a symbol definition into the schematic's lib_symbols section.
@@ -911,4 +923,80 @@ pub(crate) fn find_kicad_library_dirs(kind: &str) -> Vec<std::path::PathBuf> {
 /// Find directories where KiCAD symbol libraries are stored.
 fn find_kicad_symbol_dirs() -> Vec<std::path::PathBuf> {
     find_kicad_library_dirs("symbols")
+}
+
+#[cfg(test)]
+mod lib_symbol_not_found_error_tests {
+    use super::*;
+    use crate::mcp::error::extract_error_kind;
+    use crate::mcp::protocol::ToolContent;
+
+    fn error_body(result: &CallToolResult) -> serde_json::Value {
+        let ToolContent::Text { text } = &result.content[0] else {
+            panic!("structured errors are text content")
+        };
+        serde_json::from_str(text).expect("structured error body is JSON")
+    }
+
+    /// Fixture: one installed library, `Device`, with a single `R` symbol.
+    /// Locks `sch_components::tests::SYMBOL_DIR_ENV` — the same
+    /// process-global `KICAD10_SYMBOL_DIR` other test modules in this crate
+    /// fixture, so this doesn't race them (progress.md: two independent
+    /// locks around the same env var don't serialize anything).
+    fn write_device_r_fixture() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = crate::tools::sch_components::tests::SYMBOL_DIR_ENV
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let libdir = tempfile::tempdir().unwrap();
+        let symdir = libdir.path().join("Device.kicad_symdir");
+        std::fs::create_dir_all(&symdir).unwrap();
+        std::fs::write(
+            symdir.join("R.kicad_sym"),
+            "(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"R\"\n\t\t(property \"Reference\" \"R\" (at 0 0 0))\n\t\t(property \"Value\" \"R\" (at 0 0 0))\n\t)\n)\n",
+        )
+        .unwrap();
+        std::env::set_var("KICAD10_SYMBOL_DIR", libdir.path());
+        (libdir, guard)
+    }
+
+    #[test]
+    fn invented_library_error_carries_the_plausible_real_lib_id() {
+        let _fixture = write_device_r_fixture();
+        let result = lib_symbol_not_found_error("Resistor:R");
+        assert!(result.is_error);
+
+        let body = error_body(&result);
+        let candidates: Vec<&str> = body["error"]["candidates"]
+            .as_array()
+            .expect("candidates array present")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert!(
+            candidates.contains(&"Device:R"),
+            "expected Device:R among {candidates:?}"
+        );
+        assert!(candidates.len() <= 8, "candidate list must stay small");
+    }
+
+    #[test]
+    fn error_kind_is_unchanged_by_adding_candidates() {
+        // Before this change the plain-text error fell back to
+        // "handler_error" via `extract_error_kind`'s legacy branch. Carrying
+        // structured candidates must not migrate it to a different kind —
+        // anything already matching on "handler_error" for this failure must
+        // keep working.
+        let _fixture = write_device_r_fixture();
+        let result = lib_symbol_not_found_error("Resistor:R");
+        assert_eq!(
+            extract_error_kind(&result).as_deref(),
+            Some("handler_error")
+        );
+
+        let unrelated = lib_symbol_not_found_error("Definitely_Bogus_xyzzy:Nope");
+        assert_eq!(
+            extract_error_kind(&unrelated).as_deref(),
+            Some("handler_error")
+        );
+    }
 }

@@ -1,0 +1,1694 @@
+{
+  "model": "qwen3.5-9b",
+  "base_url": "http://127.0.0.1:1234/v1",
+  "temperature": 0.2,
+  "repeat": 5,
+  "hint_levels": [
+    "full",
+    "minimal",
+    "none"
+  ],
+  "stable_prefix_tokens": 1285,
+  "tasks": {
+    "model_divider": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1768,
+          "local_output_tokens": 1772,
+          "ttft_ms": 842.4910000003365,
+          "tokens_per_second": 102.84919789756535,
+          "wall_clock_ms": 18071.5995999999,
+          "vram_peak_mib": 9025,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1765,
+          "local_output_tokens": 2350,
+          "ttft_ms": 181.8687000004502,
+          "tokens_per_second": 103.31894661700157,
+          "wall_clock_ms": 22926.970900000015,
+          "vram_peak_mib": 9025,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op5\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op5' (connect) could not be expanded: invalid_argument (connections[0].from): '+3V3' must name a reference and a pin, e.g. 'U1.3'\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op5' (connect) could not be expanded: invalid_argument (connections[0].from): '+3V3' must name a"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1762,
+          "local_output_tokens": 1307,
+          "ttft_ms": 194.73670000024867,
+          "tokens_per_second": 103.64052283860559,
+          "wall_clock_ms": 12805.634100000134,
+          "vram_peak_mib": 9025,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1764,
+          "local_output_tokens": 1701,
+          "ttft_ms": 129.63479999962146,
+          "tokens_per_second": 103.8705761141497,
+          "wall_clock_ms": 16505.78349999978,
+          "vram_peak_mib": 9025,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1762,
+          "local_output_tokens": 1811,
+          "ttft_ms": 173.9914999998291,
+          "tokens_per_second": 101.55391623022878,
+          "wall_clock_ms": 18006.88330000048,
+          "vram_peak_mib": 9110,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1564,
+          "local_output_tokens": 1038,
+          "ttft_ms": 141.18120000057388,
+          "tokens_per_second": 101.56129354686472,
+          "wall_clock_ms": 10361.610300000393,
+          "vram_peak_mib": 9040,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op1\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op1' (power) could not be expanded: invalid_argument (schematic): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op1' (power) could not be expanded: invalid_argument (schematic): required\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1566,
+          "local_output_tokens": 1243,
+          "ttft_ms": 115.23050000050716,
+          "tokens_per_second": 102.23921818763723,
+          "wall_clock_ms": 12272.991700000603,
+          "vram_peak_mib": 9040,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1564,
+          "local_output_tokens": 2089,
+          "ttft_ms": 111.15520000021206,
+          "tokens_per_second": 102.76221842408388,
+          "wall_clock_ms": 20439.638099999684,
+          "vram_peak_mib": 9104,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1564,
+          "local_output_tokens": 1278,
+          "ttft_ms": 142.04780000000028,
+          "tokens_per_second": 102.10491927599115,
+          "wall_clock_ms": 12658.584800000426,
+          "vram_peak_mib": 9042,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1564,
+          "local_output_tokens": 1001,
+          "ttft_ms": 98.15340000022843,
+          "tokens_per_second": 103.914826549811,
+          "wall_clock_ms": 9731.042499999603,
+          "vram_peak_mib": 9028,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op1\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op1' (place) could not be expanded: invalid_argument (components[2].lib_id): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op1' (place) could not be expanded: invalid_argument (components[2].lib_id): required\"}"
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1511,
+          "local_output_tokens": 1480,
+          "ttft_ms": 106.12919999948645,
+          "tokens_per_second": 103.30669153807496,
+          "wall_clock_ms": 14432.403499999964,
+          "vram_peak_mib": 9028,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op3\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op3' (place) could not be expanded: invalid_argument (components): required, as an array\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op3' (place) could not be expanded: invalid_argument (components): required, as an array\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1507,
+          "local_output_tokens": 1464,
+          "ttft_ms": 137.1597000006659,
+          "tokens_per_second": 102.5483395466031,
+          "wall_clock_ms": 14413.35380000055,
+          "vram_peak_mib": 9028,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1515,
+          "local_output_tokens": 6677,
+          "ttft_ms": 162.84120000000257,
+          "tokens_per_second": 100.90833673787502,
+          "wall_clock_ms": 66331.80420000007,
+          "vram_peak_mib": 9104,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1507,
+          "local_output_tokens": 1215,
+          "ttft_ms": 164.832600000409,
+          "tokens_per_second": 102.10965179843838,
+          "wall_clock_ms": 12063.805700000557,
+          "vram_peak_mib": 9040,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1513,
+          "local_output_tokens": 1296,
+          "ttft_ms": 90.7958999996481,
+          "tokens_per_second": 101.89195994523014,
+          "wall_clock_ms": 12810.150799999974,
+          "vram_peak_mib": 9041,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]"
+        }
+      ]
+    },
+    "model_ldo": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1949,
+          "local_output_tokens": 1528,
+          "ttft_ms": 218.6719000001176,
+          "tokens_per_second": 102.21512757665651,
+          "wall_clock_ms": 15167.535499999758,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C1', 'C2', 'U1'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1949,
+          "local_output_tokens": 1525,
+          "ttft_ms": 160.79480000007607,
+          "tokens_per_second": 101.95914053966966,
+          "wall_clock_ms": 15117.766700000175,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C1', 'C2', 'U1'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1949,
+          "local_output_tokens": 2916,
+          "ttft_ms": 139.36410000042088,
+          "tokens_per_second": 101.68771051291495,
+          "wall_clock_ms": 28815.39570000041,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C1', 'C2', 'U1'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1945,
+          "local_output_tokens": 1413,
+          "ttft_ms": 212.9306999995606,
+          "tokens_per_second": 101.92197213028658,
+          "wall_clock_ms": 14076.477200000227,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C1', 'C2', 'U1'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1947,
+          "local_output_tokens": 3515,
+          "ttft_ms": 157.15999999974883,
+          "tokens_per_second": 101.43628791229338,
+          "wall_clock_ms": 34809.453299999404,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C1', 'C2', 'U1'] found=[]"
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1608,
+          "local_output_tokens": 1424,
+          "ttft_ms": 202.93610000044282,
+          "tokens_per_second": 101.76602428793373,
+          "wall_clock_ms": 14195.818400000462,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op5\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op5' (connect) could not be expanded: invalid_argument (connections[0].pin2): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op5' (connect) could not be expanded: invalid_argument (connections[0].pin2): required\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1608,
+          "local_output_tokens": 1421,
+          "ttft_ms": 164.26099999989674,
+          "tokens_per_second": 101.89744881559193,
+          "wall_clock_ms": 14109.65429999942,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op4\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].from): '+5V' must name a reference and a pin, e.g. 'U1.3'\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].from): '+5V' must name a r"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1612,
+          "local_output_tokens": 1482,
+          "ttft_ms": 165.6874999998763,
+          "tokens_per_second": 102.07264919560133,
+          "wall_clock_ms": 14684.758100000181,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op4\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].pin2): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].pin2): required\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1611,
+          "local_output_tokens": 1968,
+          "ttft_ms": 172.08649999975023,
+          "tokens_per_second": 101.85661315395362,
+          "wall_clock_ms": 19493.36510000012,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op5\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op5' (decouple) could not be expanded: invalid_argument (ic): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op5' (decouple) could not be expanded: invalid_argument (ic): required\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1610,
+          "local_output_tokens": 2141,
+          "ttft_ms": 177.53039999934117,
+          "tokens_per_second": 101.95965455992587,
+          "wall_clock_ms": 21176.03229999986,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op6\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op6' (connect) could not be expanded: invalid_argument (connections[0].from): '+5V' must name a reference and a pin, e.g. 'U1.3'\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op6' (connect) could not be expanded: invalid_argument (connections[0].from): '+5V' must name a r"
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1559,
+          "local_output_tokens": 2744,
+          "ttft_ms": 137.96629999978904,
+          "tokens_per_second": 101.91150023146844,
+          "wall_clock_ms": 27063.288700000157,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C1', 'C2', 'U1'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1559,
+          "local_output_tokens": 6633,
+          "ttft_ms": 161.0499999997046,
+          "tokens_per_second": 100.91885913763029,
+          "wall_clock_ms": 65887.11999999941,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1557,
+          "local_output_tokens": 6635,
+          "ttft_ms": 198.35179999972752,
+          "tokens_per_second": 101.32874312752425,
+          "wall_clock_ms": 65678.2916000002,
+          "vram_peak_mib": 9028,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1551,
+          "local_output_tokens": 1601,
+          "ttft_ms": 193.33469999946828,
+          "tokens_per_second": 101.9126457380254,
+          "wall_clock_ms": 15902.866999999787,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op4\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].from): '+5V' must name a reference and a pin, e.g. 'U1.3'\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].from): '+5V' must name a r"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1555,
+          "local_output_tokens": 1493,
+          "ttft_ms": 142.39639999959763,
+          "tokens_per_second": 101.91717677760711,
+          "wall_clock_ms": 14791.546299999936,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op1\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op1' (power) could not be expanded: invalid_argument (schematic): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op1' (power) could not be expanded: invalid_argument (schematic): required\"}"
+        }
+      ]
+    },
+    "model_decoupling_bank": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1732,
+          "local_output_tokens": 6460,
+          "ttft_ms": 176.1333000004015,
+          "tokens_per_second": 100.90010169262062,
+          "wall_clock_ms": 64199.85470000029,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1736,
+          "local_output_tokens": 1627,
+          "ttft_ms": 202.35030000003462,
+          "tokens_per_second": 101.79078965903723,
+          "wall_clock_ms": 16186.114699999962,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C10', 'C11', 'C12', 'C13'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1732,
+          "local_output_tokens": 6460,
+          "ttft_ms": 173.48239999955695,
+          "tokens_per_second": 100.74424797597186,
+          "wall_clock_ms": 64296.24999999942,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1732,
+          "local_output_tokens": 2775,
+          "ttft_ms": 202.96139999936713,
+          "tokens_per_second": 101.62320604691556,
+          "wall_clock_ms": 27509.71649999974,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C10', 'C11', 'C12', 'C13'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1730,
+          "local_output_tokens": 6462,
+          "ttft_ms": 204.5401999994283,
+          "tokens_per_second": 99.94333250166271,
+          "wall_clock_ms": 64861.17949999971,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1622,
+          "local_output_tokens": 1152,
+          "ttft_ms": 173.79750000054628,
+          "tokens_per_second": 102.05327106335811,
+          "wall_clock_ms": 11462.019700000383,
+          "vram_peak_mib": 9028,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C10', 'C11', 'C12', 'C13'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1626,
+          "local_output_tokens": 1730,
+          "ttft_ms": 108.01480000009178,
+          "tokens_per_second": 101.9149555042537,
+          "wall_clock_ms": 17082.952300000215,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C10', 'C11', 'C12', 'C13'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1628,
+          "local_output_tokens": 3396,
+          "ttft_ms": 167.1277999994345,
+          "tokens_per_second": 101.56349736845772,
+          "wall_clock_ms": 33604.337900000246,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op3\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op3' (connect) could not be expanded: invalid_argument (connections[0].from): '+3V3' must name a reference and a pin, e.g. 'U1.3'\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op3' (connect) could not be expanded: invalid_argument (connections[0].from): '+3V3' must name a"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1626,
+          "local_output_tokens": 1775,
+          "ttft_ms": 180.40399999972578,
+          "tokens_per_second": 101.66116578575692,
+          "wall_clock_ms": 17640.365100000054,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C10', 'C11', 'C12', 'C13'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1626,
+          "local_output_tokens": 1813,
+          "ttft_ms": 157.28390000003856,
+          "tokens_per_second": 101.73032338313337,
+          "wall_clock_ms": 17978.912100000343,
+          "vram_peak_mib": 9039,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C10', 'C11', 'C12', 'C13'] found=[]"
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1569,
+          "local_output_tokens": 2004,
+          "ttft_ms": 160.60259999994742,
+          "tokens_per_second": 101.89920749722127,
+          "wall_clock_ms": 19827.095099999497,
+          "vram_peak_mib": 9062,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op4\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].ref2): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op4' (connect) could not be expanded: invalid_argument (connections[0].ref2): required\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1571,
+          "local_output_tokens": 6621,
+          "ttft_ms": 161.49589999986347,
+          "tokens_per_second": 100.94548936103928,
+          "wall_clock_ms": 65751.35079999927,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1569,
+          "local_output_tokens": 1207,
+          "ttft_ms": 187.38780000057886,
+          "tokens_per_second": 102.39302336185524,
+          "wall_clock_ms": 11975.300300000526,
+          "vram_peak_mib": 9028,
+          "grade": 2,
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['C10', 'C11', 'C12', 'C13'] found=[]"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1573,
+          "local_output_tokens": 1923,
+          "ttft_ms": 97.51729999970848,
+          "tokens_per_second": 102.05292595291144,
+          "wall_clock_ms": 18940.681099999892,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op3\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op3' (place) could not be expanded: invalid_argument (components): required, as an array\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op3' (place) could not be expanded: invalid_argument (components): required, as an array\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1569,
+          "local_output_tokens": 3389,
+          "ttft_ms": 157.95369999977993,
+          "tokens_per_second": 101.62455593757242,
+          "wall_clock_ms": 33506.192900000315,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' (connect) could not be expanded: invalid_argument (connections[0].pin2): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' (connect) could not be expanded: invalid_argument (connections[0].pin2): required\"}"
+        }
+      ]
+    },
+    "model_reference_chain": {
+      "full": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1814,
+          "local_output_tokens": 1550,
+          "ttft_ms": 215.83209999971587,
+          "tokens_per_second": 101.5574490013683,
+          "wall_clock_ms": 15478.129600000102,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1814,
+          "local_output_tokens": 1486,
+          "ttft_ms": 141.779100000349,
+          "tokens_per_second": 101.86574515687036,
+          "wall_clock_ms": 14729.607400000532,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op5\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op5' (connect) could not be expanded: invalid_argument (connections[1].ref2): required\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op5' (connect) could not be expanded: invalid_argument (connections[1].ref2): required\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1816,
+          "local_output_tokens": 1908,
+          "ttft_ms": 138.59099999990576,
+          "tokens_per_second": 101.5962079481632,
+          "wall_clock_ms": 18918.8194999997,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1814,
+          "local_output_tokens": 6378,
+          "ttft_ms": 212.00299999964045,
+          "tokens_per_second": 100.83786973312375,
+          "wall_clock_ms": 63462.05000000009,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1818,
+          "local_output_tokens": 1993,
+          "ttft_ms": 243.59580000054848,
+          "tokens_per_second": 101.62219618854063,
+          "wall_clock_ms": 19855.453000000125,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"plan\", \"kind\": \"invalid_argument\", \"reason\": \"rollback_policy 'all' is not one of atomic, stop_on_error, continue\", \"transient\": \"none\"}, \"message\": \"The plan was refused before anything ran: rollback_policy 'all' is not one of atomic, stop_on_error, continue\"}"
+        }
+      ],
+      "minimal": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1679,
+          "local_output_tokens": 1392,
+          "ttft_ms": 176.2632999998459,
+          "tokens_per_second": 101.5425065394197,
+          "wall_clock_ms": 13884.808100000555,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1679,
+          "local_output_tokens": 6513,
+          "ttft_ms": 140.26939999985188,
+          "tokens_per_second": 100.84109056222323,
+          "wall_clock_ms": 64727.03619999993,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1679,
+          "local_output_tokens": 2042,
+          "ttft_ms": 214.05400000003283,
+          "tokens_per_second": 101.75486783926192,
+          "wall_clock_ms": 20281.890000000203,
+          "vram_peak_mib": 9028,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1677,
+          "local_output_tokens": 3169,
+          "ttft_ms": 161.07110000029934,
+          "tokens_per_second": 101.39692453561003,
+          "wall_clock_ms": 31414.48450000007,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1677,
+          "local_output_tokens": 1811,
+          "ttft_ms": 175.5689000001439,
+          "tokens_per_second": 101.51225513847187,
+          "wall_clock_ms": 18015.7793999997,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        }
+      ],
+      "none": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1622,
+          "local_output_tokens": 6570,
+          "ttft_ms": 153.28589999990072,
+          "tokens_per_second": 100.7704390883233,
+          "wall_clock_ms": 65350.977399999465,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1626,
+          "local_output_tokens": 1544,
+          "ttft_ms": 186.86179999986052,
+          "tokens_per_second": 101.68527671876471,
+          "wall_clock_ms": 15370.967599999858,
+          "vram_peak_mib": 9028,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op5\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op5' (connect) could not be expanded: invalid_argument (connections[0].from): '+3V3' must name a reference and a pin, e.g. 'U1.3'\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op5' (connect) could not be expanded: invalid_argument (connections[0].from): '+3V3' must name a"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1624,
+          "local_output_tokens": 6568,
+          "ttft_ms": 164.72310000062862,
+          "tokens_per_second": 100.93098646640766,
+          "wall_clock_ms": 65238.891400000284,
+          "vram_peak_mib": 9039,
+          "grade": 0,
+          "valid_json": false,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "reply is not valid JSON"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1622,
+          "local_output_tokens": 1356,
+          "ttft_ms": 195.38610000017798,
+          "tokens_per_second": 101.67450410135442,
+          "wall_clock_ms": 13532.0628999998,
+          "vram_peak_mib": 9028,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 1624,
+          "local_output_tokens": 2452,
+          "ttft_ms": 129.06829999974434,
+          "tokens_per_second": 101.52259589700425,
+          "wall_clock_ms": 24281.326999999692,
+          "vram_peak_mib": 9039,
+          "grade": 1,
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"op2\", \"kind\": \"invalid_argument\", \"reason\": \"operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\", \"transient\": \"none\"}, \"message\": \"The plan did not compile, so nothing was applied: operation 'op2' refers to ${create.schematic}, but no operation 'create' exists in this plan\"}"
+        }
+      ]
+    }
+  },
+  "aggregate": {
+    "by_task_hint": {
+      "model_divider": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 1,
+            "2": 4,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1764,
+            "p95": 1765,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1772,
+            "p95": 1811,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 181.8687000004502,
+            "p95": 194.73670000024867,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 103.31894661700157,
+            "p95": 103.64052283860559,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 18006.88330000048,
+            "p95": 18071.5995999999,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9025,
+            "p95": 9025,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0.0,
+            "p95": 0,
+            "n": 4
+          }
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 2,
+            "2": 3,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1564,
+            "p95": 1564,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1243,
+            "p95": 1278,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 115.23050000050716,
+            "p95": 141.18120000057388,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 102.23921818763723,
+            "p95": 102.76221842408388,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 12272.991700000603,
+            "p95": 12658.584800000426,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9040,
+            "p95": 9042,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0,
+            "p95": 0,
+            "n": 3
+          }
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 1,
+            "1": 1,
+            "2": 3,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1511,
+            "p95": 1513,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1464,
+            "p95": 1480,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 137.1597000006659,
+            "p95": 162.84120000000257,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 102.10965179843838,
+            "p95": 102.5483395466031,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 14413.35380000055,
+            "p95": 14432.403499999964,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9040,
+            "p95": 9041,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0,
+            "p95": 0,
+            "n": 3
+          }
+        }
+      },
+      "model_ldo": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 0,
+            "2": 5,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1949,
+            "p95": 1949,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1528,
+            "p95": 2916,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 160.79480000007607,
+            "p95": 212.9306999995606,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.92197213028658,
+            "p95": 101.95914053966966,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 15167.535499999758,
+            "p95": 28815.39570000041,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0,
+            "p95": 0,
+            "n": 5
+          }
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 5,
+            "2": 0,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1610,
+            "p95": 1611,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1482,
+            "p95": 1968,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 172.08649999975023,
+            "p95": 177.53039999934117,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.89744881559193,
+            "p95": 101.95965455992587,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 14684.758100000181,
+            "p95": 19493.36510000012,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 2,
+            "1": 2,
+            "2": 1,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1557,
+            "p95": 1559,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 2744,
+            "p95": 6633,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 161.0499999997046,
+            "p95": 193.33469999946828,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.91150023146844,
+            "p95": 101.9126457380254,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 27063.288700000157,
+            "p95": 65678.2916000002,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0,
+            "p95": 0,
+            "n": 1
+          }
+        }
+      },
+      "model_decoupling_bank": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 3,
+            "1": 0,
+            "2": 2,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1732,
+            "p95": 1732,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 6460,
+            "p95": 6460,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 202.35030000003462,
+            "p95": 202.96139999936713,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 100.90010169262062,
+            "p95": 101.62320604691556,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 64199.85470000029,
+            "p95": 64296.24999999942,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0.0,
+            "p95": 0,
+            "n": 2
+          }
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 1,
+            "2": 4,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1626,
+            "p95": 1626,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1775,
+            "p95": 1813,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 167.1277999994345,
+            "p95": 173.79750000054628,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.73032338313337,
+            "p95": 101.9149555042537,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 17640.365100000054,
+            "p95": 17978.912100000343,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0.0,
+            "p95": 0,
+            "n": 4
+          }
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 1,
+            "1": 3,
+            "2": 1,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1569,
+            "p95": 1571,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 2004,
+            "p95": 3389,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 160.60259999994742,
+            "p95": 161.49589999986347,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.89920749722127,
+            "p95": 102.05292595291144,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 19827.095099999497,
+            "p95": 33506.192900000315,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0,
+            "p95": 0,
+            "n": 1
+          }
+        }
+      },
+      "model_reference_chain": {
+        "full": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 1,
+            "1": 4,
+            "2": 0,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1814,
+            "p95": 1816,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1908,
+            "p95": 1993,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 212.00299999964045,
+            "p95": 215.83209999971587,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.5962079481632,
+            "p95": 101.62219618854063,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 18918.8194999997,
+            "p95": 19855.453000000125,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "minimal": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 1,
+            "1": 4,
+            "2": 0,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1679,
+            "p95": 1679,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 2042,
+            "p95": 3169,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 175.5689000001439,
+            "p95": 176.2632999998459,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.51225513847187,
+            "p95": 101.5425065394197,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 20281.890000000203,
+            "p95": 31414.48450000007,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": null
+        },
+        "none": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 2,
+            "1": 3,
+            "2": 0,
+            "3": 0
+          },
+          "local_input_tokens": {
+            "median": 1624,
+            "p95": 1624,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 2452,
+            "p95": 6568,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 164.72310000062862,
+            "p95": 186.86179999986052,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 101.52259589700425,
+            "p95": 101.67450410135442,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 24281.326999999692,
+            "p95": 65238.891400000284,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 9039,
+            "p95": 9039,
+            "n": 5
+          },
+          "erc_errors": null
+        }
+      }
+    },
+    "by_hint": {
+      "full": {
+        "attempts": 20,
+        "graded": 20,
+        "success_rate": 0.0,
+        "grade_histogram": {
+          "0": 4,
+          "1": 5,
+          "2": 11,
+          "3": 0
+        },
+        "local_input_tokens": {
+          "median": 1791.0,
+          "p95": 1949,
+          "n": 20
+        },
+        "local_output_tokens": {
+          "median": 1859.5,
+          "p95": 6460,
+          "n": 20
+        },
+        "ttft_ms": {
+          "median": 188.30270000034943,
+          "p95": 243.59580000054848,
+          "n": 20
+        },
+        "tokens_per_second": {
+          "median": 101.65545827991525,
+          "p95": 103.64052283860559,
+          "n": 20
+        },
+        "wall_clock_ms": {
+          "median": 18495.2095499998,
+          "p95": 64296.24999999942,
+          "n": 20
+        },
+        "vram_peak_mib": {
+          "median": 9039.0,
+          "p95": 9039,
+          "n": 20
+        },
+        "erc_errors": {
+          "median": 0,
+          "p95": 0,
+          "n": 11
+        }
+      },
+      "minimal": {
+        "attempts": 20,
+        "graded": 20,
+        "success_rate": 0.0,
+        "grade_histogram": {
+          "0": 1,
+          "1": 12,
+          "2": 7,
+          "3": 0
+        },
+        "local_input_tokens": {
+          "median": 1617.0,
+          "p95": 1679,
+          "n": 20
+        },
+        "local_output_tokens": {
+          "median": 1752.5,
+          "p95": 3396,
+          "n": 20
+        },
+        "ttft_ms": {
+          "median": 164.97424999988652,
+          "p95": 202.93610000044282,
+          "n": 20
+        },
+        "tokens_per_second": {
+          "median": 101.81131872094367,
+          "p95": 102.76221842408388,
+          "n": 20
+        },
+        "wall_clock_ms": {
+          "median": 17361.658700000135,
+          "p95": 33604.337900000246,
+          "n": 20
+        },
+        "vram_peak_mib": {
+          "median": 9039.0,
+          "p95": 9042,
+          "n": 20
+        },
+        "erc_errors": {
+          "median": 0,
+          "p95": 0,
+          "n": 7
+        }
+      },
+      "none": {
+        "attempts": 20,
+        "graded": 20,
+        "success_rate": 0.0,
+        "grade_histogram": {
+          "0": 6,
+          "1": 9,
+          "2": 5,
+          "3": 0
+        },
+        "local_input_tokens": {
+          "median": 1564.0,
+          "p95": 1624,
+          "n": 20
+        },
+        "local_output_tokens": {
+          "median": 1963.5,
+          "p95": 6635,
+          "n": 20
+        },
+        "ttft_ms": {
+          "median": 160.826299999826,
+          "p95": 195.38610000017798,
+          "n": 20
+        },
+        "tokens_per_second": {
+          "median": 101.78861833199743,
+          "p95": 102.5483395466031,
+          "n": 20
+        },
+        "wall_clock_ms": {
+          "median": 19383.888099999695,
+          "p95": 65887.11999999941,
+          "n": 20
+        },
+        "vram_peak_mib": {
+          "median": 9039.0,
+          "p95": 9062,
+          "n": 20
+        },
+        "erc_errors": {
+          "median": 0,
+          "p95": 0,
+          "n": 5
+        }
+      }
+    }
+  }
+}

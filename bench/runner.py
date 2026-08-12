@@ -130,6 +130,17 @@ class GatewayClient:
         return _unwrap_invoke(call, 0)
 
 
+def _call_failed(call: Call) -> bool:
+    """Same test as the step-error check above (line ~357): a JSON-RPC error or
+    a tool result with `isError` is a failed call, never an empty result (E4).
+    """
+    return bool(call.error) or bool((call.result or {}).get("isError"))
+
+
+def _call_error_detail(call: Call) -> str:
+    return call.error if call.error else _text_of(call.result)[:300]
+
+
 def check_assertion(spec: dict, client: McpStdioClient, env: dict[str, str], step_errors: list[str]) -> AssertResult:
     kind = spec["kind"]
 
@@ -139,6 +150,8 @@ def check_assertion(spec: dict, client: McpStdioClient, env: dict[str, str], ste
     if kind == "erc_max_errors":
         limit = int(spec["value"])
         call = client.tools_call("run_erc", {"schematic": env["SCH"], "severity": "error"})
+        if _call_failed(call):
+            return AssertResult(kind, False, f"run_erc call failed: {_call_error_detail(call)}")
         payload = _json_of(call.result)
         if payload is None:
             return AssertResult(kind, False, f"run_erc returned non-JSON: {_text_of(call.result)[:200]}")
@@ -151,6 +164,8 @@ def check_assertion(spec: dict, client: McpStdioClient, env: dict[str, str], ste
     if kind == "components_present":
         expected = set(spec["value"])
         call = client.tools_call("list_schematic_components", {"schematic": env["SCH"]})
+        if _call_failed(call):
+            return AssertResult(kind, False, f"list_schematic_components call failed: {_call_error_detail(call)}")
         payload = _json_of(call.result) or {}
         found = {c.get("reference") for c in payload.get("components", [])}
         missing = sorted(expected - found)
@@ -159,6 +174,8 @@ def check_assertion(spec: dict, client: McpStdioClient, env: dict[str, str], ste
     if kind == "nets_present":
         expected = set(spec["value"])
         call = client.tools_call("list_schematic_nets", {"schematic": env["SCH"]})
+        if _call_failed(call):
+            return AssertResult(kind, False, f"list_schematic_nets call failed: {_call_error_detail(call)}")
         payload = _json_of(call.result) or {}
         raw_nets = payload.get("nets", [])
         found = {n if isinstance(n, str) else n.get("name") for n in raw_nets}
@@ -167,6 +184,8 @@ def check_assertion(spec: dict, client: McpStdioClient, env: dict[str, str], ste
 
     if kind == "no_single_pin_nets":
         call = client.tools_call("find_single_pin_nets", {"schematic": env["SCH"]})
+        if _call_failed(call):
+            return AssertResult(kind, False, f"find_single_pin_nets call failed: {_call_error_detail(call)}")
         payload = _json_of(call.result) or {}
         offenders = payload.get("single_pin_nets", payload.get("nets", []))
         allowed = set(spec.get("allow", []))

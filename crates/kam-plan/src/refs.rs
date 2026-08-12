@@ -212,13 +212,27 @@ pub fn is_valid_ref_target(target: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '/')
 }
 
+/// The zero-based position an `ops[N]` target names, if `target` is written
+/// that way — `${ops[0].field}` for the first operation in the plan,
+/// regardless of its id. Never collides with an ordinary id: `[` and `]`
+/// cannot appear in one ([`is_valid_ref_target`]), so this shape is only ever
+/// this.
+#[must_use]
+pub fn position_target(target: &str) -> Option<usize> {
+    let digits = target.strip_prefix("ops[")?.strip_suffix(']')?;
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<usize>().ok()
+}
+
 fn parse_reference(body: &str) -> Result<Reference, RefError> {
     let malformed = || RefError::Malformed {
         text: body.to_string(),
     };
     let mut parts = body.split('.');
     let op = parts.next().ok_or_else(malformed)?;
-    if !is_valid_ref_target(op) {
+    if !is_valid_ref_target(op) && position_target(op).is_none() {
         return Err(malformed());
     }
     let mut path = Vec::new();
@@ -324,6 +338,86 @@ pub fn resolve(value: &Value, outputs: &dyn Outputs) -> Result<Value, RefError> 
             let mut out = Map::with_capacity(map.len());
             for (k, v) in map {
                 out.insert(k.clone(), resolve(v, outputs)?);
+            }
+            Ok(Value::Object(out))
+        }
+        other => Ok(other.clone()),
+    }
+}
+
+/// Why [`rewrite`] could not finish: a reference did not parse, or the
+/// caller's `resolve` refused the target it named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RewriteError<E> {
+    /// A `${...}` in `value` did not parse. Same failure [`resolve`] would
+    /// have reported, at the same place: before anything runs.
+    Ref(RefError),
+    /// `resolve` refused a reference's target — an ambiguous one, typically,
+    /// since an unparseable or absent one is [`Self::Ref`] or left for the
+    /// caller to detect once every target is canonical.
+    Target(E),
+}
+
+/// Rewrite every reference's *target* in `value` — the `op` a reference
+/// names — leaving its path and every surrounding character untouched.
+///
+/// This is how a tolerant way of writing a reference (`${ops[0].field}`, or
+/// `${create.field}` when exactly one operation is a `create`) turns into the
+/// one canonical form — `${op_id.field}` — that the rest of a compiled plan,
+/// and everything at run time, ever has to understand. Nothing downstream of
+/// compilation needs to know the tolerant forms exist.
+///
+/// # Errors
+///
+/// The first reference that fails to parse, or whose target `resolve`
+/// refuses. Both are returned before `value` is used for anything, matching
+/// [`resolve`] and [`scan`].
+pub fn rewrite<E>(
+    value: &Value,
+    resolve_target: &mut dyn FnMut(&Reference) -> Result<String, E>,
+) -> Result<Value, RewriteError<E>> {
+    match value {
+        Value::String(s) => match parse_string(s).map_err(RewriteError::Ref)? {
+            Parsed::Literal(t) => Ok(Value::String(t)),
+            Parsed::Whole(r) => {
+                let target = resolve_target(&r).map_err(RewriteError::Target)?;
+                Ok(Value::String(
+                    Reference {
+                        op: target,
+                        path: r.path,
+                    }
+                    .to_string(),
+                ))
+            }
+            Parsed::Mixed(pieces) => {
+                let mut out = String::new();
+                for piece in pieces {
+                    match piece {
+                        Piece::Text(t) => out.push_str(&t),
+                        Piece::Ref(r) => {
+                            let target = resolve_target(&r).map_err(RewriteError::Target)?;
+                            out.push_str(
+                                &Reference {
+                                    op: target,
+                                    path: r.path,
+                                }
+                                .to_string(),
+                            );
+                        }
+                    }
+                }
+                Ok(Value::String(out))
+            }
+        },
+        Value::Array(items) => items
+            .iter()
+            .map(|item| rewrite(item, resolve_target))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        Value::Object(map) => {
+            let mut out = Map::with_capacity(map.len());
+            for (k, v) in map {
+                out.insert(k.clone(), rewrite(v, resolve_target)?);
             }
             Ok(Value::Object(out))
         }
@@ -481,5 +575,52 @@ mod tests {
     fn a_plain_string_is_untouched() {
         let resolved = resolve(&json!("Device:R"), &outputs()).unwrap();
         assert_eq!(resolved, json!("Device:R"));
+    }
+
+    #[test]
+    fn a_positional_target_parses_as_ops_bracket_n() {
+        assert_eq!(position_target("ops[0]"), Some(0));
+        assert_eq!(position_target("ops[12]"), Some(12));
+        assert_eq!(position_target("ops[]"), None);
+        assert_eq!(position_target("ops[x]"), None);
+        assert_eq!(position_target("place"), None);
+    }
+
+    #[test]
+    fn a_positional_reference_scans_like_any_other() {
+        let found = scan(&json!("${ops[0].schematic}")).unwrap();
+        assert_eq!(found[0].op, "ops[0]");
+        assert_eq!(found[0].path, vec![Segment::Key("schematic".to_string())]);
+    }
+
+    #[test]
+    fn rewrite_replaces_only_the_target_leaving_the_path_and_surrounding_text() {
+        let rewritten = rewrite::<()>(
+            &json!({"a": "${ops[0].x}", "b": "net_${ops[0].reference}_out"}),
+            &mut |r| {
+                assert_eq!(r.op, "ops[0]");
+                Ok("place".to_string())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            rewritten,
+            json!({"a": "${place.x}", "b": "net_${place.reference}_out"})
+        );
+    }
+
+    #[test]
+    fn rewrite_surfaces_a_parse_error_before_resolving_anything() {
+        let err = rewrite::<()>(&json!("${place.x"), &mut |_| Ok("x".to_string())).unwrap_err();
+        assert!(matches!(
+            err,
+            RewriteError::Ref(RefError::Unterminated { .. })
+        ));
+    }
+
+    #[test]
+    fn rewrite_surfaces_the_caller_s_own_refusal() {
+        let err = rewrite(&json!("${place.x}"), &mut |_| Err("ambiguous")).unwrap_err();
+        assert_eq!(err, RewriteError::Target("ambiguous"));
     }
 }

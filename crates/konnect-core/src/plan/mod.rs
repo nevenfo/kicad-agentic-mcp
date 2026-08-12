@@ -32,4 +32,4 @@
 
 mod ops;
 
-pub use ops::{KicadOps, OP_NAMES};
+pub use ops::{description as plan_description, op_names, KicadOps, OP_LIBRARY};

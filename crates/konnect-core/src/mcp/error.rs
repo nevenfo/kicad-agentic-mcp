@@ -119,7 +119,15 @@ pub enum ToolErrorKind {
     Io { code: &'static str, detail: String },
     /// Catch-all for handler `anyhow::Error` that hasn't been migrated yet.
     /// Eventually each variant above subsumes a subset of these.
-    HandlerError { reason: String },
+    HandlerError {
+        reason: String,
+        /// Plausible `lib_id`s / library names for an unresolved KiCAD
+        /// symbol lookup — a deterministic did-you-mean, never a silent
+        /// substitution (#lib_id candidates). Empty for every other
+        /// `HandlerError`, so the field is absent from their JSON.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        candidates: Vec<String>,
+    },
     /// A plan's own `validators` promise did not hold after it ran.
     ///
     /// This is what makes `apply_plan` an honest "done": a plan that declared
@@ -215,6 +223,7 @@ impl ToolErrorKind {
         }
         Self::HandlerError {
             reason: err.to_string(),
+            candidates: Vec::new(),
         }
     }
 }
@@ -368,7 +377,10 @@ mod tests {
                 code: "not_found",
                 detail: "d".into(),
             },
-            ToolErrorKind::HandlerError { reason: "r".into() },
+            ToolErrorKind::HandlerError {
+                reason: "r".into(),
+                candidates: vec![],
+            },
             ToolErrorKind::PostconditionFailed {
                 check: "erc".into(),
                 document: "a.kicad_sch".into(),

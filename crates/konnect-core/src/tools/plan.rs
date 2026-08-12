@@ -42,19 +42,17 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Shared description of the plan document, so the two schemas cannot drift.
-const PLAN_DESCRIPTION: &str = "A plan document: {ops: [{op, with, id?}], plan_id?, documents?, \
-     rollback_policy?}. Operations: call{tool,args} runs any tool verbatim; \
-     place{schematic,components,at?,pitch?,direction?} places symbols, snapped to the \
-     1.27mm grid, in one call; power{schematic,symbols:[{net,x,y}]} and \
-     label{schematic,labels:[{net,x,y}]} add snapped power symbols and net labels; \
-     wire{schematic,segments,junctions?} adds snapped segments; \
-     connect{schematic,connections:[{from:'R1.2',to:'R2.1'}]} wires pins; \
-     decouple{schematic,ic,at,caps:[{reference,pin|rail,value?}],pitch?,ground?} places a \
-     capacitor bank, wires each to its IC pin and grounds it. A later operation may read an \
-     earlier one's output with ${op_id.field}.";
-
 pub fn tools() -> Vec<ToolDef> {
+    // Shared description of the plan document, so the two schemas cannot
+    // drift (one call, reused below) — assembled by `crate::plan::plan_description`
+    // from `crate::plan::OP_LIBRARY`, one signature constant per operation
+    // declared next to that operation's expander in `plan/ops.rs`, rather than
+    // retyped here. That pairing is what keeps this text from promising less
+    // than an expander requires: `plan::ops`'s own tests compile an example
+    // built from each signature, so a field an expander starts requiring
+    // without this text mentioning it fails a test in that module, not
+    // silently in a caller's hands.
+    let plan_description = crate::plan::plan_description();
     vec![
         tool!(
             "preview_plan",
@@ -65,7 +63,7 @@ pub fn tools() -> Vec<ToolDef> {
             json!({
                 "type": "object",
                 "properties": {
-                    "plan": { "type": "object", "description": PLAN_DESCRIPTION },
+                    "plan": { "type": "object", "description": plan_description.clone() },
                     "detail": {
                         "type": "string",
                         "enum": ["summary", "calls"],
@@ -89,7 +87,7 @@ pub fn tools() -> Vec<ToolDef> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "plan": { "type": "object", "description": PLAN_DESCRIPTION },
+                    "plan": { "type": "object", "description": plan_description },
                     "detail": {
                         "type": "string",
                         "enum": ["summary", "steps"],
@@ -501,7 +499,17 @@ async fn handle_apply_plan(
         }
     }
 
-    Ok(CallToolResult::json(&body))
+    // A step failure is a failure of the call, not a footnote inside a
+    // success: the batch that dispatched us (or an atomic kicad_invoke
+    // wrapping us) has to see `is_error` to roll back, exactly as it already
+    // does for a failed postcondition above (D28). The body — including
+    // `failed_at`, `rollback`, and the step's own `error` — is unchanged.
+    Ok(CallToolResult {
+        content: vec![crate::mcp::protocol::ToolContent::Text {
+            text: body.to_string(),
+        }],
+        is_error: report.failed_at.is_some(),
+    })
 }
 
 /// Build the `postcondition_failed` result: the structured error, with the
@@ -577,9 +585,10 @@ mod tests {
         // An operation nothing describes is an operation no caller can reach,
         // and the description is the only place a gateway client learns the
         // vocabulary — there is no per-operation schema to discover.
-        for name in crate::plan::OP_NAMES {
+        let description = crate::plan::plan_description();
+        for name in crate::plan::op_names() {
             assert!(
-                PLAN_DESCRIPTION.contains(name),
+                description.contains(name),
                 "operation '{name}' is implemented but not described"
             );
         }
@@ -703,5 +712,23 @@ mod tests {
         }});
         let result = handle_apply_plan(&args, ctx).await.unwrap();
         assert!(!result.is_error, "{}", result_text(&result));
+    }
+
+    #[tokio::test]
+    async fn a_failed_step_sets_is_error_so_an_atomic_batch_rolls_back() {
+        // D28 already does this for a failed postcondition; a step that fails
+        // outright (here: a tool the router has never heard of) must not look
+        // like success to whatever dispatched apply_plan — an atomic
+        // kicad_invoke wrapping it decides whether to roll back by reading
+        // `is_error` on this very result, not by re-parsing the body (E4).
+        let ctx = context("no-such-kicad-cli").await;
+        let args = json!({"plan": {
+            "ops": [{"op": "call", "with": {"tool": "no_such_tool_xyz", "args": {}}}]
+        }});
+        let result = handle_apply_plan(&args, ctx).await.unwrap();
+        assert!(result.is_error, "{}", result_text(&result));
+        let body: Value = serde_json::from_str(&result_text(&result)).unwrap();
+        assert_eq!(body["failed_at"], json!(0));
+        assert_eq!(body["ok"], json!(0));
     }
 }

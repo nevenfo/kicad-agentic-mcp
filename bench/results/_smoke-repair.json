@@ -1,0 +1,232 @@
+{
+  "model": "qwen3.5-9b",
+  "base_url": "http://127.0.0.1:1234/v1",
+  "temperature": 0.2,
+  "repeat": 2,
+  "strict_json": false,
+  "repair": 1,
+  "hint_levels": [
+    "full"
+  ],
+  "stable_prefix_tokens": 1969,
+  "tasks": {
+    "model_divider": {
+      "full": [
+        {
+          "llm_calls": 2,
+          "local_input_tokens": 5613,
+          "local_output_tokens": 3074,
+          "local_reasoning_tokens": 1606,
+          "finish_reason": "stop",
+          "ttft_ms": 263.62629999857745,
+          "tokens_per_second": 102.34848680517024,
+          "wall_clock_ms": 10434.758599996712,
+          "vram_peak_mib": 9043,
+          "grade": 2,
+          "outcome": "not_applied",
+          "valid_json": true,
+          "compiles": true,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"errors\": [\"{\\\"error\\\":{\\\"kind\\\":\\\"handler_error\\\",\\\"reason\\\":\\\"Library 'Resistors' not found in the installed KiCAD symbol libraries (lib_id 'Resistors'). Check the library name, the KiCAD install, or KICAD10_SYMBOL_DIR.\\\",\\\"transient\\\":\\\"none\\\"},\\\"message\\\":\\\"Library 'Resistors' not found in the installed KiCAD symbol libraries (lib_id 'Resistors'). Check the library name, the KiCAD i",
+          "raw_response": "{\n  \"ops\": [\n    {\n      \"op\": \"create\",\n      \"with\": {\n        \"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-_uin18oh\",\n        \"name\": \"divider\"\n      }\n    },\n    {\n      \"op\": \"place\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"components\": [\n          {\n            \"lib_id\": \"Resistors\",\n            \"x\": 100.33,\n            \"y\": 80.01,\n            \"reference\": \"R1\",\n            \"value\": \"10k\"\n          },\n          {\n            \"lib_id\": \"Resistors\",\n            \"x\": 100.33,\n            \"y\": 95.25,\n            \"reference\": \"R2\",\n            \"value\": \"10k\"\n          }\n        ]\n      }\n    },\n    {\n      \"op\": \"power\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"symbols\": [\n          {\n            \"net\": \"+3V3\",\n            \"x\": 100.33,\n            \"y\": 76.2\n          },\n          {\n            \"net\": \"GND\",\n            \"x\": 100.33,\n            \"y\": 99.06\n          }\n        ]\n      }\n    },\n    {\n      \"op\": \"label\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"labels\": [\n          {\n            \"net\": \"+3V3\",\n            \"x\": 100.33,\n            \"y\": 76.2\n          },\n          {\n            \"net\": \"GND\",\n            \"x\": 100.33,\n            \"y\": 99.06\n          },\n          {\n            \"net\": \"VOUT\",\n            \"x\": 100.33,\n            \"y\": 87.63\n          }\n        ]\n      }\n    },\n    {\n      \"op\": \"connect\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"connections\": [\n          {\n            \"ref1\": \"R1\",\n            \"pin1\": 2,\n            \"net\": \"VOUT\"\n          },\n          {\n            \"ref1\": \"R2\",\n            \"pin1\": 1,\n            \"net\": \"VOUT\"\n          }\n        ]\n      }\n    },\n    {\n      \"op\": \"connect\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"connections\": [\n          {\n            \"ref1\": \"R1\",\n            \"pin1\": 1,\n            \"net\": \"+3V3\"\n          },\n          {\n            \"ref1\": \"R2\",\n            \"pin1\": 2,\n            \"net\": \"GND\"\n          }\n        ]\n      }\n    }\n  ]\n}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-_uin18oh\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"schematic\": \"${0.schematic}\", \"components\": [{\"lib_id\": \"Resistors\", \"x\": 100.33, \"y\": 80.01, \"reference\": \"R1\", \"value\": \"10k\"}, {\"lib_id\": \"Resistors\", \"x\": 100.33, \"y\": 95.25, \"reference\": \"R2\", \"value\": \"10k\"}]}}, {\"op\": \"power\", \"with\": {\"schematic\": \"${0.schematic}\", \"symbols\": [{\"net\": \"+3V3\", \"x\": 100.33, \"y\": 76.2}, {\"net\": \"GND\", \"x\": 100.33, \"y\": 99.06}]}}, {\"op\": \"label\", \"with\": {\"schematic\": \"${0.schematic}\", \"labels\": [{\"net\": \"+3V3\", \"x\": 100.33, \"y\": 76.2}, {\"net\": \"GND\", \"x\": 100.33, \"y\": 99.06}, {\"net\": \"VOUT\", \"x\": 100.33, \"y\": 87.63}]}}, {\"op\": \"connect\", \"with\": {\"schematic\": \"${0.schematic}\", \"connections\": [{\"ref1\": \"R1\", \"pin1\": 2, \"net\": \"VOUT\"}, {\"ref1\": \"R2\", \"pin1\": 1, \"net\": \"VOUT\"}]}}, {\"op\": \"connect\", \"with\": {\"schematic\": \"${0.schematic}\", \"connections\": [{\"ref1\": \"R1\", \"pin1\": 1, \"net\": \"+3V3\"}, {\"ref1\": \"R2\", \"pin1\": 2, \"net\": \"GND\"}]}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "op2",
+            "kind": "apply_failed",
+            "message": "{\"error\": {\"errors\": [\"{\\\"error\\\":{\\\"kind\\\":\\\"handler_error\\\",\\\"reason\\\":\\\"Library 'Resistors' not found in the installed KiCAD symbol libraries (lib_id 'Resistors'). Check the library name, the KiCAD install, or KICAD10_SYMBOL_DIR.\\\",\\\"transient\\\":\\\"none\\\"},\\\"message\\\":\\\"Library 'Resistors' not found in the installed KiCAD symbol libraries (lib_id 'Resistors'). Check the library name, the KiCAD i"
+          },
+          "repair_rounds": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "not_applied",
+              "failure_kind": "apply_failed"
+            },
+            {
+              "round": 1,
+              "grade": 2,
+              "outcome": "not_applied",
+              "failure_kind": "apply_failed"
+            }
+          ]
+        },
+        {
+          "llm_calls": 2,
+          "local_input_tokens": 5680,
+          "local_output_tokens": 2707,
+          "local_reasoning_tokens": 1322,
+          "finish_reason": "stop",
+          "ttft_ms": 514.3480000006093,
+          "tokens_per_second": 100.80462774630202,
+          "wall_clock_ms": 13956.191199999012,
+          "vram_peak_mib": 9043,
+          "grade": 2,
+          "outcome": "not_applied",
+          "valid_json": true,
+          "compiles": true,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"errors\": [\"{\\\"error\\\":{\\\"candidates\\\":[\\\"Sensor:MAX30102\\\",\\\"Sensor:RPR-0521RS\\\"],\\\"kind\\\":\\\"handler_error\\\",\\\"reason\\\":\\\"Library symbol 'Sensor:R_0805' not found in the installed KiCAD libraries. Did you mean: Sensor:MAX30102, Sensor:RPR-0521RS? (KiCAD 10 renamed several older symbol names)\\\",\\\"transient\\\":\\\"none\\\"},\\\"message\\\":\\\"Library symbol 'Sensor:R_0805' not found in the install",
+          "raw_response": "{\n  \"ops\": [\n    {\n      \"op\": \"create\",\n      \"with\": {\n        \"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-koo2wgjp\",\n        \"name\": \"divider\"\n      }\n    },\n    {\n      \"op\": \"place\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"components\": [\n          {\n            \"lib_id\": \"Sensor:R_0805\",\n            \"x\": 100.33,\n            \"y\": 80.01,\n            \"reference\": \"R1\",\n            \"value\": \"10k\"\n          },\n          {\n            \"lib_id\": \"Sensor:R_0805\",\n            \"x\": 100.33,\n            \"y\": 95.25,\n            \"reference\": \"R2\",\n            \"value\": \"10k\"\n          }\n        ]\n      }\n    },\n    {\n      \"op\": \"power\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"symbols\": [\n          {\n            \"net\": \"+3V3\",\n            \"x\": 100.33,\n            \"y\": 76.2\n          },\n          {\n            \"net\": \"GND\",\n            \"x\": 100.33,\n            \"y\": 99.06\n          }\n        ]\n      }\n    },\n    {\n      \"op\": \"label\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"labels\": [\n          {\n            \"net\": \"+3V3\",\n            \"x\": 100.33,\n            \"y\": 76.2\n          },\n          {\n            \"net\": \"GND\",\n            \"x\": 100.33,\n            \"y\": 99.06\n          },\n          {\n            \"net\": \"VOUT\",\n            \"x\": 100.33,\n            \"y\": 87.63\n          }\n        ]\n      }\n    },\n    {\n      \"op\": \"connect\",\n      \"with\": {\n        \"schematic\": \"${0.schematic}\",\n        \"connections\": [\n          {\n            \"ref1\": \"R1\",\n            \"pin1\": 1,\n            \"net\": \"+3V3\"\n          },\n          {\n            \"ref1\": \"R1\",\n            \"pin1\": 2,\n            \"ref2\": \"R2\",\n            \"pin2\": 1\n          },\n          {\n            \"ref1\": \"R2\",\n            \"pin1\": 2,\n            \"net\": \"GND\"\n          }\n        ]\n      }\n    }\n  ]\n}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-koo2wgjp\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"schematic\": \"${0.schematic}\", \"components\": [{\"lib_id\": \"Sensor:R_0805\", \"x\": 100.33, \"y\": 80.01, \"reference\": \"R1\", \"value\": \"10k\"}, {\"lib_id\": \"Sensor:R_0805\", \"x\": 100.33, \"y\": 95.25, \"reference\": \"R2\", \"value\": \"10k\"}]}}, {\"op\": \"power\", \"with\": {\"schematic\": \"${0.schematic}\", \"symbols\": [{\"net\": \"+3V3\", \"x\": 100.33, \"y\": 76.2}, {\"net\": \"GND\", \"x\": 100.33, \"y\": 99.06}]}}, {\"op\": \"label\", \"with\": {\"schematic\": \"${0.schematic}\", \"labels\": [{\"net\": \"+3V3\", \"x\": 100.33, \"y\": 76.2}, {\"net\": \"GND\", \"x\": 100.33, \"y\": 99.06}, {\"net\": \"VOUT\", \"x\": 100.33, \"y\": 87.63}]}}, {\"op\": \"connect\", \"with\": {\"schematic\": \"${0.schematic}\", \"connections\": [{\"ref1\": \"R1\", \"pin1\": 1, \"net\": \"+3V3\"}, {\"ref1\": \"R1\", \"pin1\": 2, \"ref2\": \"R2\", \"pin2\": 1}, {\"ref1\": \"R2\", \"pin1\": 2, \"net\": \"GND\"}]}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "op2",
+            "kind": "apply_failed",
+            "message": "{\"error\": {\"errors\": [\"{\\\"error\\\":{\\\"candidates\\\":[\\\"Sensor:MAX30102\\\",\\\"Sensor:RPR-0521RS\\\"],\\\"kind\\\":\\\"handler_error\\\",\\\"reason\\\":\\\"Library symbol 'Sensor:R_0805' not found in the installed KiCAD libraries. Did you mean: Sensor:MAX30102, Sensor:RPR-0521RS? (KiCAD 10 renamed several older symbol names)\\\",\\\"transient\\\":\\\"none\\\"},\\\"message\\\":\\\"Library symbol 'Sensor:R_0805' not found in the install"
+          },
+          "repair_rounds": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "not_applied",
+              "failure_kind": "apply_failed"
+            },
+            {
+              "round": 1,
+              "grade": 2,
+              "outcome": "not_applied",
+              "failure_kind": "apply_failed"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "aggregate": {
+    "by_task_hint": {
+      "model_divider": {
+        "full": {
+          "attempts": 2,
+          "graded": 2,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 0,
+            "2": 2,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 0,
+            "compile_failed": 0,
+            "not_applied": 2,
+            "applied_invalid": 0,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 2.0,
+            "p95": 2,
+            "n": 2
+          },
+          "local_input_tokens": {
+            "median": 5646.5,
+            "p95": 5613,
+            "n": 2
+          },
+          "local_output_tokens": {
+            "median": 2890.5,
+            "p95": 2707,
+            "n": 2
+          },
+          "local_reasoning_tokens": {
+            "median": 1464.0,
+            "p95": 1322,
+            "n": 2
+          },
+          "ttft_ms": {
+            "median": 388.9871499995934,
+            "p95": 263.62629999857745,
+            "n": 2
+          },
+          "tokens_per_second": {
+            "median": 101.57655727573612,
+            "p95": 100.80462774630202,
+            "n": 2
+          },
+          "wall_clock_ms": {
+            "median": 12195.474899997862,
+            "p95": 10434.758599996712,
+            "n": 2
+          },
+          "vram_peak_mib": {
+            "median": 9043.0,
+            "p95": 9043,
+            "n": 2
+          },
+          "erc_errors": null
+        }
+      }
+    },
+    "by_hint": {
+      "full": {
+        "attempts": 2,
+        "graded": 2,
+        "success_rate": 0.0,
+        "grade_histogram": {
+          "0": 0,
+          "1": 0,
+          "2": 2,
+          "3": 0
+        },
+        "outcome_histogram": {
+          "invalid_json": 0,
+          "truncated": 0,
+          "compile_failed": 0,
+          "not_applied": 2,
+          "applied_invalid": 0,
+          "success": 0
+        },
+        "llm_calls": {
+          "median": 2.0,
+          "p95": 2,
+          "n": 2
+        },
+        "local_input_tokens": {
+          "median": 5646.5,
+          "p95": 5613,
+          "n": 2
+        },
+        "local_output_tokens": {
+          "median": 2890.5,
+          "p95": 2707,
+          "n": 2
+        },
+        "local_reasoning_tokens": {
+          "median": 1464.0,
+          "p95": 1322,
+          "n": 2
+        },
+        "ttft_ms": {
+          "median": 388.9871499995934,
+          "p95": 263.62629999857745,
+          "n": 2
+        },
+        "tokens_per_second": {
+          "median": 101.57655727573612,
+          "p95": 100.80462774630202,
+          "n": 2
+        },
+        "wall_clock_ms": {
+          "median": 12195.474899997862,
+          "p95": 10434.758599996712,
+          "n": 2
+        },
+        "vram_peak_mib": {
+          "median": 9043.0,
+          "p95": 9043,
+          "n": 2
+        },
+        "erc_errors": null
+      }
+    }
+  }
+}

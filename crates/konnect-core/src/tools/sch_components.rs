@@ -1206,8 +1206,10 @@ async fn handle_replace_component(
 
 // Library symbol resolution moved to tools/mod.rs (shared with sch_wiring.rs)
 
+// `pub(crate)` (rather than private): `tools::lib_symbol_not_found_error_tests`
+// needs `SYMBOL_DIR_ENV` below to serialize against these tests' env-var use.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::router::ToolRouter;
     use crate::tools::ServerConfig;
@@ -1228,7 +1230,10 @@ mod tests {
     }
 
     /// Serializes tests that set KICAD10_SYMBOL_DIR (process-wide env).
-    static SYMBOL_DIR_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// `pub(crate)` so other test modules in this crate that also fixture a
+    /// symbol dir (e.g. `tools::lib_symbol_not_found_error_tests`) serialize
+    /// against the same lock instead of racing on a second, independent one.
+    pub(crate) static SYMBOL_DIR_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// A stub symbol library so component adds resolve without an installed
     /// KiCAD (CI has none): Device:R and Device:C_Polarized in the KiCAD 10
