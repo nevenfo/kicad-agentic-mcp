@@ -7,7 +7,7 @@
 #![deny(missing_docs)]
 
 use kam_context::{BudgetLimits, Compactor, RetrievalBundle, TaskCore};
-use kam_llm::{CompletionRequest, Provider, ReasoningEffort, Role};
+use kam_llm::{CompletionRequest, Provider, ReasoningEffort, Role, StructuredOutput};
 use kam_state::{TaskError, TaskState, TaskStore};
 use serde::Serialize;
 use std::sync::Arc;
@@ -73,6 +73,8 @@ pub struct SupervisorOutcome {
     pub local_model_called: bool,
     /// Local usage when a provider returned successfully.
     pub usage: Option<UsageEvidence>,
+    /// Untrusted local-model proposal. It is never a verified fact.
+    pub proposal: Option<String>,
     /// Stable evidence for a refusal or unavailable local execution.
     pub evidence: Vec<SupervisorEvidence>,
 }
@@ -126,6 +128,7 @@ impl Supervisor {
                 decision: "NO_LLM",
                 local_model_called: false,
                 usage: None,
+                proposal: None,
                 evidence: vec![SupervisorEvidence {
                     code: "no_llm",
                     detail: "measured route completed without a model call".to_string(),
@@ -136,6 +139,7 @@ impl Supervisor {
                 decision: "ESCALATE",
                 local_model_called: false,
                 usage: None,
+                proposal: None,
                 evidence: vec![SupervisorEvidence {
                     code: "escalated",
                     detail:
@@ -158,6 +162,7 @@ impl Supervisor {
                 decision: "LOCAL",
                 local_model_called: false,
                 usage: None,
+                proposal: None,
                 evidence: vec![SupervisorEvidence {
                     code: "local_provider_unavailable",
                     detail: "LOCAL was measured but no local Provider is configured".to_string(),
@@ -173,7 +178,7 @@ impl Supervisor {
             )
             .map_err(|error| TaskError::Unknown(format!("context_budget:{error}")))?;
         let mut messages = vec![
-            kam_llm::Message::text(Role::System, "You are the local KiCAD supervisor."),
+            kam_llm::Message::text(Role::System, "You are the local KiCAD supervisor. Return only one Plan IR JSON object; it will be compiled and executed deterministically."),
             kam_llm::Message::text(Role::User, compacted.task_core().rendered()),
         ];
         messages.extend(compacted.retrieval().iter().map(|bundle| {
@@ -185,6 +190,34 @@ impl Supervisor {
         let request = CompletionRequest {
             messages,
             reasoning_effort: Some(LocalModelProfile::REASONING_EFFORT),
+            structured_output: Some(StructuredOutput {
+                name: "kicad_plan".to_string(),
+                schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {"type": "string"},
+                        "documents": {"type": "array", "items": {"type": "string"}},
+                        "ops": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "op": {"type": "string"},
+                                    "with": {"type": "object"}
+                                },
+                                "required": ["op"]
+                            }
+                        },
+                        "constraints": {"type": "array", "items": {"type": "string"}},
+                        "validators": {"type": "array", "items": {"type": "string"}},
+                        "rollback_policy": {"type": "string"}
+                    },
+                    "required": ["ops"]
+                }),
+                strict: false,
+            }),
+            temperature: Some(0.2),
             ..Default::default()
         };
         let response = match provider.complete(request).await {
@@ -195,6 +228,7 @@ impl Supervisor {
                     decision: "LOCAL",
                     local_model_called: true,
                     usage: None,
+                    proposal: None,
                     evidence: vec![SupervisorEvidence {
                         code: "local_provider_error",
                         detail: error.to_string(),
@@ -216,6 +250,7 @@ impl Supervisor {
                 completion_tokens: response.usage.completion_tokens,
                 reasoning_tokens: response.usage.reasoning_tokens,
             }),
+            proposal: Some(reply),
             evidence: vec![SupervisorEvidence {
                 code: "local_model",
                 detail: format!(
@@ -314,6 +349,11 @@ mod tests {
         let requests = provider.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].reasoning_effort, Some(ReasoningEffort::Medium));
+        assert_eq!(requests[0].temperature, Some(0.2));
+        let structured = requests[0].structured_output.as_ref().unwrap();
+        assert_eq!(structured.name, "kicad_plan");
+        assert_eq!(structured.schema["required"], serde_json::json!(["ops"]));
+        assert!(!structured.strict);
         assert!(requests[0].messages.iter().any(|message| {
             message
                 .content

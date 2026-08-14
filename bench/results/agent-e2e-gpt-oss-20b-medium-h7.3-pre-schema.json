@@ -1,0 +1,105 @@
+{
+  "harness": "H.7.3",
+  "task": "model_divider",
+  "hint": "full",
+  "model": "openai/gpt-oss-20b",
+  "base_url": "http://127.0.0.1:1234/v1",
+  "loopback": true,
+  "context_window_tokens": 32768,
+  "reasoning_effort": "medium",
+  "attempt_limit": 5,
+  "attempts": [
+    {
+      "attempt": 1,
+      "task_id": "task_1",
+      "work": "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-6e6koqm6",
+      "status": "PLAN_INVALID",
+      "preview": null,
+      "application": null,
+      "verification": null,
+      "evidence": null,
+      "usage": {
+        "prompt_tokens": 3208,
+        "completion_tokens": 3264,
+        "reasoning_tokens": 2922
+      },
+      "reason": "model proposal must be a Plan IR object containing ops",
+      "local_calls": 1,
+      "external_calls": 0
+    },
+    {
+      "attempt": 2,
+      "task_id": "task_2",
+      "work": "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-6nw8msgl",
+      "status": "PLAN_INVALID",
+      "preview": null,
+      "application": null,
+      "verification": null,
+      "evidence": null,
+      "usage": {
+        "prompt_tokens": 3200,
+        "completion_tokens": 3400,
+        "reasoning_tokens": 3102
+      },
+      "reason": "model proposal must be a Plan IR object containing ops",
+      "local_calls": 1,
+      "external_calls": 0
+    },
+    {
+      "attempt": 3,
+      "task_id": "task_3",
+      "work": "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-bi_84ud7",
+      "status": "PLAN_INVALID",
+      "preview": null,
+      "application": null,
+      "verification": null,
+      "evidence": null,
+      "usage": {
+        "prompt_tokens": 3192,
+        "completion_tokens": 2576,
+        "reasoning_tokens": 2262
+      },
+      "reason": "model proposal is not JSON Plan IR: expected `,` or `]` at line 1 column 321",
+      "local_calls": 1,
+      "external_calls": 0
+    },
+    {
+      "attempt": 4,
+      "task_id": "task_4",
+      "work": "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-yz3n81jo",
+      "status": "PLAN_INVALID",
+      "preview": null,
+      "application": null,
+      "verification": null,
+      "evidence": null,
+      "usage": {
+        "prompt_tokens": 3200,
+        "completion_tokens": 1618,
+        "reasoning_tokens": 1320
+      },
+      "reason": "model proposal must be a Plan IR object containing ops",
+      "local_calls": 1,
+      "external_calls": 0
+    },
+    {
+      "attempt": 5,
+      "task_id": "task_5",
+      "work": "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-perjh9pv",
+      "status": "PLAN_INVALID",
+      "preview": null,
+      "application": null,
+      "verification": null,
+      "evidence": null,
+      "usage": {
+        "prompt_tokens": 3184,
+        "completion_tokens": 3267,
+        "reasoning_tokens": 2986
+      },
+      "reason": "model proposal must be a Plan IR object containing ops",
+      "local_calls": 1,
+      "external_calls": 0
+    }
+  ],
+  "local_calls": 5,
+  "external_calls": 0
+}

@@ -170,7 +170,9 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                     "decision": {"enum": ["NO_LLM", "LOCAL", "ESCALATE"]},
                     "task_core_tokens": {"type": "integer", "minimum": 0, "default": 0},
                     "fixed_prefix_tokens": {"type": "integer", "minimum": 0, "default": 0},
-                    "retrieval_bundles": {"type": "array", "description": "Each item must atomically include electrical_constraints, plan_ir, geometry, and measured_tokens."}
+                    "retrieval_bundles": {"type": "array", "description": "Each item must atomically include electrical_constraints, plan_ir, geometry, and measured_tokens."},
+                    "execute": {"type": "boolean", "default": false, "description": "For LOCAL only: compile/preview/apply the model Plan IR then deterministically verify document."},
+                    "document": {"type": "string", "description": "Required when execute is true; document passed to kicad_agent_verify after apply."}
                 },
                 "required": ["task_id", "decision"]
             }),
@@ -357,6 +359,21 @@ async fn handle_kicad_agent(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> 
         fixed_prefix_tokens,
         retrieval,
     };
+    if args
+        .get("execute")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        if decision != kam_runtime::RoutingDecision::Local {
+            return CallToolResult::error("kicad_agent execute requires decision LOCAL");
+        }
+        let Some(document) = args.get("document").and_then(Value::as_str) else {
+            return CallToolResult::error("kicad_agent execute requires document (string)");
+        };
+        return CallToolResult::json(
+            &crate::agent_loop::execute(ctx.clone(), input, document).await,
+        );
+    }
     match ctx.supervisor.run(decision, input).await {
         Ok(outcome) => CallToolResult::json(&outcome),
         Err(error) => CallToolResult::error(format!("kicad_agent task error: {error}")),

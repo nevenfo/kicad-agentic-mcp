@@ -136,6 +136,13 @@ impl Config {
                 .ok()
                 .filter(|value| !value.is_empty());
         }
+        if self.local_llm_model == default_local_llm_model() {
+            if let Ok(model) = std::env::var("KONNECT_LOCAL_LLM_MODEL") {
+                if !model.is_empty() {
+                    self.local_llm_model = model;
+                }
+            }
+        }
     }
 
     /// Build the optional loopback-only local provider for Agent mode.

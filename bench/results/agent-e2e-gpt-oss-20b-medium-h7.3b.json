@@ -1,0 +1,87 @@
+{
+  "harness": "H.7.3",
+  "task": "model_divider",
+  "hint": "full",
+  "model": "openai/gpt-oss-20b",
+  "base_url": "http://127.0.0.1:1234/v1",
+  "loopback": true,
+  "context_window_tokens": 32768,
+  "reasoning_effort": "medium",
+  "attempt_limit": 5,
+  "attempts": [
+    {
+      "attempt": 1,
+      "task_id": "task_1",
+      "work": "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk",
+      "status": "SUCCESS",
+      "preview": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"expansion\":[\"create=1 step(s)\",\"place=1 step(s)\",\"place=1 step(s)\",\"place=1 step(s)\",\"label=1 step(s)\",\"connect=3 step(s)\"],\"ops\":6,\"plan_id\":\"divider_plan\",\"references\":true,\"rollback_policy\":\"atomic\",\"steps\":8}"
+          }
+        ],
+        "isError": false
+      },
+      "application": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"ok\":8,\"ops\":6,\"plan_id\":\"divider_plan\",\"steps\":8}"
+          }
+        ],
+        "isError": false
+      },
+      "verification": {
+        "task": {
+          "id": "task_1",
+          "objective": "TASK: Resistive divider, ERC-clean\n\nBuild a 10k/10k resistive voltage divider between +3V3 and GND, with the\nmidpoint net labeled VOUT. Work inside the schematic at C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk/divider.kicad_sch, in a project\ncreated at C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk named divider.\n\nNOTES:\nDevice:R pins sit at (component_x, component_y - 3.81) for pin 1 and\n(component_x, component_y + 3.81) for pin 2. Place R1 at (100.33, 80.01)\nand R2 at (100.33, 95.25), so R1's pin 2 (100.33, 83.82) and R2's pin 1\n(100.33, 91.44) can be wired together, with the VOUT label at their\nmidpoint (100.33, 87.63). Each power rail needs a PWR_FLAG anchored at the\nsame coordinate as its power symbol or ERC reports the rail as not driven:\n+3V3 and a PWR_FLAG at (100.33, 76.2), GND and a PWR_FLAG at\n(100.33, 99.06). Every coordinate above is already a multiple of the\n1.27mm schematic grid.\n\nPaths, already literal above and repeated here verbatim:\nwork directory  C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk\nproject name    divider\nschematic file  C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk/divider.kicad_sch",
+          "subgoal": null,
+          "constraints": [],
+          "success_criteria": [],
+          "verified_facts": [
+            "erc C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk/divider.kicad_sch PASS at 2f8f61d70fd1d75e-14760: 0 errors, 0 warnings (kicad-cli)"
+          ],
+          "assumptions": [
+            "local supervisor proposal: {\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk\",\"name\":\"divider\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":100.33,\"y\":80.01},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\",\"x\":100.33,\"y\":95.25}]}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"power:+3V3\",\"x\":100.33,\"y\":76.2},{\"lib_id\":\"power:GND\",\"x\":100.33,\"y\":99.06}]}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"power:PWR_FLAG\",\"net\":\"+3V3\",\"x\":100.33,\"y\":76.2},{\"lib_id\":\"power:PWR_FLAG\",\"net\":\"GND\",\"x\":100.33,\"y\":99.06}]}},{\"op\":\"label\",\"with\":{\"labels\":[{\"net\":\"VOUT\",\"x\":100.33,\"y\":87.63}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"ref1\":\"R1\",\"pin1\":\"2\",\"ref2\":\"R2\",\"pin2\":\"1\"},{\"ref1\":\"R1\",\"pin1\":\"1\",\"net\":\"+3V3\"},{\"ref1\":\"R2\",\"pin1\":\"2\",\"net\":\"GND\"}]}}],\"plan_id\":\"divider_plan\",\"rollback_policy\":\"none\",\"validators\":[] }"
+          ],
+          "unresolved": [],
+          "failed_attempts": [],
+          "forbidden_repeats": [],
+          "revisions": {
+            "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk/divider.kicad_sch": "2f8f61d70fd1d75e-14760"
+          },
+          "evidence": [
+            "kicad://verification/1"
+          ],
+          "progress": {
+            "done": 0,
+            "total": 0
+          },
+          "batches": 0,
+          "status": "active"
+        },
+        "document": "C:/Users/FlowUP/AppData/Local/Temp/kam-agent-model_divider-d3dk1ysk/divider.kicad_sch",
+        "check": "erc",
+        "revision": "2f8f61d70fd1d75e-14760",
+        "verdict": "PASS",
+        "source": "kicad-cli",
+        "errors": 0,
+        "warnings": 0,
+        "evidence": "kicad://verification/1",
+        "reason": null
+      },
+      "evidence": "kicad://verification/1",
+      "usage": {
+        "prompt_tokens": 3192,
+        "completion_tokens": 3124,
+        "reasoning_tokens": 2782
+      },
+      "reason": null,
+      "local_calls": 1,
+      "external_calls": 0
+    }
+  ],
+  "local_calls": 1,
+  "external_calls": 0
+}

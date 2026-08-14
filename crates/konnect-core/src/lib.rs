@@ -1,3 +1,4 @@
+pub mod agent_loop;
 pub mod capability;
 pub mod evidence;
 pub mod graph;
