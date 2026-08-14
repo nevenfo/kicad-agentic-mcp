@@ -20,6 +20,10 @@ pub struct Usage {
     pub prompt_tokens: u32,
     /// Tokens the backend generated. Feeds `LOCAL_OUTPUT_TOKENS`.
     pub completion_tokens: u32,
+    /// Deliberation tokens included in [`Self::completion_tokens`]. This is a
+    /// split, not an additional cost: answer tokens are
+    /// `completion_tokens - reasoning_tokens`.
+    pub reasoning_tokens: u32,
     /// Wall-clock time from request start to the first streamed token.
     /// `None` when the backend never sent one (empty completion, or a
     /// non-streaming path). Feeds `TTFT_LOCAL`.
@@ -39,6 +43,19 @@ impl Usage {
     #[must_use]
     pub fn local_output_tokens(&self) -> u32 {
         self.completion_tokens
+    }
+
+    /// Deliberation tokens included in `LOCAL_OUTPUT_TOKENS`.
+    #[must_use]
+    pub fn local_reasoning_tokens(&self) -> u32 {
+        self.reasoning_tokens
+    }
+
+    /// Visible answer tokens when the backend reports a valid reasoning split.
+    /// Returns `None` for malformed accounting instead of underflowing.
+    #[must_use]
+    pub fn local_answer_tokens(&self) -> Option<u32> {
+        self.completion_tokens.checked_sub(self.reasoning_tokens)
     }
 
     /// `TTFT_LOCAL` for this call.
@@ -80,6 +97,7 @@ mod tests {
         let usage = Usage {
             prompt_tokens: 100,
             completion_tokens: 50,
+            reasoning_tokens: 35,
             ttft: Some(Duration::from_millis(200)),
             total_latency: Duration::from_millis(1200),
         };
@@ -87,6 +105,8 @@ mod tests {
         assert_eq!(usage.tokens_per_second_local(), Some(50.0));
         assert_eq!(usage.local_input_tokens(), 100);
         assert_eq!(usage.local_output_tokens(), 50);
+        assert_eq!(usage.local_reasoning_tokens(), 35);
+        assert_eq!(usage.local_answer_tokens(), Some(15));
         assert_eq!(usage.total_tokens(), 150);
     }
 
@@ -109,5 +129,15 @@ mod tests {
         };
         assert_eq!(usage.tokens_per_second_local(), None);
         assert_eq!(usage.ttft_local(), None);
+    }
+
+    #[test]
+    fn malformed_reasoning_split_is_not_an_answer_count() {
+        let usage = Usage {
+            completion_tokens: 10,
+            reasoning_tokens: 11,
+            ..Usage::default()
+        };
+        assert_eq!(usage.local_answer_tokens(), None);
     }
 }

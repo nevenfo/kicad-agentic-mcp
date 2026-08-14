@@ -1053,6 +1053,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kam-context"
+version = "0.2.2"
+dependencies = [
+ "kam-llm",
+ "kam-state",
+ "serde_json",
+]
+
+[[package]]
 name = "kam-evidence"
 version = "0.2.2"
 dependencies = [

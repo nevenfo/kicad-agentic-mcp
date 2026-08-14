@@ -1,0 +1,13 @@
+[package]
+name = "kam-context"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Explicit token budgets and accounting for local-agent contexts."
+
+[dependencies]
+kam-llm.workspace = true
+kam-state.workspace = true
+serde_json.workspace = true

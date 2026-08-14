@@ -317,6 +317,7 @@ async fn consume_sse_stream(
             if let Some(u) = event.usage {
                 usage.prompt_tokens = u.prompt_tokens;
                 usage.completion_tokens = u.completion_tokens;
+                usage.reasoning_tokens = u.completion_tokens_details.reasoning_tokens;
             }
             if let Some(choice) = event.choices.into_iter().next() {
                 if let Some(c) = choice.delta.content {
@@ -448,6 +449,14 @@ struct WireUsage {
     prompt_tokens: u32,
     #[serde(default)]
     completion_tokens: u32,
+    #[serde(default)]
+    completion_tokens_details: WireCompletionTokenDetails,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct WireCompletionTokenDetails {
+    #[serde(default)]
+    reasoning_tokens: u32,
 }
 
 #[cfg(test)]
@@ -501,7 +510,8 @@ mod tests {
             sse_body(&[
                 json!({"choices":[{"delta":{"content":"Hel"}}]}).to_string(),
                 json!({"choices":[{"delta":{"content":"lo"}, "finish_reason":"stop"}],
-                       "usage":{"prompt_tokens":12,"completion_tokens":2}})
+                       "usage":{"prompt_tokens":12,"completion_tokens":2,
+                                "completion_tokens_details":{"reasoning_tokens":1}}})
                 .to_string(),
             ])
         }
@@ -520,6 +530,8 @@ mod tests {
         assert_eq!(resp.finish_reason, FinishReason::Stop);
         assert_eq!(resp.usage.local_input_tokens(), 12);
         assert_eq!(resp.usage.local_output_tokens(), 2);
+        assert_eq!(resp.usage.local_reasoning_tokens(), 1);
+        assert_eq!(resp.usage.local_answer_tokens(), Some(1));
         assert!(resp.usage.ttft_local().is_some());
     }
 

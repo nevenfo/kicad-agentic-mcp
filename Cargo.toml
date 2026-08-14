@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/kam-context",
     "crates/kam-evidence",
     "crates/kam-graph",
     "crates/kam-llm",
@@ -78,6 +79,7 @@ dirs = "5"
 usvg = "0.47"
 
 # Internal crates
+kam-context = { path = "crates/kam-context" }
 kam-evidence = { path = "crates/kam-evidence" }
 kam-graph = { path = "crates/kam-graph" }
 kam-llm = { path = "crates/kam-llm" }
