@@ -103,6 +103,9 @@ pub struct ToolContext {
     pub tasks: Arc<kam_state::TaskStore>,
     /// Explicit Agent-only entry point. Direct KiCAD tools never consult it.
     pub supervisor: Arc<kam_runtime::Supervisor>,
+    /// Deterministic companion to the Agent supervisor. Only validator-derived
+    /// verdicts from this path enter `TaskState::verified_facts`.
+    pub verification_agent: Arc<crate::verification_agent::VerificationAgent>,
     /// Built graphs of a project's documents, cached by content revision so a
     /// `graph_*` call reuses the last build when nothing on disk moved.
     pub graph: Arc<crate::graph::GraphStore>,
@@ -113,15 +116,24 @@ impl ToolContext {
     /// tests and by callers that don't need persistent call logs.
     pub fn new(config: ServerConfig, router: Arc<ToolRouter>) -> Self {
         let tasks = Arc::new(kam_state::TaskStore::default());
+        let evidence = Arc::new(kam_evidence::EvidenceStore::default());
+        let validation = Arc::new(crate::evidence::validators::Cache::default());
+        let verification_agent = Arc::new(crate::verification_agent::VerificationAgent::new(
+            tasks.clone(),
+            validation.clone(),
+            evidence.clone(),
+            config.kicad_cli.clone(),
+        ));
         ToolContext {
             config,
             router,
             observer: crate::observability::CallObserver::new(None),
             jlcpcb_cache: QueryCache::default(),
             idempotency: Arc::default(),
-            evidence: Arc::default(),
-            validation: Arc::default(),
+            evidence,
+            validation,
             supervisor: Arc::new(kam_runtime::Supervisor::new(tasks.clone(), None)),
+            verification_agent,
             tasks,
             graph: Arc::default(),
         }
@@ -146,15 +158,24 @@ impl ToolContext {
         provider: Option<Arc<dyn kam_llm::Provider>>,
     ) -> Self {
         let tasks = Arc::new(kam_state::TaskStore::default());
+        let evidence = Arc::new(kam_evidence::EvidenceStore::default());
+        let validation = Arc::new(crate::evidence::validators::Cache::default());
+        let verification_agent = Arc::new(crate::verification_agent::VerificationAgent::new(
+            tasks.clone(),
+            validation.clone(),
+            evidence.clone(),
+            config.kicad_cli.clone(),
+        ));
         ToolContext {
             config,
             router,
             observer,
             jlcpcb_cache: QueryCache::default(),
             idempotency: Arc::default(),
-            evidence: Arc::default(),
-            validation: Arc::default(),
+            evidence,
+            validation,
             supervisor: Arc::new(kam_runtime::Supervisor::new(tasks.clone(), provider)),
+            verification_agent,
             tasks,
             graph: Arc::default(),
         }

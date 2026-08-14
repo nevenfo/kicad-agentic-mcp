@@ -6,3 +6,4 @@ pub mod observability;
 pub mod plan;
 pub mod router;
 pub mod tools;
+pub mod verification_agent;

@@ -176,6 +176,15 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
             }),
         },
         McpToolDescription {
+            name: "kicad_agent_verify".to_string(),
+            description: "Explicit Agent verification turn. Its PASS/FAIL verdict and TaskState.verified_facts come only from cached or freshly run kicad-cli ERC/DRC; model assertions are never verified facts.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {"task_id": {"type": "string"}, "document": {"type": "string"}},
+                "required": ["task_id", "document"]
+            }),
+        },
+        McpToolDescription {
             name: "list_toolboxes".to_string(),
             description:
                 "List all available KiCAD toolsets with descriptions, categories, tool counts, \
@@ -289,6 +298,7 @@ pub async fn handle_meta_tool(
         "kicad_describe" => Some(handle_kicad_describe(args, ctx).await),
         "kicad_invoke" => Some(handle_kicad_invoke(args, ctx).await),
         "kicad_agent" => Some(handle_kicad_agent(args, ctx).await),
+        "kicad_agent_verify" => Some(handle_kicad_agent_verify(args, ctx).await),
         "list_toolboxes" => Some(handle_list_toolboxes(ctx).await),
         "load_toolset" => Some(handle_load_toolset(args, ctx).await),
         "unload_toolset" => Some(handle_unload_toolset(args, ctx).await),
@@ -296,6 +306,23 @@ pub async fn handle_meta_tool(
         "get_recent_calls" => Some(handle_get_recent_calls(args, ctx).await),
         "server_stats" => Some(handle_server_stats(ctx).await),
         _ => None,
+    }
+}
+
+/// Explicit deterministic verification companion to `kicad_agent`.
+async fn handle_kicad_agent_verify(
+    args: &Value,
+    ctx: &std::sync::Arc<ToolContext>,
+) -> CallToolResult {
+    let Some(task_id) = args.get("task_id").and_then(Value::as_str) else {
+        return CallToolResult::error("kicad_agent_verify requires task_id (string)");
+    };
+    let Some(document) = args.get("document").and_then(Value::as_str) else {
+        return CallToolResult::error("kicad_agent_verify requires document (string)");
+    };
+    match ctx.verification_agent.verify(task_id, document).await {
+        Ok(outcome) => CallToolResult::json(&outcome),
+        Err(error) => CallToolResult::error(format!("kicad_agent_verify task error: {error}")),
     }
 }
 
