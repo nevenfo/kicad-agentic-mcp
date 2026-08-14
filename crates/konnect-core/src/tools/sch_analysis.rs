@@ -10,8 +10,8 @@ use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
-        extract_junctions, extract_labels, extract_symbol_instances, extract_wires, read_schematic,
-        Wire,
+        extract_junctions, extract_labels, extract_lib_pins_for_unit, extract_symbol_instances,
+        extract_wires, parse_at, pin_endpoint, read_schematic, Wire,
     },
 };
 use serde_json::json;
@@ -143,7 +143,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "find_single_pin_nets",
-            "Find nets with only one label/connection — often indicates a missing counterpart.",
+            "Find symbol pins with no wire or label and no explicit no-connect marker.",
             json!({ "type": "object",
                 "properties": { "schematic": { "type": "string" } },
                 "required": ["schematic"] }),
@@ -652,29 +652,66 @@ async fn handle_find_single_pin_nets(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sch = cse::Schematic::load(&sch_path)?;
-    let labels = super::sch_bridge::all_labels_as_sexp(&sch);
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for l in &labels {
-        *counts.entry(l.net.clone()).or_insert(0) += 1;
-    }
-    let singles: Vec<serde_json::Value> = counts
-        .iter()
-        .filter(|(_, &c)| c == 1)
-        .map(|(net, _)| {
-            let l = labels.iter().find(|l| &l.net == net).unwrap();
-            json!({ "net": net, "x": l.x, "y": l.y, "type": format!("{:?}", l.kind) })
-        })
-        .collect();
+    let (_, tree) = read_schematic(&sch_path)?;
+    let singles = find_isolated_pins(&tree);
     Ok(CallToolResult::json(
         &json!({ "single_pin_net_count": singles.len(), "nets": singles }),
     ))
 }
 
+fn find_isolated_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<serde_json::Value> {
+    let wires = extract_wires(tree);
+    let labels = extract_labels(tree);
+    let no_connects: HashSet<(i64, i64)> = tree
+        .find_all("no_connect")
+        .iter()
+        .filter_map(|node| parse_at(node).map(|(x, y, _)| pt_key(x, y)))
+        .collect();
+    let lib_syms = tree
+        .find("lib_symbols")
+        .map(|node| node.find_all("symbol"))
+        .unwrap_or_default();
+    let mut graph = build_net_graph(&wires, &labels, &extract_junctions(tree));
+    let mut isolated = Vec::new();
+
+    for instance in extract_symbol_instances(tree) {
+        let Some(lib_sym) = lib_syms
+            .iter()
+            .find(|symbol| symbol.get(1).and_then(|node| node.as_str()) == Some(&instance.lib_id))
+        else {
+            continue;
+        };
+        for pin in extract_lib_pins_for_unit(lib_sym, instance.unit) {
+            let (x, y) = pin_endpoint(&pin, instance.pin_transform());
+            if no_connects.contains(&pt_key(x, y)) {
+                continue;
+            }
+            let connected = graph.net_at(x, y).is_some()
+                || wires
+                    .iter()
+                    .any(|wire| point_on_segment(x, y, wire.x1, wire.y1, wire.x2, wire.y2, 0.01));
+            if !connected {
+                isolated.push(json!({
+                    "net": null,
+                    "reference": instance.reference,
+                    "pin_number": pin.number,
+                    "pin_name": pin.name,
+                    "x": x,
+                    "y": y,
+                    "type": "unconnected_pin"
+                }));
+            }
+        }
+    }
+    isolated
+}
+
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use crate::{mcp::protocol::ToolContent, router::ToolRouter};
+    use konnect_sexp::parser::parse_sexp;
     use std::{process::Command, sync::Arc};
 
     fn ctx() -> ToolContext {
@@ -710,8 +747,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn documents_zero_in_process_single_pin_nets_for_isolated_resistors() {
-        assert_eq!(in_process_single_pin_nets().await, 0);
+    async fn finds_six_isolated_pins_for_three_isolated_resistors() {
+        assert_eq!(in_process_single_pin_nets().await, 6);
+    }
+
+    const RESISTOR_LIBRARY: &str = r#"
+        (lib_symbols
+          (symbol "Device:R"
+            (symbol "R_1_1"
+              (pin passive line (at 0 3.81 270) (length 1.27) (name "~") (number "1"))
+              (pin passive line (at 0 -3.81 90) (length 1.27) (name "~") (number "2")))))
+    "#;
+
+    #[test]
+    fn excludes_explicit_no_connect_pins() {
+        let tree = parse_sexp(&format!(
+            r#"(kicad_sch {RESISTOR_LIBRARY}
+              (symbol (lib_id "Device:R") (at 100 50 0) (unit 1)
+                (property "Reference" "R1") (property "Value" "10k"))
+              (no_connect (at 100 53.81)))"#
+        ))
+        .unwrap();
+        let pins = find_isolated_pins(&tree);
+
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0]["pin_number"], "1");
+    }
+
+    #[test]
+    fn recognizes_pins_connected_by_a_wire() {
+        let tree = parse_sexp(&format!(
+            r#"(kicad_sch {RESISTOR_LIBRARY}
+              (symbol (lib_id "Device:R") (at 100 50 0) (unit 1)
+                (property "Reference" "R1") (property "Value" "10k"))
+              (symbol (lib_id "Device:R") (at 110 50 0) (unit 1)
+                (property "Reference" "R2") (property "Value" "10k"))
+              (wire (pts (xy 100 53.81) (xy 110 53.81))))"#
+        ))
+        .unwrap();
+        let pins = find_isolated_pins(&tree);
+
+        assert_eq!(pins.len(), 2);
+        assert!(pins.iter().all(|pin| pin["pin_number"] == "1"));
     }
 
     #[tokio::test]
@@ -742,7 +819,7 @@ mod tests {
             .filter(|violation| violation["type"] == "pin_not_connected")
             .count();
 
-        assert_eq!(in_process_single_pin_nets().await, 0);
+        assert_eq!(in_process_single_pin_nets().await, 6);
         assert_eq!(cli_unconnected_pins, 6);
     }
 }

@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 166 | 46 | 5 | 106 | 4 | 5 | 28.6 % |
+| KiCAD domains | 166 | 46 | 7 | 104 | 4 | 5 | 28.6 % |
 | server's own | 40 | 15 | 3 | 22 | 0 | 0 | 37.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -49,7 +49,7 @@ Coverage is `(supported + external) / (entries − entries KiCAD has no API for)
 | [`schematic`](#schematic) | 9 | 2 | 0 | 6 | 1 | 0 | 22.2 % |
 | [`symbols`](#symbols) | 19 | 5 | 1 | 13 | 0 | 0 | 26.3 % |
 | [`wires`](#wires) | 8 | 4 | 0 | 4 | 0 | 0 | 50.0 % |
-| [`nets`](#nets) | 25 | 5 | 2 | 18 | 0 | 0 | 20.0 % |
+| [`nets`](#nets) | 25 | 5 | 4 | 16 | 0 | 0 | 20.0 % |
 | [`labels`](#labels) | 6 | 2 | 0 | 4 | 0 | 0 | 33.3 % |
 | [`buses`](#buses) | 1 | 0 | 0 | 0 | 1 | 0 | 0.0 % |
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -183,8 +183,8 @@ Not covered by any tool:
 | `get_net_components` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `trace_from_point` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `find_shorted_nets` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `find_single_pin_nets` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_connected_items` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `find_single_pin_nets` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_connected_items` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `batch_connect_to_net` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/plan/ops.rs` |  |
 | `batch_connect_pins` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
 | `connect_passthrough` | `sch_batch` | `sexpr` | NOT_TESTED | — | — |  |
@@ -527,7 +527,7 @@ Not covered by any tool:
 
 ## Not tested
 
-128 of 196 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+126 of 196 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -567,8 +567,6 @@ Not covered by any tool:
 | `trace_from_point` | `nets` | `sexpr` | none |
 | `find_orphan_items` | `schematic` | `sexpr` | none |
 | `find_shorted_nets` | `nets` | `sexpr` | none |
-| `find_single_pin_nets` | `nets` | `sexpr` | none |
-| `get_connected_items` | `nets` | `sexpr` | none |
 | `check_schematic_overlaps` | `schematic` | `sexpr` | none |
 | `bulk_move_schematic_components` | `symbols` | `sexpr` | none |
 | `batch_edit_schematic_components` | `symbols` | `sexpr` | none |
