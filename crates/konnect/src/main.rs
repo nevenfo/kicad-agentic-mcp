@@ -85,7 +85,8 @@ async fn main() -> Result<()> {
         jlcpcb_db_path: config.jlcpcb_db_path.clone(),
         auto_load_toolsets: config.auto_load_toolsets,
     };
-    let handler = McpHandler::new(server_config).await?;
+    let handler =
+        McpHandler::new_with_agent_provider(server_config, config.local_provider()?).await?;
 
     match config.transport {
         TransportMode::Stdio => {

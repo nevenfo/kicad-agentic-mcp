@@ -161,6 +161,21 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
             }),
         },
         McpToolDescription {
+            name: "kicad_agent".to_string(),
+            description: "Explicit Agent gateway. Runs one supervisor turn from durable TaskState using the measured decision NO_LLM, LOCAL, or ESCALATE. Direct kicad_describe and kicad_invoke never enter this gateway or start an LLM.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string"},
+                    "decision": {"enum": ["NO_LLM", "LOCAL", "ESCALATE"]},
+                    "task_core_tokens": {"type": "integer", "minimum": 0, "default": 0},
+                    "fixed_prefix_tokens": {"type": "integer", "minimum": 0, "default": 0},
+                    "retrieval_bundles": {"type": "array", "description": "Each item must atomically include electrical_constraints, plan_ir, geometry, and measured_tokens."}
+                },
+                "required": ["task_id", "decision"]
+            }),
+        },
+        McpToolDescription {
             name: "list_toolboxes".to_string(),
             description:
                 "List all available KiCAD toolsets with descriptions, categories, tool counts, \
@@ -273,6 +288,7 @@ pub async fn handle_meta_tool(
         "load_tools" => Some(handle_load_tools(args, ctx).await),
         "kicad_describe" => Some(handle_kicad_describe(args, ctx).await),
         "kicad_invoke" => Some(handle_kicad_invoke(args, ctx).await),
+        "kicad_agent" => Some(handle_kicad_agent(args, ctx).await),
         "list_toolboxes" => Some(handle_list_toolboxes(ctx).await),
         "load_toolset" => Some(handle_load_toolset(args, ctx).await),
         "unload_toolset" => Some(handle_unload_toolset(args, ctx).await),
@@ -281,6 +297,95 @@ pub async fn handle_meta_tool(
         "server_stats" => Some(handle_server_stats(ctx).await),
         _ => None,
     }
+}
+
+/// Explicit Agent gateway; Direct MCP meta-tools never call this path.
+async fn handle_kicad_agent(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> CallToolResult {
+    let Some(task_id) = args.get("task_id").and_then(Value::as_str) else {
+        return CallToolResult::error("kicad_agent requires task_id (string)");
+    };
+    let decision = match args.get("decision").and_then(Value::as_str) {
+        Some("NO_LLM") => kam_runtime::RoutingDecision::NoLlm,
+        Some("LOCAL") => kam_runtime::RoutingDecision::Local,
+        Some("ESCALATE") => kam_runtime::RoutingDecision::Escalate,
+        _ => {
+            return CallToolResult::error("kicad_agent decision must be NO_LLM, LOCAL, or ESCALATE")
+        }
+    };
+    let retrieval = match agent_retrieval(args) {
+        Ok(retrieval) => retrieval,
+        Err(message) => return CallToolResult::error(message),
+    };
+    let task_core_tokens = match agent_u32(args, "task_core_tokens") {
+        Ok(tokens) => tokens,
+        Err(message) => return CallToolResult::error(message),
+    };
+    let fixed_prefix_tokens = match agent_u32(args, "fixed_prefix_tokens") {
+        Ok(tokens) => tokens,
+        Err(message) => return CallToolResult::error(message),
+    };
+    let input = kam_runtime::SupervisorInput {
+        task_id: task_id.to_string(),
+        task_core_tokens,
+        fixed_prefix_tokens,
+        retrieval,
+    };
+    match ctx.supervisor.run(decision, input).await {
+        Ok(outcome) => CallToolResult::json(&outcome),
+        Err(error) => CallToolResult::error(format!("kicad_agent task error: {error}")),
+    }
+}
+
+fn agent_u32(args: &Value, field: &str) -> Result<u32, String> {
+    match args.get(field) {
+        None => Ok(0),
+        Some(value) => value
+            .as_u64()
+            .filter(|tokens| *tokens <= u64::from(u32::MAX))
+            .map(|tokens| tokens as u32)
+            .ok_or_else(|| format!("{field} must be a u32")),
+    }
+}
+
+/// D42: electrical constraints, Plan IR and geometry never travel separately.
+fn agent_retrieval(args: &Value) -> Result<Vec<kam_context::RetrievalBundle>, String> {
+    let Some(bundles) = args.get("retrieval_bundles") else {
+        return Ok(Vec::new());
+    };
+    let Some(bundles) = bundles.as_array() else {
+        return Err("retrieval_bundles must be an array".to_string());
+    };
+    bundles
+        .iter()
+        .enumerate()
+        .map(|(index, bundle)| {
+            let measured_tokens = bundle
+                .get("measured_tokens")
+                .and_then(Value::as_u64)
+                .filter(|tokens| *tokens <= u64::from(u32::MAX))
+                .ok_or_else(|| {
+                    format!("retrieval_bundles[{index}].measured_tokens must be a u32")
+                })? as u32;
+            for field in ["electrical_constraints", "plan_ir", "geometry"] {
+                if bundle.get(field).is_none() {
+                    return Err(format!(
+                        "retrieval_bundles[{index}] must include {field} atomically"
+                    ));
+                }
+            }
+            let content = serde_json::json!({
+                "electrical_constraints": bundle["electrical_constraints"],
+                "plan_ir": bundle["plan_ir"],
+                "geometry": bundle["geometry"],
+            })
+            .to_string();
+            Ok(kam_context::RetrievalBundle::new(
+                format!("bundle_{index}"),
+                content,
+                measured_tokens,
+            ))
+        })
+        .collect()
 }
 
 /// Read a deduplicated `names` array argument. A non-string entry is an error
@@ -654,6 +759,111 @@ fn file_under_task(
         Ok((task, ())) => json!({ "id": task.id, "anchor": task.anchor() }),
         Err(e) => json!({ "id": task_id, "error": e.code() }),
     };
+}
+
+#[cfg(test)]
+mod agent_gateway_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use kam_llm::{
+        CompletionRequest, CompletionResponse, FinishReason, Message, Provider, ProviderError,
+        Role, Usage,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    struct CountingProvider(AtomicUsize);
+
+    #[async_trait]
+    impl Provider for CountingProvider {
+        async fn complete(
+            &self,
+            _request: CompletionRequest,
+        ) -> Result<CompletionResponse, ProviderError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(CompletionResponse {
+                message: Message::text(Role::Assistant, "proposal"),
+                finish_reason: FinishReason::Stop,
+                usage: Usage::default(),
+            })
+        }
+    }
+
+    fn context(provider: Arc<CountingProvider>) -> Arc<ToolContext> {
+        let router = Arc::new(crate::router::ToolRouter::new());
+        let mut context = ToolContext::new(
+            crate::tools::ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+            },
+            router,
+        );
+        context.supervisor = Arc::new(kam_runtime::Supervisor::new(
+            context.tasks.clone(),
+            Some(provider),
+        ));
+        Arc::new(context)
+    }
+
+    #[tokio::test]
+    async fn direct_gateway_never_calls_provider_and_agent_local_does() {
+        let provider = Arc::new(CountingProvider(AtomicUsize::new(0)));
+        let context = context(provider.clone());
+
+        handle_meta_tool(
+            "kicad_describe",
+            &json!({"names": ["create_project"]}),
+            &context,
+        )
+        .await
+        .unwrap();
+        handle_meta_tool("kicad_invoke", &json!({"calls": []}), &context)
+            .await
+            .unwrap();
+        assert_eq!(provider.0.load(Ordering::SeqCst), 0);
+
+        let task = context.tasks.start("route supply");
+        let result = handle_meta_tool(
+            "kicad_agent",
+            &json!({
+                "task_id": task.id,
+                "decision": "LOCAL",
+                "task_core_tokens": 0,
+                "fixed_prefix_tokens": 0
+            }),
+            &context,
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+        assert_eq!(provider.0.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn retrieval_bundle_requires_all_three_d42_parts() {
+        let partial = json!({
+            "retrieval_bundles": [{
+                "electrical_constraints": "PWR_FLAG",
+                "plan_ir": "power op",
+                "measured_tokens": 10
+            }]
+        });
+        assert!(agent_retrieval(&partial).unwrap_err().contains("geometry"));
+
+        let complete = json!({
+            "retrieval_bundles": [{
+                "electrical_constraints": "PWR_FLAG",
+                "plan_ir": "power op",
+                "geometry": "pin offset",
+                "measured_tokens": 10
+            }]
+        });
+        assert_eq!(agent_retrieval(&complete).unwrap().len(), 1);
+    }
 }
 
 /// At most this many revisions are reported. A batch that rewrites forty sheets

@@ -50,7 +50,14 @@ pub unsafe extern "C" fn kicad_plugin_init(config_path: *const c_char) -> c_int 
             jlcpcb_db_path: config.jlcpcb_db_path.clone(),
             auto_load_toolsets: config.auto_load_toolsets,
         };
-        match McpHandler::new(server_config).await {
+        let provider = match config.local_provider() {
+            Ok(provider) => provider,
+            Err(error) => {
+                tracing::error!("invalid local Agent provider configuration: {error}");
+                return;
+            }
+        };
+        match McpHandler::new_with_agent_provider(server_config, provider).await {
             Ok(handler) => match config.transport {
                 TransportMode::Stdio => {
                     let _ = crate::transport::stdio::run_stdio(handler).await;

@@ -1,0 +1,19 @@
+[package]
+name = "kam-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Task-state-driven local-agent supervisor and measured routing decisions."
+
+[dependencies]
+kam-context.workspace = true
+kam-llm.workspace = true
+kam-state.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+async-trait = "0.1"
+tokio.workspace = true

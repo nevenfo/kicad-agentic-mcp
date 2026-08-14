@@ -5,6 +5,7 @@ members = [
     "crates/kam-evidence",
     "crates/kam-graph",
     "crates/kam-llm",
+    "crates/kam-runtime",
     "crates/kam-plan",
     "crates/kam-state",
     "crates/konnect",
@@ -82,6 +83,7 @@ usvg = "0.47"
 kam-context = { path = "crates/kam-context" }
 kam-evidence = { path = "crates/kam-evidence" }
 kam-graph = { path = "crates/kam-graph" }
+kam-runtime = { path = "crates/kam-runtime" }
 kam-llm = { path = "crates/kam-llm" }
 kam-plan = { path = "crates/kam-plan" }
 kam-state = { path = "crates/kam-state" }

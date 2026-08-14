@@ -32,6 +32,15 @@ pub struct McpHandler {
 
 impl McpHandler {
     pub async fn new(config: crate::tools::ServerConfig) -> anyhow::Result<Self> {
+        Self::new_with_agent_provider(config, None).await
+    }
+
+    /// Build the handler with an optional local provider reachable only through
+    /// the explicit `kicad_agent` entry point.
+    pub async fn new_with_agent_provider(
+        config: crate::tools::ServerConfig,
+        provider: Option<Arc<dyn kam_llm::Provider>>,
+    ) -> anyhow::Result<Self> {
         let router = Arc::new(ToolRouter::new());
 
         // Load only the starter kit at startup so baseline `tools/list` stays small
@@ -39,10 +48,11 @@ impl McpHandler {
         router.load_starter_kit().await;
 
         let observer = CallObserver::new(Some(default_calls_log_path()));
-        let ctx = Arc::new(crate::tools::ToolContext::new_with_observer(
+        let ctx = Arc::new(crate::tools::ToolContext::new_with_observer_and_provider(
             config,
             router,
             observer.clone(),
+            provider,
         ));
 
         Ok(McpHandler {

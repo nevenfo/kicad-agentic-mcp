@@ -8,7 +8,10 @@ license.workspace = true
 
 [dependencies]
 kam-evidence.workspace = true
+kam-context.workspace = true
 kam-graph.workspace = true
+kam-llm.workspace = true
+kam-runtime.workspace = true
 kam-plan.workspace = true
 kam-state.workspace = true
 konnect-sexp.workspace = true
@@ -31,6 +34,7 @@ usvg.workspace = true
 tempfile = "3"
 
 [dev-dependencies]
+async-trait = "0.1"
 # The pcb_components fallback tests spawn a mock KiCAD NNG endpoint to prove
 # a reachable-but-rejecting KiCAD never triggers the file-editing fallback.
 nng.workspace = true

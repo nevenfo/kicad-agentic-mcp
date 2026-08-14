@@ -1102,6 +1102,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kam-runtime"
+version = "0.2.2"
+dependencies = [
+ "async-trait",
+ "kam-context",
+ "kam-llm",
+ "kam-state",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kam-state"
 version = "0.2.2"
 dependencies = [
@@ -1117,6 +1130,7 @@ dependencies = [
  "anyhow",
  "axum",
  "dirs",
+ "kam-llm",
  "konnect-core",
  "konnect-ipc",
  "konnect-sexp",
@@ -1136,11 +1150,15 @@ name = "konnect-core"
 version = "0.2.2"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "base64 0.23.0",
+ "kam-context",
  "kam-evidence",
  "kam-graph",
+ "kam-llm",
  "kam-plan",
+ "kam-runtime",
  "kam-state",
  "konnect-ipc",
  "konnect-schematic-editor",

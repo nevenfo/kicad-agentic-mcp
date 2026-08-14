@@ -101,6 +101,8 @@ pub struct ToolContext {
     /// Objectives, constraints and what has already been tried — the part of a
     /// session that must outlive any one model's context window.
     pub tasks: Arc<kam_state::TaskStore>,
+    /// Explicit Agent-only entry point. Direct KiCAD tools never consult it.
+    pub supervisor: Arc<kam_runtime::Supervisor>,
     /// Built graphs of a project's documents, cached by content revision so a
     /// `graph_*` call reuses the last build when nothing on disk moved.
     pub graph: Arc<crate::graph::GraphStore>,
@@ -110,6 +112,7 @@ impl ToolContext {
     /// Construct a context with an in-memory-only observer (no JSONL). Used by
     /// tests and by callers that don't need persistent call logs.
     pub fn new(config: ServerConfig, router: Arc<ToolRouter>) -> Self {
+        let tasks = Arc::new(kam_state::TaskStore::default());
         ToolContext {
             config,
             router,
@@ -118,7 +121,8 @@ impl ToolContext {
             idempotency: Arc::default(),
             evidence: Arc::default(),
             validation: Arc::default(),
-            tasks: Arc::default(),
+            supervisor: Arc::new(kam_runtime::Supervisor::new(tasks.clone(), None)),
+            tasks,
             graph: Arc::default(),
         }
     }
@@ -130,6 +134,18 @@ impl ToolContext {
         router: Arc<ToolRouter>,
         observer: crate::observability::CallObserver,
     ) -> Self {
+        Self::new_with_observer_and_provider(config, router, observer, None)
+    }
+
+    /// Construct a context with an explicitly configured Agent-only provider.
+    /// Direct tools retain no path to it; only `kicad_agent` uses the supervisor.
+    pub fn new_with_observer_and_provider(
+        config: ServerConfig,
+        router: Arc<ToolRouter>,
+        observer: crate::observability::CallObserver,
+        provider: Option<Arc<dyn kam_llm::Provider>>,
+    ) -> Self {
+        let tasks = Arc::new(kam_state::TaskStore::default());
         ToolContext {
             config,
             router,
@@ -138,7 +154,8 @@ impl ToolContext {
             idempotency: Arc::default(),
             evidence: Arc::default(),
             validation: Arc::default(),
-            tasks: Arc::default(),
+            supervisor: Arc::new(kam_runtime::Supervisor::new(tasks.clone(), provider)),
+            tasks,
             graph: Arc::default(),
         }
     }

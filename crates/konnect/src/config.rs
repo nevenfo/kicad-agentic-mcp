@@ -43,6 +43,16 @@ pub struct Config {
     /// context growth -- opt in only if that trade is worth it for your client.
     #[serde(default)]
     pub auto_load_toolsets: bool,
+
+    /// Explicit loopback OpenAI-compatible endpoint for Agent mode. When
+    /// absent, LOCAL returns `local_provider_unavailable` and Direct is
+    /// unaffected.
+    #[serde(default)]
+    pub local_llm_base_url: Option<String>,
+
+    /// Backend model id; defaults to the D38 selection.
+    #[serde(default = "default_local_llm_model")]
+    pub local_llm_model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -83,6 +93,10 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+fn default_local_llm_model() -> String {
+    "gpt-oss-20b".to_string()
+}
+
 impl Config {
     /// Load config from the default search path.
     pub fn load() -> Result<Self> {
@@ -117,6 +131,22 @@ impl Config {
                 }
             }
         }
+        if self.local_llm_base_url.as_deref().is_none_or(str::is_empty) {
+            self.local_llm_base_url = std::env::var("KONNECT_LOCAL_LLM_BASE_URL")
+                .ok()
+                .filter(|value| !value.is_empty());
+        }
+    }
+
+    /// Build the optional loopback-only local provider for Agent mode.
+    pub fn local_provider(&self) -> Result<Option<std::sync::Arc<dyn kam_llm::Provider>>> {
+        let Some(base_url) = self.local_llm_base_url.as_deref() else {
+            return Ok(None);
+        };
+        let config = kam_llm::OpenAiCompatConfig::new(base_url, &self.local_llm_model)?;
+        Ok(Some(std::sync::Arc::new(
+            kam_llm::OpenAiCompatProvider::new(config),
+        )))
     }
 
     /// Load config from a specific file path. Auto-detects JSON vs TOML by extension.
@@ -150,6 +180,8 @@ impl Default for Config {
             jlcpcb_db_path: None,
             log_level: default_log_level(),
             auto_load_toolsets: false,
+            local_llm_base_url: None,
+            local_llm_model: default_local_llm_model(),
         }
     }
 }
@@ -332,5 +364,17 @@ mod tests {
         let f = write_temp("conf", "log_level = \"debug\"\n");
         let c = Config::load_from(f.path()).unwrap();
         assert_eq!(c.log_level, "debug");
+    }
+
+    #[test]
+    fn local_agent_provider_is_opt_in_and_loopback_only() {
+        assert!(Config::default().local_provider().unwrap().is_none());
+
+        let mut local = Config::default();
+        local.local_llm_base_url = Some("http://127.0.0.1:1234/v1".to_string());
+        assert!(local.local_provider().unwrap().is_some());
+
+        local.local_llm_base_url = Some("https://models.example.com/v1".to_string());
+        assert!(local.local_provider().is_err());
     }
 }
