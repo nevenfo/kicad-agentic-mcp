@@ -671,6 +671,82 @@ async fn handle_find_single_pin_nets(
     ))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{mcp::protocol::ToolContent, router::ToolRouter};
+    use std::{process::Command, sync::Arc};
+
+    fn ctx() -> ToolContext {
+        ToolContext::new(
+            crate::tools::ServerConfig {
+                kicad_cli: "kicad-cli".to_string(),
+                kicad_binary: "kicad".to_string(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    const THREE_ISOLATED_RESISTORS: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/three_isolated_resistors.kicad_sch"
+    );
+
+    async fn in_process_single_pin_nets() -> usize {
+        let result =
+            handle_find_single_pin_nets(&json!({ "schematic": THREE_ISOLATED_RESISTORS }), &ctx())
+                .await
+                .unwrap();
+        let ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        serde_json::from_str::<serde_json::Value>(text).unwrap()["single_pin_net_count"]
+            .as_u64()
+            .unwrap() as usize
+    }
+
+    #[tokio::test]
+    async fn documents_zero_in_process_single_pin_nets_for_isolated_resistors() {
+        assert_eq!(in_process_single_pin_nets().await, 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires KICAD_CLI to reproduce the external ERC divergence"]
+    async fn reproduces_kicad_cli_erc_divergence_for_isolated_resistors() {
+        let kicad_cli = std::env::var("KICAD_CLI")
+            .expect("KICAD_CLI must name the kicad-cli executable for this probe");
+        let output_dir = tempfile::tempdir().unwrap();
+        let output = output_dir.path().join("erc.json");
+        let cli = Command::new(kicad_cli)
+            .args(["sch", "erc", "--format", "json", "--output"])
+            .arg(&output)
+            .arg(THREE_ISOLATED_RESISTORS)
+            .output()
+            .expect("KICAD_CLI could not be executed");
+        assert!(
+            cli.status.success(),
+            "kicad-cli sch erc failed: {}",
+            String::from_utf8_lossy(&cli.stderr)
+        );
+        let erc: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+        let cli_unconnected_pins = erc["sheets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|sheet| sheet["violations"].as_array().unwrap())
+            .filter(|violation| violation["type"] == "pin_not_connected")
+            .count();
+
+        assert_eq!(in_process_single_pin_nets().await, 0);
+        assert_eq!(cli_unconnected_pins, 6);
+    }
+}
+
 async fn handle_get_connected_items(
     args: &serde_json::Value,
     _ctx: &ToolContext,
