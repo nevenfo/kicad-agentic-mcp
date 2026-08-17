@@ -93,11 +93,11 @@ harness (Claude Code / Codex / AGY)
 ├──────────────────────────┤
 │ TASK STATE MANAGER       │  objective / constraints / facts / failures   SHIPPED
 ├──────────────────────────┤
-│ CONTEXT + ATTENTION MGR  │  anchor SHIPPED · budgets/compaction OPEN (E.6)
+│ CONTEXT + ATTENTION MGR  │  anchor · budgets · compaction · retrieval       SHIPPED
 ├──────────────────────────┤
-│ AGENT ROUTER             │  NO_LLM | SMALL | MEDIUM | LARGE | ESCALATE   OPEN (H.6)
+│ AGENT ROUTER             │  NO_LLM | LOCAL | ESCALATE (fitted, H.6.2)        SHIPPED
 ├──────────────────────────┤
-│ LOCAL AGENT RUNTIME      │  supervisor / schematic / pcb / verification  OPEN (H.7)
+│ LOCAL AGENT RUNTIME      │  supervisor / schematic / pcb / verification      SHIPPED
 ├──────────────────────────┤
 │ PLAN COMPILER + PLAN IR  │  typed, reference-checked, batched            SHIPPED
 ├──────────────────────────┤
@@ -119,7 +119,7 @@ crates/kam-evidence   semantic diff over an abstract ItemSet, handle store,
 crates/kam-plan       Plan IR, compiler, reference resolution, execution FSM      SHIPPED
 crates/kam-graph      indexed store + query/neighbour language                    SHIPPED
 crates/kam-llm        local provider abstraction (+ router, not built)            PARTIAL
-crates/kam-context    budgets, compaction, retrieval                              NOT BUILT
+crates/kam-context    budgets, compaction, retrieval                              SHIPPED
 crates/kam-bench      benchmark runner + metrics schema                           NOT BUILT (Python harness in bench/ does the job today)
 ```
 
@@ -140,8 +140,16 @@ Current values: `docs/benchmark.md`. Targets are never moved (INV6).
 - [ ] `LLM_CALLS_PER_SUCCESSFUL_TASK` materially below baseline — measured
       **15 → 5.5** inside the model-fit harness, but **no baseline for this
       metric was ever measured**, so the criterion is not claimed met
-- [ ] `CAPABILITY_COVERAGE` > baseline — KiCad-domain **28.6 %** and rising; the
-      comparison target is undefined and needs one (J.2)
+- [x] `CAPABILITY_COVERAGE` > baseline — **29.6 % against the baseline's
+      22.6 %**, on a frozen denominator of 186, with no regression. Defined in
+      J.2.1 and rendered in `docs/capability-matrix.md` under
+      *V1 comparison target*: the 187 tools the baseline registers at `5cd6454`
+      (this fork still registers all of them), minus what KiCAD gives no API
+      for, scored on both sides by the same scanner. The headline **28.6 %** is
+      the whole-surface number and is deliberately not the criterion — its
+      denominator grows with every tool added. Nothing this fork adds can enter
+      the frozen one, so the percentage moves only when a test that runs starts
+      proving a tool
 
 ---
 
@@ -425,7 +433,7 @@ Blocked in CI by the same GUI-session question as J.3.
 
 ---
 
-# Phase E — World model, task state, evidence — DONE except E.6
+# Phase E — World model, task state, evidence — DONE
 
 ## E.1 — Semantic diff — DONE
 
@@ -507,7 +515,7 @@ batch gets no verdict; a bare check is still `run_erc`.
 adjacency, not on serialisation, and its description says so. Shortening the key
 was rejected: the key is the address `graph_neighbors` takes.
 
-## E.6 — Context Manager — TODO
+## E.6 — Context Manager — DONE
 
 ### Objectif
 `crates/kam-context`: budgets, compaction, retrieval. The attention half already
@@ -517,10 +525,10 @@ exists as the anchor (E.4.2); the budget half does not exist at all.
 E.4, and the local-token accounting from H.2 (`Usage`, reasoning split).
 
 ### Tâches
-- [ ] E.6.1 Token budgets per context, measured against real local runs
-- [ ] E.6.2 Compaction that preserves the objective (already true of the anchor)
+- [x] E.6.1 Token budgets per context, measured against real local runs
+- [x] E.6.2 Compaction that preserves the objective (already true of the anchor)
       and the verified facts
-- [ ] E.6.3 Retrieval into the context, budget-aware
+- [x] E.6.3 Retrieval into the context, budget-aware
 
 ### Validation
 A compaction cycle on a real session loses no hard constraint and no verified
@@ -592,7 +600,7 @@ E2E run against real `kicad-cli`, not merely written (E12's rule).
 
 ---
 
-# Phase H — Local AI runtime — WIP
+# Phase H — Local AI runtime — DONE
 
 ## H.1 — Backend and shortlist — DONE
 
@@ -738,8 +746,9 @@ A committed `bench/results/model-fit-*.json` per run carrying
 on grade 3 with Fisher exact. Headline table: `docs/benchmark.md` § Model fit.
 
 **Standing results** (detail in `docs/benchmark.md`, do not restate elsewhere):
-the chosen local model is `gpt-oss-20b`, `medium`, ctx 32 768, one-shot — 12/60 at
-grade 3, 54/60 compiling, 5.0 LLM calls per success on the E26 build. `high` is
+the chosen local model is `gpt-oss-20b`, `medium`, ctx 32 768, one-shot — 16/60 at
+grade 3, 53/60 compiling, 3.75 LLM calls per success on the E27 build (12/60,
+54/60 and 5.0 on the E26 build the model choice was made on). `high` is
 dominated by `medium` at 2.8× the cost. Deliberation is 92–97 % of local output
 tokens, so any budget reading only the answer is wrong by more than 10×. Against
 `qwen3.5-9b` measured on the same build in the same window, the 20B reaches grade
@@ -748,11 +757,14 @@ compile-rate difference is not significant (54/60 vs 49/60, p = 0.295). The
 earlier verdict — no success difference, 9B compiling better — came from a pair
 that straddled two builds.
 
-## H.6 — The router — TODO, deliberately blocked
+## H.6 — The router — DONE
 
 ### Objectif
 `NO_LLM | SMALL | MEDIUM | LARGE | ESCALATE`, with thresholds fitted to measured
-data rather than to n = 60 noise.
+data rather than to n = 60 noise. The fitting was done (H.6.2) and the data
+answered with three tiers: `NO_LLM | LOCAL | ESCALATE`. The middle rungs are not
+postponed, they are unmeasurable — no second local model is cheaper per success
+and no self-repair round converts a failure.
 
 ### Dépendances
 H.5.3 — done, and it removes one of the two tiers: on one build the 9B costs more
@@ -760,18 +772,52 @@ per success than the 20B (D38), so there is no cheap tier to route *to*. What is
 left is D37's point: routing between *no LLM* and an LLM buys the whole call.
 
 ### Tâches
-- [ ] H.6.1 **NO_LLM first** — extend the deterministic operation library wherever
-      a measurement shows an LLM call can be removed entirely. The next such fix
-      must come from a new measurement: after E24 no refusal string dominates the
-      residue any more (E25)
-- [ ] H.6.2 Tiers and escalation thresholds, each traceable to a measured number
-- [ ] H.6.3 Direct mode / Agent mode split at the gateway
+- [x] H.6.1 **NO_LLM first** — extend the deterministic operation library wherever
+      a measurement shows an LLM call can be removed entirely. The candidate came
+      from E26's own residue as required (E25 had already exhausted the refusal
+      strings): 16 of 60 attempts failed to apply on a `lib_id` that named
+      exactly one installed symbol through a library that does not exist.
+      `canonical_lib_id` rewrites those two shapes — invented library, power
+      polarity sign — and only when the installed index admits exactly one
+      answer. E27: `not_applied` 16/60 → 5/60 (p = 0.0148),
+      `LLM_CALLS_PER_SUCCESSFUL_TASK` 5.0 → 3.75
+- [x] H.6.2 Tiers and escalation thresholds, each traceable to a measured number.
+      The answer the measurements give is **three tiers, not five**:
+      `NO_LLM` (H.6.1: `not_applied` 16/60 → 5/60, p = 0.0148),
+      one local model (`gpt-oss-20b` at `medium`, D38: 12/60 vs the 9B's 3/60,
+      p = 0.0246, at half the output tokens), then `ESCALATE` on the first
+      failure of any kind (D35: one repair round converted 0 of 58 and pushed 11
+      down the ladder, so no rung sits between the local model and escalation).
+      `SMALL`/`MEDIUM`/`LARGE` collapse because no second local model is cheaper
+      per success. E27's residue was replayed violation by violation
+      (`bench/erc_residue.py`, 39 attempts, all reproducing their graded count)
+      and holds no further `NO_LLM` candidate: 139 violations in three classes,
+      largest single-rule ceiling 2/60 (p ≈ 0.5)
+- [x] H.6.3 Direct mode / Agent mode split at the gateway is an explicit caller
+      choice, not a heuristic or server-wide mode. Direct is the existing
+      `kicad_describe` / `kicad_invoke` path and never starts an LLM. H.7.1 owns
+      a distinct Agent entry point; its `ESCALATE` result returns failure and
+      evidence to the caller and never silently contacts an external model
+- [x] H.6.4 Evaluate `connect` naming a single-pin symbol while omitting `pin1`.
+      Decision: do not build it from E27's 2/60 signal, which is at the noise
+      floor. Reopen only if a later run raises it, or alongside a change already
+      touching that path
+- [x] H.6.5 Fit the geometry contract before adding an agent that composes
+      prompts. E28 kept only pin offsets and derived coordinates: 3/20 grade 3,
+      all on the decoupling macro, indistinguishable from E27's 7/40 without
+      full hints (two-sided p = 1.0) and below `full`'s 9/20 in the pre-declared
+      direction (one-sided p = 0.0412; two-sided p = 0.0824). The router must
+      retrieve task-specific electrical and Plan IR constraints with geometry;
+      the small sample does not identify one sentence as the mechanism
 
 ### Validation
 `LLM_CALLS_PER_SUCCESSFUL_TASK` and success rate measured with the router on and
-off, same tasks, same build, same declared window.
+off, same tasks, same build, same declared window. For H.6.2 the on/off pair is
+E26 vs E27 for the `NO_LLM` boundary; the other two tier decisions are settled by
+D38 and D35, each a measured comparison rather than a router setting. H.6.5 is
+E28's `geometry` arm against E27's same-model, same-window prompt arms.
 
-## H.7 — Local agent runtime — TODO
+## H.7 — Local agent runtime — DONE
 
 ### Objectif
 Supervisor / schematic / pcb / verification agents over the router.
@@ -780,8 +826,13 @@ Supervisor / schematic / pcb / verification agents over the router.
 H.6, E.6 (budgets), E.4 (task state).
 
 ### Tâches
-- [ ] H.7.1 Supervisor loop driven by task state, not by conversation
-- [ ] H.7.2 Verification agent whose verdict is `kicad-cli`'s (INV1)
+- [x] H.7.1 Supervisor loop driven by task state, not by conversation
+- [x] H.7.2 Verification agent whose verdict is `kicad-cli`'s (INV1)
+- [x] H.7.3 End-to-end Agent task on the fitted local profile, with no external
+      model call and deterministic verification evidence. The `model_divider`
+      golden task completed on its first recorded attempt: 8/8 deterministic
+      steps, ERC PASS with 0 errors/0 warnings, one local call and zero external
+      calls (`agent-e2e-gpt-oss-20b-medium-h7.3b.json`)
 
 ### Validation
 An end-to-end task completed with no external model call, measured against the
@@ -812,7 +863,7 @@ A written decision with the same evidence standard as D3, or the gate stays shut
 
 # Phase J — Scope expansion — TODO
 
-## J.1 — Close E7
+## J.1 — Close E7 — DONE
 
 ### Objectif
 Konnect's in-process connectivity analysis disagrees with `kicad-cli` ERC — it
@@ -824,10 +875,15 @@ call site, from the same manifest the matrix renders, INV7); the defect is not.
 None.
 
 ### Tâches
-- [ ] J.1.1 Reproduce the disagreement as a committed probe
-- [ ] J.1.2 Fix the analysis, or narrow what those tools claim to answer
-- [ ] J.1.3 Only then consider removing the advisory suffix — the equality test
-      between suffix and manifest must keep holding
+- [x] J.1.1 Reproduce the disagreement as a committed probe. Three isolated
+      `Device:R` symbols produce 0 in-process single-pin nets versus 6
+      `pin_not_connected` findings from KiCad 10.0.3 ERC; the ignored probe
+      re-runs both sources when `KICAD_CLI` is set
+- [x] J.1.2 Replace label-frequency counting with pin-aware analysis and narrow
+      the public claim to pins with no wire/label and no explicit `no_connect`
+- [x] J.1.3 Keep the advisory suffix: the reproduced case is now 6 == 6, but
+      the implementation remains intentionally `PARTIAL`; the generated matrix
+      and suffix/manifest equality test pass
 
 ### Validation
 The probe's in-process answer equals `kicad-cli`'s on the case that fails today,
@@ -839,7 +895,12 @@ and the suffix/manifest equality test still passes.
 F.4 (the matrix is the instrument).
 
 ### Tâches
-- [ ] J.2.1 Define the coverage comparison target the V1 criterion needs
+- [x] J.2.1 Define the coverage comparison target the V1 criterion needs — the
+      187 tools the baseline registers at `5cd6454`, frozen in
+      `capability::baseline`, scored on both sides by the same scanner; met only
+      when strictly ahead *and* nothing the baseline proved is lost. Measured
+      **22.6 % → 29.6 %** on a denominator of 186, 0 regressions, re-derived
+      from `git archive` in the default gate
 - [ ] J.2.2 Fill the highest-value gaps — `MISSING` names buses, a standalone
       drill export, IPC-D-356, and the stackup write KiCad 10 declares and does
       not implement

@@ -23,6 +23,7 @@
 //! `crates/konnect-core/tests/capability_matrix.rs`, which also fails if the
 //! committed document has drifted.
 
+pub mod baseline;
 pub mod coverage;
 pub mod render;
 

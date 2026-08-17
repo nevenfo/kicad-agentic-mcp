@@ -41,6 +41,17 @@ inflates the number it exists to keep honest.
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
 
+## V1 comparison target
+
+The headline above measures this fork's whole surface, which grows as tools are added — useful, and not a comparison. The V1 criterion `CAPABILITY_COVERAGE > baseline` is this table instead: the 187 tools mixelpixx/Konnect v0.2.2 registers at `5cd6454`, scored on both sides by the same scanner. This fork still registers every one of them, so the two sides compare name-for-name. The denominator drops only what KiCAD gives no API for and admits nothing this fork added, so the percentage can move only when a test that runs starts proving a tool.
+
+| | inherited tools scored | proved | coverage |
+|---|---|---|---|
+| baseline `5cd6454` | 186 | 42 | 22.6 % |
+| this fork | 186 | 55 | 29.6 % |
+
+Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
+
 ## By domain
 
 | domain | entries | supported | partial | not tested | gap | no API | coverage |

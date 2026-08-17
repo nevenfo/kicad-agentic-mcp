@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use super::coverage::{Coverage, Proof};
-use super::{Adapter, Capability, Domain, Status, ALL_DOMAINS, MANIFEST, MISSING};
+use super::{baseline, Adapter, Capability, Domain, Status, ALL_DOMAINS, MANIFEST, MISSING};
 
 /// Which toolset each tool belongs to, read from the registry rather than
 /// stored in the manifest, so the two cannot disagree.
@@ -120,6 +120,60 @@ pub fn render(coverage: &Coverage) -> String {
         "Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. \
          An entry is `supported` only when a test that actually runs, or a golden benchmark \
          task, exercises it; the proof is named in the tables below.\n"
+    );
+
+    // ── The V1 comparison target ────────────────────────────────────────────
+    let comparison = baseline::compare(coverage);
+    let _ = writeln!(out, "## V1 comparison target\n");
+    let _ = writeln!(
+        out,
+        "The headline above measures this fork's whole surface, which grows as tools are \
+         added — useful, and not a comparison. The V1 criterion `CAPABILITY_COVERAGE > baseline` \
+         is this table instead: the {} tools {} registers at `{}`, scored on both sides by the \
+         same scanner. This fork still registers every one of them, so the two sides compare \
+         name-for-name. The denominator drops only what KiCAD gives no API for and admits \
+         nothing this fork added, so the percentage can move only when a test that runs starts \
+         proving a tool.\n",
+        baseline::BASELINE_TOOLS.len(),
+        baseline::BASELINE_VERSION,
+        &baseline::BASELINE_COMMIT[..7],
+    );
+    let _ = writeln!(out, "| | inherited tools scored | proved | coverage |");
+    let _ = writeln!(out, "|---|---|---|---|");
+    let _ = writeln!(
+        out,
+        "| baseline `{}` | {} | {} | {:.1} % |",
+        &baseline::BASELINE_COMMIT[..7],
+        comparison.denominator,
+        comparison.baseline_covered,
+        comparison.baseline_percent()
+    );
+    let _ = writeln!(
+        out,
+        "| this fork | {} | {} | {:.1} % |",
+        comparison.denominator,
+        comparison.head_covered,
+        comparison.head_percent()
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "Criterion met: **{}** — ahead of the baseline requires being strictly ahead *and* \
+         losing nothing. {}\n",
+        if comparison.is_met() { "yes" } else { "no" },
+        if comparison.regressions.is_empty() {
+            "No tool the baseline proved is unproved here.".to_string()
+        } else {
+            format!(
+                "Proved by the baseline and not here: {}.",
+                comparison
+                    .regressions
+                    .iter()
+                    .map(|tool| format!("`{tool}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
     );
 
     // ── Domain summary ──────────────────────────────────────────────────────

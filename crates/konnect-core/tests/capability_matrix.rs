@@ -16,8 +16,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use konnect_core::capability::{
-    coverage, is_advisory_tool, render, Adapter, Limitation, Status, ADVISORY_SUFFIX, ALL_DOMAINS,
-    MANIFEST, MISSING,
+    baseline, coverage, is_advisory_tool, render, Adapter, Limitation, Status, ADVISORY_SUFFIX,
+    ALL_DOMAINS, MANIFEST, MISSING,
 };
 use konnect_core::router::registry;
 
@@ -273,4 +273,121 @@ fn the_scan_finds_the_benchmark_and_the_tests() {
         with_proof > 40,
         "only {with_proof} tools have a running proof — the scanner is probably broken, not the suite"
     );
+}
+
+/// This fork is measured against the baseline every time the matrix renders;
+/// the baseline side is a frozen list, and a frozen measurement is a claim
+/// until something re-derives it. This test does, from the tree itself.
+///
+/// It runs in the default gate: the criterion would otherwise be the one
+/// number in the document nothing checks.
+#[test]
+fn the_frozen_baseline_measurement_still_holds() {
+    let Some(tree) = extract_baseline() else {
+        panic!(
+            "commit {} is not in this clone — the baseline measurement cannot be re-derived. \
+             Fetch the full history (a shallow clone will not do) and re-run.",
+            baseline::BASELINE_COMMIT
+        );
+    };
+
+    let registered = baseline_registered_tools(&tree);
+    assert_eq!(
+        registered,
+        baseline::BASELINE_TOOLS.iter().copied().collect::<BTreeSet<_>>(),
+        "the baseline's registered surface is not what capability::baseline froze"
+    );
+
+    let names: Vec<&str> = baseline::BASELINE_TOOLS.to_vec();
+    let scanned = coverage::scan(&tree, &names);
+    let proved: BTreeSet<&str> = MANIFEST
+        .iter()
+        .filter(|capability| baseline::is_scored(capability.tool))
+        .filter(|capability| {
+            capability
+                .status(scanned.get(capability.tool).proof)
+                .is_covered()
+        })
+        .map(|capability| capability.tool)
+        .collect();
+    assert_eq!(
+        proved,
+        baseline::BASELINE_COVERED
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        "the baseline proves a different set of tools than capability::baseline records"
+    );
+}
+
+/// Export the baseline commit into a scratch directory, or `None` when this
+/// clone does not have the object. Uses `git archive` + `tar` rather than a
+/// worktree so the developer's repository state is never touched.
+fn extract_baseline() -> Option<PathBuf> {
+    let root = workspace_root();
+    let out = std::env::temp_dir().join(format!("kam-baseline-{}", &baseline::BASELINE_COMMIT[..7]));
+    let archive = out.with_extension("tar");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).ok()?;
+
+    let archived = std::process::Command::new("git")
+        .current_dir(&root)
+        .args(["archive", "--format=tar", "--output"])
+        .arg(&archive)
+        .arg(baseline::BASELINE_COMMIT)
+        .status()
+        .ok()?;
+    if !archived.success() {
+        return None;
+    }
+    let extracted = std::process::Command::new("tar")
+        .arg("-xf")
+        .arg(&archive)
+        .arg("-C")
+        .arg(&out)
+        .status()
+        .ok()?;
+    let _ = std::fs::remove_file(&archive);
+    extracted.success().then_some(out)
+}
+
+/// The tool names the baseline registers, read from its `tool!(` declarations —
+/// the same source its own `tool-directory.md` is generated from.
+fn baseline_registered_tools(tree: &std::path::Path) -> BTreeSet<&'static str> {
+    let dir = tree.join("crates").join("konnect-core").join("src").join("tools");
+    let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| {
+        panic!("the extracted baseline has no {}: {e}", dir.display())
+    });
+
+    let mut names = BTreeSet::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("the extracted file is readable");
+        let mut lines = text.lines();
+        while let Some(line) = lines.next() {
+            if !line.trim_end().ends_with("tool!(") {
+                continue;
+            }
+            let Some(next) = lines.next() else { break };
+            let quoted = next.trim().trim_end_matches(',');
+            let Some(name) = quoted
+                .strip_prefix('"')
+                .and_then(|rest| rest.strip_suffix('"'))
+            else {
+                continue;
+            };
+            // Borrow the manifest's `'static` name so the sets compare directly;
+            // a baseline tool this fork dropped would fail the surface check in
+            // `capability::baseline` first.
+            if let Some(capability) = MANIFEST.iter().find(|c| c.tool == name) {
+                names.insert(capability.tool);
+            } else {
+                panic!("the baseline registers '{name}' and this fork does not classify it");
+            }
+        }
+    }
+    names
 }
