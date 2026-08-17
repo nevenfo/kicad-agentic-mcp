@@ -496,6 +496,32 @@ async fn handle_get_board_extents(
     })))
 }
 
+/// Read a board's `(layers …)` block.
+///
+/// Each entry is `(0 "F.Cu" signal)`: the **id is the head**, so there is no tag
+/// to search for and the fields start at index 0. Both readers here used
+/// `find_all("")` and read from index 1, which matched nothing and made
+/// `get_layer_list` return an empty list on every board (J.2.3.6). `add_layer`
+/// used the same lookup to pick a free id, so it always proposed 1.
+fn board_layers(layers_node: &konnect_sexp::parser::SexpNode) -> Vec<(i32, String, String)> {
+    layers_node
+        .children()
+        .unwrap_or(&[])
+        .iter()
+        .skip(1) // the `layers` head itself
+        .filter_map(|node| {
+            let id = node.get_f64(0).map(|n| n as i32)?;
+            let name = node.get(1)?.as_str()?.to_string();
+            let kind = node
+                .get(2)
+                .and_then(|n| n.as_str())
+                .unwrap_or("user")
+                .to_string();
+            Some((id, name, kind))
+        })
+        .collect()
+}
+
 async fn handle_get_layer_list(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -513,20 +539,9 @@ async fn handle_get_layer_list(
         }
     };
 
-    // Each child of layers looks like: (0 "F.Cu" signal)
-    let layers: Vec<serde_json::Value> = layers_node
-        .find_all("")
-        .iter()
-        .filter_map(|node| {
-            let id = node.get_f64(1).map(|n| n as i32)?;
-            let name = node.get(2)?.as_str()?.to_string();
-            let kind = node
-                .get(3)
-                .and_then(|n| n.as_str())
-                .unwrap_or("user")
-                .to_string();
-            Some(json!({ "id": id, "name": name, "type": kind }))
-        })
+    let layers: Vec<serde_json::Value> = board_layers(layers_node)
+        .into_iter()
+        .map(|(id, name, kind)| json!({ "id": id, "name": name, "type": kind }))
         .collect();
 
     Ok(CallToolResult::json(
@@ -557,12 +572,7 @@ async fn handle_add_layer(
     let tree = parse_sexp(&content)?;
     let used_ids: std::collections::HashSet<i32> = tree
         .find("layers")
-        .map(|n| {
-            n.find_all("")
-                .iter()
-                .filter_map(|node| node.get_f64(1).map(|n| n as i32))
-                .collect()
-        })
+        .map(|n| board_layers(n).into_iter().map(|(id, _, _)| id).collect())
         .unwrap_or_default();
     let new_id = (1..=30).find(|id| !used_ids.contains(id)).unwrap_or(1);
 

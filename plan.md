@@ -959,8 +959,13 @@ F.4 (the matrix is the instrument).
         `create_symbol` and then registers, lists, reads and edits *that*, so no
         installed KiCAD is needed. `search_footprints` searches the installed
         libraries by design and stays `#[ignore]`d/`gated` rather than faked
-  - [ ] J.2.3.6 `labels` (4 `sexpr`), `stackup` (3 `sexpr`), `zones` (1),
-        `pcb` (2 `sexpr`), `templates` (1 `internal`)
+  - [x] J.2.3.6 `labels`, `stackup`, `zones`, `pcb` and `templates` —
+        `tests/board_and_labels.rs`. The four `ipc→sexpr` board tools fall back
+        to the file engine with no KiCAD listening, so they are testable; the
+        `ipc` `refill_zones` is not and waits for J.3. Found and fixed:
+        `get_layer_list` searched `find_all("")` for entries whose head is the
+        layer id, so it returned an empty list on every board, and `add_layer`
+        picked a free id from that same empty set
   - [ ] J.2.3.7 `export` (4 `cli`) and `drc` (2 `cli`) — argument handling
         without KiCAD, plus a live probe where a fixture makes one possible
   - [ ] J.2.3.8 `sourcing` (3 `external`) — a third party is not a test

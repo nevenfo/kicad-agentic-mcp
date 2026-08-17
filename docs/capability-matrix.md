@@ -36,8 +36,8 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 91 | 17 | 54 | 2 | 5 | 55.5 % |
-| server's own | 40 | 22 | 9 | 9 | 0 | 0 | 55.0 % |
+| KiCAD domains | 169 | 105 | 17 | 40 | 2 | 5 | 64.0 % |
+| server's own | 40 | 23 | 9 | 8 | 0 | 0 | 57.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
 
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 101 | 54.3 % |
+| this fork | 186 | 116 | 62.4 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -61,17 +61,17 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`symbols`](#symbols) | 19 | 16 | 2 | 1 | 0 | 0 | 84.2 % |
 | [`wires`](#wires) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`nets`](#nets) | 25 | 11 | 13 | 1 | 0 | 0 | 44.0 % |
-| [`labels`](#labels) | 6 | 2 | 0 | 4 | 0 | 0 | 33.3 % |
+| [`labels`](#labels) | 6 | 6 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`buses`](#buses) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`libraries`](#libraries) | 9 | 9 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`footprints`](#footprints) | 7 | 6 | 0 | 1 | 0 | 0 | 85.7 % |
-| [`pcb`](#pcb) | 8 | 1 | 0 | 7 | 0 | 0 | 12.5 % |
+| [`pcb`](#pcb) | 8 | 7 | 0 | 1 | 0 | 0 | 87.5 % |
 | [`placement`](#placement) | 11 | 1 | 0 | 9 | 1 | 0 | 9.1 % |
 | [`routing`](#routing) | 10 | 1 | 0 | 7 | 0 | 2 | 12.5 % |
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
-| [`zones`](#zones) | 3 | 1 | 0 | 2 | 0 | 0 | 33.3 % |
-| [`stackup`](#stackup) | 4 | 0 | 0 | 3 | 0 | 1 | 0.0 % |
+| [`zones`](#zones) | 3 | 2 | 0 | 1 | 0 | 0 | 66.7 % |
+| [`stackup`](#stackup) | 4 | 3 | 0 | 0 | 0 | 1 | 100.0 % |
 | [`rules`](#rules) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`erc`](#erc) | 2 | 1 | 1 | 0 | 0 | 0 | 50.0 % |
 | [`drc`](#drc) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
@@ -87,7 +87,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`export`](#export) | 11 | 6 | 0 | 5 | 0 | 0 | 54.5 % |
 | [`review`](#review) | 6 | 0 | 6 | 0 | 0 | 0 | 0.0 % |
 | [`config`](#config) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`templates`](#templates) | 4 | 3 | 0 | 1 | 0 | 0 | 75.0 % |
+| [`templates`](#templates) | 4 | 4 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`task`](#task) | 4 | 4 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`plan`](#plan) | 2 | 2 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`ui`](#ui) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
@@ -210,11 +210,11 @@ Not covered by any tool:
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
 | `add_schematic_net_label` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
-| `delete_schematic_net_label` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
-| `rotate_schematic_label` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
+| `delete_schematic_net_label` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `rotate_schematic_label` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `move_labels_by_offset` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `batch_rotate_labels` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
-| `list_schematic_labels` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — |  |
+| `batch_rotate_labels` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `list_schematic_labels` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 ### buses
 
@@ -273,12 +273,12 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `set_board_size` | `pcb_board` | `ipc→sexpr` | NOT_TESTED | — | — |  |
-| `get_board_info` | `pcb_board` | `sexpr` | NOT_TESTED | — | — |  |
-| `get_board_extents` | `pcb_board` | `ipc→sexpr` | NOT_TESTED | — | — |  |
-| `add_board_outline` | `pcb_board` | `ipc→sexpr` | NOT_TESTED | — | — |  |
-| `add_mounting_hole` | `pcb_board` | `sexpr` | NOT_TESTED | — | — |  |
-| `add_board_text` | `pcb_board` | `ipc→sexpr` | NOT_TESTED | — | — |  |
+| `set_board_size` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `get_board_info` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `get_board_extents` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_board_outline` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_mounting_hole` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_board_text` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `import_svg_logo` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
 | `get_board_2d_view` | `pcb_components` | `cli` | NOT_TESTED | — | — |  |
 
@@ -334,16 +334,16 @@ Not covered by any tool:
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
 | `add_zone` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/mcp/error.rs` |  |
-| `add_copper_pour` | `pcb_routing` | `sexpr` | NOT_TESTED | — | — |  |
+| `add_copper_pour` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `refill_zones` | `pcb_export` | `ipc` | NOT_TESTED | — | — |  |
 
 ### stackup
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `get_layer_list` | `pcb_board` | `sexpr` | NOT_TESTED | — | — |  |
-| `add_layer` | `pcb_board` | `sexpr` | NOT_TESTED | — | — |  |
-| `set_active_layer` | `pcb_board` | `sexpr` | NOT_TESTED | — | — |  |
+| `get_layer_list` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_layer` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `set_active_layer` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 Not covered by any tool:
 
@@ -494,7 +494,7 @@ Not covered by any tool:
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
 | `search_templates` | `templates` | `internal` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
-| `get_template` | `templates` | `internal` | NOT_TESTED | — | — |  |
+| `get_template` | `templates` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `apply_template` | `templates` | `sexpr` | SUPPORTED | bench | `bench/tasks/03_sch_template_stm32.yaml` |  |
 | `list_template_categories` | `templates` | `internal` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
 
@@ -532,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-63 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+48 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -542,21 +542,8 @@ Not covered by any tool:
 | `open_schematic_viewer` | `ui` | `process` | none |
 | `annotate_schematic` | `symbols` | `cli` | none |
 | `get_schematic_view` | `schematic` | `cli` | none |
-| `delete_schematic_net_label` | `labels` | `sexpr` | none |
-| `rotate_schematic_label` | `labels` | `sexpr` | none |
-| `batch_rotate_labels` | `labels` | `sexpr` | none |
-| `list_schematic_labels` | `labels` | `sexpr` | none |
 | `export_schematic_pdf` | `export` | `cli` | none |
 | `export_netlist_summary` | `export` | `sexpr` | none |
-| `set_board_size` | `pcb` | `ipc→sexpr` | none |
-| `get_board_info` | `pcb` | `sexpr` | none |
-| `get_board_extents` | `pcb` | `ipc→sexpr` | none |
-| `get_layer_list` | `stackup` | `sexpr` | none |
-| `add_layer` | `stackup` | `sexpr` | none |
-| `set_active_layer` | `stackup` | `sexpr` | none |
-| `add_board_outline` | `pcb` | `ipc→sexpr` | none |
-| `add_mounting_hole` | `pcb` | `sexpr` | none |
-| `add_board_text` | `pcb` | `ipc→sexpr` | none |
 | `move_component` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `rotate_component` | `placement` | `ipc` | none |
 | `delete_component` | `placement` | `ipc` | none |
@@ -569,7 +556,6 @@ Not covered by any tool:
 | `get_board_2d_view` | `pcb` | `cli` | none |
 | `route_pad_to_pad` | `routing` | `ipc` | none |
 | `add_via` | `vias` | `ipc` | none |
-| `add_copper_pour` | `zones` | `sexpr` | none |
 | `delete_trace` | `routing` | `ipc` | none |
 | `query_traces` | `routing` | `ipc` | none |
 | `get_nets_list` | `nets` | `ipc` | none |
@@ -595,7 +581,6 @@ Not covered by any tool:
 | `launch_kicad_ui` | `ui` | `process` | none |
 | `copy_routing_pattern` | `routing` | `sexpr` | none |
 | `check_clearance` | `drc` | `sexpr` | none |
-| `get_template` | `templates` | `internal` | none |
 | `export_manufacturing_package` | `manufacturing` | `cli` | none |
 | `validate_for_manufacturing` | `manufacturing` | `sexpr` | none |
 | `estimate_cost` | `manufacturing` | `internal` | none |

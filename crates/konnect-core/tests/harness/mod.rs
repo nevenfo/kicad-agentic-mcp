@@ -119,6 +119,11 @@ pub fn as_str(path: &Path) -> &str {
 /// above its symbol and each pin 2 the same distance below.
 pub const TWO_RESISTORS: &str = "bus_two_resistors.kicad_sch";
 
+/// A board with layers and nothing on them — the same skeleton
+/// `create_project` writes. Use it when the fixture's own `Edge.Cuts` outline
+/// would be measured together with whatever the test draws.
+pub const BLANK_BOARD: &str = "(kicad_pcb\n\t(version 20250610)\n\t(generator \"konnect\")\n\t(generator_version \"10.0\")\n\t(general\n\t\t(thickness 1.6)\n\t)\n\t(paper \"A4\")\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(31 \"B.Cu\" signal)\n\t\t(36 \"B.SilkS\" user \"B.Silkscreen\")\n\t\t(37 \"F.SilkS\" user \"F.Silkscreen\")\n\t\t(44 \"Edge.Cuts\" user)\n\t)\n\t(setup\n\t\t(pad_to_mask_clearance 0.05)\n\t)\n\t(net 0 \"\")\n)\n";
+
 /// Pin coordinates of the [`TWO_RESISTORS`] fixture, as (x, y) in mm.
 pub mod pins {
     pub const R1_PIN1: (f64, f64) = (101.6, 46.99);
