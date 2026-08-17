@@ -130,4 +130,10 @@ jobs:
 
       - name: Live PCB E2E (pcbnew + IPC, unattended)
         shell: pwsh
-        run: ./scripts/live-pcb-e2e.ps1
+        # A longer wait than the local default: the first run of the day on a
+        # cold runner has no warm KiCad settings, no shader cache and no page
+        # cache. 2026-08-17, run 32020437428: pcbnew stayed alive but the API
+        # pipe never appeared within 90s, and "it timed out" does not say whether
+        # that is slow or stuck — the script now prints the process state when it
+        # gives up, which distinguishes the two.
+        run: ./scripts/live-pcb-e2e.ps1 -TimeoutSeconds 180

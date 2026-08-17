@@ -129,13 +129,47 @@ Write-Host "pcbnew : $pcbnewPath"
 Write-Host "board  : $Board"
 Write-Host "socket : $env:KICAD_API_SOCKET"
 
+# When the pipe never appears, "it timed out" is not a diagnosis. A live pcbnew
+# with no main window and no CPU time is stuck before it reaches its API server;
+# one with a window and a spinning CPU is stuck on something modal. Both readings
+# are lost once the process is killed, so take them first.
+function Write-PipeDiagnostics {
+    param([System.Diagnostics.Process]$Process)
+    Write-Host "--- diagnostics: the API pipe never appeared ---"
+    try {
+        $live = Get-Process -Id $Process.Id -ErrorAction Stop
+        $live.Refresh()
+        Write-Host "pcbnew pid       : $($live.Id)"
+        Write-Host "responding       : $($live.Responding)"
+        Write-Host "main window title: '$($live.MainWindowTitle)'"
+        Write-Host "main window handle: $($live.MainWindowHandle)"
+        Write-Host "cpu seconds      : $([math]::Round($live.TotalProcessorTime.TotalSeconds, 2))"
+        Write-Host "working set MB   : $([math]::Round($live.WorkingSet64 / 1MB, 1))"
+    }
+    catch {
+        Write-Host "pcbnew is no longer queryable: $_"
+    }
+    try {
+        $kicadPipes = [System.IO.Directory]::GetFiles('\\.\pipe\') |
+            Where-Object { $_ -like '*kicad*' }
+        Write-Host "kicad pipes      : $(if ($kicadPipes) { $kicadPipes -join ', ' } else { '(none)' })"
+    }
+    catch {
+        Write-Host "the pipe namespace could not be enumerated: $_"
+    }
+    Write-Host "-----------------------------------------------"
+}
+
 $proc = Start-Process -FilePath $pcbnewPath -ArgumentList $Board -PassThru
 $exit = 0
 try {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while (-not (Test-ApiPipe $pipe)) {
         if ($proc.HasExited) { throw "pcbnew exited with $($proc.ExitCode) before the API pipe appeared" }
-        if ((Get-Date) -ge $deadline) { throw "API pipe $pipe did not appear within ${TimeoutSeconds}s" }
+        if ((Get-Date) -ge $deadline) {
+            Write-PipeDiagnostics -Process $proc
+            throw "API pipe $pipe did not appear within ${TimeoutSeconds}s"
+        }
         Start-Sleep -Milliseconds 500
     }
     Write-Host "API pipe is up."
