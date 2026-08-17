@@ -14,8 +14,17 @@
 //! Why a real writer and not a mock: `write_atomic_if_unchanged`'s guarantee
 //! is specifically that it catches "applications that do not honor the
 //! advisory lock, including KiCad itself" (writer.rs doc comment) — a real
-//! `std::fs::write` from a thread that never opens Konnect's lock file is the
-//! closest honest stand-in for that GUI, on every OS this suite runs on.
+//! writer thread that never opens Konnect's lock file is the closest honest
+//! stand-in for that GUI, on every OS this suite runs on. That writer must
+//! itself write atomically (temp file in the same directory, then
+//! `std::fs::rename` over the target — exactly how KiCad and every other
+//! well-behaved editor saves): a naive `std::fs::write` truncates the target
+//! before writing its new bytes, opening a window where the file is
+//! momentarily empty. `read_consistent` landing in that window sees a torn,
+//! zero-byte read — not a *modified* file — which surfaces as a parse error
+//! (`handler_error`) instead of the `conflict` this test exists to prove.
+//! Atomic rename removes that parasitic window entirely: every reader either
+//! sees the file before or after a GUI save, in full, never in between.
 //!
 //! Making the race deterministic without touching production code: the GUI
 //! thread writes in a tight loop for as long as the batch runs, so across
@@ -69,14 +78,24 @@ fn label_call(sch: &std::path::Path, n: usize) -> Value {
     })
 }
 
-/// A GUI save: a plain `std::fs::write`, never touching Konnect's advisory
+/// A GUI save: write-to-temp-then-rename, never touching Konnect's advisory
 /// lock file, appending a growing, uniquely-marked trailing comment so every
 /// write is both distinct and trivially recognizable in the final content.
+/// The rename is atomic on every OS this suite runs on, so a reader either
+/// sees the whole file before this save or the whole file after it — never a
+/// torn, truncated read — which is what lets a failure of this test's core
+/// assertion mean "the compare-and-swap decayed", not "the GUI stand-in
+/// tore a read".
 fn spawn_gui_writer(
     path: std::path::PathBuf,
     stop: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<usize> {
     std::thread::spawn(move || {
+        let dir = path
+            .parent()
+            .expect("schematic path has a parent dir")
+            .to_path_buf();
+        let tmp = dir.join(".gui-save.tmp");
         let mut writes = 0usize;
         while !stop.load(Ordering::Relaxed) {
             let Ok(current) = std::fs::read_to_string(&path) else {
@@ -86,10 +105,18 @@ fn spawn_gui_writer(
             // in konnect-sexp (they scan for `(tag`, never anchor on EOF), so
             // this is a content change that cannot itself break parsing.
             let edited = format!("{current}\n; gui-save-{writes}\n");
-            if std::fs::write(&path, edited).is_ok() {
+            if std::fs::write(&tmp, edited).is_err() {
+                continue;
+            }
+            // On Windows, `rename` fails if the target is open elsewhere
+            // without `FILE_SHARE_DELETE`; treat that as an uncounted miss
+            // and keep looping rather than panicking, so the race stays
+            // exercised even if some attempts lose to a held handle.
+            if std::fs::rename(&tmp, &path).is_ok() {
                 writes += 1;
             }
         }
+        let _ = std::fs::remove_file(&tmp);
         writes
     })
 }
