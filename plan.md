@@ -1047,7 +1047,11 @@ None. Blocks D.9's validation and most of J.2's PCB half.
       since the matrix scores what the default suite proves.
 - [x] J.3.3 Give the answer a gate: `live-ipc` job in `.github/workflows/e2e-kicad.yml`,
       separate from `e2e` so an IPC failure and a kicad-cli failure stay
-      distinguishable. Locally proven; its first CI run is still unobserved.
+      distinguishable. The runner-shaped risk — a KiCad profile that has never
+      been written — was rehearsed locally by pointing `APPDATA` at an empty
+      directory: the script writes the minimal `kicad_common.json`, KiCad
+      accepts it, and the suites pass 3/3, exit 0. What no local run can settle
+      is whether `windows-latest` gives pcbnew a usable window station.
 
 ### Validation
 Either an unattended PCB E2E in the gate, or a written constraint with evidence.

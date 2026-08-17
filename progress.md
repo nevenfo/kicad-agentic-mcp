@@ -62,10 +62,10 @@ Validation :
    old URL 404s. The tool is declared a `GAP` meanwhile.
 2. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
    `kicad-cli api-server` it needs.
-3. The `live-ipc` CI job (J.3.3) is proven locally but has never run on a
-   GitHub runner. Unknowns there: whether `windows-latest` gives pcbnew a usable
-   window station, and whether a minimal `kicad_common.json` is enough for a
-   profile KiCad has never written.
+3. The `live-ipc` CI job (J.3.3) has never run on a GitHub runner. One unknown
+   left: whether `windows-latest` gives pcbnew a usable window station. The
+   fresh-profile half was rehearsed locally with `APPDATA` pointed at an empty
+   directory — 3/3, exit 0.
 
 ## Fichiers / zones utiles
 
