@@ -1040,7 +1040,7 @@ the download path and the schema are proved without a third party; one
 `#[ignore]`d probe fetches the real `basic-preferred` library and is the check to
 run when a download starts failing.
 
-## J.3 — PCB E2E without a GUI session — DONE
+## J.3 — PCB E2E without a GUI session — DONE, and green in CI
 
 ### Objectif
 Open question, and it currently blocks PCB benchmark coverage entirely: does
@@ -1075,10 +1075,28 @@ None. Blocks D.9's validation and most of J.2's PCB half.
       directory: the script writes the minimal `kicad_common.json`, KiCad
       accepts it, and the suites pass 3/3, exit 0. What no local run can settle
       is whether `windows-latest` gives pcbnew a usable window station.
+- [x] J.3.4 Make the gate actually run on a GitHub runner. It does, and it is
+      green: run 32026731031, `live-ipc` 3/3, exit 0. `windows-latest` gives
+      pcbnew a usable window station after all — the answer to J.3.3's open
+      question is yes. Six failures stood between the job existing and the job
+      passing, and every one was named by a measurement rather than guessed:
+      Actions had never registered the workflows (no push had ever touched
+      `.github/workflows/`); KiCad opened its pipe under the 8.3 short name
+      (`RUNNER~1`) while the harness waited for the long spelling, and a pipe name
+      is a literal with no path resolution; then three modal dialogs, each served
+      *before* the API and so indistinguishable from a hung KiCad — no OpenGL 2.1
+      on the runner, the first-run wizard's library page, and its Updates &
+      Privacy page; and finally a genuine test failure, because
+      `live_ipc.kicad_pcb`'s named net had never been committed. The harness now
+      matches the pipe by shape and exports the name that exists, writes the three
+      library tables and answers the privacy prompts in profiles it creates, asks
+      for software rendering there, and — when it does give up — enumerates
+      pcbnew's windows and their child controls, which is what turned each of
+      those dialogs from a timeout into a sentence
 
 ### Validation
 Either an unattended PCB E2E in the gate, or a written constraint with evidence.
-Both, as it turned out.
+Both, as it turned out — and the gate is green on a runner, not only locally.
 
 ## J.4 — Adapter matrix — DONE
 

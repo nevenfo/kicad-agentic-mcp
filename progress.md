@@ -2,33 +2,39 @@
 
 ## Phase actuelle
 
-J — scope expansion. J.1, J.2 and J.4 are closed, the J.2.4 residue included.
-J.3's question is answered; J.3.3's CI half is open again now that the job
-actually runs on a runner and fails there.
+J — scope expansion. J.1, J.2, J.3 and J.4 are all closed, the J.2.4 residue and
+the CI half of J.3 included. Nothing in phase J is open.
 
 ## Tâche actuelle
 
-J.3.3 — make the `live-ipc` job pass on a GitHub runner, or establish that it
-cannot. It runs there now; it fails there (blocage 1).
+None. Phase K is unnamed: the user asked for a priority other than the PCB
+benchmark coverage but has not said which.
 
 ## Dernière tâche validée
 
-J.2.4.3 + J.2.4.4 — the JLCPCB parts database. The old URL 404'd because
-upstream publishes chunked archives, not a single `.db`; and the query tools were
-reading a schema no published database has ever had.
+J.3.4 — the `live-ipc` job runs on a GitHub runner and passes. `windows-latest`
+does give pcbnew a usable window station, which answers J.3.3's open question.
 
 Validation :
-- `cargo test --workspace`: 960 passed, 0 failed
-- `cargo test -p konnect-core --lib jlcpcb`: 15 passed (download path + schema,
-  loopback-served archive, no third party)
-- `cargo test -p konnect-core --test sourcing_and_manufacturing -- --ignored
-  the_published_database`: PASS against the real host
-- `cargo clippy -p konnect-core --lib -- -D warnings`: PASS
-- `docs/capability-matrix.md` regenerated: sourcing 100 %, the `GAP` is gone,
-  KiCAD domains 72.6 % → 73.2 %, fork-vs-baseline 72.0 % → 72.6 %
+- run 32026731031, `live-ipc`: 3/3 live tests, exit 0; `e2e` green in the same run
+- `scripts/live-pcb-e2e.ps1` locally, fresh profile (`APPDATA` at an empty
+  directory): 3/3, exit 0 — and unchanged against the normal profile
+- J.2.4.3 + J.2.4.4 before it: `cargo test --workspace` 960 passed / 0 failed,
+  `cargo clippy -p konnect-core --lib -- -D warnings` PASS, matrix regenerated
+  (sourcing 100 %, the JLCPCB `GAP` gone, KiCAD domains 73.2 %)
 
 ## Décisions actives
 
+- D49 — a KiCad profile this project *creates* is configured for a machine that
+  is nobody's: software rendering (`graphics.canvas_type` 2), the three library
+  tables written, and `do_not_show_again.update_check_prompt` /
+  `.data_collection_prompt` answered. Each of those is a modal dialog KiCad would
+  otherwise serve *before* its API, which is indistinguishable from a hung KiCad.
+  A profile that already exists is a real user's and is never touched.
+- D50 — the API pipe is matched by shape (`*\kicad\api.sock`), never by equality
+  with a computed path, and the name that exists is what gets exported. KiCad may
+  spell it in 8.3 (`RUNNER~1` on a runner); a pipe name is a literal in a
+  namespace with no path resolution, so the difference is a failed connection.
 - D48 — `download_jlcpcb_database` defaults to the `basic-preferred` library
   (~2 MB) rather than upstream's own default `current-parts` (~780 MB inflated):
   a caller who asks for "the database" should not get a 175 MB download it cannot
@@ -72,37 +78,24 @@ Validation :
 
 ## Blocage actif
 
-1. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
-   `kicad-cli api-server` it needs.
-2. **The `live-ipc` job fails on `windows-latest`** (J.3.3). Run 32020437428,
-   2026-08-17: pcbnew started, stayed alive — the harness distinguishes an exit —
-   and `\\.\pipe\...\kicad\api.sock` never appeared within 90 s. The `e2e` job in
-   the same run passed, so the runner and the KiCad install are fine; it is the
-   GUI-process API server that does not come up. Locally the same script is 3/3.
-   Excluded: a missing workflow (see below), a pcbnew crash, a bad socket path
-   (the harness logs the one it waits on and it is the deterministic one).
-   Next attempt is running: the harness now prints pcbnew's window handle, title,
-   responsiveness and CPU time when it gives up, and the CI step waits 180 s, so
-   the outcome separates "slow on a cold runner" from "stuck before the API
-   server". Run 32021813623.
-
-   Settled on the way (do not re-derive): `origin` has **no** `main` branch — its
-   default branch *is* `agentic/main`. The earlier dispatch 404 was that Actions
-   had never registered the workflows, because no push had ever touched
-   `.github/workflows/`; one push fixed it. `gh` resolves a bare `-R`-less
-   invocation to `upstream` (mixelpixx/Konnect), where a dispatch is a 403 and
-   whose green "E2E (real KiCAD)" runs are not this fork's. Always
-   `-R nevenfo/kicad-agentic-mcp --ref agentic/main`.
+Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
+`kicad-cli api-server` it needs.
 
 ## Fichiers / zones utiles
 
+- `scripts/live-pcb-e2e.ps1` — the live PCB harness: prepares the profile,
+  starts pcbnew, runs both live suites, stops pcbnew. Run it with no arguments.
+  Its window-enumeration diagnostics are the tool for any future "KiCad is
+  reachable and not answering": they print the modal's text
+- `.github/workflows/e2e-kicad.yml` — `e2e` + `live-ipc`, weekly and on demand.
+  Dispatch it as `gh workflow run e2e-kicad.yml -R nevenfo/kicad-agentic-mcp
+  --ref agentic/main`; a bare `gh` resolves to `upstream` and 403s. `origin` has
+  no `main` — its default branch *is* `agentic/main`
 - `crates/konnect-core/src/tools/integration.rs` — the JLCPCB tools; the
   published-database constants (`JLCPCB_LIBRARIES`, `JLCPCB_PART_COLUMNS`) and
-  both test modules live here. The scanner counts `#[cfg(test)]` blocks under
-  `crates/konnect-core/src/tools` as proof, which is why the hermetic download
-  tests sit in the source file rather than in `tests/`
-- `scripts/live-pcb-e2e.ps1` — the live PCB harness: starts pcbnew, runs both
-  live suites, stops pcbnew. Run it with no arguments.
+  both test modules live here. The coverage scanner counts `#[cfg(test)]` blocks
+  under `crates/konnect-core/src/tools` as proof, which is why the hermetic
+  download tests sit in the source file rather than in `tests/`
 - `crates/konnect-ipc/tests/live_kicad_test.rs`,
   `crates/konnect/tests/live_kicad_tools.rs` — the live suites
 - `crates/konnect-core/tests/harness/mod.rs` — shared rig: calls a tool through
@@ -125,12 +118,6 @@ Validation :
 
 ## NEXT ACTION
 
-Read run 32021813623's `live-ipc` diagnostics (`gh run view <id>
--R nevenfo/kicad-agentic-mcp --log-failed`) and decide from the process state
-whether the API pipe is slow or unreachable on `windows-latest`. If it passes at
-180 s, J.3.3 closes; if pcbnew is alive with no window handle, record that a
-GitHub runner gives it no usable window station and mark the job `gated` rather
-than chasing it further.
-
-Phase K is still unnamed: the user asked for a priority other than the PCB
-benchmark coverage but has not said which.
+Ask the user which priority phase K is, then build the phase around it — objective,
+dependencies, tasks, validations — before writing any code. The one candidate
+already on the table and declined is the PCB benchmark coverage J.3 unblocked.
