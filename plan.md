@@ -1181,6 +1181,14 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       L.1.1 never fired in CI) and its `fmt` step would fail today on ~38
       pre-existing rustfmt hunks in 15 files. Trigger it on the branch that
       exists, lint all targets, and clear the drift so `fmt` means something
+- [x] L.1.5 The first CI run L.1.4 made possible found one non-hermetic test:
+      `kicad_invoke_reports_what_it_changed_in_design_terms` placed `Device:R`
+      through whatever KiCAD the machine had, so it passed on a developer box
+      and failed on every runner. It now spawns the server with
+      `KICAD10_SYMBOL_DIR` pointed at a fixture library — env on the child, not
+      on the test process, which runs these in parallel threads — and asserts on
+      a marker property only the fixture carries, so the assertion is the same
+      one on both
 
 ### Validation
 `cargo clippy --workspace --locked --all-targets -- -D warnings` clean, and

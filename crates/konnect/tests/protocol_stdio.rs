@@ -24,9 +24,30 @@ impl McpProcess {
     /// `Config::load()`'s first search path (`konnect.toml` in cwd) picks up
     /// a test config file placed there.
     fn spawn_in_dir(dir: Option<&std::path::Path>) -> Self {
+        Self::spawn_with(dir, None)
+    }
+
+    /// Spawn with `KICAD10_SYMBOL_DIR` pointed at a fixture library, for a
+    /// test that must actually place a symbol.
+    ///
+    /// The env var goes to the child, never to this process: these tests run
+    /// in parallel threads of one binary, and a `set_var` here would race
+    /// every other test in the file. It also makes the test say which
+    /// libraries it needs instead of inheriting whatever KiCad the machine
+    /// has — which is how `kicad_invoke_reports_what_it_changed_in_design_terms`
+    /// passed on a developer box and failed on the first CI runner to ever
+    /// run it (L.1.5).
+    fn spawn_with_symbols(symbols: &std::path::Path) -> Self {
+        Self::spawn_with(None, Some(symbols))
+    }
+
+    fn spawn_with(dir: Option<&std::path::Path>, symbols: Option<&std::path::Path>) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_konnect"));
         if let Some(dir) = dir {
             command.current_dir(dir);
+        }
+        if let Some(symbols) = symbols {
+            command.env("KICAD10_SYMBOL_DIR", symbols);
         }
         let mut child = command
             .stdin(Stdio::piped())
@@ -572,6 +593,28 @@ impl Scratch {
     }
 }
 
+/// The `Datasheet` value of the fixture symbol below, and nothing a real KiCAD
+/// library would ever carry. A test that places `Device:R` can assert on it to
+/// prove it resolved through the fixture rather than through whatever KiCAD the
+/// machine happens to have — the difference the CI runner would otherwise be
+/// the only one to notice.
+const FIXTURE_MARKER: &str = "not-a-real-datasheet-L15";
+
+/// A `Device` library with a two-pin `R`, in the KiCAD 10 symdir layout —
+/// enough for a placement to resolve on a machine with no KiCAD installed,
+/// which is every CI runner.
+fn stub_symbol_library() -> tempfile::TempDir {
+    let libdir = tempfile::tempdir().expect("tempdir");
+    let symdir = libdir.path().join("Device.kicad_symdir");
+    std::fs::create_dir_all(&symdir).expect("the symdir is creatable");
+    std::fs::write(
+        symdir.join("R.kicad_sym"),
+        format!("(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"R\"\n\t\t(property \"Reference\" \"R\" (at 0 0 0))\n\t\t(property \"Value\" \"R\" (at 0 0 0))\n\t\t(property \"Datasheet\" \"{FIXTURE_MARKER}\" (at 0 0 0))\n\t\t(symbol \"R_0_1\"\n\t\t\t(pin passive line (at 0 3.81 270) (length 1.27)\n\t\t\t\t(name \"~\" (effects (font (size 1.27 1.27))))\n\t\t\t\t(number \"1\" (effects (font (size 1.27 1.27))))\n\t\t\t)\n\t\t\t(pin passive line (at 0 -3.81 90) (length 1.27)\n\t\t\t\t(name \"~\" (effects (font (size 1.27 1.27))))\n\t\t\t\t(number \"2\" (effects (font (size 1.27 1.27))))\n\t\t\t)\n\t\t)\n\t)\n)\n"),
+    )
+    .expect("the fixture symbol is writable");
+    libdir
+}
+
 impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
@@ -667,7 +710,8 @@ fn kicad_invoke_keeps_partial_work_when_atomic_is_off() {
 #[test]
 fn kicad_invoke_reports_what_it_changed_in_design_terms() {
     let scratch = Scratch::new("semdiff");
-    let mut p = McpProcess::spawn();
+    let symbols = stub_symbol_library();
+    let mut p = McpProcess::spawn_with_symbols(symbols.path());
     let created = McpProcess::tool_body(&p.call_tool(
         "kicad_invoke",
         json!({"calls": [
@@ -700,6 +744,14 @@ fn kicad_invoke_reports_what_it_changed_in_design_terms() {
     assert!(
         body["diff"]["changes"].is_null(),
         "the per-item detail is opt-in — it is not in the default reply: {body:#?}"
+    );
+    // And it resolved through the fixture, not through a KiCAD this machine
+    // happens to have installed: without this the test proves nothing on a
+    // developer box and fails on every runner.
+    let written = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        written.contains(FIXTURE_MARKER),
+        "the placed symbol did not come from the fixture library"
     );
 }
 
