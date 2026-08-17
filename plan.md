@@ -924,7 +924,28 @@ F.4 (the matrix is the instrument).
         '**not yet implemented**', and `konnect-ipc`'s
         `stackup_write_is_unimplemented` test fails if that ever changes. Stays
         `GUI_ONLY_NO_API` and out of the denominator
-- [ ] J.2.3 Prove the 107-ish tools that have no test that runs
+- [ ] J.2.3 Prove the tools that have no test that runs. 126 of 202 at the last
+      regeneration; 19 `ipc`, 3 `process` and 4 `ipc→sexpr` of those need a live
+      KiCAD and stay `gated` until J.3 answers the GUI-session question, so the
+      reachable target is the ~100 that run against files, `kicad-cli` or
+      nothing. Ordered by size, largest first — each is one commit
+  - [x] J.2.3.1 `nets` and `wires` — `tests/nets_and_wires.rs` builds a circuit
+        with the writers and questions every reader about it, through the
+        router by name. `get_nets_list` stays `NOT_TESTED`: it is `ipc`, and
+        proving it by its own "KiCAD must be running" error would be the claim
+        the matrix exists to prevent. `tests/harness/` is the shared rig
+  - [ ] J.2.3.2 `symbols` (12 `sexpr` + 1 `cli`) and `schematic` (5)
+  - [ ] J.2.3.3 `config` (7 `internal`) and `rules` (5 `sexpr`)
+  - [ ] J.2.3.4 `review` (6 `sexpr`) — heuristic audits; assert the shape of the
+        finding, never that the advice is right
+  - [ ] J.2.3.5 `footprints` (6 `sexpr`) and `libraries` (4)
+  - [ ] J.2.3.6 `labels` (4 `sexpr`), `stackup` (3 `sexpr`), `zones` (1),
+        `pcb` (2 `sexpr`), `templates` (1 `internal`)
+  - [ ] J.2.3.7 `export` (4 `cli`) and `drc` (2 `cli`) — argument handling
+        without KiCAD, plus a live probe where a fixture makes one possible
+  - [ ] J.2.3.8 `sourcing` (3 `external`) — a third party is not a test
+        dependency: assert against a recorded response, and keep any live call
+        `#[ignore]`d
 
 ### Validation
 `docs/capability-matrix.md` regenerated; the percentage moves for the right

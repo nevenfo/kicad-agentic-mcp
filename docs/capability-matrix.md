@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 52 | 6 | 104 | 2 | 5 | 31.7 % |
+| KiCAD domains | 169 | 62 | 15 | 85 | 2 | 5 | 37.8 % |
 | server's own | 40 | 15 | 3 | 22 | 0 | 0 | 37.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 55 | 29.6 % |
+| this fork | 186 | 65 | 34.9 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -59,8 +59,8 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`project`](#project) | 5 | 2 | 0 | 3 | 0 | 0 | 40.0 % |
 | [`schematic`](#schematic) | 9 | 2 | 0 | 6 | 1 | 0 | 22.2 % |
 | [`symbols`](#symbols) | 19 | 5 | 1 | 13 | 0 | 0 | 26.3 % |
-| [`wires`](#wires) | 8 | 4 | 0 | 4 | 0 | 0 | 50.0 % |
-| [`nets`](#nets) | 25 | 5 | 4 | 16 | 0 | 0 | 20.0 % |
+| [`wires`](#wires) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
+| [`nets`](#nets) | 25 | 11 | 13 | 1 | 0 | 0 | 44.0 % |
 | [`labels`](#labels) | 6 | 2 | 0 | 4 | 0 | 0 | 33.3 % |
 | [`buses`](#buses) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -168,41 +168,41 @@ Not covered by any tool:
 |---|---|---|---|---|---|---|
 | `add_wire` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `batch_add_wire` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
-| `delete_schematic_wire` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
-| `batch_delete_schematic_wire` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
+| `delete_schematic_wire` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `batch_delete_schematic_wire` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `split_wire_at_point` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `add_junction` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
+| `add_junction` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `batch_add_junction` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
-| `list_schematic_wires` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — |  |
+| `list_schematic_wires` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 
 ### nets
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `add_no_connect` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
+| `add_no_connect` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `delete_no_connect` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `batch_delete_no_connect` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `connect_to_net` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
+| `connect_to_net` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `connect_pins` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
-| `add_schematic_connection` | `sch_wiring` | `sexpr` | NOT_TESTED | — | — |  |
+| `add_schematic_connection` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `list_schematic_nets` | `sch_analysis` | `sexpr` | PARTIAL | bench | `bench/probes/divider.yaml` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_net_connections` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_net_connectivity` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_pin_connections` | `sch_analysis` | `sexpr` | NOT_TESTED | gated | `crates/konnect/tests/e2e_kicad.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_pin_net_name` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_component_nets` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_net_components` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `trace_from_point` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `find_shorted_nets` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_net_connections` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_net_connectivity` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_pin_connections` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_pin_net_name` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_component_nets` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_net_components` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `trace_from_point` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `find_shorted_nets` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `find_single_pin_nets` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_connected_items` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `batch_connect_to_net` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/plan/ops.rs` |  |
 | `batch_connect_pins` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
-| `connect_passthrough` | `sch_batch` | `sexpr` | NOT_TESTED | — | — |  |
-| `validate_wire_connections` | `sch_batch` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `connect_passthrough` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `validate_wire_connections` | `sch_batch` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `validate_component_connections` | `sch_batch` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_batch.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `fix_connectivity` | `sch_export` | `sexpr` | NOT_TESTED | — | — |  |
-| `add_net` | `pcb_routing` | `sexpr` | NOT_TESTED | — | — |  |
+| `fix_connectivity` | `sch_export` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `add_net` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `get_nets_list` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
 
 ### labels
@@ -532,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-126 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+107 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -552,37 +552,19 @@ Not covered by any tool:
 | `add_component_annotation` | `schematic` | `sexpr` | none |
 | `group_components` | `symbols` | `sexpr` | none |
 | `get_schematic_view` | `schematic` | `cli` | none |
-| `delete_schematic_wire` | `wires` | `sexpr` | none |
-| `batch_delete_schematic_wire` | `wires` | `sexpr` | none |
 | `delete_schematic_net_label` | `labels` | `sexpr` | none |
 | `rotate_schematic_label` | `labels` | `sexpr` | none |
 | `batch_rotate_labels` | `labels` | `sexpr` | none |
-| `add_no_connect` | `nets` | `sexpr` | none |
-| `add_junction` | `wires` | `sexpr` | none |
-| `connect_to_net` | `nets` | `sexpr` | none |
-| `add_schematic_connection` | `nets` | `sexpr` | none |
-| `list_schematic_wires` | `wires` | `sexpr` | none |
 | `list_schematic_labels` | `labels` | `sexpr` | none |
-| `get_net_connections` | `nets` | `sexpr` | none |
-| `get_net_connectivity` | `nets` | `sexpr` | none |
-| `get_pin_connections` | `nets` | `sexpr` | gated — `crates/konnect/tests/e2e_kicad.rs` |
-| `get_pin_net_name` | `nets` | `sexpr` | none |
-| `get_component_nets` | `nets` | `sexpr` | none |
-| `get_net_components` | `nets` | `sexpr` | none |
-| `trace_from_point` | `nets` | `sexpr` | none |
 | `find_orphan_items` | `schematic` | `sexpr` | none |
-| `find_shorted_nets` | `nets` | `sexpr` | none |
 | `check_schematic_overlaps` | `schematic` | `sexpr` | none |
 | `bulk_move_schematic_components` | `symbols` | `sexpr` | none |
 | `batch_edit_schematic_components` | `symbols` | `sexpr` | none |
 | `batch_delete_schematic_components` | `symbols` | `sexpr` | none |
-| `connect_passthrough` | `nets` | `sexpr` | none |
 | `add_schematic_text` | `schematic` | `sexpr` | none |
 | `get_schematic_layout` | `schematic` | `sexpr` | none |
-| `validate_wire_connections` | `nets` | `sexpr` | none |
 | `export_schematic_pdf` | `export` | `cli` | none |
 | `export_netlist_summary` | `export` | `sexpr` | none |
-| `fix_connectivity` | `nets` | `sexpr` | none |
 | `set_board_size` | `pcb` | `ipc→sexpr` | none |
 | `get_board_info` | `pcb` | `sexpr` | none |
 | `get_board_extents` | `pcb` | `ipc→sexpr` | none |
@@ -604,7 +586,6 @@ Not covered by any tool:
 | `align_components` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `duplicate_component` | `placement` | `ipc` | none |
 | `get_board_2d_view` | `pcb` | `cli` | none |
-| `add_net` | `nets` | `sexpr` | none |
 | `route_pad_to_pad` | `routing` | `ipc` | none |
 | `add_via` | `vias` | `ipc` | none |
 | `add_copper_pour` | `zones` | `sexpr` | none |
