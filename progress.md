@@ -58,16 +58,11 @@ Validation :
 
 ## Blocage actif
 
-1. **`git push` cannot authenticate here** — "Unable to persist credentials with
-   the 'wincredman' credential store", and no tty for a prompt. Commits from
-   `c17138f` onward are local only on `agentic/main`. Run `git push` from an
-   interactive shell.
-2. **J.2.4.3 needs an external lookup** this session could not make: the JLCPCB
-   parts database moved and the old URL 404s. The tool is declared a `GAP`
-   meanwhile.
-3. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
+1. **J.2.4.3 needs an external lookup**: the JLCPCB parts database moved and the
+   old URL 404s. The tool is declared a `GAP` meanwhile.
+2. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
    `kicad-cli api-server` it needs.
-4. The `live-ipc` CI job (J.3.3) is proven locally but has never run on a
+3. The `live-ipc` CI job (J.3.3) is proven locally but has never run on a
    GitHub runner. Unknowns there: whether `windows-latest` gives pcbnew a usable
    window station, and whether a minimal `kicad_common.json` is enough for a
    profile KiCad has never written.
