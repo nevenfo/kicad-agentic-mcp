@@ -81,8 +81,10 @@ can hold them, and the schema and operation-library blocks are pulled from
 `kicad_describe(["apply_plan"])` against the running server rather than
 hand-typed, because a copied schema drifts silently.
 
-Four tasks: `01_divider`, `02_ldo`, `03_decoupling_bank`, `04_reference_heavy`,
-each at three hint levels (`full`, `minimal`, `none`).
+Four tasks: `01_divider`, `02_ldo`, `03_decoupling_bank`, `04_reference_heavy`.
+The default measurement has three historical hint levels (`full`, `minimal`,
+`none`); the optional `geometry` isolation arm keeps only pin offsets and their
+derived coordinates.
 
 ### The oracle is proved before any model runs
 
@@ -149,21 +151,130 @@ design:
 
 ---
 
-## What is deliberately not built
+## Context budget contract
 
-**The router.** `NO_LLM / SMALL_LOCAL / MEDIUM_LOCAL / LARGE_LOCAL /
-EXTERNAL_ESCALATION` is the next step and it stays unbuilt on purpose. The two
-models are now separated on one build — `gpt-oss-20b` at `medium` reaches grade 3
-four times as often as `qwen3.5-9b` (12/60 vs 3/60, p = 0.0246) at half the output
-tokens (D38, superseding D36) — so the 9B is not a cheaper tier to route *to*, it
-is a model that costs more per success. What a router still has to earn is the
-`NO_LLM` boundary, whose thresholds must come from measurements rather than from
-n = 60 on four tasks.
+`kam-context` owns one `ContextBudget` per conversation context. Limits are
+explicit: the crate has no implicit model or window default. Each completed
+call is accounted from `kam_llm::Usage`; `completion_tokens` already includes
+`reasoning_tokens`, so reasoning remains a reported split and is never added a
+second time. Missing backend counts produce `Unmeasured`, not a false zero-cost
+success.
 
-**Specialised agents.** The intended minimum is router/supervisor, schematic,
-PCB and verification, with anything further added only on measured evidence. None
-of them exists yet, and adding them before a routing decision can be justified
-would be building the abstraction before the flow.
+The initial `gpt-oss-20b`, `medium`, 32 768-token profile is grounded in the
+same real E27/E28 calls used to fit the router:
+
+| run / arm (n = 20) | input p95 | output p95 | reasoning p95 |
+|---|---:|---:|---:|
+| E27 `full` | 2 707 | 5 044 | 4 584 |
+| E28 `geometry` | 2 620 | 4 451 | 4 171 |
+
+The runtime profile therefore reserves **5 120 completion tokens** (the next
+256-token boundary above the largest observed p95), leaving **27 648 prompt
+tokens**. Crossing that prompt boundary while the measured call still fits
+returns `CompactionRequired`; crossing either the context window or the
+completion reserve returns `Exceeded`. These are accounting boundaries, not a
+claim that the model needs all remaining prompt space. A different model,
+effort, or loaded window requires a separately supplied profile.
+
+Compaction renders the full objective, hard constraints, success criteria and
+verified facts directly from `TaskState`; this durable core is refused rather
+than truncated when it cannot fit. Caller-ranked retrieval is inserted next as
+atomic bundles, before the evictable transcript. This is deliberate after E28:
+electrical, Plan IR and geometry guidance that is only useful together travels
+as one bundle, rather than letting a tight budget silently keep geometry alone.
+The remaining capacity holds the newest contiguous transcript suffix.
+
+The integration test `recorded_e27` replays the committed E27 decoupling calls:
+the stable prefix (`2 015` tokens), per-call input/output/reasoning counts and
+the measured `full - none` retrieval delta all come from
+`model-fit-gpt-oss-20b-medium-e27.json`. Repeated recorded completions force one
+compaction cycle; the result stays within `27 648`, retains the durable task and
+retrieval bundle, and drops only oldest transcript messages.
+
+---
+
+## Runtime boundary and remaining work
+
+The measured route is now exactly `NO_LLM | LOCAL | ESCALATE`. The earlier
+five-tier proposal was rejected: `gpt-oss-20b` at `medium` reaches grade 3 four
+times as often as `qwen3.5-9b` (12/60 vs 3/60, p = 0.0246) at half the output
+tokens (D38), so the 9B is not a cheaper tier. Self-repair converted 0 of 58
+attempts (D35), so it is not another runtime rung either.
+
+The first piece of that boundary is built and it needed no router to hold it.
+Sixteen of E26's sixty attempts failed to apply on a `lib_id` naming exactly one
+installed symbol through a library that does not exist; `canonical_lib_id`
+resolves that case in the library index and refuses everything ambiguous, taking
+`not_applied` to 5/60 (p = 0.0148) and `LLM_CALLS_PER_SUCCESSFUL_TASK` from 5.0
+to 3.75. The cheapest tier is not a smaller model, it is the call that never
+happens — and the deterministic answer lives at the call site, not behind a
+routing decision that would have to be made before knowing the answer exists.
+
+**And it is the last piece the measurements ask for.** Replaying E27's applied
+plans through `run_erc` (`bench/erc_residue.py`) names the 139 violations that
+`erc_max_errors` had only counted: 68 `Pin not connected`, 62 `Input Power pin
+not driven`, 9 `Label not connected`, spread so that the largest group a single
+deterministic rule could flip is 2 of 60. E26's `lib_id` histogram was one shape
+repeated sixteen times; this one is a model failing to wire what it placed, in
+12 of the 16 attempts the ERC budget rejected. The five tiers are down to three
+by measurement — `NO_LLM`, one local model, escalate — because `SMALL` costs
+more per success (D38) and the self-repair rung converted 0 of 58 (D35).
+
+What the prompt carries is now fitted one step further. E27 gave 9/20 grade 3
+with `full` hints against 7/40 without (one-sided p = 0.0323). E28 retained only
+pin offsets and derived coordinates and got 3/20, all on the decoupling macro:
+indistinguishable from the 7/40 non-full residue (two-sided p = 1.0), and below
+`full` in the pre-declared direction (one-sided p = 0.0412; two-sided p =
+0.0824). A generic geometry block is therefore insufficient. The router payload
+must retrieve task-specific electrical and Plan IR constraints together with
+geometry; n = 20 does not justify naming one removed sentence as the mechanism.
+
+### The gateway split is explicit
+
+Direct mode is the existing `kicad_describe` / `kicad_invoke` path: the external
+harness owns intent and the gateway executes deterministic calls. It must never
+start a local model as a side effect. Agent mode is the distinct `kicad_agent`
+gateway entry point; its local supervisor uses the measured
+`NO_LLM | LOCAL | ESCALATE` route, but it reaches the same Plan IR compiler and
+validators as direct mode.
+
+The split is selected by the caller through the entry point, not inferred from
+prompt wording and not set for an entire server process. This preserves current
+clients, makes local inference an explicit cost/privacy decision, and permits
+direct and agent tasks in one session. `ESCALATE` is a structured result carrying
+the failure and evidence handles back to the caller; it is not permission for
+the server to contact an external model. `LOCAL` uses `gpt-oss-20b`, effort
+`medium`, a 32 768-token window and the measured 5 120-token completion reserve.
+A model proposal is stored as an assumption, never as a verified fact; H.7.2
+owns the validator verdict.
+
+Local inference is opt-in and loopback-only. Configure it in `konnect.toml`:
+
+```toml
+local_llm_base_url = "http://127.0.0.1:1234/v1"
+local_llm_model = "gpt-oss-20b"
+```
+
+`KONNECT_LOCAL_LLM_BASE_URL` and `KONNECT_LOCAL_LLM_MODEL` are fallbacks when
+the file leaves either value unset. With no URL setting, `LOCAL` returns structured
+`local_provider_unavailable`; Direct remains fully functional. A non-loopback
+URL is rejected by the gateway.
+
+**Specialised agents.** The supervisor and verification runtimes now exist.
+Schematic and PCB execution still flow through the shared deterministic Plan IR
+path. Anything further is added only on measured evidence.
+
+`kicad_agent_verify` runs the existing validator or reuses only its exact-revision
+cache entry. It returns `PASS`, `FAIL` or `COULD_NOT_RUN`, with counts, source and
+`kicad://verification/*` evidence. Only completed `kicad-cli`/cache verdicts enter
+`TaskState.verified_facts`; missing documents, unsupported types and CLI errors
+produce no fact and cannot read as PASS.
+
+`bench/agent_e2e.py` exercises the complete gateway without a repair pass. The
+recorded H.7.3 `model_divider` run used `gpt-oss-20b` at `medium`, compiled and
+applied 8/8 deterministic steps, then obtained ERC `PASS` with 0 errors and 0
+warnings. Its counters prove one loopback local call and zero external calls;
+the result is in `bench/results/agent-e2e-gpt-oss-20b-medium-h7.3b.json`.
 
 When they do exist, two rules already apply: handoffs are structured payloads
 rather than conversations, and a local agent is never the only source of

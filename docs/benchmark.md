@@ -642,6 +642,7 @@ built server on a 0–3 ladder.
 | **`gpt-oss-20b`, `medium`, ctx 32k, E26 build** | **12/60** | **54/60** | **5.0** | 171 045 | 93 % | 12 612 ms |
 | **`qwen3.5-9b`, ctx 32k, E26 build** | 3/60 | 49/60 | 20.0 | 325 400 | 64 % | 18 472 ms |
 | `gpt-oss-20b`, `medium`, ctx 32k, E26 build, `strict_json` | 9/60 | 58/60 | 6.7 | 154 927 | 92 % | 12 595 ms |
+| **`gpt-oss-20b`, `medium`, ctx 32k, E27 build** | 16/60 | 53/60 | **3.75** | 166 024 | 91 % | 12 778 ms |
 
 Rows 2 and 4 are void as statements about a model and are kept because deleting
 them hides why the rest is shaped as it is: row 2 ran at the model's deliberation
@@ -710,6 +711,135 @@ D33 decided this on outcome counts alone and inferred the mechanism; the
 mechanism now reads directly off the field and says the same thing. The setting
 would buy a dependency on backend support for a difference no run can see.
 
+**The NO_LLM comparison is rows 9 and 12** (H.6.1) — same model, same effort,
+same window, only the build differs:
+
+| | E26 build | E27 build |
+|---|---|---|
+| `not_applied` | 16/60 | 5/60 — Fisher exact **p = 0.0148** |
+| `applied_invalid` | 26/60 | 32/60 — p = 0.361 |
+| compiled (≥2) | 54/60 | 53/60 — p = 1.0 |
+| grade 3 | 12/60 | 16/60 — p = 0.518, not claimed |
+| LLM calls/success | 5.0 | **3.75** |
+
+E27 canonicalizes a `lib_id` that names exactly one installed symbol through a
+library that does not exist. Sixteen of E26's sixty attempts died on that, in two
+shapes and no others: an invented library wrapped around a correct symbol name
+(`regulator/AMS1117-3.3`, `MICROCHIP/AMS1117-3.3`, `Device:PWR_FLAG`, bare `R`)
+and a power-symbol polarity sign (`power:5V` for `power:+5V`, `power:+GND` for
+`power:GND`). Replaying the E26 failures against the installed index predicted
+10 of the 16 would resolve uniquely and 6 would not; the run came back with 3
+`lib_id` failures left, and all three are shapes the resolver is documented to
+refuse — `Resistor_SMD:R_0805` (a footprint asked for as a symbol, twice) and
+`power:1`. The other two residual `not_applied` are a missing pin and an IO
+error, not naming at all.
+
+**What it does not do is make the plan correct.** The freed attempts mostly moved
+one rung, not to the top: `applied_invalid` 26 → 32. The plan now applies and
+then fails its invariants or its ERC budget, which is a different problem with a
+different fix. grade 3 12 → 16 is in the same direction and is not significant at
+n = 60; the claim here is the mechanism that *is* — an apply failure the
+libraries could answer themselves, removed.
+
+`LLM_CALLS_PER_SUCCESSFUL_TASK` **5.0 → 3.75** with no model change, no prompt
+change and no extra call: the second D37 result, and the reason H.6 starts at
+NO_LLM rather than at tiers.
+
+### E27's residue — what is left once the naming failures are gone
+
+D37's rule is that a number is attributed to a model only after its failure
+histogram has been read. E27's 44 failures were read the same way, and the ERC
+half of them needed a measurement the run does not record: `erc_max_errors` is a
+budget, so it stores a *count*, and a count cannot separate a gap in the
+operation library from a design mistake. `bench/erc_residue.py` replays every
+applied attempt against the same built server and asks `run_erc` for the
+violations themselves. All 39 replays reproduce the count the run graded.
+
+| | E27, n = 60 |
+|---|---|
+| grade 3 | 16 |
+| grade 2 — `invariant` | 16 |
+| grade 2 — `erc_budget` | 16 |
+| grade 2 — `apply_failed` / `handler_error` / `io` | 5 |
+| grade 1 — `invalid_argument` | 7 |
+
+The 139 violations behind those attempts are three classes and no others: **68
+`Pin not connected`** (48.9 %), **62 `Input Power pin not driven`** (44.6 %) and
+**9 `Label not connected`** (6.5 %). That distribution is the opposite of E26's
+`lib_id` histogram, which was one shape repeated. Split over the 16 attempts the
+budget actually failed, no class isolates a group worth a rule:
+
+| violation classes present | attempts |
+|---|---|
+| power-driver + unconnected pin | 6 |
+| power-driver + unconnected pin + dangling label | 2 |
+| power-driver alone | 2 |
+| unconnected pin alone | 2 |
+| dangling label alone | 2 |
+| dangling label + unconnected pin | 2 |
+
+A deterministic rule can only flip an attempt whose *whole* residue it removes.
+The ceiling for each candidate is therefore 2/60 — a missing `PWR_FLAG` on a net
+whose only driver is a power input, a free label placed where no pin or wire is,
+an unwired pin. Fisher exact for 2 more successes on 60 is p ≈ 0.5. Even
+granting all three at once, and the two compile failures below, grade 3 would go
+16/60 → 22/60, p = 0.33 — a post-hoc union of three unmeasured fixes, not a
+result. **E27's residue contains no further NO_LLM candidate above noise**, and
+`Pin not connected` in 12 of the 16 is the model failing to wire what it placed.
+
+The seven grade-1 compile failures were read the same way and are four shapes:
+two plans invented an operation (`defaults`), two referenced `${proj.schematic}`
+after giving the `create` operation no id at all, one omitted a required
+`schematic`, and **two connected a single-pin power symbol to a net without
+naming its pin** (`{"ref1": "#FLG01", "net": "+3V3"}`). Only the last has D39's
+shape — a symbol with exactly one pin admits exactly one answer — and at 2/60 it
+is recorded as a candidate, not built.
+
+Four attempts on `model_reference_chain` returned a two-operation plan — create,
+place `R1`, stop — with `finish_reason: stop`, no truncation, and 1 504–2 898
+reasoning tokens spent to produce it. That is not a window ceiling (E23) and not
+a parse loss; the model deliberated its way to an unfinished answer.
+
+**What this settles for H.6.2.** The five-tier router has no measured tier left
+to route between. `SMALL` died with D38 — the 9B costs more per success on one
+build. The self-repair rung died with D35 — one repair round converted 0 of 58
+failures and pushed 11 down the ladder. `NO_LLM` is built and its residue is now
+measured empty. What remains measurable is not which model but what the prompt
+carries: grade 3 is **9/20 with full geometry hints against 7/40 without**
+(p = 0.0323), the only lever in E27 that separates at n = 60.
+
+### E28 — pin offsets are not the lever by themselves
+
+H.6.5 added one isolation arm, `geometry`, without changing the three historical
+arms or their default. It keeps symbol pin offsets and coordinates derived from
+them, but removes task-specific semantic advice from `full`: the divider's
+`PWR_FLAG` requirement, the LDO wiring recipe, the decoupling fixture's ERC
+explanation and power-symbol recipe, and the reference task's repeated
+`${create.schematic}` instruction.
+
+Same E27 build, `gpt-oss-20b`, `medium`, temperature 0.2, one-shot, declared and
+observed 32 768-token window, 4 tasks × 5 repeats:
+
+| prompt arm | grade 3 | compiled (≥2) |
+|---|---:|---:|
+| E27 `full` | 9/20 | 17/20 |
+| **E28 `geometry` only** | **3/20** | **19/20** |
+| E27 `minimal` + `none` | 7/40 | 36/40 |
+
+All three E28 successes are `model_decoupling_bank`; divider, LDO and reference
+chain are 0/5 each. Offsets alone are indistinguishable from no geometry
+(3/20 vs 7/40, Fisher two-sided p = 1.0) and are below the pre-declared `full`
+direction (9/20 vs 3/20, one-sided p = 0.0412; two-sided p = 0.0824). The small
+sample does not identify which removed sentence carries the effect. It does
+settle the contract needed by H.7: **a router cannot send a generic pin-offset
+block and expect the E27 gain; it must retrieve task-specific electrical and
+Plan IR constraints together with geometry.**
+
+Artefacts: `bench/results/model-fit-gpt-oss-20b-medium-e28.json` and
+`bench/results/_gpt-oss-20b-medium-e28.log`. LM Studio named the second loaded
+instance `openai/gpt-oss-20b:2`; the recorded model window is 32 768 and the
+weights, effort and sampling settings are unchanged.
+
 ## Reproducing
 
 ```powershell
@@ -728,7 +858,17 @@ python bench\model_fit.py --server .\target\release\konnect.exe --selftest
 python bench\model_fit.py --server .\target\release\konnect.exe `
     --model "openai/gpt-oss-20b" --reasoning-effort medium --repeat 5 `
     --out bench\results\model-fit-mine.json
+
+# what the ERC counts in that run actually were — no model involved
+python bench\erc_residue.py --server .\target\release\konnect.exe `
+    --results bench\results\model-fit-mine.json `
+    --out bench\results\erc-residue-mine.json
 ```
+
+`erc_residue.py` replays a finished run's applied plans and prints each ERC
+violation's own description; it exits non-zero if any attempt fails to reproduce
+the count the run graded, which is the only thing that makes its histogram
+readable as evidence.
 
 `--selftest` runs no model and must print `SELFTEST PASSED` first: it proves all
 four rungs of the ladder and the best-round selection before any measurement is
