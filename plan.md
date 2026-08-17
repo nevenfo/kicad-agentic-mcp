@@ -924,11 +924,13 @@ F.4 (the matrix is the instrument).
         '**not yet implemented**', and `konnect-ipc`'s
         `stackup_write_is_unimplemented` test fails if that ever changes. Stays
         `GUI_ONLY_NO_API` and out of the denominator
-- [ ] J.2.3 Prove the tools that have no test that runs. 126 of 202 at the last
+- [x] J.2.3 Prove the tools that have no test that runs. 126 of 202 at the last
       regeneration; 19 `ipc`, 3 `process` and 4 `ipc→sexpr` of those need a live
       KiCAD and stay `gated` until J.3 answers the GUI-session question, so the
       reachable target is the ~100 that run against files, `kicad-cli` or
-      nothing. Ordered by size, largest first — each is one commit
+      nothing. Ordered by size, largest first — each is one commit. **Done: 126
+      untested became 26**, and the 26 are the `ipc`/`process` tools waiting on
+      J.3 plus the handful whose only honest proof is `gated`
   - [x] J.2.3.1 `nets` and `wires` — `tests/nets_and_wires.rs` builds a circuit
         with the writers and questions every reader about it, through the
         router by name. `get_nets_list` stays `NOT_TESTED`: it is `ipc`, and
@@ -973,9 +975,11 @@ F.4 (the matrix is the instrument).
         `kicad-cli` actually writes. The live probes use a blank board, not
         `test.kicad_pcb`: that fixture is a KiCad 8 file and KiCad 10 refuses to
         load it
-  - [ ] J.2.3.8 `sourcing` (3 `external`) — a third party is not a test
-        dependency: assert against a recorded response, and keep any live call
-        `#[ignore]`d
+  - [x] J.2.3.8 `sourcing`, `datasheet`, cost/DFM and the last file-engine
+        strays — `tests/sourcing_and_manufacturing.rs`. A third party is not a
+        test dependency, so what is asserted is what each tool does when it is
+        absent: "no database" must never read as "nothing found". The download
+        and the `kicad-cli` snapshot are `#[ignore]`d
 
 ### Validation
 `docs/capability-matrix.md` regenerated; the percentage moves for the right
