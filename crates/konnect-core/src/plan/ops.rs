@@ -855,6 +855,252 @@ mod tests {
             .collect()
     }
 
+    // ─── A parser for the `*_SIGNATURE` DSL, for the anti-drift test below ──
+    //
+    // The test that follows must not just run the hand-written minimal example
+    // for each operation — that only proves the example itself compiles, which
+    // is also true of an example that compiles because of a field the
+    // signature never mentions. What actually rules out drift is checking the
+    // example, and the expander's required-field errors, against what the
+    // signature string documents. That needs the signature parsed, not just
+    // read by eye, so it is parsed here, once, into a flat field list every
+    // check below shares.
+
+    /// One field a `*_SIGNATURE` constant documents, flattened to a path into
+    /// the operation's `with` object.
+    #[derive(Debug, Clone)]
+    struct DocField {
+        /// Dotted/bracketed path, e.g. `components[].lib_id` or `at.x`. `[]`
+        /// stands for "in each element of this array".
+        path: String,
+        /// The DSL marks this with a trailing `?`, or (like `args?`) gives it
+        /// no type at all — either way, an example may omit it.
+        optional: bool,
+        /// Reachable only through one branch of a `|` — either a field-level
+        /// union (`pin:string|rail:string`) or an array-of-alternatives union
+        /// (`[{...}|{...}]`). A union member is never truly required on its
+        /// own: some other branch may satisfy the operation instead, so the
+        /// required-field check below must not demand it.
+        in_union: bool,
+        /// No type was given at all (`args?`), so the DSL says nothing about
+        /// what lives underneath this field — an example may nest anything
+        /// there without it counting as an undocumented field.
+        opaque: bool,
+    }
+
+    /// Parse one `OP_LIBRARY` signature constant into its documented
+    /// operation name and the flat field list it promises.
+    fn parse_signature(sig: &str) -> (&str, Vec<DocField>) {
+        let brace = sig.find('{').expect("signature must open with name{...}");
+        let name = &sig[..brace];
+        let body = balanced(&sig[brace..]);
+        let mut fields = Vec::new();
+        parse_object_body(&body[1..body.len() - 1], "", false, &mut fields);
+        (name, fields)
+    }
+
+    /// The substring starting at `s`'s first byte (a `{` or `[`), up to and
+    /// including its matching close. Only the requested bracket kind is
+    /// tracked, so a `{` opened inside a `[...]` (or vice versa) does not
+    /// confuse the count.
+    fn balanced(s: &str) -> &str {
+        let open = s.as_bytes()[0];
+        let close = match open {
+            b'{' => b'}',
+            b'[' => b']',
+            _ => panic!("balanced() called on '{s}', which opens with neither '{{' nor '['"),
+        };
+        let mut depth = 0i32;
+        for (i, b) in s.bytes().enumerate() {
+            if b == open {
+                depth += 1;
+            } else if b == close {
+                depth -= 1;
+                if depth == 0 {
+                    return &s[..=i];
+                }
+            }
+        }
+        panic!("unbalanced '{}' in signature fragment: {s}", open as char);
+    }
+
+    /// Split `s` at top-level occurrences of `sep` — never inside a `{...}`
+    /// or `[...]` it contains, so a comma inside a nested object does not
+    /// split the field list it belongs to, one level up.
+    fn split_top_level(s: &str, sep: char) -> Vec<&str> {
+        let mut parts = Vec::new();
+        let mut depth = 0i32;
+        let mut start = 0usize;
+        for (i, c) in s.char_indices() {
+            match c {
+                '{' | '[' => depth += 1,
+                '}' | ']' => depth -= 1,
+                c if c == sep && depth == 0 => {
+                    parts.push(&s[start..i]);
+                    start = i + c.len_utf8();
+                }
+                _ => {}
+            }
+        }
+        parts.push(&s[start..]);
+        parts
+    }
+
+    /// Parse a comma-separated field list — the inside of a signature's
+    /// outer `{...}`, or of a nested object type — into flat, path-qualified
+    /// fields.
+    ///
+    /// `prefix` is the dotted path fields here are relative to (`""` at the
+    /// top, `"at."` inside `at:{...}`, `"components[]."` inside
+    /// `components:[{...}]`). `parent_union` is true when this whole object
+    /// was reached through a `|` branch, so every field found here is a
+    /// union member too, whether or not it also has siblings joined by `|`.
+    fn parse_object_body(body: &str, prefix: &str, parent_union: bool, out: &mut Vec<DocField>) {
+        for chunk in split_top_level(body, ',') {
+            let chunk = chunk.trim();
+            if chunk.is_empty() {
+                continue;
+            }
+            // A chunk like `pin:string|rail:string` is not one field with a
+            // union type — it is two alternative fields, only one of which
+            // the caller gives. Each alternative is parsed on its own.
+            let alts = split_top_level(chunk, '|');
+            let in_union = parent_union || alts.len() > 1;
+            for alt in alts {
+                parse_field(alt.trim(), prefix, in_union, out);
+            }
+        }
+    }
+
+    /// Parse one `key[?][:type]` field spec — never containing a top-level
+    /// `|`, [`parse_object_body`] has already split those out — and recurse
+    /// into its type when that type is a nested object or an array of them.
+    fn parse_field(spec: &str, prefix: &str, in_union: bool, out: &mut Vec<DocField>) {
+        let (key_raw, type_spec) = match spec.split_once(':') {
+            Some((k, t)) => (k, Some(t)),
+            None => (spec, None),
+        };
+        let optional = key_raw.ends_with('?');
+        let key = key_raw.trim_end_matches('?');
+        let path = format!("{prefix}{key}");
+
+        out.push(DocField {
+            path: path.clone(),
+            optional,
+            in_union,
+            opaque: type_spec.is_none(),
+        });
+
+        match type_spec {
+            Some(t) if t.starts_with('{') => {
+                let obj = balanced(t);
+                parse_object_body(&obj[1..obj.len() - 1], &format!("{path}."), in_union, out);
+            }
+            Some(t) if t.starts_with('[') => {
+                let arr = balanced(t);
+                let inner = &arr[1..arr.len() - 1];
+                let alts = split_top_level(inner, '|');
+                let array_union = in_union || alts.len() > 1;
+                for alt in alts {
+                    let alt = alt.trim();
+                    if alt.starts_with('{') {
+                        let obj = balanced(alt);
+                        parse_object_body(
+                            &obj[1..obj.len() - 1],
+                            &format!("{path}[]."),
+                            array_union,
+                            out,
+                        );
+                    }
+                    // A bare type name inside `[...]` (no signature here
+                    // uses one, but nothing rules it out) names no
+                    // sub-fields, so there is nothing further to recurse into.
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Every field path an example actually uses, keys only (leaf scalar
+    /// values contribute nothing beyond the key that names them). Mirrors
+    /// [`DocField::path`]'s notation: `.` into an object, `[].` into each
+    /// element of an array.
+    fn used_field_paths(value: &Value, prefix: &str, out: &mut Vec<String>) {
+        if let Value::Object(map) = value {
+            for (k, v) in map {
+                let path = format!("{prefix}{k}");
+                out.push(path.clone());
+                match v {
+                    Value::Object(_) => used_field_paths(v, &format!("{path}."), out),
+                    Value::Array(items) => {
+                        for item in items {
+                            used_field_paths(item, &format!("{path}[]."), out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Whether `path` currently resolves to something in `value` — checked
+    /// against the array's first element, since every anti-drift example
+    /// uses at most one element per array. Used to skip required-field
+    /// checks for a field whose *parent* the minimal example never included
+    /// in the first place (e.g. `place`'s `at.x`, when that example gives
+    /// `x`/`y` directly and omits `at` entirely) — the signature's `?` on
+    /// the parent already says that whole branch is optional.
+    fn field_present(value: &Value, path: &str) -> bool {
+        fn go(value: &Value, segments: &[&str]) -> bool {
+            let Some((seg, rest)) = segments.split_first() else {
+                return true;
+            };
+            if let Some(key) = seg.strip_suffix("[]") {
+                match value.get(key) {
+                    Some(Value::Array(items)) if !items.is_empty() => go(&items[0], rest),
+                    _ => false,
+                }
+            } else if rest.is_empty() {
+                value.get(*seg).is_some()
+            } else {
+                value.get(*seg).is_some_and(|child| go(child, rest))
+            }
+        }
+        go(value, &path.split('.').collect::<Vec<_>>())
+    }
+
+    /// Remove whatever `path` names from `value` — `[]` removes the field
+    /// from every element of the array it follows, though every anti-drift
+    /// example only ever has one.
+    fn remove_field(value: &mut Value, path: &str) {
+        fn go(value: &mut Value, segments: &[&str]) {
+            let Some((seg, rest)) = segments.split_first() else {
+                return;
+            };
+            if let Some(key) = seg.strip_suffix("[]") {
+                if let Some(Value::Array(items)) = value.get_mut(key) {
+                    for item in items {
+                        go(item, rest);
+                    }
+                }
+            } else if rest.is_empty() {
+                if let Value::Object(map) = value {
+                    map.remove(*seg);
+                }
+            } else if let Some(child) = value.get_mut(*seg) {
+                go(child, rest);
+            }
+        }
+        go(value, &path.split('.').collect::<Vec<_>>());
+    }
+
+    /// The `ExpandError::field` a removal at `doc_path` should produce.
+    /// Documented paths use `[]` for "any element"; every anti-drift example
+    /// has exactly one, so the error it actually names is always index 0.
+    fn expected_error_field(doc_path: &str) -> String {
+        doc_path.replace("[]", "[0]")
+    }
+
     #[test]
     fn create_expands_to_one_call_to_create_project() {
         let steps = calls("create", json!({"path": "/p", "name": "divider"}));
@@ -1260,14 +1506,15 @@ mod tests {
         assert!(err.reason.contains("'call'"));
     }
 
-    #[test]
-    fn every_documented_signature_has_a_working_minimal_example() {
-        // One example per operation, built from nothing but the signature
-        // constant next to its expander above. If an expander ever starts
-        // requiring a field its signature does not mention — the bug this
-        // module exists to close — the missing field makes `expand` fail
-        // here, not silently in a model's hands.
-        let examples: &[(&str, Value)] = &[
+    /// One minimal example per operation, in `OP_LIBRARY` order, built from
+    /// nothing but the signature constant next to each expander above.
+    ///
+    /// Shared by both anti-drift tests below rather than written out twice:
+    /// they check the same examples from two directions — that everything an
+    /// example uses is documented, and that everything documented as required
+    /// really is — and two copies drifting apart would quietly weaken both.
+    fn minimal_examples() -> Vec<(&'static str, Value)> {
+        vec![
             ("create", json!({"path": "/p", "name": "a"})),
             (
                 "call",
@@ -1317,16 +1564,108 @@ mod tests {
                     "caps": [{"reference": "C1", "pin": "1"}]
                 }),
             ),
-        ];
+        ]
+    }
+
+    #[test]
+    fn every_documented_signature_has_a_working_minimal_example() {
+        // One example per operation, built from nothing but the signature
+        // constant next to its expander above. If an expander ever starts
+        // requiring a field its signature does not mention — the bug this
+        // module exists to close — the missing field makes `expand` fail
+        // here, not silently in a model's hands.
+        let examples = minimal_examples();
         assert_eq!(
             examples.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
             OP_LIBRARY.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
             "an example above is missing, extra, or out of order relative to OP_LIBRARY"
         );
-        for (name, with) in examples {
+        for (name, with) in &examples {
             expand(name, with.clone()).unwrap_or_else(|e| {
                 panic!("{name}: its own documented signature's example did not compile: {e}")
             });
+
+            // The documented name and OP_LIBRARY's key for it cannot drift:
+            // the parser trusts the text before the first '{' is the name.
+            let (_, sig) = OP_LIBRARY.iter().find(|(n, _)| n == name).unwrap();
+            assert!(
+                sig.starts_with(&format!("{name}{{")),
+                "{name}: its signature does not open with '{name}{{' — the documented name and \
+                 OP_LIBRARY's key for it have drifted apart"
+            );
+
+            // An example that only compiles because of a field its own
+            // signature never mentions is exactly the drift this test
+            // exists to catch — so every key the example uses must appear,
+            // at that path, in the parsed signature.
+            let (_, fields) = parse_signature(sig);
+            let documented: std::collections::HashSet<&str> =
+                fields.iter().map(|f| f.path.as_str()).collect();
+            let opaque: Vec<&str> = fields
+                .iter()
+                .filter(|f| f.opaque)
+                .map(|f| f.path.as_str())
+                .collect();
+            let mut used = Vec::new();
+            used_field_paths(with, "", &mut used);
+            for path in &used {
+                let documented_directly = documented.contains(path.as_str());
+                let under_an_opaque_field = opaque.iter().any(|p| {
+                    path == p
+                        || path.starts_with(&format!("{p}."))
+                        || path.starts_with(&format!("{p}[]"))
+                });
+                assert!(
+                    documented_directly || under_an_opaque_field,
+                    "{name}: its example uses '{path}', which its own documented signature does \
+                     not mention"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_field_a_signature_marks_required_and_outside_a_union_is_actually_required() {
+        // The complement of the check above: not just that every field the
+        // example uses is documented, but that every field the signature
+        // calls required — no '?', and not one branch of a '|' — really is
+        // one. Removing it from the same minimal example must make `expand`
+        // fail, naming that exact field, or the signature is promising more
+        // than the expander enforces.
+        //
+        // `schematic?` is the one deliberate exception: it is documented
+        // optional because `infer_omitted_schematics` fills it in before an
+        // expander ever runs, even though the expander itself calls
+        // `need_str(with, "schematic")` — so it is already excluded by
+        // being marked optional in the signature, not by a special case here.
+        let examples = minimal_examples();
+
+        for (name, with) in &examples {
+            let (_, sig) = OP_LIBRARY.iter().find(|(n, _)| n == name).unwrap();
+            let (_, fields) = parse_signature(sig);
+            for field in fields.iter().filter(|f| !f.optional && !f.in_union) {
+                if !field_present(with, &field.path) {
+                    // The field's own parent branch is not in this example
+                    // (e.g. place's `at.x`, when the example gives x/y
+                    // directly and omits `at` — itself documented optional).
+                    continue;
+                }
+                let mut broken = with.clone();
+                remove_field(&mut broken, &field.path);
+                match expand(name, broken) {
+                    Ok(_) => panic!(
+                        "{name}: removing required field '{}' should have failed to expand, but \
+                         didn't",
+                        field.path
+                    ),
+                    Err(e) => assert_eq!(
+                        e.field.as_deref(),
+                        Some(expected_error_field(&field.path).as_str()),
+                        "{name}: removing required field '{}' failed for the wrong reason: {e}",
+                        field.path
+                    ),
+                }
+            }
         }
     }
 
