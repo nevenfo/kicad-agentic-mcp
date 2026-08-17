@@ -24,6 +24,17 @@ intents:
   - "add power symbols for the supply rails"
   - "run erc and list the components"
 
+safety: mutating
+expected_tools:
+  - create_project
+  - batch_place_components
+  - batch_add_wire
+  - batch_add_junction
+  - add_power_symbol
+# Measured, not guessed: the costliest load mode is `search` at 13 scored calls
+# (toolsets 9, tools 8, gateway 2), plus a margin of 2.
+max_calls: 15
+
 steps:
   - tool: create_project
     args: { path: "$WORK", name: "$NAME" }

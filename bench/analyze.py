@@ -60,6 +60,57 @@ def main() -> None:
     for avg, tool in slowest:
         print(f"  {avg:>8.0f}  {tool}")
 
+    violations(runs)
+    instability(runs)
+
+
+def violations(runs: list[dict]) -> None:
+    """Violations by kind, with the task each one came from.
+
+    A count alone is not actionable: `safety` on one task and `max_calls` on
+    another are different problems with different fixes, and a total hides
+    which one moved.
+    """
+    by_kind: collections.Counter[str] = collections.Counter()
+    by_kind_task: dict[str, collections.Counter[str]] = {}
+    for run in runs:
+        for v in run.get("violations", []):
+            by_kind[v["kind"]] += 1
+            by_kind_task.setdefault(v["kind"], collections.Counter())[run["task_id"]] += 1
+
+    print("\nviolations by kind:")
+    if not by_kind:
+        print("  none")
+        return
+    for kind, n in by_kind.most_common():
+        where = ", ".join(f"{t}×{c}" for t, c in by_kind_task[kind].most_common())
+        print(f"  {kind:<18}{n:>4}   {where}")
+
+
+def instability(runs: list[dict]) -> None:
+    """Per-task disagreement between repeats of the same task.
+
+    Signature = `(success, tuple(tools_used))`, the same one `bench/runner.py`
+    scores on, so this reads the stored runs rather than recomputing a
+    different definition of the same word.
+    """
+    by_task: dict[str, list[dict]] = {}
+    for run in runs:
+        by_task.setdefault(run["task_id"], []).append(run)
+
+    measurable = {t: rs for t, rs in by_task.items() if len(rs) > 1}
+    print("\ninstability per task:")
+    if not measurable:
+        print("  n/a — one run per task, nothing to disagree with")
+        return
+    for task_id, rs in measurable.items():
+        sigs = collections.Counter(
+            (r["success"], tuple(r.get("tools_used", []))) for r in rs
+        )
+        rate = 1.0 - sigs.most_common(1)[0][1] / len(rs)
+        note = "" if len(sigs) == 1 else f"   {len(sigs)} distinct outcomes"
+        print(f"  {task_id:<26}{rate:>6.0%}  ({len(rs)} runs){note}")
+
 
 if __name__ == "__main__":
     main()

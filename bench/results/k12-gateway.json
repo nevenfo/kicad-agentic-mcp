@@ -1,0 +1,1385 @@
+{
+  "label": "k12-gateway",
+  "runs": [
+    {
+      "task_id": "sch_divider",
+      "success": true,
+      "mcp_calls": 5,
+      "setup_calls": 1,
+      "wall_clock_ms": 52.196399999957066,
+      "request_tokens": 696,
+      "response_tokens": 2188,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 50,
+          "resp_tokens": 967,
+          "ms": 3.0
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 465,
+          "resp_tokens": 727,
+          "ms": 52.0
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 62,
+          "resp_tokens": 114,
+          "ms": 1045.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 59,
+          "resp_tokens": 339,
+          "ms": 2.2
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 60,
+          "resp_tokens": 41,
+          "ms": 1.7
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_divider",
+      "success": true,
+      "mcp_calls": 5,
+      "setup_calls": 1,
+      "wall_clock_ms": 53.699000003689434,
+      "request_tokens": 723,
+      "response_tokens": 2203,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 50,
+          "resp_tokens": 967,
+          "ms": 3.4
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 483,
+          "resp_tokens": 739,
+          "ms": 53.5
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 65,
+          "resp_tokens": 117,
+          "ms": 1036.6
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 62,
+          "resp_tokens": 339,
+          "ms": 2.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 63,
+          "resp_tokens": 41,
+          "ms": 1.8
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_divider",
+      "success": true,
+      "mcp_calls": 5,
+      "setup_calls": 1,
+      "wall_clock_ms": 54.869800005690195,
+      "request_tokens": 714,
+      "response_tokens": 2194,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 50,
+          "resp_tokens": 967,
+          "ms": 3.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 477,
+          "resp_tokens": 731,
+          "ms": 54.7
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 64,
+          "resp_tokens": 116,
+          "ms": 1038.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 339,
+          "ms": 2.2
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 62,
+          "resp_tokens": 41,
+          "ms": 1.8
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_ldo",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 67.28450000082375,
+      "request_tokens": 954,
+      "response_tokens": 2127,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', '#PWR003', 'C1', 'C2', 'U1']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 43,
+          "resp_tokens": 767,
+          "ms": 2.7
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 786,
+          "resp_tokens": 791,
+          "ms": 67.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 64,
+          "resp_tokens": 115,
+          "ms": 1061.2
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 454,
+          "ms": 2.4
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "batch_add_wire",
+        "batch_add_junction",
+        "add_power_symbol"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_ldo",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 68.16630000685109,
+      "request_tokens": 954,
+      "response_tokens": 2134,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', '#PWR003', 'C1', 'C2', 'U1']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 43,
+          "resp_tokens": 767,
+          "ms": 2.7
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 786,
+          "resp_tokens": 798,
+          "ms": 68.0
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 64,
+          "resp_tokens": 115,
+          "ms": 1034.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 454,
+          "ms": 2.5
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "batch_add_wire",
+        "batch_add_junction",
+        "add_power_symbol"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_ldo",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 68.74119999702089,
+      "request_tokens": 963,
+      "response_tokens": 2132,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', '#PWR003', 'C1', 'C2', 'U1']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 43,
+          "resp_tokens": 767,
+          "ms": 2.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 793,
+          "resp_tokens": 795,
+          "ms": 68.6
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 65,
+          "resp_tokens": 116,
+          "ms": 1046.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 62,
+          "resp_tokens": 454,
+          "ms": 2.4
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "batch_add_wire",
+        "batch_add_junction",
+        "add_power_symbol"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "success": true,
+      "mcp_calls": 3,
+      "setup_calls": 1,
+      "wall_clock_ms": 19.964300001447555,
+      "request_tokens": 242,
+      "response_tokens": 2042,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 27,
+          "resp_tokens": 615,
+          "ms": 3.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 147,
+          "resp_tokens": 1307,
+          "ms": 19.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 68,
+          "resp_tokens": 120,
+          "ms": 1031.0
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "search_templates",
+        "apply_template"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "success": true,
+      "mcp_calls": 3,
+      "setup_calls": 1,
+      "wall_clock_ms": 15.625799998815637,
+      "request_tokens": 239,
+      "response_tokens": 2037,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 27,
+          "resp_tokens": 615,
+          "ms": 2.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 145,
+          "resp_tokens": 1303,
+          "ms": 15.4
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 67,
+          "resp_tokens": 119,
+          "ms": 1041.0
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "search_templates",
+        "apply_template"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "success": true,
+      "mcp_calls": 3,
+      "setup_calls": 1,
+      "wall_clock_ms": 16.821500001242384,
+      "request_tokens": 233,
+      "response_tokens": 2028,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 27,
+          "resp_tokens": 615,
+          "ms": 2.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 141,
+          "resp_tokens": 1296,
+          "ms": 16.6
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 65,
+          "resp_tokens": 117,
+          "ms": 1042.1
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "search_templates",
+        "apply_template"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "success": true,
+      "mcp_calls": 2,
+      "setup_calls": 1,
+      "wall_clock_ms": 65.09850000293227,
+      "request_tokens": 617,
+      "response_tokens": 2192,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-87folv5c\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-87folv5c\\power2.kicad_sch"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 45,
+          "resp_tokens": 1094,
+          "ms": 3.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 572,
+          "resp_tokens": 1098,
+          "ms": 64.8
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "add_hierarchical_sheet",
+        "add_sheet_pin",
+        "duplicate_sheet",
+        "get_sheet_hierarchy",
+        "validate_sheet_pins",
+        "renumber_sheet_pages"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "success": true,
+      "mcp_calls": 2,
+      "setup_calls": 1,
+      "wall_clock_ms": 62.24909999582451,
+      "request_tokens": 608,
+      "response_tokens": 2194,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-13l386mf\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-13l386mf\\power2.kicad_sch"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 45,
+          "resp_tokens": 1094,
+          "ms": 3.6
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 563,
+          "resp_tokens": 1100,
+          "ms": 62.0
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "add_hierarchical_sheet",
+        "add_sheet_pin",
+        "duplicate_sheet",
+        "get_sheet_hierarchy",
+        "validate_sheet_pins",
+        "renumber_sheet_pages"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "success": true,
+      "mcp_calls": 2,
+      "setup_calls": 1,
+      "wall_clock_ms": 59.75200000102632,
+      "request_tokens": 617,
+      "response_tokens": 2205,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-me6c3pxn\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-sch_hierarchy-me6c3pxn\\power2.kicad_sch"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 45,
+          "resp_tokens": 1094,
+          "ms": 3.7
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 572,
+          "resp_tokens": 1111,
+          "ms": 59.5
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "add_hierarchical_sheet",
+        "add_sheet_pin",
+        "duplicate_sheet",
+        "get_sheet_hierarchy",
+        "validate_sheet_pins",
+        "renumber_sheet_pages"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": true,
+      "mcp_calls": 3,
+      "setup_calls": 1,
+      "wall_clock_ms": 791.1707999955979,
+      "request_tokens": 835,
+      "response_tokens": 2182,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-hzq9dxiz\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-hzq9dxiz\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 52,
+          "resp_tokens": 1211,
+          "ms": 3.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 718,
+          "resp_tokens": 926,
+          "ms": 791.0
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 65,
+          "resp_tokens": 45,
+          "ms": 1039.0
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": true,
+      "mcp_calls": 3,
+      "setup_calls": 1,
+      "wall_clock_ms": 791.2594000008539,
+      "request_tokens": 822,
+      "response_tokens": 2181,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-wfuwe_61\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-wfuwe_61\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 52,
+          "resp_tokens": 1211,
+          "ms": 3.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 706,
+          "resp_tokens": 925,
+          "ms": 791.0
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 64,
+          "resp_tokens": 45,
+          "ms": 1050.6
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": true,
+      "mcp_calls": 3,
+      "setup_calls": 1,
+      "wall_clock_ms": 777.9666999995243,
+      "request_tokens": 835,
+      "response_tokens": 2181,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-9rxiaf_l\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-9rxiaf_l\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 52,
+          "resp_tokens": 1211,
+          "ms": 3.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 718,
+          "resp_tokens": 925,
+          "ms": 777.7
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 65,
+          "resp_tokens": 45,
+          "ms": 1036.6
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "recovery",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 424.0614999944228,
+      "request_tokens": 862,
+      "response_tokens": 2561,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 43,
+          "resp_tokens": 952,
+          "ms": 2.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 700,
+          "resp_tokens": 1158,
+          "ms": 423.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 58,
+          "resp_tokens": 339,
+          "ms": 1.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 112,
+          "ms": 1022.0
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "add_schematic_component",
+        "list_schematic_components",
+        "connect_pins",
+        "batch_place_components",
+        "add_power_symbol"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "recovery",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 426.53169999539386,
+      "request_tokens": 910,
+      "response_tokens": 2574,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 43,
+          "resp_tokens": 952,
+          "ms": 2.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 740,
+          "resp_tokens": 1167,
+          "ms": 426.3
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 62,
+          "resp_tokens": 339,
+          "ms": 1.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 65,
+          "resp_tokens": 116,
+          "ms": 1053.3
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "add_schematic_component",
+        "list_schematic_components",
+        "connect_pins",
+        "batch_place_components",
+        "add_power_symbol"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "recovery",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 427.06290000205627,
+      "request_tokens": 898,
+      "response_tokens": 2565,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 43,
+          "resp_tokens": 952,
+          "ms": 2.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 730,
+          "resp_tokens": 1159,
+          "ms": 426.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 339,
+          "ms": 1.9
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 64,
+          "resp_tokens": 115,
+          "ms": 1091.2
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "add_schematic_component",
+        "list_schematic_components",
+        "connect_pins",
+        "batch_place_components",
+        "add_power_symbol"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_inspection",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 6.1884999959147535,
+      "request_tokens": 428,
+      "response_tokens": 1519,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 42,
+          "resp_tokens": 348,
+          "ms": 1.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 263,
+          "resp_tokens": 791,
+          "ms": 6.0
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 339,
+          "ms": 2.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 62,
+          "resp_tokens": 41,
+          "ms": 1.8
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "list_schematic_components",
+        "list_schematic_nets",
+        "get_schematic_component",
+        "get_schematic_pin_locations",
+        "find_single_pin_nets"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_inspection",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 6.645300003583543,
+      "request_tokens": 421,
+      "response_tokens": 1519,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 42,
+          "resp_tokens": 348,
+          "ms": 1.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 258,
+          "resp_tokens": 791,
+          "ms": 6.5
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 60,
+          "resp_tokens": 339,
+          "ms": 2.1
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 41,
+          "ms": 1.8
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "list_schematic_components",
+        "list_schematic_nets",
+        "get_schematic_component",
+        "get_schematic_pin_locations",
+        "find_single_pin_nets"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "sch_inspection",
+      "success": true,
+      "mcp_calls": 4,
+      "setup_calls": 1,
+      "wall_clock_ms": 6.1190999986138195,
+      "request_tokens": 421,
+      "response_tokens": 1519,
+      "catalog_tokens": 0,
+      "catalog_refreshes": 0,
+      "step_errors": [],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": true,
+          "detail": "all steps returned ok"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "kicad_describe",
+          "req_tokens": 42,
+          "resp_tokens": 348,
+          "ms": 1.8
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 258,
+          "resp_tokens": 791,
+          "ms": 6.0
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 60,
+          "resp_tokens": 339,
+          "ms": 2.2
+        },
+        {
+          "tool": "kicad_invoke",
+          "req_tokens": 61,
+          "resp_tokens": 41,
+          "ms": 1.8
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "list_schematic_components",
+        "list_schematic_nets",
+        "get_schematic_component",
+        "get_schematic_pin_locations",
+        "find_single_pin_nets"
+      ],
+      "scored_calls": 2,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    }
+  ]
+}

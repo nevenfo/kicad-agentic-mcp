@@ -14,6 +14,15 @@ intents:
   - "search reference circuit templates and instantiate one"
   - "run erc"
 
+safety: mutating
+expected_tools:
+  - create_project
+  - search_templates
+  - apply_template
+# Measured, not guessed: the costliest load mode is `search` at 7 scored calls
+# (toolsets 5, tools 4, gateway 2), plus a margin of 2.
+max_calls: 9
+
 steps:
   - tool: create_project
     args: { path: "$WORK", name: "$NAME" }

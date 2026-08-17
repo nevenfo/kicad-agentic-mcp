@@ -12,6 +12,19 @@ intents:
   - "duplicate a hierarchical sheet"
   - "inspect the sheet hierarchy, validate sheet pins, renumber pages"
 
+safety: mutating
+expected_tools:
+  - create_project
+  - add_hierarchical_sheet
+  - add_sheet_pin
+  - duplicate_sheet
+  - get_sheet_hierarchy
+  - validate_sheet_pins
+  - renumber_sheet_pages
+# Measured, not guessed: the costliest load mode is `search` at 14 scored calls
+# (toolsets 11, tools 10, gateway 2), plus a margin of 2.
+max_calls: 16
+
 steps:
   - tool: create_project
     args: { path: "$WORK", name: "$NAME" }

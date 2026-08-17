@@ -20,6 +20,28 @@ intents:
   - "connect two component pins with a wire"
   - "run erc and list the components"
 
+safety: mutating
+expected_tools:
+  - create_project
+  - add_schematic_component
+  - list_schematic_components
+  - connect_pins
+  - batch_place_components
+  - add_power_symbol
+# The only task with `allowed_tools`, and the only one that needs it: recovery
+# is where an agent is most tempted to flail. These are the reads a recovering
+# caller may legitimately reach for to find out what state it is in; anything
+# else it calls is an unnecessary call, not a diagnosis.
+allowed_tools:
+  - get_schematic_component
+  - list_schematic_nets
+  - find_single_pin_nets
+  - get_symbol_info
+  - run_erc
+# Measured, not guessed: the costliest load mode is `search` at 17 scored calls
+# (toolsets 12, tools 11, gateway 2), plus a margin of 2.
+max_calls: 19
+
 steps:
   - tool: create_project
     args: { path: "$WORK", name: "$NAME" }

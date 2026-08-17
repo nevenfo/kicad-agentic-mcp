@@ -20,6 +20,20 @@ intents:
   - "export bom and netlist and schematic svg"
   - "run erc and list the components"
 
+safety: mutating
+expected_tools:
+  - create_project
+  - batch_place_components
+  - add_power_symbol
+  - connect_pins
+  - add_schematic_net_label
+  - export_bom
+  - generate_netlist
+  - export_schematic_svg
+# Measured, not guessed: the costliest load mode is `search` at 15 scored calls
+# (toolsets 11, tools 10, gateway 2), plus a margin of 2.
+max_calls: 17
+
 steps:
   - tool: create_project
     args: { path: "$WORK", name: "$NAME" }

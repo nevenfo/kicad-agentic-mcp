@@ -19,6 +19,17 @@ intents:
   - "add a net label"
   - "run erc and list the components and nets"
 
+safety: mutating
+expected_tools:
+  - create_project
+  - batch_place_components
+  - add_power_symbol
+  - connect_pins
+  - add_schematic_net_label
+# Measured, not guessed: the costliest load mode is `search` at 13 scored calls
+# (toolsets 8, tools 7, gateway 2), plus a margin of 2.
+max_calls: 15
+
 steps:
   - tool: create_project
     args: { path: "$WORK", name: "$NAME" }

@@ -1,0 +1,68 @@
+id: sch_inspection
+title: Read a design without touching it
+project_name: divider
+category: inspection
+toolsets: [project, sch_components, sch_analysis]
+
+# The only `safety: read_only` task in the suite, and the reason the tier is not
+# decoration: every other golden task authors something, so a `read_only` claim
+# that nothing exercises would never be wrong.
+#
+# The design is not built by the task — it is copied in from `fixture` before
+# the first call, because a task that had to write its own subject could not be
+# read-only. The fixture is a real `create_project` + `batch_place_components`
+# output (the divider task's, kept with `--keep`), so its `lib_symbols` are
+# embedded and no installed library is needed to read it.
+#
+# Two independent checks guard the tier: the declared effect of each tool, read
+# from the capability registry, and a byte-level fingerprint of `$WORK` taken
+# before and after the steps. The second one is what catches a registry that
+# lies.
+fixture: divider
+
+intents:
+  - "list the components in a schematic"
+  - "list the nets in a schematic"
+  - "look up one component by its reference"
+  - "find nets with a single pin on them"
+  - "where are a component's pins"
+
+safety: read_only
+# Measured on the same basis as every other task: the costliest load mode is
+# `search` at 11 scored calls (toolsets 7, tools 6, gateway 2), plus a margin
+# of 2. A tighter budget would have flagged `search` twice for one defect —
+# retrieval, which is already scored on its own terms.
+max_calls: 13
+expected_tools:
+  - list_schematic_components
+  - list_schematic_nets
+  - get_schematic_component
+  - find_single_pin_nets
+  - get_schematic_pin_locations
+forbidden_tools:
+  - add_schematic_component
+  - batch_place_components
+  - delete_schematic_component
+
+steps:
+  - tool: list_schematic_components
+    args: { schematic: "$SCH" }
+
+  - tool: list_schematic_nets
+    args: { schematic: "$SCH" }
+
+  - tool: get_schematic_component
+    args: { schematic: "$SCH", reference: "R1" }
+
+  - tool: get_schematic_pin_locations
+    args: { schematic: "$SCH", reference: "R1" }
+
+  - tool: find_single_pin_nets
+    args: { schematic: "$SCH" }
+
+assert:
+  - kind: all_steps_ok
+  - kind: components_present
+    value: ["R1", "R2"]
+  - kind: nets_present
+    value: ["VOUT"]

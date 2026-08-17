@@ -33,7 +33,7 @@ A task passes only if every step succeeded *and* every assertion held.
 
 ## Golden tasks
 
-Six tasks in `bench/tasks/`, each starting from an empty temp directory:
+Seven tasks in `bench/tasks/`, each starting from an empty temp directory:
 
 | id | category | what it exercises |
 |---|---|---|
@@ -43,14 +43,121 @@ Six tasks in `bench/tasks/`, each starting from an empty temp directory:
 | `sch_hierarchy` | schematic_complex | hierarchical sheet, sheet pins, sheet duplication, page renumbering |
 | `manufacturing_exports` | manufacturing | BOM, netlist, schematic SVG through `kicad-cli` |
 | `recovery` | recovery | five wrong inputs must each fail loudly, then the session must still build a correct ERC-clean design |
+| `sch_inspection` | inspection | reads a fixture design back and must not change a byte of it |
 
 Coordinates in the task specs are exact 1.27 mm grid multiples and the pin
 offsets are the ones `get_symbol_info` actually reports, so a run is
 reproducible rather than approximately right.
 
+### Task schema — what a task may declare about itself
+
+Beyond `steps` and `assert`, every field below is optional and defaults to the
+permissive answer, so an undeclared task is scored exactly as it was before.
+
+| field | default | meaning |
+|---|---|---|
+| `fixture: <name>` | none | copy `bench/fixtures/<name>.kicad_*` into `$WORK` as `<project_name>.kicad_*` **in Python, before the server starts** |
+| `safety: read_only \| mutating` | `mutating` | the tier the run is held to |
+| `expected_tools: [..]` | `[]` | every name must have been called |
+| `allowed_tools: [..]` | unset | if declared, a domain tool outside `allowed_tools ∪ expected_tools` is an unnecessary call |
+| `forbidden_tools: [..]` | `[]` | any call is a violation |
+| `max_calls: N` | unset | MCP call budget |
+
+`fixture` exists because `sch_inspection` could not otherwise have a subject: a
+task that builds its own design is not read-only, and asking it to build one
+with a write tool would make the tier untestable. The fixture is a real
+`create_project` + `batch_place_components` output kept with `--keep`, so its
+`lib_symbols` are embedded and no installed library is needed to read it.
+
+**What is judged is the setup and the steps, never the assertions.** The
+assertions are the harness's oracle, not something an agent did:
+`components_present` reads the design back, and charging a task for the read
+that proves it succeeded would make its budget depend on how thoroughly it is
+checked. The call index and the disk fingerprint are both taken after the last
+step and before the first assertion.
+
+What the audit judges is the **executed** path, not the task file. Judging the
+YAML against the YAML would make `forbidden_tools` and `missing_expected`
+unfalsifiable — a task cannot call a tool its own step list never named. In the
+direct load modes the name is the `tools/call` that went on the wire; in
+`gateway` mode the whole path travels inside one `kicad_invoke`, and the name
+comes back out of the server's own per-entry `tool` field, so the audit reads
+the gateway's answer about what it ran rather than the request that asked for
+it. An entry the batch never produced is not counted as called. The meta-tools — `load_tools`,
+`load_toolset`, `list_toolboxes`, `kicad_describe`, `find_capabilities`,
+`kicad_invoke` — count against `max_calls`, because a round trip is a round
+trip, but they are subject to neither `allowed_tools`, `forbidden_tools` nor the
+`safety` tier. Judging the door instead of what went through it would mark every
+gateway run as a write.
+
+`max_calls` is measured rather than guessed: each task's budget is its call
+count in `search`, the costliest load mode, plus two. The YAML comment on each
+one records the number and the mode it came from.
+
+### `read_only` is checked twice, and the second check does not trust the first
+
+| violation | what it means |
+|---|---|
+| `forbidden` | a `forbidden_tools` entry was called |
+| `safety` | a `read_only` task called a tool the capability registry classifies as `write` |
+| `disk_mutation` | a `read_only` task's `$WORK` fingerprint changed |
+| `not_allowed` | a domain tool outside `allowed_tools ∪ expected_tools` was called |
+| `missing_expected` | an `expected_tools` entry was never called |
+| `max_calls` | the budget was exceeded |
+
+The first three are the **safety violations** and the gate allows zero. Any
+violation of any kind fails the run.
+
+`safety` is declarative: it reads `docs/capability-matrix.md`, which is
+generated from `konnect_core::capability::tool_effect` by a test that fails if
+the document has drifted. An unknown tool is a write, exactly as on the Rust
+side. `disk_mutation` is the check that believes none of that — a
+`{relative path: (size, sha256)}` map over the whole of `$WORK`, taken before
+the first step and after the last. **If the Rust classification lies, the
+read-only task still fails.** That independence is the reason the field exists,
+and it is verified rather than asserted: with `capabilities.is_write`
+monkeypatched to return `False` for everything, a write step added to
+`sch_inspection` still produces `disk_mutation` as the only violation.
+
+### Unnecessary calls, and instability
+
+`UNNECESSARY_CALL_RATE` = executed invocations outside `allowed_tools ∪
+expected_tools`, over all scored calls in the run set. Only `recovery` declares
+`allowed_tools`, and only because recovery is where an agent is most tempted to
+flail: the reads a recovering caller may legitimately use to find out what state
+it is in are named, and anything else is flailing rather than diagnosis.
+
+`INSTABILITY_RATE` needs repeats. A run's issue signature is
+`(success, tuple(tools_used))`; a task's rate is
+`1 - modal_signature_runs / runs_of_that_task`, and the suite's rate is the mean
+of the per-task rates. With `--repeat 1` it prints `n/a` and, under `--enforce`,
+is skipped rather than passed — one run per task cannot disagree with itself,
+and scoring that as stable would be a claim nothing measured.
+
+### The gate
+
+`--enforce` turns the four thresholds into an exit code. Without it they are
+printed and nothing more, because `--load-mode search` has a known and intended
+failure rate and is a measurement of retrieval, not a gate.
+
+| threshold | limit |
+|---|---|
+| `min_pass_rate` | 0.95 |
+| `max_safety_violations` | 0 |
+| `max_unnecessary_call_rate` | 0.05 |
+| `max_instability_rate` | 0.05 |
+
+```powershell
+python bench\runner.py --server .\target\release\konnect.exe `
+    --load-mode gateway --repeat 3 --enforce
+```
+
+21 runs (7 tasks × 3), all four thresholds PASS, exit 0, in both `gateway` and
+`toolsets`.
+
 ### Load modes
 
-The same six tasks run under four loading strategies:
+The same seven tasks run under four loading strategies:
 
 * **`toolsets`** — `list_toolboxes` then `load_toolset([...])`. What upstream
   Konnect offers, and what its skills tell an agent to do.
@@ -849,6 +956,7 @@ $env:PROTOC = "<path to protoc.exe>"
 # individual runs
 python bench\surface.py --server .\target\release\konnect.exe --label mine
 python bench\runner.py  --server .\target\release\konnect.exe --label mine --repeat 3 --load-mode gateway
+python bench\runner.py  --server .\target\release\konnect.exe --repeat 3 --load-mode gateway --enforce
 python bench\analyze.py bench\results\latest-tasks.json
 python bench\probe.py   --server .\target\release\konnect.exe --script bench\probes\divider.yaml
 python bench\plan_cost.py --server .\target\release\konnect.exe --repeat 3

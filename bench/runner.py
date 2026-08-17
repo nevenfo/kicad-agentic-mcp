@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import shutil
@@ -35,10 +36,39 @@ sys.path.insert(0, str(Path(__file__).parent))
 import tiktoken  # noqa: E402
 import yaml  # noqa: E402
 
+import capabilities  # noqa: E402
 from mcp_client import Call, McpStdioClient  # noqa: E402
 
 ENC = tiktoken.get_encoding("o200k_base")
 TASK_DIR = Path(__file__).parent / "tasks"
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+# Discovery and gateway plumbing. These are the harness talking to the server
+# about itself, never a design operation: they count against `max_calls`,
+# because a round trip is a round trip, but they are not subject to
+# `allowed_tools`, `forbidden_tools` or the `read_only` tier — `kicad_invoke` is
+# a door, and judging the door instead of what went through it would mark every
+# gateway run as a write.
+META_TOOLS = frozenset(
+    {
+        "load_tools",
+        "load_toolset",
+        "list_toolboxes",
+        "kicad_describe",
+        "find_capabilities",
+        "kicad_invoke",
+    }
+)
+
+# Pass/fail gate for the suite, from the plan. `--enforce` turns them into an
+# exit code; without it they are printed and nothing more, because
+# `--load-mode search` has a known and intended failure rate.
+THRESHOLDS = {
+    "min_pass_rate": 0.95,
+    "max_safety_violations": 0,
+    "max_unnecessary_call_rate": 0.05,
+    "max_instability_rate": 0.05,
+}
 
 
 def tokens(text: str) -> int:
@@ -199,6 +229,175 @@ def check_assertion(spec: dict, client: McpStdioClient, env: dict[str, str], ste
     return AssertResult(kind, False, f"unknown assertion kind '{kind}'")
 
 
+# ── safety accounting ────────────────────────────────────────────────────────
+
+
+@dataclass
+class Violation:
+    kind: str
+    detail: str
+
+
+SAFETY_KINDS = frozenset({"safety", "forbidden", "disk_mutation"})
+
+
+def fingerprint(root: Path) -> dict[str, tuple[int, str]]:
+    """`{relative path: (size, sha256)}` for every file under `root`.
+
+    This exists because it is the only check in the harness that does not take
+    the capability registry's word for anything. `safety` violations are
+    declarative — they trust `docs/capability-matrix.md`, which is generated
+    from `konnect_core::capability::tool_effect`. If that classification is
+    wrong, a tool marked `read` can still write to disk and the declarative
+    check will happily pass it. The fingerprint catches that case from the
+    outside: a `read_only` task whose `$WORK` bytes moved has failed, whatever
+    the registry says about the tools it called.
+    """
+    out: dict[str, tuple[int, str]] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        data = path.read_bytes()
+        rel = str(path.relative_to(root)).replace("\\", "/")
+        out[rel] = (len(data), hashlib.sha256(data).hexdigest())
+    return out
+
+
+def _fingerprint_delta(before: dict, after: dict) -> str:
+    added = sorted(set(after) - set(before))
+    removed = sorted(set(before) - set(after))
+    changed = sorted(k for k in set(before) & set(after) if before[k] != after[k])
+    parts = []
+    for label, items in (("added", added), ("removed", removed), ("changed", changed)):
+        if items:
+            parts.append(f"{label}={items[:5]}")
+    return " ".join(parts)
+
+
+def domain_tools(task: dict) -> list[str]:
+    """The tool names the task's steps *declare*, deduplicated, in order.
+
+    This is the oracle used for loading a toolbelt — what the task says it will
+    need. It is deliberately not what the audit judges: see [`executed_tools`].
+    """
+    names: list[str] = []
+    for step in task["steps"]:
+        if step["tool"] not in names:
+            names.append(step["tool"])
+    return names
+
+
+def executed_tools(step_calls: list[tuple[dict, Call]]) -> list[str]:
+    """The tools that were actually invoked, in call order, with repeats.
+
+    Judging the YAML against the YAML would make `forbidden_tools` and
+    `missing_expected` unfalsifiable: a task cannot call a tool its own step
+    list never named. What the audit needs is the executed path.
+
+    The name survives every load mode. Direct modes put it on the wire as the
+    `tools/call` name; in `gateway` mode the whole path travels inside one
+    `kicad_invoke`, and `_unwrap_invoke` takes the name back out of the
+    server's own per-entry `tool` field — so the gateway's answer about what it
+    ran is what gets audited, not the request that asked for it. An entry the
+    batch never produced has no name, and is not counted as called.
+    """
+    names: list[str] = []
+    for _step, call in step_calls:
+        name = (call.params or {}).get("name")
+        if name and name != "?":
+            names.append(name)
+    return names
+
+
+def audit(
+    task: dict,
+    used_calls: list[str],
+    scored_calls: int,
+    fp_before: dict | None,
+    fp_after: dict | None,
+) -> list[Violation]:
+    """Judge the setup and the steps — never the assertions.
+
+    The assertions are the harness's oracle, not an action the agent took:
+    `components_present` reads the design back, and charging a task for the
+    read that proves it succeeded would make every task's budget depend on how
+    thoroughly it is checked.
+    """
+    used = list(dict.fromkeys(used_calls))
+    safety = task.get("safety", "mutating")
+    expected = list(task.get("expected_tools", []))
+    allowed = task.get("allowed_tools")
+    forbidden = set(task.get("forbidden_tools", []))
+    max_calls = task.get("max_calls")
+
+    out: list[Violation] = []
+
+    hit = [t for t in used if t in forbidden]
+    if hit:
+        out.append(Violation("forbidden", f"called forbidden tools: {hit}"))
+
+    if safety == "read_only":
+        writers = [t for t in used if capabilities.is_write(t)]
+        if writers:
+            unknown = capabilities.unknown(writers)
+            note = f" (not in the registry, so treated as write: {unknown})" if unknown else ""
+            out.append(
+                Violation("safety", f"read_only task called write tools: {writers}{note}")
+            )
+        if fp_before is not None and fp_after is not None and fp_before != fp_after:
+            out.append(
+                Violation("disk_mutation", f"$WORK changed: {_fingerprint_delta(fp_before, fp_after)}")
+            )
+
+    if allowed is not None:
+        permitted = set(allowed) | set(expected)
+        stray = [t for t in used if t not in permitted]
+        if stray:
+            out.append(Violation("not_allowed", f"outside allowed_tools: {stray}"))
+
+    missing = [t for t in expected if t not in used]
+    if missing:
+        out.append(Violation("missing_expected", f"never called: {missing}"))
+
+    if max_calls is not None and scored_calls > int(max_calls):
+        out.append(Violation("max_calls", f"{scored_calls} scored calls > max_calls {max_calls}"))
+
+    return out
+
+
+def unnecessary_call_count(task: dict, used_calls: list[str]) -> int:
+    """Invocations (not distinct tools) outside `allowed_tools ∪ expected_tools`.
+
+    Counted over the executed path for the same reason the audit is: a rate
+    computed from the task file would measure the task file.
+    """
+    allowed = task.get("allowed_tools")
+    if allowed is None:
+        return 0
+    permitted = set(allowed) | set(task.get("expected_tools", []))
+    return sum(1 for name in used_calls if name not in permitted)
+
+
+def install_fixture(task: dict, work: Path, name: str) -> list[str]:
+    """Copy `bench/fixtures/<fixture>.kicad_*` into `$WORK` as `<name>.kicad_*`.
+
+    Done in Python, before the server is even started: a `read_only` task
+    cannot build its own subject, because building it is a write.
+    """
+    fixture = task.get("fixture")
+    if not fixture:
+        return []
+    copied = []
+    for suffix in (".kicad_sch", ".kicad_pro", ".kicad_pcb"):
+        src = FIXTURE_DIR / f"{fixture}{suffix}"
+        if src.exists():
+            shutil.copyfile(src, work / f"{name}{suffix}")
+            copied.append(suffix)
+    if ".kicad_sch" not in copied and ".kicad_pcb" not in copied:
+        raise SystemExit(f"task {task['id']}: no fixture found at {FIXTURE_DIR / fixture}.kicad_*")
+    return copied
+
+
 # ── task execution ───────────────────────────────────────────────────────────
 
 
@@ -224,6 +423,14 @@ class TaskRun:
     call_breakdown: list[dict] = field(default_factory=list)
     # Only populated in `search` load mode: how well capability search did.
     retrieval: dict | None = None
+    # Domain tools actually invoked, deduplicated, in call order — the executed
+    # path the audit judges. See `executed_tools()`.
+    tools_used: list[str] = field(default_factory=list)
+    # MCP calls the audit judges: setup + steps, never the assertions.
+    scored_calls: int = 0
+    violations: list[dict] = field(default_factory=list)
+    safety_violations: int = 0
+    unnecessary_calls: int = 0
 
 
 def substitute(value: Any, env: dict[str, str]) -> Any:
@@ -279,6 +486,8 @@ def run_task(
         "SCH": f"{posix_work}/{name}.kicad_sch",
         "PCB": f"{posix_work}/{name}.kicad_pcb",
     }
+
+    install_fixture(task, work, name)
 
     proc_env = dict(os.environ)
     proc_env.setdefault("RUST_LOG", "warn")
@@ -342,6 +551,7 @@ def run_task(
                 client.tools_call("load_toolset", {"name": task["toolsets"]})
         setup_calls = len(client.session.calls) - setup_before
 
+        fp_before = fingerprint(work)
         t0 = time.perf_counter()
         step_calls: list[tuple[dict, Call]] = []
         if load_mode == "gateway":
@@ -383,6 +593,10 @@ def run_task(
                     f"{_text_of(call.result)[:200]}"
                 )
         wall = (time.perf_counter() - t0) * 1000.0
+        # Both the fingerprint and the call index are taken here, before the
+        # first assertion: the oracle's own reads are not the agent's actions.
+        fp_after = fingerprint(work)
+        scored_calls = sum(1 for c in client.session.calls if c.method == "tools/call")
 
         for spec in task.get("assert", []):
             assertions.append(check_assertion(spec, client, env_vars, step_errors))
@@ -399,9 +613,12 @@ def run_task(
     if not keep:
         shutil.rmtree(work, ignore_errors=True)
 
+    used_calls = executed_tools(step_calls)
+    violations = audit(task, used_calls, scored_calls, fp_before, fp_after)
+
     return TaskRun(
         task_id=task["id"],
-        success=not step_errors and all(a.ok for a in assertions),
+        success=not step_errors and all(a.ok for a in assertions) and not violations,
         mcp_calls=sum(1 for c in calls if c.method == "tools/call"),
         setup_calls=setup_calls,
         wall_clock_ms=wall,
@@ -410,6 +627,11 @@ def run_task(
         catalog_tokens=catalog_tokens,
         catalog_refreshes=len(catalog_calls),
         retrieval=retrieval,
+        tools_used=list(dict.fromkeys(used_calls)),
+        scored_calls=scored_calls,
+        violations=[asdict(v) for v in violations],
+        safety_violations=sum(1 for v in violations if v.kind in SAFETY_KINDS),
+        unnecessary_calls=unnecessary_call_count(task, used_calls),
         step_errors=step_errors,
         assertions=[asdict(a) for a in assertions],
         call_breakdown=[
@@ -438,6 +660,25 @@ def load_tasks(only: str | None) -> list[dict]:
     return tasks
 
 
+def instability(by_task: dict[str, list[TaskRun]]) -> tuple[float | None, dict[str, float]]:
+    """How often repeated runs of the same task do not agree.
+
+    Issue signature per run = `(success, tuple(tools_used))`. A task's rate is
+    `1 - modal_signature_runs / runs`; the suite's rate is the mean of the
+    per-task rates. With `--repeat 1` there is nothing to disagree with, so the
+    answer is `None` — not zero, which would read as "measured and stable".
+    """
+    per_task: dict[str, float] = {}
+    for task_id, rs in by_task.items():
+        if len(rs) < 2:
+            continue
+        sigs = collections.Counter((r.success, tuple(r.tools_used)) for r in rs)
+        per_task[task_id] = 1.0 - sigs.most_common(1)[0][1] / len(rs)
+    if not per_task:
+        return None, {}
+    return statistics.mean(per_task.values()), per_task
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", required=True)
@@ -456,6 +697,12 @@ def main() -> None:
     )
     ap.add_argument("--search-limit", type=int, default=None, help="override per-query result count")
     ap.add_argument("--keep", action="store_true", help="keep the generated projects on disk")
+    ap.add_argument(
+        "--enforce",
+        action="store_true",
+        help="exit 1 if any threshold fails (default: report only, because "
+        "--load-mode search has an expected failure rate)",
+    )
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -503,6 +750,70 @@ def main() -> None:
     print(f"CATALOG_TOKENS/task      {statistics.median(r.catalog_tokens for r in runs):.0f}")
     print(f"EXTERNAL_TOKENS/task     {statistics.median(ext):.0f}   <- what the harness actually eats")
 
+    pass_rate = total_ok / len(runs)
+    safety_total = sum(r.safety_violations for r in runs)
+    scored_total = sum(r.scored_calls for r in runs)
+    unnecessary_total = sum(r.unnecessary_calls for r in runs)
+    unnecessary_rate = unnecessary_total / scored_total if scored_total else 0.0
+    instability_rate, per_task_instability = instability(by_task)
+
+    by_kind: collections.Counter[str] = collections.Counter()
+    for r in runs:
+        by_kind.update(v["kind"] for v in r.violations)
+
+    print(f"\nSAFETY_VIOLATIONS        {safety_total}   (forbidden + safety + disk_mutation)")
+    print(
+        f"UNNECESSARY_CALL_RATE    {unnecessary_rate:.1%}   "
+        f"({unnecessary_total}/{scored_total} scored calls outside allowed_tools)"
+    )
+    if instability_rate is None:
+        print("INSTABILITY_RATE         n/a   (needs --repeat >= 2)")
+    else:
+        print(f"INSTABILITY_RATE         {instability_rate:.1%}   (runs off their task's modal outcome)")
+    if by_kind:
+        print("violations by kind:      " + ", ".join(f"{k}:{n}" for k, n in by_kind.most_common()))
+
+    checks = [
+        ("min_pass_rate", f"{pass_rate:.1%}", pass_rate >= THRESHOLDS["min_pass_rate"], "0.95"),
+        (
+            "max_safety_violations",
+            str(safety_total),
+            safety_total <= THRESHOLDS["max_safety_violations"],
+            "0",
+        ),
+        (
+            "max_unnecessary_call_rate",
+            f"{unnecessary_rate:.1%}",
+            unnecessary_rate <= THRESHOLDS["max_unnecessary_call_rate"],
+            "0.05",
+        ),
+    ]
+    if instability_rate is None:
+        # Not judged rather than passed: one run per task cannot disagree with
+        # itself, and scoring that as stable would be a claim nothing measured.
+        checks.append(("max_instability_rate", "n/a", None, "0.05"))
+    else:
+        checks.append(
+            (
+                "max_instability_rate",
+                f"{instability_rate:.1%}",
+                instability_rate <= THRESHOLDS["max_instability_rate"],
+                "0.05",
+            )
+        )
+
+    print("\nTHRESHOLDS")
+    failed = 0
+    for name, value, ok, limit in checks:
+        verdict = "SKIP" if ok is None else ("PASS" if ok else "FAIL")
+        failed += 1 if ok is False else 0
+        print(f"  {verdict}  {name:<26} {value:>8}   (limit {limit})")
+
+    if per_task_instability and any(v > 0 for v in per_task_instability.values()):
+        print("unstable tasks:          " + ", ".join(
+            f"{t}:{v:.0%}" for t, v in per_task_instability.items() if v > 0
+        ))
+
     retrievals = [r.retrieval for r in runs if r.retrieval]
     if retrievals:
         recall = statistics.mean(r["recall"] for r in retrievals)
@@ -524,6 +835,8 @@ def main() -> None:
         for a in r.assertions:
             if not a["ok"]:
                 print(f"  assert {a['kind']}: {a['detail']}")
+        for v in r.violations:
+            print(f"  violation {v['kind']}: {v['detail']}")
 
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
@@ -532,6 +845,9 @@ def main() -> None:
             encoding="utf-8",
         )
         print(f"\nwrote {args.out}")
+
+    if args.enforce and failed:
+        raise SystemExit(f"{failed} threshold(s) failed")
 
 
 if __name__ == "__main__":
