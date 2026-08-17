@@ -233,11 +233,7 @@ impl BusAlias {
                 .chain(self.members.iter().map(|m| qstr(m.clone())))
                 .collect(),
         );
-        SexpNode::List(vec![
-            atom("bus_alias"),
-            qstr(self.name.clone()),
-            members,
-        ])
+        SexpNode::List(vec![atom("bus_alias"), qstr(self.name.clone()), members])
     }
 }
 

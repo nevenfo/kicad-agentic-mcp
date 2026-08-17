@@ -395,7 +395,10 @@ async fn a_wire_that_touches_nothing_is_left_alone_by_move_connected() {
     let wires = h
         .json("list_schematic_wires", json!({ "schematic": sch }))
         .await;
-    assert_eq!(wires["wires"][0]["x1"], 25.4, "the loose wire moved: {wires}");
+    assert_eq!(
+        wires["wires"][0]["x1"], 25.4,
+        "the loose wire moved: {wires}"
+    );
 }
 
 /// `bulk_move_schematic_components` and `move_region` both shift by a delta.
@@ -498,7 +501,10 @@ async fn a_batch_delete_removes_every_reference_it_is_given() {
         .as_array()
         .map(|c| c.len())
         .unwrap_or(0);
-    assert_eq!(remaining, 0, "components survived the batch delete: {layout}");
+    assert_eq!(
+        remaining, 0,
+        "components survived the batch delete: {layout}"
+    );
 }
 
 /// `group_components` tags a set with a shared name, which is how a caller

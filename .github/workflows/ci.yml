@@ -1,10 +1,14 @@
 name: CI
 
+# `main` is upstream's branch and this fork has none: its default *and*
+# working branch is `agentic/main`, so a workflow listening only on `main`
+# never ran here at all (L.1.4). Both are listed so the file keeps working
+# whichever way the fork is merged back.
 on:
   push:
-    branches: [main]
+    branches: [main, agentic/main]
   pull_request:
-    branches: [main]
+    branches: [main, agentic/main]
 
 # A new push to the same branch/PR supersedes the previous run.
 concurrency:
@@ -71,7 +75,10 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --locked -- -D warnings
+      # --all-targets, or test code is never linted: E10 (a MutexGuard held
+      # across an await, fifteen times over) lived in tests for the whole of
+      # phases A–J because the default target set excludes them.
+      - run: cargo clippy --workspace --locked --all-targets -- -D warnings
 
   fmt:
     name: Format

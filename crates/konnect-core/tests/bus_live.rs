@@ -153,8 +153,7 @@ fn kicad_names_the_nets_the_way_expand_members_does() {
     assert!(ok, "netlist export failed:\n{output}");
 
     let text = std::fs::read_to_string(&netlist).expect("the netlist is readable");
-    let (kind, members) =
-        cse::schematic::bus::expand_members(BUS_LABEL, &[]);
+    let (kind, members) = cse::schematic::bus::expand_members(BUS_LABEL, &[]);
     assert_eq!(kind, cse::schematic::bus::BusKind::Vector);
 
     // The two members with a pin on them must appear as nets by exactly the

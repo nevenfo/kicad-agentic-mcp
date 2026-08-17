@@ -150,9 +150,15 @@ async fn a_board_sized_by_one_tool_is_measured_by_another() {
     .await;
 
     let extents = h.json("get_board_extents", json!({ "board": board })).await;
-    assert_eq!(extents["width"], 60.0, "the board was sized 60 wide: {extents}");
+    assert_eq!(
+        extents["width"], 60.0,
+        "the board was sized 60 wide: {extents}"
+    );
     assert_eq!(extents["height"], 40.0, "and 40 high: {extents}");
-    assert_eq!(extents["x_min"], 10.0, "at the origin it was given: {extents}");
+    assert_eq!(
+        extents["x_min"], 10.0,
+        "at the origin it was given: {extents}"
+    );
     assert_eq!(extents["y_max"], 50.0, "10 + 40: {extents}");
     assert_eq!(
         extents["source"], "file",
@@ -320,9 +326,7 @@ async fn a_template_comes_back_with_values_and_an_unknown_id_does_not() {
         "usb_c_5v_sink"
     };
 
-    let template = h
-        .json("get_template", json!({ "template_id": id }))
-        .await;
+    let template = h.json("get_template", json!({ "template_id": id })).await;
     assert!(
         template.to_string().len() > 100,
         "a reference circuit should carry components and values: {template}"

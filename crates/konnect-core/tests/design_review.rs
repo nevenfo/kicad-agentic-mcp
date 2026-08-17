@@ -63,7 +63,9 @@ async fn the_bom_audit_finds_missing_footprints_and_lets_go_when_they_are_assign
     let h = Harness::new();
     let sch = harness::as_str(&h.fixture(TWO_RESISTORS)).to_string();
 
-    let before = h.json("check_bom_health", json!({ "schematic": sch })).await;
+    let before = h
+        .json("check_bom_health", json!({ "schematic": sch }))
+        .await;
     assert_eq!(before["total_components"], 2);
     assert_eq!(
         before["missing_footprint"], 2,
@@ -82,7 +84,9 @@ async fn the_bom_audit_finds_missing_footprints_and_lets_go_when_they_are_assign
     )
     .await;
 
-    let after = h.json("check_bom_health", json!({ "schematic": sch })).await;
+    let after = h
+        .json("check_bom_health", json!({ "schematic": sch }))
+        .await;
     assert_eq!(
         after["missing_footprint"], 1,
         "R1 now has a footprint and should have dropped out: {after}"
@@ -206,7 +210,9 @@ async fn the_design_review_aggregates_the_audits_it_runs() {
         .json("run_design_review", json!({ "schematic": sch }))
         .await;
     let review = &review["design_review"];
-    let findings = review["findings"].as_array().expect("a review has findings");
+    let findings = review["findings"]
+        .as_array()
+        .expect("a review has findings");
 
     let audits: Vec<&str> = findings
         .iter()
@@ -222,10 +228,7 @@ async fn the_design_review_aggregates_the_audits_it_runs() {
     );
     assert_eq!(
         review["errors"].as_u64().unwrap_or(0) as usize,
-        findings
-            .iter()
-            .filter(|f| f["severity"] == "error")
-            .count(),
+        findings.iter().filter(|f| f["severity"] == "error").count(),
         "the error count and the errors listed disagree: {review}"
     );
 }

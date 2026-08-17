@@ -30,7 +30,7 @@ function Step($name, $block) {
 }
 
 Step "fmt"     { cargo fmt --all -- --check }
-Step "clippy"  { cargo clippy --workspace --locked -- -D warnings }
+Step "clippy"  { cargo clippy --workspace --locked --all-targets -- -D warnings }
 Step "test"    { cargo test --workspace --locked --lib --tests }
 Step "doctest" { cargo test --workspace --locked --doc }
 Step "build"   { cargo build --release -p konnect }

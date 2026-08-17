@@ -319,7 +319,8 @@ async fn handle_export_gerber(
         // kicad-cli also has a dedicated drill export, into the same directory
         // — its `--output` is a directory and it names the file after the
         // board. For anything beyond the defaults, call `export_drill`.
-        let _ = cli::export_drill(cli, &board, &output_dir, &cli::DrillOptions::default()).await; // best-effort
+        let _ = cli::export_drill(cli, &board, &output_dir, &cli::DrillOptions::default()).await;
+        // best-effort
     }
 
     // List produced files
@@ -875,7 +876,10 @@ mod new_export_format_tests {
     #[test]
     fn ipc_d356_is_recognised_by_every_spelling_the_tool_advertises() {
         for spelling in ["ipc", "IPC", "ipcd356", "ipc-d-356", "IPC_D_356"] {
-            assert!(is_ipc_d356(spelling), "'{spelling}' should route to ipcd356");
+            assert!(
+                is_ipc_d356(spelling),
+                "'{spelling}' should route to ipcd356"
+            );
         }
         for other in ["kicad", "kicadxml", "spice", "orcadpcb2", "pads"] {
             assert!(!is_ipc_d356(other), "'{other}' is a sch netlist format");

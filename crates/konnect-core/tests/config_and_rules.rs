@@ -172,7 +172,10 @@ async fn design_rules_are_scoped_and_listed_together() {
         .json("list_design_rules", json!({ "project_dir": project }))
         .await;
     let text = listed.to_string();
-    assert!(text.contains("crystal"), "the user rule is missing: {listed}");
+    assert!(
+        text.contains("crystal"),
+        "the user rule is missing: {listed}"
+    );
     assert!(
         text.contains("2-layer"),
         "the project rule is missing: {listed}"
@@ -276,11 +279,8 @@ async fn a_netclass_takes_its_widths_and_its_members() {
         }),
     )
     .await;
-    h.json(
-        "add_net",
-        json!({ "board": board, "net_name": "VBUS" }),
-    )
-    .await;
+    h.json("add_net", json!({ "board": board, "net_name": "VBUS" }))
+        .await;
     h.json(
         "assign_net_to_class",
         json!({ "board": board, "net_name": "VBUS", "netclass": "Power" }),

@@ -196,7 +196,9 @@ async fn handle_add_bus_alias(
         })
         .unwrap_or_default();
     if members.is_empty() {
-        anyhow::bail!("'members' must list at least one net name — an alias with no members names nothing");
+        anyhow::bail!(
+            "'members' must list at least one net name — an alias with no members names nothing"
+        );
     }
 
     let mut sch = cse::Schematic::load(&sch_path)?;
@@ -433,9 +435,12 @@ mod tests {
         let sch = path.to_str().unwrap();
         let ctx = test_ctx();
 
-        handle_add_bus_alias(&json!({ "schematic": sch, "name": "CTRL", "members": ["RD"] }), &ctx)
-            .await
-            .expect("the alias is declared");
+        handle_add_bus_alias(
+            &json!({ "schematic": sch, "name": "CTRL", "members": ["RD"] }),
+            &ctx,
+        )
+        .await
+        .expect("the alias is declared");
         let again = body(
             &handle_add_bus_alias(
                 &json!({ "schematic": sch, "name": "CTRL", "members": ["RD", "WR"] }),
@@ -452,7 +457,13 @@ mod tests {
                 .await
                 .expect("the buses are listed"),
         );
-        assert_eq!(listed["bus_aliases"][0]["members"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            listed["bus_aliases"][0]["members"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     /// An alias with no members would name nothing, so it is refused rather

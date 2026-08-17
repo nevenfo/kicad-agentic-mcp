@@ -523,23 +523,23 @@ async fn handle_edit_schematic_component(
     // made the tool unable to do the single most common edit after placement
     // (J.2.4.1). A missing property is now created, exactly as
     // `add_component_annotation` creates one.
-    let mut apply = |content: &mut String, field: &str, new_val: &str| {
-        match update_field(content, &reference, field, new_val) {
-            Ok(updated) => {
-                *content = updated;
-                changed.push(format!("{} → {}", field, new_val));
-            }
-            Err(FieldError::MissingProperty) => {
-                match insert_property(content, &reference, field, new_val) {
-                    Ok(updated) => {
-                        *content = updated;
-                        changed.push(format!("{} → {} (added)", field, new_val));
-                    }
-                    Err(why) => errors.push(format!("{field}: {why}")),
-                }
-            }
-            Err(other) => errors.push(format!("{field}: {other}")),
+    let mut apply = |content: &mut String, field: &str, new_val: &str| match update_field(
+        content, &reference, field, new_val,
+    ) {
+        Ok(updated) => {
+            *content = updated;
+            changed.push(format!("{} → {}", field, new_val));
         }
+        Err(FieldError::MissingProperty) => {
+            match insert_property(content, &reference, field, new_val) {
+                Ok(updated) => {
+                    *content = updated;
+                    changed.push(format!("{} → {} (added)", field, new_val));
+                }
+                Err(why) => errors.push(format!("{field}: {why}")),
+            }
+        }
+        Err(other) => errors.push(format!("{field}: {other}")),
     };
 
     // Every field is located by looking the symbol up by `reference`, so the

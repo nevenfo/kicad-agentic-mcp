@@ -237,7 +237,10 @@ async fn the_net_readers_agree_about_the_net_that_exists() {
             json!({ "schematic": sch, "net": "SIGNAL" }),
         )
         .await;
-    assert_eq!(geometry["label_count"], 1, "one label names SIGNAL: {geometry}");
+    assert_eq!(
+        geometry["label_count"], 1,
+        "one label names SIGNAL: {geometry}"
+    );
     assert_eq!(
         geometry["connected_points"], 3,
         "two pins and a label sit on SIGNAL: {geometry}"
@@ -255,7 +258,8 @@ async fn the_net_readers_agree_about_the_net_that_exists() {
         "SIGNAL is one wire: {connectivity}"
     );
     assert_eq!(
-        connectivity["wires"][0]["x1"], pins::R1_PIN1.0,
+        connectivity["wires"][0]["x1"],
+        pins::R1_PIN1.0,
         "the wire reported is the one drawn: {connectivity}"
     );
 
@@ -295,7 +299,8 @@ async fn the_net_readers_agree_about_the_net_that_exists() {
         .await;
     assert_eq!(pin["net"], "SIGNAL");
     assert_eq!(
-        pin["pin_x"], pins::R1_PIN1.0,
+        pin["pin_x"],
+        pins::R1_PIN1.0,
         "the pin located is R1's pin 1: {pin}"
     );
 }

@@ -76,8 +76,7 @@ impl Harness {
     pub fn fixture(&self, name: &str) -> PathBuf {
         let src = fixtures_dir().join(name);
         let dst = self.dir.path().join(name);
-        std::fs::copy(&src, &dst)
-            .unwrap_or_else(|e| panic!("fixture {name} is copyable: {e}"));
+        std::fs::copy(&src, &dst).unwrap_or_else(|e| panic!("fixture {name} is copyable: {e}"));
         dst
     }
 

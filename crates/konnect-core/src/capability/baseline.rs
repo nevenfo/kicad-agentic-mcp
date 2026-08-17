@@ -342,7 +342,10 @@ pub fn compare(coverage: &Coverage) -> Comparison {
             continue;
         }
         denominator += 1;
-        if capability.status(coverage.get(capability.tool).proof).is_covered() {
+        if capability
+            .status(coverage.get(capability.tool).proof)
+            .is_covered()
+        {
             head_covered += 1;
             proved_here.push(capability.tool);
         }
@@ -431,7 +434,10 @@ mod tests {
             "this fork adds tools of its own; if it stops, this test is the wrong shape"
         );
         for tool in fork_only {
-            assert!(!is_scored(tool), "'{tool}' is this fork's own and is scored");
+            assert!(
+                !is_scored(tool),
+                "'{tool}' is this fork's own and is scored"
+            );
         }
     }
 

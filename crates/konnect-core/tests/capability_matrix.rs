@@ -294,7 +294,10 @@ fn the_frozen_baseline_measurement_still_holds() {
     let registered = baseline_registered_tools(&tree);
     assert_eq!(
         registered,
-        baseline::BASELINE_TOOLS.iter().copied().collect::<BTreeSet<_>>(),
+        baseline::BASELINE_TOOLS
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
         "the baseline's registered surface is not what capability::baseline froze"
     );
 
@@ -325,7 +328,8 @@ fn the_frozen_baseline_measurement_still_holds() {
 /// worktree so the developer's repository state is never touched.
 fn extract_baseline() -> Option<PathBuf> {
     let root = workspace_root();
-    let out = std::env::temp_dir().join(format!("kam-baseline-{}", &baseline::BASELINE_COMMIT[..7]));
+    let out =
+        std::env::temp_dir().join(format!("kam-baseline-{}", &baseline::BASELINE_COMMIT[..7]));
     let archive = out.with_extension("tar");
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out).ok()?;
@@ -354,10 +358,13 @@ fn extract_baseline() -> Option<PathBuf> {
 /// The tool names the baseline registers, read from its `tool!(` declarations —
 /// the same source its own `tool-directory.md` is generated from.
 fn baseline_registered_tools(tree: &std::path::Path) -> BTreeSet<&'static str> {
-    let dir = tree.join("crates").join("konnect-core").join("src").join("tools");
-    let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| {
-        panic!("the extracted baseline has no {}: {e}", dir.display())
-    });
+    let dir = tree
+        .join("crates")
+        .join("konnect-core")
+        .join("src")
+        .join("tools");
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("the extracted baseline has no {}: {e}", dir.display()));
 
     let mut names = BTreeSet::new();
     for entry in entries.flatten() {

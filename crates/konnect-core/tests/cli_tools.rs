@@ -72,14 +72,20 @@ async fn the_required_arguments_are_enforced_before_anything_is_spawned() {
     let h = Harness::new();
 
     for (tool, args) in [
-        ("export_schematic_pdf", json!({ "schematic": "x.kicad_sch" })),
+        (
+            "export_schematic_pdf",
+            json!({ "schematic": "x.kicad_sch" }),
+        ),
         ("export_pdf", json!({ "board": "x.kicad_pcb" })),
         ("export_svg", json!({ "board": "x.kicad_pcb" })),
         ("export_3d", json!({ "board": "x.kicad_pcb" })),
         ("export_netlist", json!({ "board": "x.kicad_sch" })),
         ("export_position_file", json!({ "board": "x.kicad_pcb" })),
         ("export_gerber", json!({ "board": "x.kicad_pcb" })),
-        ("export_manufacturing_package", json!({ "board": "x.kicad_pcb" })),
+        (
+            "export_manufacturing_package",
+            json!({ "board": "x.kicad_pcb" }),
+        ),
     ] {
         let outcome = h.call(tool, args).await;
         let reported = match outcome {
@@ -315,7 +321,10 @@ async fn the_manufacturing_package_fills_its_output_directory() {
     let files = package["files_generated"]
         .as_array()
         .expect("the package reports what it generated");
-    assert!(!files.is_empty(), "the package generated nothing: {package}");
+    assert!(
+        !files.is_empty(),
+        "the package generated nothing: {package}"
+    );
 
     // Every path it claims has to exist — reporting a file that is not there is
     // the failure this pipeline had before (J.2.2.1).
