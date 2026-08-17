@@ -948,8 +948,12 @@ F.4 (the matrix is the instrument).
         `HOME` is redirected into a tempdir under a mutex; the tests assert the
         behaviour that matters at two scopes — the project scope wins the merge,
         and a project rule does not leak into another project
-  - [ ] J.2.3.4 `review` (6 `sexpr`) — heuristic audits; assert the shape of the
-        finding, never that the advice is right
+  - [x] J.2.3.4 `review` — `tests/design_review.rs`. Each audit is checked for
+        the contrast that makes it worth anything: it finds what it exists to
+        find, and stays quiet when there is nothing. The advice itself is never
+        asserted. The coverage percentage does not move and should not: all six
+        are `HEURISTIC`, so they read `PARTIAL` rather than `SUPPORTED` however
+        well tested they are — 78 untested tools became 72
   - [ ] J.2.3.5 `footprints` (6 `sexpr`) and `libraries` (4)
   - [ ] J.2.3.6 `labels` (4 `sexpr`), `stackup` (3 `sexpr`), `zones` (1),
         `pcb` (2 `sexpr`), `templates` (1 `internal`)

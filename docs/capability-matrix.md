@@ -37,7 +37,7 @@ inflates the number it exists to keep honest.
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
 | KiCAD domains | 169 | 82 | 17 | 63 | 2 | 5 | 50.0 % |
-| server's own | 40 | 22 | 3 | 15 | 0 | 0 | 55.0 % |
+| server's own | 40 | 22 | 9 | 9 | 0 | 0 | 55.0 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
 
@@ -85,7 +85,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`datasheet`](#datasheet) | 2 | 0 | 0 | 2 | 0 | 0 | 0.0 % |
 | [`sourcing`](#sourcing) | 5 | 2 | 0 | 3 | 0 | 0 | 40.0 % |
 | [`export`](#export) | 11 | 6 | 0 | 5 | 0 | 0 | 54.5 % |
-| [`review`](#review) | 6 | 0 | 0 | 6 | 0 | 0 | 0.0 % |
+| [`review`](#review) | 6 | 0 | 6 | 0 | 0 | 0 | 0.0 % |
 | [`config`](#config) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`templates`](#templates) | 4 | 3 | 0 | 1 | 0 | 0 | 75.0 % |
 | [`task`](#task) | 4 | 4 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -124,7 +124,7 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
 | `create_schematic` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `add_component_annotation` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `add_component_annotation` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/design_review.rs` |  |
 | `get_schematic_view` | `sch_components` | `cli` | NOT_TESTED | — | — |  |
 | `find_orphan_items` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `check_schematic_overlaps` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
@@ -470,12 +470,12 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `audit_decoupling` | `design_review` | `sexpr` | NOT_TESTED | — | — | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `audit_connections` | `design_review` | `sexpr` | NOT_TESTED | — | — | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `audit_power_rails` | `design_review` | `sexpr` | NOT_TESTED | — | — | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `audit_manufacturing` | `design_review` | `sexpr` | NOT_TESTED | — | — | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `run_design_review` | `design_review` | `sexpr` | NOT_TESTED | — | — | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `check_bom_health` | `design_review` | `sexpr` | NOT_TESTED | — | — | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `audit_decoupling` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `audit_connections` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `audit_power_rails` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `audit_manufacturing` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `run_design_review` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `check_bom_health` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
 
 ### config
 
@@ -532,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-78 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+72 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -604,12 +604,6 @@ Not covered by any tool:
 | `launch_kicad_ui` | `ui` | `process` | none |
 | `copy_routing_pattern` | `routing` | `sexpr` | none |
 | `check_clearance` | `drc` | `sexpr` | none |
-| `audit_decoupling` | `review` | `sexpr` | none |
-| `audit_connections` | `review` | `sexpr` | none |
-| `audit_power_rails` | `review` | `sexpr` | none |
-| `audit_manufacturing` | `review` | `sexpr` | none |
-| `run_design_review` | `review` | `sexpr` | none |
-| `check_bom_health` | `review` | `sexpr` | none |
 | `get_template` | `templates` | `internal` | none |
 | `export_manufacturing_package` | `manufacturing` | `cli` | none |
 | `validate_for_manufacturing` | `manufacturing` | `sexpr` | none |
