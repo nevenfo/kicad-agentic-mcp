@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 62 | 15 | 85 | 2 | 5 | 37.8 % |
+| KiCAD domains | 169 | 77 | 17 | 68 | 2 | 5 | 47.0 % |
 | server's own | 40 | 15 | 3 | 22 | 0 | 0 | 37.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 65 | 34.9 % |
+| this fork | 186 | 80 | 43.0 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -57,8 +57,8 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | domain | entries | supported | partial | not tested | gap | no API | coverage |
 |---|---|---|---|---|---|---|---|
 | [`project`](#project) | 5 | 2 | 0 | 3 | 0 | 0 | 40.0 % |
-| [`schematic`](#schematic) | 9 | 2 | 0 | 6 | 1 | 0 | 22.2 % |
-| [`symbols`](#symbols) | 19 | 5 | 1 | 13 | 0 | 0 | 26.3 % |
+| [`schematic`](#schematic) | 9 | 6 | 1 | 1 | 1 | 0 | 66.7 % |
+| [`symbols`](#symbols) | 19 | 16 | 2 | 1 | 0 | 0 | 84.2 % |
 | [`wires`](#wires) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`nets`](#nets) | 25 | 11 | 13 | 1 | 0 | 0 | 44.0 % |
 | [`labels`](#labels) | 6 | 2 | 0 | 4 | 0 | 0 | 33.3 % |
@@ -124,13 +124,13 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
 | `create_schematic` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `add_component_annotation` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
+| `add_component_annotation` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `get_schematic_view` | `sch_components` | `cli` | NOT_TESTED | — | — |  |
-| `find_orphan_items` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `check_schematic_overlaps` | `sch_analysis` | `sexpr` | NOT_TESTED | — | — |  |
+| `find_orphan_items` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `check_schematic_overlaps` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `batch_delete` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
-| `add_schematic_text` | `sch_batch` | `sexpr` | NOT_TESTED | — | — |  |
-| `get_schematic_layout` | `sch_batch` | `sexpr` | NOT_TESTED | — | — |  |
+| `add_schematic_text` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `get_schematic_layout` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 
 Not covered by any tool:
 
@@ -143,24 +143,24 @@ Not covered by any tool:
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
 | `add_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/probes/symbol_lookup_cost.yaml` |  |
-| `delete_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `edit_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `get_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
+| `delete_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `edit_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `get_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `list_schematic_components` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/probes/graph.yaml` |  |
-| `move_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `rotate_schematic_component` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `move_connected` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `move_region` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
+| `move_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `rotate_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `move_connected` | `sch_components` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | moves the symbol only — wire stubs are not stretched, so wires attached to the moved pins are left behind and the connection is lost (J.2.3.2) |
+| `move_region` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `annotate_schematic` | `sch_components` | `cli` | NOT_TESTED | — | — |  |
 | `get_schematic_pin_locations` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `batch_get_schematic_pin_locations` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `group_components` | `sch_components` | `sexpr` | NOT_TESTED | — | — |  |
+| `batch_get_schematic_pin_locations` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `group_components` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `replace_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `add_power_symbol` | `sch_wiring` | `sexpr` | PARTIAL | bench | `bench/probes/divider.yaml` | does not snap to the 1.27 mm grid (E6): a power symbol placed at a component's nominal coordinate lands 0.33 mm off the pin and ERC reports it unconnected. A plan's `power` operation snaps before calling it; the direct path does not |
 | `batch_place_components` | `sch_batch` | `sexpr` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
-| `bulk_move_schematic_components` | `sch_batch` | `sexpr` | NOT_TESTED | — | — |  |
-| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | NOT_TESTED | — | — |  |
-| `batch_delete_schematic_components` | `sch_batch` | `sexpr` | NOT_TESTED | — | — |  |
+| `bulk_move_schematic_components` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `batch_delete_schematic_components` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 
 ### wires
 
@@ -532,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-107 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+90 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -540,29 +540,12 @@ Not covered by any tool:
 | `save_project` | `project` | `ipc` | none |
 | `snapshot_project` | `project` | `internal` | none |
 | `open_schematic_viewer` | `ui` | `process` | none |
-| `delete_schematic_component` | `symbols` | `sexpr` | none |
-| `edit_schematic_component` | `symbols` | `sexpr` | none |
-| `get_schematic_component` | `symbols` | `sexpr` | none |
-| `move_schematic_component` | `symbols` | `sexpr` | none |
-| `rotate_schematic_component` | `symbols` | `sexpr` | none |
-| `move_connected` | `symbols` | `sexpr` | none |
-| `move_region` | `symbols` | `sexpr` | none |
 | `annotate_schematic` | `symbols` | `cli` | none |
-| `batch_get_schematic_pin_locations` | `symbols` | `sexpr` | none |
-| `add_component_annotation` | `schematic` | `sexpr` | none |
-| `group_components` | `symbols` | `sexpr` | none |
 | `get_schematic_view` | `schematic` | `cli` | none |
 | `delete_schematic_net_label` | `labels` | `sexpr` | none |
 | `rotate_schematic_label` | `labels` | `sexpr` | none |
 | `batch_rotate_labels` | `labels` | `sexpr` | none |
 | `list_schematic_labels` | `labels` | `sexpr` | none |
-| `find_orphan_items` | `schematic` | `sexpr` | none |
-| `check_schematic_overlaps` | `schematic` | `sexpr` | none |
-| `bulk_move_schematic_components` | `symbols` | `sexpr` | none |
-| `batch_edit_schematic_components` | `symbols` | `sexpr` | none |
-| `batch_delete_schematic_components` | `symbols` | `sexpr` | none |
-| `add_schematic_text` | `schematic` | `sexpr` | none |
-| `get_schematic_layout` | `schematic` | `sexpr` | none |
 | `export_schematic_pdf` | `export` | `cli` | none |
 | `export_netlist_summary` | `export` | `sexpr` | none |
 | `set_board_size` | `pcb` | `ipc→sexpr` | none |

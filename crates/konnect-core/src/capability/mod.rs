@@ -424,7 +424,14 @@ pub static MANIFEST: &[Capability] = &[
     cap("list_schematic_components", Domain::Symbols, Adapter::Sexpr),
     cap("move_schematic_component", Domain::Symbols, Adapter::Sexpr),
     cap("rotate_schematic_component", Domain::Symbols, Adapter::Sexpr),
-    cap("move_connected", Domain::Symbols, Adapter::Sexpr),
+    cap_lim(
+        "move_connected",
+        Domain::Symbols,
+        Adapter::Sexpr,
+        Limitation::Partial(
+            "moves the symbol only — wire stubs are not stretched, so wires attached to the moved pins are left behind and the connection is lost (J.2.3.2)",
+        ),
+    ),
     cap("move_region", Domain::Symbols, Adapter::Sexpr),
     cap("annotate_schematic", Domain::Symbols, Adapter::Cli),
     cap("get_schematic_pin_locations", Domain::Symbols, Adapter::Sexpr),

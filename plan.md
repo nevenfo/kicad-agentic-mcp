@@ -934,7 +934,15 @@ F.4 (the matrix is the instrument).
         router by name. `get_nets_list` stays `NOT_TESTED`: it is `ipc`, and
         proving it by its own "KiCAD must be running" error would be the claim
         the matrix exists to prevent. `tests/harness/` is the shared rig
-  - [ ] J.2.3.2 `symbols` (12 `sexpr` + 1 `cli`) and `schematic` (5)
+  - [x] J.2.3.2 `symbols` and `schematic` — `tests/symbols_and_schematic.rs`.
+        `annotate_schematic` and `get_schematic_view` are `cli` and wait for
+        J.2.3.7. Three defects found by writing the tests, two fixed here:
+        `edit_schematic_component` applied `new_reference` first, which made the
+        symbol unfindable and failed every other field in the same call; and a
+        rename never reached the `instances` block, so `kicad-cli` kept
+        exporting the old designator while the tool reported success (live
+        probe). The third, `move_connected` not stretching wires, is recorded
+        below rather than hidden
   - [ ] J.2.3.3 `config` (7 `internal`) and `rules` (5 `sexpr`)
   - [ ] J.2.3.4 `review` (6 `sexpr`) — heuristic audits; assert the shape of the
         finding, never that the advice is right
@@ -950,6 +958,30 @@ F.4 (the matrix is the instrument).
 ### Validation
 `docs/capability-matrix.md` regenerated; the percentage moves for the right
 reason (a test that runs, not a denominator change).
+
+## J.2.4 — Defects the coverage work surfaced
+
+### Objectif
+Writing the tests for J.2.3 turned up tools that work differently from what
+they promise. The promises are corrected as they are found; these are the ones
+whose fix is real work.
+
+### Dépendances
+None.
+
+### Tâches
+- [ ] J.2.4.1 `edit_schematic_component` cannot set a field the symbol has no
+      property for: `footprint` on a symbol with no `Footprint` property comes
+      back "'R2' has no 'Footprint' property". Adding it is what
+      `add_component_annotation` already does
+- [ ] J.2.4.2 `move_connected` does not stretch wire stubs — it delegates to
+      `move_schematic_component`. Now declared `PARTIAL` with its description
+      corrected (J.2.3.2); implementing the stretch retires the limitation and
+      flips `moving_connected_leaves_the_attached_wire_behind`
+
+### Validation
+Each fix lands with the test that proved the defect, and the `PARTIAL` row it
+retires disappears from the generated matrix.
 
 ## J.3 — PCB E2E without a GUI session
 

@@ -151,7 +151,9 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "move_connected",
-            "Move a symbol and stretch/shrink connected wire stubs to preserve connections.",
+            "Move a symbol. Wire stubs are NOT stretched: the wires stay where they are and \
+             the connection to the moved pins is lost, exactly as move_schematic_component \
+             would leave it. Redraw the affected wires, or move the symbol before wiring it.",
             json!({
                 "type": "object",
                 "properties": {
@@ -524,9 +526,9 @@ async fn handle_edit_schematic_component(
         Err(why) => errors.push(format!("{field}: {why}")),
     };
 
-    if let Some(new_ref) = opt_str(args, "new_reference") {
-        apply(&mut content, "Reference", new_ref);
-    }
+    // Every field is located by looking the symbol up by `reference`, so the
+    // rename has to go last: renaming first made the symbol unfindable and
+    // every other field in the same call came back "symbol 'R2' not found".
     if let Some(val) = opt_str(args, "value") {
         apply(&mut content, "Value", val);
     }
@@ -535,6 +537,17 @@ async fn handle_edit_schematic_component(
     }
     if let Some(ds) = opt_str(args, "datasheet") {
         apply(&mut content, "Datasheet", ds);
+    }
+    if let Some(new_ref) = opt_str(args, "new_reference") {
+        apply(&mut content, "Reference", new_ref);
+        // KiCAD resolves a symbol's designator from its `instances` block, not
+        // from the Reference property. Renaming only the property left
+        // `kicad-cli sch export netlist` still emitting the old designator
+        // while this tool reported success (J.2.3.2).
+        match update_instance_reference(&content, new_ref, &reference) {
+            Ok(updated) => content = updated,
+            Err(why) => errors.push(format!("instances: {why}")),
+        }
     }
 
     // A request that changed nothing is a failure, not a success — silently
@@ -566,6 +579,37 @@ async fn handle_edit_schematic_component(
         result["errors"] = json!(errors);
     }
     Ok(CallToolResult::json(&result))
+}
+
+/// Point a renamed symbol's `instances` entries at its new designator.
+///
+/// `new_ref` is what the symbol's Reference property now says — that is how the
+/// block is located — and `old_ref` is the designator the instance entries still
+/// carry. Every entry is rewritten, because a symbol placed on several sheets
+/// has one per sheet and leaving any of them behind means KiCAD reports two
+/// different designators for the same symbol.
+fn update_instance_reference(
+    content: &str,
+    new_ref: &str,
+    old_ref: &str,
+) -> Result<String, String> {
+    let (start, end) = find_symbol_instance_block(content, new_ref)
+        .ok_or_else(|| format!("symbol '{new_ref}' not found after the rename"))?;
+
+    let needle = format!(r#"(reference "{old_ref}")"#);
+    let replacement = format!(r#"(reference "{new_ref}")"#);
+    let block = &content[start..end];
+    if !block.contains(&needle) {
+        // Nothing to repoint: a symbol with no instances block is already
+        // consistent, and saying so beats reporting a failure.
+        return Ok(content.to_string());
+    }
+    Ok(format!(
+        "{}{}{}",
+        &content[..start],
+        block.replace(&needle, &replacement),
+        &content[end..]
+    ))
 }
 
 async fn handle_get_schematic_component(
