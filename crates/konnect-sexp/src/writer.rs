@@ -124,10 +124,69 @@ pub(crate) fn write_atomic_unlocked(path: &Path, content: &str) -> Result<(), Se
     file.sync_all()?; // fsync — mandatory
     drop(file);
 
-    std::fs::rename(&tmp_path, path)?;
+    if let Err(error) = std::fs::rename(&tmp_path, path) {
+        return Err(SexpError::Io(refine_rename_failure(path, error)));
+    }
     cleanup.disarm();
     sync_parent_directory(path.parent().unwrap_or_else(|| Path::new(".")))?;
     Ok(())
+}
+
+/// Tell "someone holds this file open" apart from "the ACL forbids replacing
+/// it" (L.2.5).
+///
+/// Windows reports both as `ERROR_ACCESS_DENIED`, which `io::ErrorKind`
+/// flattens to `PermissionDenied` — and the two want opposite responses. A
+/// KiCad GUI holding the document is worth waiting for: it closes the file and
+/// the identical write succeeds. An ACL denial never is, and telling a
+/// recovery loop to wait for one turns a clear refusal into a hang.
+///
+/// The discriminator is a second open of the *target*, asking only for
+/// `DELETE` — the access the rename itself needs. A handle held without
+/// `FILE_SHARE_DELETE` makes that open fail with `ERROR_SHARING_VIOLATION`,
+/// which no ACL denial produces; an ACL that forbids us answers
+/// `ERROR_ACCESS_DENIED` a second time. Only the sharing violation is
+/// relabelled, and it becomes `ResourceBusy` — already in the `Lock` class in
+/// `konnect-core`'s error taxonomy, so a caller learns to wait without
+/// `permission_denied` as a whole being reclassified.
+///
+/// A probe that *succeeds* leaves the original error alone: the rename was
+/// refused for a reason this cannot name (a directory ACL, most likely), and
+/// guessing would be worse than the honest `permission_denied`.
+#[cfg(windows)]
+fn refine_rename_failure(path: &Path, error: std::io::Error) -> std::io::Error {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const DELETE: u32 = 0x0001_0000;
+    const FILE_SHARE_READ_WRITE_DELETE: u32 = 0x0000_0007;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+
+    if error.kind() != std::io::ErrorKind::PermissionDenied {
+        return error;
+    }
+    let probe = OpenOptions::new()
+        .access_mode(DELETE)
+        .share_mode(FILE_SHARE_READ_WRITE_DELETE)
+        .open(path);
+    match probe {
+        Err(denied) if denied.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => {
+            std::io::Error::new(
+                std::io::ErrorKind::ResourceBusy,
+                format!(
+                    "{} is held open by another application (KiCad, most likely) — \
+                     close it and retry: {error}",
+                    path.display()
+                ),
+            )
+        }
+        _ => error,
+    }
+}
+
+/// Nothing to disambiguate: an open handle does not block a rename here.
+#[cfg(not(windows))]
+fn refine_rename_failure(_path: &Path, error: std::io::Error) -> std::io::Error {
+    error
 }
 
 /// Atomically replace `path` only when it still contains `expected`.
@@ -1219,15 +1278,16 @@ mod atomic_write_tests {
         let SexpError::Io(io) = &error else {
             panic!("expected an io error from the blocked rename, got {error:?}");
         };
-        // The observed OS error is ERROR_ACCESS_DENIED (raw 5), which
-        // `std::io::ErrorKind` maps to `PermissionDenied` — indistinguishable,
-        // once inside `ToolErrorKind::Io { code: "permission_denied", .. }`,
-        // from a genuine ACL failure, which is not transient. A GUI holding
-        // the file, closing it, and the same write succeeding is exactly the
-        // "worth waiting for" case `TransientClass::Lock` exists to name, but
-        // reclassifying `permission_denied` in general would misclassify the
-        // ACL case, which is out of scope here — see the final report.
-        assert_eq!(io.kind(), std::io::ErrorKind::PermissionDenied, "{io}");
+        // The OS reports ERROR_ACCESS_DENIED (raw 5), which `io::ErrorKind`
+        // flattens to `PermissionDenied` — the same thing an ACL denial gives.
+        // `refine_rename_failure` (L.2.5) separates them by re-opening the
+        // target for DELETE, and relabels only the held-handle case, so what
+        // reaches the caller says "wait" rather than "give up".
+        assert_eq!(io.kind(), std::io::ErrorKind::ResourceBusy, "{io}");
+        assert!(
+            io.to_string().contains("held open by another application"),
+            "the message must tell a human what to close: {io}"
+        );
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             "original",
@@ -1236,6 +1296,88 @@ mod atomic_write_tests {
         assert!(
             !leftover_scratch_files(directory.path()),
             "a failed rename must not litter the project directory"
+        );
+    }
+
+    /// The other half of L.2.5, and the reason the held-handle case could not
+    /// simply be reclassified wholesale: a rename refused by an access-control
+    /// entry produces the *same* `ERROR_ACCESS_DENIED`, and it is never worth
+    /// waiting out. `refine_rename_failure` must leave this one alone.
+    ///
+    /// A real deny ACE, not a simulated error. It needs both entries: denying
+    /// delete on the file alone is not enough, because `FILE_DELETE_CHILD` on
+    /// the parent directory grants the deletion anyway — which is itself worth
+    /// pinning, since a test that denied only the file would pass while
+    /// exercising nothing.
+    #[cfg(windows)]
+    #[test]
+    fn an_acl_denial_is_left_as_permission_denied_not_relabelled_as_busy() {
+        /// Restores the ACL whatever the test does, so a failing assertion
+        /// cannot leave a directory `tempfile` is then unable to remove.
+        struct DenyAce {
+            directory: std::path::PathBuf,
+            file: std::path::PathBuf,
+            user: String,
+        }
+
+        impl DenyAce {
+            fn icacls(target: &Path, args: &[&str]) {
+                let status = std::process::Command::new("icacls")
+                    .arg(target)
+                    .args(args)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .expect("icacls is present on every Windows install");
+                assert!(status.success(), "icacls {args:?} failed on {target:?}");
+            }
+        }
+
+        impl Drop for DenyAce {
+            fn drop(&mut self) {
+                Self::icacls(&self.file, &["/remove:d", &self.user]);
+                Self::icacls(&self.directory, &["/remove:d", &self.user]);
+            }
+        }
+
+        let Ok(user) = std::env::var("USERNAME") else {
+            return; // No account name to write an ACE for; nothing to prove.
+        };
+        let user = match std::env::var("USERDOMAIN") {
+            Ok(domain) if !domain.is_empty() => format!("{domain}\\{user}"),
+            _ => user,
+        };
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        std::fs::write(&path, "original").unwrap();
+
+        let _restore = DenyAce {
+            directory: directory.path().to_path_buf(),
+            file: path.clone(),
+            user: user.clone(),
+        };
+        // `DE` (the specific "delete" right) and not `D`: icacls reads a bare
+        // `D` as its *simple* rights vocabulary, whose deny mask takes read
+        // access with it — the test would then fail on its own setup rather
+        // than on what it means to check.
+        DenyAce::icacls(&path, &["/deny", &format!("{user}:(DE)")]);
+        DenyAce::icacls(directory.path(), &["/deny", &format!("{user}:(DC)")]);
+
+        let error = write_atomic_unlocked(&path, "edited").unwrap_err();
+        let SexpError::Io(io) = &error else {
+            panic!("expected an io error from the denied rename, got {error:?}");
+        };
+        assert_eq!(
+            io.kind(),
+            std::io::ErrorKind::PermissionDenied,
+            "an ACL denial must stay deterministic — telling a recovery loop to \
+             wait for it would turn a clear refusal into a hang: {io}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "original",
+            "a refused rename must not have touched the document: {io}"
         );
     }
 

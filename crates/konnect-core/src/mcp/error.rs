@@ -288,6 +288,13 @@ fn io_code(kind: std::io::ErrorKind) -> &'static str {
         K::PermissionDenied => "permission_denied",
         K::AlreadyExists => "already_exists",
         K::WouldBlock => "would_block",
+        // `transient_class` has always listed "resource_busy" under `Lock`, but
+        // nothing produced the code, so the class was unreachable. It is what
+        // `konnect-sexp`'s `refine_rename_failure` raises when a rename is
+        // blocked by another application's open handle rather than by an ACL
+        // (L.2.5) — the one `permission_denied` that is genuinely worth waiting
+        // out.
+        K::ResourceBusy => "resource_busy",
         K::Interrupted => "interrupted",
         K::TimedOut => "timed_out",
         K::InvalidData => "invalid_data",
@@ -549,6 +556,47 @@ mod tests {
         let kind = ToolErrorKind::from_anyhow(&anyhow::Error::new(io));
         assert_eq!(kind.transient_class(), TransientClass::Lock);
         assert_eq!(kind.transient_class().retry_after_ms(), Some(250));
+    }
+
+    /// L.2.5 — the two halves of `ERROR_ACCESS_DENIED`, once `konnect-sexp`
+    /// has told them apart, must land on opposite sides of the taxonomy. The
+    /// `Lock` side was dead code until now: `transient_class` listed
+    /// `"resource_busy"` but `io_code` never produced it.
+    #[test]
+    fn a_busy_file_is_worth_waiting_for_and_a_denied_one_never_is() {
+        let busy = std::io::Error::new(std::io::ErrorKind::ResourceBusy, "held open");
+        let busy = ToolErrorKind::from_anyhow(&anyhow::Error::new(busy));
+        assert!(
+            matches!(
+                &busy,
+                ToolErrorKind::Io {
+                    code: "resource_busy",
+                    ..
+                }
+            ),
+            "a busy file must reach the caller under its own code: {busy:?}"
+        );
+        assert_eq!(busy.transient_class(), TransientClass::Lock);
+        assert_eq!(busy.transient_class().retry_after_ms(), Some(250));
+
+        let denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "acl");
+        let denied = ToolErrorKind::from_anyhow(&anyhow::Error::new(denied));
+        assert!(
+            matches!(
+                &denied,
+                ToolErrorKind::Io {
+                    code: "permission_denied",
+                    ..
+                }
+            ),
+            "{denied:?}"
+        );
+        assert_eq!(
+            denied.transient_class(),
+            TransientClass::None,
+            "waiting out an ACL denial is a hang, not a recovery"
+        );
+        assert_eq!(denied.transient_class().retry_after_ms(), None);
     }
 
     fn error_body(result: &CallToolResult) -> serde_json::Value {

@@ -1291,16 +1291,31 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       key as fresh (no `replayed`, no `operation_in_flight`), and a third
       presenting the creation-time revision is refused `stale_revision` having
       run nothing
-- [ ] L.2.5 A held file handle and a denied ACL both arrive as
+- [x] L.2.5 A held file handle and a denied ACL both arrive as
       `permission_denied` (found by L.2.3, pinned on Windows in
       `writer.rs::a_handle_held_without_delete_sharing_blocks_the_publishing_rename`).
       One is worth waiting for — the GUI closes the document and the same write
       works — and the other never is, but `ToolErrorKind::Io { code:
       "permission_denied" }` gives a recovery loop no way to tell them apart.
-      Decide whether the two can be separated at the source (the failing
-      operation is the rename, and the path's own ACL is queryable) and either
-      classify the held-handle case `Lock` or state, where a reader of
-      `permission_denied` will find it, that waiting is a caller decision
+      **They can be separated at the source, and now are.** When
+      `write_atomic_unlocked`'s rename fails with `PermissionDenied`,
+      `refine_rename_failure` re-opens the *target* asking only for `DELETE` —
+      the access the rename itself needs. A handle held without
+      `FILE_SHARE_DELETE` answers `ERROR_SHARING_VIOLATION`, which no ACL
+      denial produces; an ACL that forbids us answers `ERROR_ACCESS_DENIED` a
+      second time. Only the sharing violation is relabelled, as `ResourceBusy`
+      → `Io { code: "resource_busy" }` → `TransientClass::Lock`, so the caller
+      is told to wait without `permission_denied` as a whole being
+      reclassified. A probe that succeeds leaves the original error alone: the
+      rename was refused for a reason this cannot name, and guessing beats
+      nothing only when the guess is right. `"resource_busy"` was already in
+      `transient_class`'s `Lock` arm but unreachable — `io_code` never emitted
+      it — so this also closes a dead branch. Both halves are pinned on real
+      OS behaviour, not simulation: the held-handle test opens with a
+      restrictive share mode, and the ACL test writes a genuine deny ACE with
+      `icacls` (needing `DE` on the file *and* `DC` on the parent, since
+      `FILE_DELETE_CHILD` otherwise grants the deletion regardless of the
+      file's own ACL) and restores it from a `Drop` guard
 
 ### Validation
 Silent corruption stays 0 under injection; no partial batch survives a failure.
