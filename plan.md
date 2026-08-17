@@ -1175,7 +1175,7 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       finds exactly one owner, so a stale index turns a refusal into a silent
       pick. The fingerprint now includes each library entry's own mtime (D51),
       at a measured 3.7 ms for the 223 libraries of a stock KiCad 10 install
-- [ ] L.1.4 The gate is a gate nowhere: `ci.yml` triggers on `main` only, and
+- [x] L.1.4 The gate is a gate nowhere: `ci.yml` triggers on `main` only, and
       this fork's default *and* working branch is `agentic/main`, so no push has
       ever run it. Its `clippy` step also omits `--all-targets` (which is why
       L.1.1 never fired in CI) and its `fmt` step would fail today on ~38

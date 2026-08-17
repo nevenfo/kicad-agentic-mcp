@@ -2,28 +2,32 @@
 
 ## Phase actuelle
 
-L — hardening. L.1 (known debt) is closed: L.1.1 through L.1.5 are all done.
-L.2 (failure injection and concurrency) is untouched.
+L — hardening. L.1 (known debt) is closed and proven by a green CI run.
+L.2 (failure injection and concurrency) is in progress.
 
 ## Tâche actuelle
 
-None. L.2.1 is the next task in the plan; the user has not been asked whether
-L.2 is the priority over K.1 (multi-harness, which M depends on).
+L.2.1 — fuzz the S-expression parser/writer round trip. Delegated to a worker.
+The gap is not the parser (already covered by
+`crates/konnect-sexp/tests/proptest_parser.rs`) but the *write* round trip:
+this crate has no tree serialiser, so every write is "locate a block by byte
+offset, replace that text, rewrite the file". Nothing fuzzes that path, and the
+existing file explicitly confines itself to ASCII — while `apply_edits` uses
+`String::replace_range`, which panics on a non-char-boundary offset, and real
+KiCAD files carry UTF-8.
 
 ## Dernière tâche validée
 
-L.1.5 — the one non-hermetic test the first CI run found now brings its own
-symbol library.
+L.1.6 — the frozen-baseline test re-derives its measurement from the tree at
+`BASELINE_COMMIT`, which a depth-1 checkout does not contain; the `check` job
+now fetches full history.
 
 Validation :
-- `cargo test --workspace`: 962 passed / 0 failed
-- `cargo clippy --workspace --locked --all-targets -- -D warnings`: clean
-- `cargo fmt --all -- --check`: clean (the whole tree, for the first time)
-- L.1.2 and L.1.3 each verified by negative control: the test fails when the
-  fix is removed
-- CI: `Format`, `Clippy`, `Schematic viewer` and `PCM packaging` green on the
-  first run that ever executed; `Check & Test` on all three OSes is what L.1.5
-  fixes — its run was still in flight at the last check
+- CI run 32031309526 on `agentic/main`: **all 7 jobs green** — `Format`,
+  `Clippy`, `Check & Test` on ubuntu/macos/windows, `Schematic viewer`,
+  `PCM packaging`. This is the first fully green run this fork has ever had.
+- L.1.4 was still `[ ]` in `plan.md` despite being committed at `439015a`; that
+  same run is its proof, so it is now checked.
 
 ## Décisions actives
 
@@ -81,19 +85,22 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## Fichiers / zones utiles
 
-- `.github/workflows/ci.yml` — now triggers on `agentic/main` as well as
-  `main`, and its clippy step is `--all-targets`. Before L.1.4 no job in this
-  file had ever run on this fork. Dispatch the KiCad E2E one as
-  `gh workflow run e2e-kicad.yml -R nevenfo/kicad-agentic-mcp --ref
-  agentic/main`; a bare `gh` resolves to `upstream` and 403s
-- `gate.ps1` — the local mirror of CI; its clippy step is `--all-targets` too,
-  and `cargo fmt --all -- --check` now passes, so every step of it is real
-- `crates/konnect-core/src/plan/ops.rs` — the operation library. Its `tests`
-  module now parses the `*_SIGNATURE` DSL; `minimal_examples()` is shared by
-  both anti-drift tests and must stay in `OP_LIBRARY` order
-- `crates/konnect-schematic-editor/src/library.rs` — `canonical_lib_id`
-  (H.6.1) and the on-disk symbol index (`probe_dir`, `DirFingerprint`, cache
-  magic V2)
+- `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits`,
+  and the block finders (`find_balanced_block`, `find_block_starts`,
+  `find_direct_child_blocks`, `find_enclosing_block`) whose byte offsets feed it
+- `crates/konnect-sexp/tests/proptest_parser.rs` — the existing parser
+  properties; L.2.1 adds a writer-side sibling rather than editing this one
+- `.github/workflows/ci.yml` — triggers on `agentic/main` as well as `main`;
+  clippy is `--all-targets` and the `check` job fetches full history. Dispatch
+  the KiCad E2E one as `gh workflow run e2e-kicad.yml -R
+  nevenfo/kicad-agentic-mcp --ref agentic/main`; a bare `gh` resolves to
+  `upstream` and 403s
+- `gate.ps1` — the local mirror of CI; every step of it is real now
+- `crates/konnect-core/src/plan/ops.rs` — the operation library; its `tests`
+  module parses the `*_SIGNATURE` DSL, and `minimal_examples()` must stay in
+  `OP_LIBRARY` order
+- `crates/konnect-schematic-editor/src/library.rs` — `canonical_lib_id` (H.6.1)
+  and the on-disk symbol index (`probe_dir`, `DirFingerprint`, cache magic V2)
 - `crates/konnect/tests/protocol_stdio.rs` — `stub_symbol_library()` and
   `spawn_with_symbols()`: how a stdio test gets a resolvable `lib_id` with no
   KiCAD installed
@@ -102,14 +109,10 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
   `ToolRouter` by name; `BLANK_BOARD`, `TWO_RESISTORS`, `pins::*`
 - `crates/konnect-core/src/capability/` — regenerate the matrix with
   `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
-- Run the non-IPC live probes with
-  `KICAD_CLI=<path> cargo test -p konnect-core -- --ignored`; the path is in
-  `bench/konnect.bench.toml`
 
 ## NEXT ACTION
 
-Confirm the CI run for `L.1.5` is green on all three OSes
-(`gh run list -R nevenfo/kicad-agentic-mcp --workflow ci.yml --limit 1`), then
-ask which comes next: L.2 (failure injection: fuzz the s-expression round trip,
-inject `TransientClass` failures, prove `base_revisions` catches a concurrent
-GUI edit) or K.1 (multi-harness, which M.1 depends on).
+Review the L.2.1 worker's result, run `cargo test -p konnect-sexp` and
+`cargo clippy -p konnect-sexp --locked --all-targets -- -D warnings` as the
+final check, then continue with L.2.2 (inject failures per `TransientClass`
+and assert the recovery policy).
