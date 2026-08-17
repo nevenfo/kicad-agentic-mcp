@@ -2,14 +2,18 @@
 
 ## Phase actuelle
 
-L — hardening. L.1 (known debt) is closed and proven by a green CI run.
-L.2 (failure injection and concurrency) is in progress.
+L — hardening — **closed**. L.1 (known debt) and L.2 (failure injection and
+concurrency, L.2.1 through L.2.5) are all done. Next is M — final benchmark.
 
 ## Tâche actuelle
 
-Phase M — final benchmark. M.1 (baseline vs direct mode vs agent mode) depends
-on H.6, H.7, K.1; confirm those are actually validated before starting, and
-check what M.1 needs that phase I gating would block.
+K.1.2 — the eval design in `bench/`. M.1 (phase M) depends on H.6, H.7 and
+K.1; H.6/H.7 are DONE but K.1 is not, so K.1 comes first. K.1.1 (running the
+golden suite through Claude Code / Codex / AGY) needs external harnesses and is
+not autonomous; K.1.2 is: add `expected_tools`, `allowed_tools`,
+`forbidden_tools`, a `safety` tier checked against the capability registry (a
+`read_only` case must reject *any* write tool), `max_calls`, and an
+instability rate across repeated runs.
 
 ## Dernière tâche validée
 
@@ -33,6 +37,8 @@ Validation :
   neutered → the batch applies instead of being refused) and L.2.3
   (compare-and-swap, control = both checks short-circuited → the file is
   *corrupted*, not merely misreported)
+- phase-close check: `gate.ps1` → `GATE PASSED`, exit 0 (fmt, clippy, test,
+  doctest, release build; the optional benchmark steps stay behind their flag)
 
 ## Décisions actives
 
@@ -106,6 +112,16 @@ Validation :
 Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 `kicad-cli api-server` it needs.
 
+GitHub CI is red on `agentic/main` for an external reason, not the code:
+`codeload.github.com` is returning 429 to the runners, so `Swatinem/rust-cache`
+and `arduino/setup-protoc` fail to download (the latter surfaces as "unable to
+get latest version"). Every job that needs an action download fails at the
+setup step, before any cargo command; `Format`, `Schematic viewer` and `PCM
+packaging validation` pass. `gate.ps1` covers the same ground locally and
+passes. Next attempt: re-run the failed jobs (`gh run rerun <id> --failed -R
+nevenfo/kicad-agentic-mcp`) once the rate limit clears — do not restructure the
+workflows in response to a 429.
+
 ## Fichiers / zones utiles
 
 - `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits`,
@@ -149,6 +165,9 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Open Phase M in `plan.md` (line ~1310): confirm M.1's dependencies (H.6, H.7,
-K.1) are validated, then start M.1 — baseline vs direct mode vs agent mode,
-driven by `bench/` and `docs/benchmark.md`.
+Implement K.1.2 — extend the task schema in `bench/tasks/*.yaml` and the runner
+(`bench/runner.py`, scored in `bench/analyze.py`) with `expected_tools`,
+`allowed_tools`, `forbidden_tools`, `safety`, `max_calls` and a repeated-run
+instability rate, checking the `safety` tier against
+`crates/konnect-core/src/capability/`. Then run the suite and
+`cargo clippy --workspace --locked --all-targets -- -D warnings`.
