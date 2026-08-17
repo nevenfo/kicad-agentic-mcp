@@ -72,11 +72,24 @@ function Resolve-Pcbnew {
 function Enable-ApiServer {
     $config = Join-Path $env:APPDATA 'kicad\10.0\kicad_common.json'
     if (-not (Test-Path $config)) {
-        # A profile KiCad has never written — a fresh CI runner. Writing the one
-        # key we need is enough: KiCad fills the rest from its defaults on load.
+        # A profile KiCad has never written — a fresh CI runner. Writing the keys
+        # we need is enough: KiCad fills the rest from its defaults on load.
+        #
+        # `canvas_type` 2 is Cairo, i.e. software rendering. It is set only here,
+        # in the profile this script creates, because a machine with no profile
+        # is a machine we know nothing about — and a `windows-latest` runner has
+        # no OpenGL 2.1. pcbnew's response to that is a modal `Information`
+        # dialog ("Could not use OpenGL, falling back to software rendering")
+        # which it serves *before* the API, so the pipe comes up, the PCB Editor
+        # window stays hidden behind the dialog, and every request is answered
+        # `AS_NOT_READY` until something clicks OK. Choosing software rendering
+        # up front means there is nothing to report. No live test reads a
+        # rendered canvas, so nothing is given up. An existing profile is left
+        # alone: that is a real user's rendering preference.
         New-Item -ItemType Directory -Force (Split-Path $config) | Out-Null
-        '{ "api": { "enable_server": true } }' | Set-Content $config -Encoding utf8
-        Write-Host "Created $config with the API server enabled."
+        '{ "api": { "enable_server": true }, "graphics": { "canvas_type": 2 } }' |
+            Set-Content $config -Encoding utf8
+        Write-Host "Created $config with the API server enabled and software rendering."
         return $true
     }
     $json = Get-Content $config -Raw | ConvertFrom-Json
