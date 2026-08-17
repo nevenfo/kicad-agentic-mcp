@@ -1189,6 +1189,11 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       on the test process, which runs these in parallel threads — and asserts on
       a marker property only the fixture carries, so the assertion is the same
       one on both
+- [x] L.1.6 Same run, second finding: `the_frozen_baseline_measurement_still_holds`
+      re-derives the frozen baseline from the tree at `BASELINE_COMMIT`, which a
+      depth-1 checkout does not contain. The `check` job now checks out the full
+      history. The test refused to pass vacuously, which is why it was the thing
+      that reported it
 
 ### Validation
 `cargo clippy --workspace --locked --all-targets -- -D warnings` clean, and

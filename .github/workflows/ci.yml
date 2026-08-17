@@ -27,7 +27,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
+      # Full history, not the default shallow clone:
+      # `the_frozen_baseline_measurement_still_holds` re-derives the frozen
+      # baseline from the tree at BASELINE_COMMIT, and a depth-1 checkout does
+      # not contain it. The test says so itself rather than passing vacuously,
+      # which is how this was found on the first run that ever executed it.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: arduino/setup-protoc@v3
         with:
