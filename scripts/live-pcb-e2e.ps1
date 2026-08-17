@@ -120,13 +120,20 @@ function Initialize-LibraryTables {
     $profile = Join-Path $env:APPDATA 'kicad\10.0'
     New-Item -ItemType Directory -Force $profile | Out-Null
 
+    # All three of them: KiCad 10 runs its `KiCad Setup` first-run wizard when any
+    # is missing, and the wizard is modal, so one forgotten table stalls the API
+    # exactly like a missing one. `design-block-lib-table` has no template in the
+    # installation — an empty table is the right content for it.
+    Write-Host "library table template dir: $template (exists: $(Test-Path $template))"
     foreach ($table in @(
-            @{ File = 'fp-lib-table';  Tag = 'fp_lib_table' },
-            @{ File = 'sym-lib-table'; Tag = 'sym_lib_table' })) {
+            @{ File = 'fp-lib-table';           Tag = 'fp_lib_table' },
+            @{ File = 'sym-lib-table';          Tag = 'sym_lib_table' },
+            @{ File = 'design-block-lib-table'; Tag = 'design_block_lib_table' })) {
         $target = Join-Path $profile $table.File
         if (Test-Path $target) { continue }
 
         $source = Join-Path $template $table.File
+        Write-Host "  $($table.File): template $(if (Test-Path $source) { 'found' } else { 'absent, writing an empty table' })"
         $entry = if (Test-Path $source) {
             # The same single "Table" entry a fresh KiCad profile gets: an
             # indirection to the installation's own table, forward slashes and
