@@ -72,10 +72,19 @@ Validation :
 
 1. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
    `kicad-cli api-server` it needs.
-2. The `live-ipc` CI job (J.3.3) has never run on a GitHub runner. One unknown
-   left: whether `windows-latest` gives pcbnew a usable window station. The
-   fresh-profile half was rehearsed locally with `APPDATA` pointed at an empty
-   directory — 3/3, exit 0.
+2. The `live-ipc` CI job (J.3.3) still cannot be made to run on a GitHub runner,
+   so the one unknown stands: whether `windows-latest` gives pcbnew a usable
+   window station. The fresh-profile half was rehearsed locally with `APPDATA`
+   pointed at an empty directory — 3/3, exit 0.
+   Cause, established 2026-08-17: GitHub registers `workflow_dispatch` only from
+   a repository's *default* branch, and `origin`'s default branch (`main`) has no
+   `.github/workflows/` at all — `gh workflow list -R nevenfo/kicad-agentic-mcp`
+   shows Dependabot only, and a dispatch on `--ref agentic/main` 404s. (The
+   `gh run list` successes for "E2E (real KiCAD)" are `upstream`
+   mixelpixx/Konnect, not this fork; `gh` resolves the bare flag to `upstream`.)
+   Next attempt is a user decision, not a command: either land the workflows on
+   `origin/main` (a PR carrying `.github/workflows/` alone, or the whole
+   `agentic/main` merge) or change the fork's default branch.
 
 ## Fichiers / zones utiles
 
@@ -108,7 +117,7 @@ Validation :
 
 ## NEXT ACTION
 
-Phase J has no open task. Decide what phase K is — the two candidates on the
-table are (a) run the `live-ipc` CI job on a GitHub runner to close the last
-J.3.3 unknown, and (b) the PCB benchmark coverage that J.3 unblocked. Both need
-a user decision on priority before any work starts.
+Phase J has no open task, and the one residue left (blocage 2) needs a user
+decision about where the workflows live on `origin`, not more work. Ask for that
+decision and for what phase K is; the candidate on the table is the PCB benchmark
+coverage J.3 unblocked.
