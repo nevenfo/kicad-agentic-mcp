@@ -901,7 +901,7 @@ F.4 (the matrix is the instrument).
       when strictly ahead *and* nothing the baseline proved is lost. Measured
       **22.6 % → 29.6 %** on a denominator of 186, 0 regressions, re-derived
       from `git archive` in the default gate
-- [ ] J.2.2 Fill the highest-value gaps — `MISSING` names buses, a standalone
+- [x] J.2.2 Fill the highest-value gaps — `MISSING` names buses, a standalone
       drill export, IPC-D-356, and the stackup write KiCad 10 declares and does
       not implement
   - [x] J.2.2.1 The two `kicad-cli` gaps: `export_drill` exposes format, units,
@@ -912,11 +912,18 @@ F.4 (the matrix is the instrument).
         existing callers passed `<dir>/drill.drl`, so KiCAD made a *directory*
         of that name — `export_manufacturing_package` reported a file path that
         was not a file
-  - [ ] J.2.2.2 Buses — bus entries, bus aliases, bus-member expansion; the
-        schematic engine handles wires and labels only
-  - [ ] J.2.2.3 Stackup write — record the KiCad 10 limit, do not build. Already
-        `GUI_ONLY_NO_API` and out of the denominator; the task is to confirm
-        `UpdateBoardStackup` is still unimplemented and say so once
+  - [x] J.2.2.2 Buses — `sch_buses` models bus segments, entries and aliases in
+        the engine and exposes `add_bus`, `add_bus_entry`, `add_bus_alias`,
+        `list_buses`, `expand_bus`. KiCAD's netlist confirms the vector
+        expansion (`bus_live`). The probe also found a defect that predates
+        buses: KiCAD 10 refuses a label whose `at` has no angle, and the engine
+        wrote `(at x y)` — every label type was affected, and the tools only
+        escaped it by calling `set_rotation` afterwards
+  - [x] J.2.2.3 Stackup write — confirmed and pinned rather than written down:
+        KiCad 10's vendored board protos mark `UpdateBoardStackup`
+        '**not yet implemented**', and `konnect-ipc`'s
+        `stackup_write_is_unimplemented` test fails if that ever changes. Stays
+        `GUI_ONLY_NO_API` and out of the denominator
 - [ ] J.2.3 Prove the 107-ish tools that have no test that runs
 
 ### Validation

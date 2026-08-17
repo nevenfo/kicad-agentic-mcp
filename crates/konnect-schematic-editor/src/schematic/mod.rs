@@ -1,3 +1,4 @@
+pub mod bus;
 pub mod label;
 pub mod misc;
 pub mod sheet;
@@ -11,6 +12,7 @@ use crate::error::Result;
 use crate::sexp::{atom, parser, qstr, tagged, writer, SexpNode};
 use crate::types::{At, ChangeSet};
 
+use bus::{Bus, BusAlias, BusEntry};
 use label::{
     GlobalLabel, GlobalLabelCollection, HierarchicalLabel, HierarchicalLabelCollection, Label,
     LabelCollection,
@@ -78,6 +80,10 @@ pub struct Schematic {
 
     pub symbols: SymbolCollection,
     pub wires: WireCollection,
+    pub buses: Vec<Bus>,
+    pub bus_entries: Vec<BusEntry>,
+    /// `bus_alias` declarations, in the order the sheet states them.
+    pub bus_aliases: Vec<BusAlias>,
     pub labels: LabelCollection,
     pub global_labels: GlobalLabelCollection,
     pub hierarchical_labels: HierarchicalLabelCollection,
@@ -86,7 +92,7 @@ pub struct Schematic {
     pub no_connects: Vec<NoConnect>,
     pub sheets: SheetCollection,
 
-    /// All nodes we don't model (title_block, lib_symbols, bus, sheet_instances, …)
+    /// All nodes we don't model (title_block, lib_symbols, sheet_instances, …)
     /// preserved verbatim so round-trips don't lose anything.
     pub raw_other: Vec<SexpNode>,
 }
@@ -148,6 +154,30 @@ impl Schematic {
         self.wires.get_mut(last).expect("just pushed")
     }
 
+    /// Add a bus segment. Returns a mutable reference to it.
+    ///
+    /// A bus is not a thick wire: KiCAD's connectivity joins a bus to a wire
+    /// only through a `bus_entry`, so a caller that means "one net" wants
+    /// [`add_wire`](Self::add_wire).
+    pub fn add_bus(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) -> &mut Bus {
+        self.buses.push(Bus::new(x1, y1, x2, y2));
+        self.buses.last_mut().expect("just pushed")
+    }
+
+    /// Add a bus entry — the stub that taps one member out of a bus.
+    pub fn add_bus_entry(&mut self, x: f64, y: f64, dx: f64, dy: f64) -> &mut BusEntry {
+        self.bus_entries.push(BusEntry::with_size(x, y, dx, dy));
+        self.bus_entries.last_mut().expect("just pushed")
+    }
+
+    /// Declare a bus alias, replacing any declaration of the same name — the
+    /// sheet cannot mean two things by one name.
+    pub fn add_bus_alias(&mut self, name: &str, members: Vec<String>) -> &mut BusAlias {
+        self.bus_aliases.retain(|alias| alias.name != name);
+        self.bus_aliases.push(BusAlias::new(name, members));
+        self.bus_aliases.last_mut().expect("just pushed")
+    }
+
     /// Add a junction. Returns a mutable reference to it.
     pub fn add_junction(&mut self, x: f64, y: f64) -> &mut Junction {
         self.junctions.push(Junction::new(x, y));
@@ -181,7 +211,8 @@ impl Schematic {
         let hl = HierarchicalLabel {
             text: text.to_owned(),
             shape: Some(shape.to_owned()),
-            at: At::new(x, y),
+            // See Label::new — KiCAD 10 requires the angle.
+            at: At::with_rotation(x, y, 0.0),
             uuid: uuid::Uuid::new_v4().to_string(),
             effects: None,
         };
@@ -374,6 +405,9 @@ impl Schematic {
         let mut texts: Vec<Text> = vec![];
         let mut no_connects: Vec<NoConnect> = vec![];
         let mut sheets: Vec<Sheet> = vec![];
+        let mut buses: Vec<Bus> = vec![];
+        let mut bus_entries: Vec<BusEntry> = vec![];
+        let mut bus_aliases: Vec<BusAlias> = vec![];
         let mut raw_other: Vec<SexpNode> = vec![];
 
         for child in root.args() {
@@ -400,6 +434,18 @@ impl Schematic {
                 Some("wire") => match Wire::from_sexp(child) {
                     Ok(w) => wires.push(w),
                     Err(e) => eprintln!("[konnect-schematic-editor] skipping wire: {e}"),
+                },
+                Some("bus") => match Bus::from_sexp(child) {
+                    Ok(b) => buses.push(b),
+                    Err(e) => eprintln!("[konnect-schematic-editor] skipping bus: {e}"),
+                },
+                Some("bus_entry") => match BusEntry::from_sexp(child) {
+                    Ok(be) => bus_entries.push(be),
+                    Err(e) => eprintln!("[konnect-schematic-editor] skipping bus_entry: {e}"),
+                },
+                Some("bus_alias") => match BusAlias::from_sexp(child) {
+                    Ok(ba) => bus_aliases.push(ba),
+                    Err(e) => eprintln!("[konnect-schematic-editor] skipping bus_alias: {e}"),
                 },
                 Some("label") | Some("net_label") => match Label::from_sexp(child) {
                     Ok(l) => labels.push(l),
@@ -447,6 +493,9 @@ impl Schematic {
             paper,
             symbols: SymbolCollection::new(symbols),
             wires: WireCollection::new(wires),
+            buses,
+            bus_entries,
+            bus_aliases,
             labels: LabelCollection::new(labels),
             global_labels: GlobalLabelCollection::new(glob_labels),
             hierarchical_labels: HierarchicalLabelCollection::new(hier_labels),
@@ -494,16 +543,29 @@ impl Schematic {
             }
         }
 
+        // Bus aliases are declarations, not geometry: KiCAD writes them with
+        // the header, before anything that can reference them.
+        for alias in &self.bus_aliases {
+            c.push(alias.to_sexp());
+        }
+
         // Typed elements in KiCAD 10 required order:
-        // junctions → no_connects → wires → texts → labels → sheets → symbols (LAST)
+        // junctions → no_connects → bus_entries → wires → buses → texts →
+        // labels → sheets → symbols (LAST)
         for j in &self.junctions {
             c.push(j.to_sexp());
         }
         for nc in &self.no_connects {
             c.push(nc.to_sexp());
         }
+        for be in &self.bus_entries {
+            c.push(be.to_sexp());
+        }
         for w in self.wires.iter() {
             c.push(w.to_sexp());
+        }
+        for b in &self.buses {
+            c.push(b.to_sexp());
         }
         for t in &self.texts {
             c.push(t.to_sexp());

@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 165 | 47 | 6 | 104 | 3 | 5 | 29.4 % |
+| KiCAD domains | 169 | 52 | 6 | 104 | 2 | 5 | 31.7 % |
 | server's own | 40 | 15 | 3 | 22 | 0 | 0 | 37.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -62,7 +62,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`wires`](#wires) | 8 | 4 | 0 | 4 | 0 | 0 | 50.0 % |
 | [`nets`](#nets) | 25 | 5 | 4 | 16 | 0 | 0 | 20.0 % |
 | [`labels`](#labels) | 6 | 2 | 0 | 4 | 0 | 0 | 33.3 % |
-| [`buses`](#buses) | 1 | 0 | 0 | 0 | 1 | 0 | 0.0 % |
+| [`buses`](#buses) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`libraries`](#libraries) | 9 | 5 | 0 | 4 | 0 | 0 | 55.6 % |
 | [`footprints`](#footprints) | 7 | 1 | 0 | 6 | 0 | 0 | 14.3 % |
@@ -99,11 +99,11 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 
 | adapter | tools | needs a running KiCAD |
 |---|---|---|
-| `sexpr` | 120 | no |
+| `sexpr` | 124 | no |
 | `cli` | 22 | no |
 | `ipc` | 21 | yes |
 | `ipc→sexpr` | 5 | no |
-| `internal` | 18 | no |
+| `internal` | 19 | no |
 | `external` | 8 | no |
 | `process` | 3 | yes |
 
@@ -218,11 +218,13 @@ Not covered by any tool:
 
 ### buses
 
-Not covered by any tool:
-
-| capability | status | why |
-|---|---|---|
-| bus entries, bus aliases, bus-member expansion | GAP | no tool writes or reads a bus; the schematic engine handles wires and labels only, so a bus-based design cannot be authored here |
+| tool | toolset | adapter | status | proof | evidence | note |
+|---|---|---|---|---|---|---|
+| `add_bus` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `add_bus_entry` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `add_bus_alias` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `list_buses` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `expand_bus` | `sch_buses` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
 
 ### hierarchy
 
@@ -347,7 +349,7 @@ Not covered by any tool:
 
 | capability | status | why |
 |---|---|---|
-| write the board stackup (material, thickness, dielectric) | GUI_ONLY_NO_API | `UpdateBoardStackup` is declared in KiCad 10's board protos and not implemented; the stackup is read-only over IPC and editable only in the GUI |
+| write the board stackup (material, thickness, dielectric) | GUI_ONLY_NO_API | `UpdateBoardStackup` is declared in KiCad 10's board protos and marked '**not yet implemented**' there (crates/konnect-ipc/proto/board/board_commands.proto, pinned by that crate's stackup_write_is_unimplemented test); the stackup is read-only over IPC and editable only in the GUI |
 
 ### rules
 
@@ -530,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-126 of 197 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+126 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|

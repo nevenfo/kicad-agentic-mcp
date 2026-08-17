@@ -67,7 +67,10 @@ impl Label {
     pub fn new(text: impl Into<String>, x: f64, y: f64) -> Self {
         Label {
             text: text.into(),
-            at: At::new(x, y),
+            // KiCAD 10 refuses to load a label whose `at` has no angle:
+            // `(at x y)` fails, `(at x y 0)` loads. Proved against kicad-cli
+            // in konnect-core's bus_live probe.
+            at: At::with_rotation(x, y, 0.0),
             shape: None,
             uuid: uuid::Uuid::new_v4().to_string(),
             effects: None,
@@ -145,7 +148,10 @@ impl GlobalLabel {
         GlobalLabel {
             text: text.into(),
             shape: shape.into(),
-            at: At::new(x, y),
+            // KiCAD 10 refuses to load a label whose `at` has no angle:
+            // `(at x y)` fails, `(at x y 0)` loads. Proved against kicad-cli
+            // in konnect-core's bus_live probe.
+            at: At::with_rotation(x, y, 0.0),
             uuid: uuid::Uuid::new_v4().to_string(),
             properties: vec![],
             effects: None,
@@ -374,3 +380,26 @@ macro_rules! label_collection {
 label_collection!(LabelCollection, Label);
 label_collection!(GlobalLabelCollection, GlobalLabel);
 label_collection!(HierarchicalLabelCollection, HierarchicalLabel);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// KiCAD 10 refuses to load a schematic whose label has no angle in its
+    /// `at`: `(at x y)` fails, `(at x y 0)` loads. Every label type was
+    /// affected, and the tools only escaped it by calling `set_rotation`
+    /// afterwards. Proved against a real `kicad-cli` by konnect-core's
+    /// `bus_live` probe; pinned here so the default cannot quietly go back.
+    #[test]
+    fn every_label_is_written_with_an_angle() {
+        let written = |node: SexpNode| {
+            let at = node.find("at").expect("a label carries an `at`");
+            at.scalar_args().len()
+        };
+        assert_eq!(written(Label::new("DATA0", 10.0, 20.0).to_sexp()), 3);
+        assert_eq!(
+            written(GlobalLabel::new("VBUS", "input", 10.0, 20.0).to_sexp()),
+            3
+        );
+    }
+}

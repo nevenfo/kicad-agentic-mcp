@@ -606,6 +606,12 @@ pub static MANIFEST: &[Capability] = &[
             "one straight segment per net, offset perpendicular by (gap + width) / 2: no length matching, no skew budget, no impedance target and no vias",
         ),
     ),
+    // ── sch_buses ───────────────────────────────────────────────────────────
+    cap("add_bus", Domain::Buses, Adapter::Sexpr),
+    cap("add_bus_entry", Domain::Buses, Adapter::Sexpr),
+    cap("add_bus_alias", Domain::Buses, Adapter::Sexpr),
+    cap("list_buses", Domain::Buses, Adapter::Sexpr),
+    cap("expand_bus", Domain::Buses, Adapter::Internal),
     // ── pcb_export ──────────────────────────────────────────────────────────
     cap("export_gerber", Domain::Gerber, Adapter::Cli),
     cap("export_drill", Domain::Drill, Adapter::Cli),
@@ -764,17 +770,10 @@ impl MissingCapability {
 
 pub static MISSING: &[MissingCapability] = &[
     MissingCapability {
-        domain: Domain::Buses,
-        capability: "bus entries, bus aliases, bus-member expansion",
-        limitation: Limitation::Gap(
-            "no tool writes or reads a bus; the schematic engine handles wires and labels only, so a bus-based design cannot be authored here",
-        ),
-    },
-    MissingCapability {
         domain: Domain::Stackup,
         capability: "write the board stackup (material, thickness, dielectric)",
         limitation: Limitation::GuiOnlyNoApi(
-            "`UpdateBoardStackup` is declared in KiCad 10's board protos and not implemented; the stackup is read-only over IPC and editable only in the GUI",
+            "`UpdateBoardStackup` is declared in KiCad 10's board protos and marked '**not yet implemented**' there (crates/konnect-ipc/proto/board/board_commands.proto, pinned by that crate's stackup_write_is_unimplemented test); the stackup is read-only over IPC and editable only in the GUI",
         ),
     },
     MissingCapability {

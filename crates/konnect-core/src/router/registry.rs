@@ -63,6 +63,12 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
         tool_count: 7,
     },
     ToolsetMeta {
+        name: "sch_buses",
+        description: "Buses: bus segments, bus entries, bus aliases, and expanding a bus name into the nets it carries",
+        category: "schematic",
+        tool_count: 5,
+    },
+    ToolsetMeta {
         name: "sch_hierarchy",
         description: "Hierarchical sheets: add/edit/move/delete/duplicate a sheet, hierarchy and page-numbering queries, import/add/edit/delete sheet pins, pin/label sync validation",
         category: "schematic",
@@ -164,6 +170,7 @@ pub fn tools_for(name: &str) -> Option<Vec<ToolDef>> {
         "sch_analysis" => sch_analysis::tools(),
         "sch_batch" => sch_batch::tools(),
         "sch_export" => sch_export::tools(),
+        "sch_buses" => sch_buses::tools(),
         "sch_hierarchy" => sch_hierarchy::tools(),
         "pcb_board" => pcb_board::tools(),
         "pcb_components" => pcb_components::tools(),
