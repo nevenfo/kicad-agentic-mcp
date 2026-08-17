@@ -889,7 +889,7 @@ None.
 The probe's in-process answer equals `kicad-cli`'s on the case that fails today,
 and the suffix/manifest equality test still passes.
 
-## J.2 — Raise capability coverage
+## J.2 — Raise capability coverage — DONE
 
 ### Dépendances
 F.4 (the matrix is the instrument).
@@ -1027,7 +1027,7 @@ None. Blocks D.9's validation and most of J.2's PCB half.
 ### Validation
 Either an unattended PCB E2E in the gate, or a written constraint with evidence.
 
-## J.4 — Adapter matrix
+## J.4 — Adapter matrix — DONE
 
 ### Objectif
 For each capability, which concrete backend actually runs (`ipc` / `cli` /
@@ -1037,7 +1037,15 @@ For each capability, which concrete backend actually runs (`ipc` / `cli` /
 F.4.
 
 ### Tâches
-- [ ] J.4.1 Generate it from the same manifest the capability matrix uses
+- [x] J.4.1 Generate it from the same manifest the capability matrix uses —
+      it is *in* `docs/capability-matrix.md` rather than beside it: an `adapter`
+      column on every tool row, an Adapters summary counting them and saying
+      which need a running KiCAD, and the same equality test guarding both. A
+      separate document would be a second thing to drift.
+- [x] J.4.2 Make the fallback observable at run time too, not only in the
+      document: an `ipc→sexpr` tool reports which backend answered
+      (`"source": "file"` with no KiCAD listening), pinned by
+      `board_and_labels.rs`
 
 ### Validation
 Generated, committed, and equality-tested like the capability matrix.
