@@ -118,6 +118,7 @@
 		)
 	)
 	(net 0 "")
+	(net 1 "GND")
 	(footprint "MountingHole:MountingHole_2.7mm_M2.5_DIN965"
 		(locked yes)
 		(layer "F.Cu")
@@ -628,6 +629,14 @@
 				(xy 215 47.5) (xy 55 47.5) (xy 55 45) (xy 215 45)
 			)
 		)
+	)
+	(segment
+		(start 30 30)
+		(end 50 30)
+		(width 0.25)
+		(layer "F.Cu")
+		(net 1)
+		(uuid "0b3c1d42-9e77-4d1a-8f60-2a4c5e6b7d80")
 	)
 	(embedded_fonts no)
 	)
