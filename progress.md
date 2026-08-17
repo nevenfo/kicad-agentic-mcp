@@ -7,27 +7,27 @@ L.2 (failure injection and concurrency) is in progress.
 
 ## Tâche actuelle
 
-L.2.1 — fuzz the S-expression parser/writer round trip. Delegated to a worker.
-The gap is not the parser (already covered by
-`crates/konnect-sexp/tests/proptest_parser.rs`) but the *write* round trip:
-this crate has no tree serialiser, so every write is "locate a block by byte
-offset, replace that text, rewrite the file". Nothing fuzzes that path, and the
-existing file explicitly confines itself to ASCII — while `apply_edits` uses
-`String::replace_range`, which panics on a non-char-boundary offset, and real
-KiCAD files carry UTF-8.
+L.2.2 — inject failures per `TransientClass` and assert the recovery policy.
+What exists today is the *classification*: `ToolErrorKind::transient_class()`
+in `crates/konnect-core/src/mcp/error.rs` maps each error to
+`None | Network | Timeout | Lock | State`, and its unit tests check that map.
+What does not exist is the injection: nothing provokes a real held lock, a real
+stale revision or a real timeout and then asserts the policy the class
+advertises actually holds end to end — `Lock` retries as is and succeeds,
+`State` stays failing until the caller re-reads, and no partial batch survives.
 
 ## Dernière tâche validée
 
-L.1.6 — the frozen-baseline test re-derives its measurement from the tree at
-`BASELINE_COMMIT`, which a depth-1 checkout does not contain; the `check` job
-now fetches full history.
+L.2.1 — the writer-side round trip is fuzzed.
 
 Validation :
-- CI run 32031309526 on `agentic/main`: **all 7 jobs green** — `Format`,
-  `Clippy`, `Check & Test` on ubuntu/macos/windows, `Schematic viewer`,
-  `PCM packaging`. This is the first fully green run this fork has ever had.
-- L.1.4 was still `[ ]` in `plan.md` despite being committed at `439015a`; that
-  same run is its proof, so it is now checked.
+- `cargo test -p konnect-sexp`: 93 + 8 + 7 unit/property tests + doctests, all
+  pass; `cargo clippy -p konnect-sexp --locked --all-targets -- -D warnings`
+  clean; `cargo fmt --all -- --check` clean
+- negative control: removing string-awareness from `find_block_starts` fails
+  the health property, shrunk to `(kicad_sch (symbol "(label 😀)"))`
+- no production bug found, and `writer.rs` is unchanged. See L.2.1 in `plan.md`
+  for why the UTF-8 boundary hazard this task targeted cannot fire
 
 ## Décisions actives
 
@@ -88,8 +88,12 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 - `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits`,
   and the block finders (`find_balanced_block`, `find_block_starts`,
   `find_direct_child_blocks`, `find_enclosing_block`) whose byte offsets feed it
-- `crates/konnect-sexp/tests/proptest_parser.rs` — the existing parser
-  properties; L.2.1 adds a writer-side sibling rather than editing this one
+- `crates/konnect-sexp/tests/proptest_parser.rs` (parser properties) and
+  `tests/proptest_writer.rs` (L.2.1, writer properties). The writer generator
+  carries its own ground truth — never assert one finder against another
+- `crates/konnect-core/src/mcp/error.rs` — `TransientClass`,
+  `retry_after_ms()` (Lock 250 ms, Network/Timeout 1 s, None/State none) and
+  `ToolErrorKind::transient_class()`. L.2.2's subject
 - `.github/workflows/ci.yml` — triggers on `agentic/main` as well as `main`;
   clippy is `--all-targets` and the `check` job fetches full history. Dispatch
   the KiCad E2E one as `gh workflow run e2e-kicad.yml -R
@@ -112,7 +116,6 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Review the L.2.1 worker's result, run `cargo test -p konnect-sexp` and
-`cargo clippy -p konnect-sexp --locked --all-targets -- -D warnings` as the
-final check, then continue with L.2.2 (inject failures per `TransientClass`
-and assert the recovery policy).
+Implement L.2.2 — provoke a real failure of each `TransientClass` and assert
+the recovery policy end to end, then run `cargo test -p konnect-core` and
+`cargo clippy -p konnect-core --locked --all-targets -- -D warnings`.

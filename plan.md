@@ -1202,7 +1202,25 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 ## L.2 — Failure injection and concurrency
 
 ### Tâches
-- [ ] L.2.1 Fuzz the S-expression parser/writer round trip
+- [x] L.2.1 Fuzz the S-expression parser/writer round trip. The round trip that
+      exists is not parse → serialize → parse — this crate has no tree
+      serialiser — but parse → locate a block by byte offset → replace that
+      text → reparse, which is how every write in the project happens.
+      `tests/proptest_writer.rs` fuzzes that path against a generator that
+      knows its own ground truth (block counts come from the generated tree,
+      never from a second call to the code under test): empty-edit identity,
+      excise/reinsert byte-for-byte, replacement still reparses, every
+      `find_block_starts` offset is a char boundary landing on `(tag`, deleting
+      a tag's direct children drops its count by exactly the number removed,
+      and none of the six finders panics on arbitrary content at an arbitrary
+      offset. **No production bug found**, including the one this task was
+      aimed at: `apply_edits` uses `String::replace_range`, which panics on a
+      non-boundary offset, but the finders only ever match ASCII bytes
+      (`(`, `)`, `"`, `\`), and no UTF-8 continuation byte can equal one — so
+      every offset they return is a valid boundary by construction, on CJK and
+      emoji alike. The properties still earn their place: the negative control
+      (removing string-awareness from `find_block_starts`) is caught and
+      shrunk to `(kicad_sch (symbol "(label 😀)"))`
 - [ ] L.2.2 Inject failures per `TransientClass` and assert the recovery policy
 - [ ] L.2.3 Concurrent user edits: a GUI holding the same file open is outside
       the file-level rollback (D12); prove `base_revisions` catches it
