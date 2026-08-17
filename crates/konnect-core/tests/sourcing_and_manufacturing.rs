@@ -267,23 +267,44 @@ async fn copying_a_routing_pattern_needs_a_board_and_a_region() {
 
 // ─── Reaches a third party ───────────────────────────────────────────────────
 
-/// `download_jlcpcb_database` fetches a multi-megabyte database over the
-/// network. `#[ignore]`d so a test run never does that, and `gated` in the
-/// matrix for the same reason:
+/// `download_jlcpcb_database` cannot fetch anything: its source URL,
+/// `https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db`, returns HTTP
+/// 404 (checked 2026-08-17). The upstream project still exists, so this is a
+/// moved file rather than a retired one — recorded as J.2.4.3 and declared a
+/// `GAP` in the matrix, because every JLCPCB tool is unusable until it is
+/// fixed.
+///
+/// What this probe pins is that the failure is *reported*, not swallowed: a
+/// download that quietly leaves no file behind while claiming success is how a
+/// caller ends up believing the database is there. `#[ignore]`d because it
+/// reaches the network:
 ///
 ///     cargo test -p konnect-core --test sourcing_and_manufacturing -- --ignored
 #[tokio::test]
-#[ignore = "downloads the JLCPCB parts database over the network; run with --ignored"]
-async fn the_parts_database_can_be_downloaded_and_is_then_reported_as_present() {
+#[ignore = "reaches the network; run with --ignored"]
+async fn the_dead_database_url_fails_loudly_rather_than_silently() {
     let h = Harness::new();
     let db = h.path("jlcpcb.sqlite3");
 
-    h.json(
-        "download_jlcpcb_database",
-        json!({ "output_path": harness::as_str(&db), "force": true }),
-    )
-    .await;
-    assert!(db.is_file(), "no database at {}", db.display());
+    let outcome = h
+        .call(
+            "download_jlcpcb_database",
+            json!({ "output_path": harness::as_str(&db), "force": true }),
+        )
+        .await;
+    let reported = match outcome {
+        Ok(result) => harness::body(&result).to_string(),
+        Err(e) => e.to_string(),
+    };
+    assert!(
+        reported.contains("404") || reported.to_lowercase().contains("failed"),
+        "the download failed and the caller was not told: {reported}"
+    );
+    assert!(
+        !db.exists(),
+        "a failed download left a file behind at {}",
+        db.display()
+    );
 }
 
 /// `snapshot_project` renders PDFs through `kicad-cli`, so it needs one.

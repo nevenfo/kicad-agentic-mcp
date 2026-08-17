@@ -176,6 +176,57 @@ async fn editing_a_component_renames_and_revalues_it() {
     );
 }
 
+/// A symbol carries only the properties it was given, and the fixture's
+/// resistors have no `Footprint` at all. Setting one has to add it — refusing
+/// made the tool unable to do the commonest edit after placement (J.2.4.1).
+#[tokio::test]
+async fn a_field_the_symbol_does_not_have_yet_is_added_rather_than_refused() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+
+    let edited = h
+        .json(
+            "edit_schematic_component",
+            json!({
+                "schematic": sch,
+                "reference": "R1",
+                "footprint": "Resistor_SMD:R_0603_1608Metric"
+            }),
+        )
+        .await;
+    assert!(
+        edited["errors"].is_null(),
+        "a missing property is added, not reported as an error: {edited}"
+    );
+
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        text.contains("R_0603_1608Metric"),
+        "the footprint was not written:\n{text}"
+    );
+
+    // And setting it again edits the property rather than adding a second one.
+    h.json(
+        "edit_schematic_component",
+        json!({
+            "schematic": sch,
+            "reference": "R1",
+            "footprint": "Resistor_SMD:R_0805_2012Metric"
+        }),
+    )
+    .await;
+    let again = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert_eq!(
+        again.matches("(property \"Footprint\"").count(),
+        1,
+        "R1 ended up with two Footprint properties:\n{again}"
+    );
+    assert!(
+        again.contains("R_0805_2012Metric") && !again.contains("R_0603_1608Metric"),
+        "the second edit did not replace the first:\n{again}"
+    );
+}
+
 /// `add_component_annotation` adds a free-form property, which is how a caller
 /// carries information KiCAD has no field for.
 #[tokio::test]
@@ -263,13 +314,12 @@ async fn deleting_a_component_leaves_the_others_alone() {
 
 // ─── Moving several at once ──────────────────────────────────────────────────
 
-/// `move_connected` does *not* stretch the wires, whatever its name suggests:
-/// it delegates to the plain move. Its description and the matrix say so now
-/// (`PARTIAL`), and this pins the behaviour they describe — so implementing the
-/// stretch (J.2.4.2) has to change this test on purpose rather than by
-/// accident.
+/// `move_connected` moves the symbol *and* drags the wire ends that were on
+/// its pins (J.2.4.2). Before that it delegated to the plain move and left
+/// every attached wire behind, silently breaking the connection the caller was
+/// trying to preserve.
 #[tokio::test]
-async fn moving_connected_leaves_the_attached_wire_behind() {
+async fn moving_connected_drags_the_attached_wire_end_along() {
     let h = Harness::new();
     let sch = sheet(&h).await;
     h.json(
@@ -282,11 +332,16 @@ async fn moving_connected_leaves_the_attached_wire_behind() {
     )
     .await;
 
-    h.json(
-        "move_connected",
-        json!({ "schematic": sch, "reference": "R1", "x": 88.9, "y": 50.8 }),
-    )
-    .await;
+    let result = h
+        .json(
+            "move_connected",
+            json!({ "schematic": sch, "reference": "R1", "x": 88.9, "y": 50.8 }),
+        )
+        .await;
+    assert_eq!(
+        result["wire_ends_dragged"], 1,
+        "one wire end was on R1's pin 1: {result}"
+    );
 
     let moved = h
         .json(
@@ -294,19 +349,53 @@ async fn moving_connected_leaves_the_attached_wire_behind() {
             json!({ "schematic": sch, "reference": "R1" }),
         )
         .await;
-    assert_eq!(moved["x"], 88.9, "the symbol itself moved: {moved}");
+    assert_eq!(moved["x"], 88.9, "the symbol moved: {moved}");
 
     let wires = h
         .json("list_schematic_wires", json!({ "schematic": sch }))
         .await;
-    let x1 = wires["wires"][0]["x1"]
-        .as_f64()
-        .expect("the wire reports its start");
-    assert!(
-        (x1 - pins::R1_PIN1.0).abs() < 0.001,
-        "the wire moved — if the stretch is implemented, this test and the PARTIAL \
-         limitation change together: {wires}"
+    let wire = &wires["wires"][0];
+    let (x1, x2) = (
+        wire["x1"].as_f64().expect("the wire reports its start"),
+        wire["x2"].as_f64().expect("the wire reports its end"),
     );
+    assert!(
+        (x1 - 88.9).abs() < 0.01,
+        "the end on R1's pin should have followed it to 88.9: {wires}"
+    );
+    assert!(
+        (x2 - pins::R2_PIN1.0).abs() < 0.01,
+        "the end on R2 must not have moved: {wires}"
+    );
+}
+
+/// Only the ends that were on a moved pin are dragged: a wire elsewhere on the
+/// sheet stays where it was drawn.
+#[tokio::test]
+async fn a_wire_that_touches_nothing_is_left_alone_by_move_connected() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+    h.json(
+        "add_wire",
+        json!({ "schematic": sch, "x1": 25.4, "y1": 25.4, "x2": 38.1, "y2": 25.4 }),
+    )
+    .await;
+
+    let result = h
+        .json(
+            "move_connected",
+            json!({ "schematic": sch, "reference": "R1", "x": 88.9, "y": 50.8 }),
+        )
+        .await;
+    assert_eq!(
+        result["wire_ends_dragged"], 0,
+        "nothing was attached to R1: {result}"
+    );
+
+    let wires = h
+        .json("list_schematic_wires", json!({ "schematic": sch }))
+        .await;
+    assert_eq!(wires["wires"][0]["x1"], 25.4, "the loose wire moved: {wires}");
 }
 
 /// `bulk_move_schematic_components` and `move_region` both shift by a delta.

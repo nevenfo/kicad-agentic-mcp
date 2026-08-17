@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 119 | 20 | 23 | 2 | 5 | 72.6 % |
+| KiCAD domains | 169 | 119 | 19 | 23 | 3 | 5 | 72.6 % |
 | server's own | 40 | 27 | 10 | 3 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -58,7 +58,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 |---|---|---|---|---|---|---|---|
 | [`project`](#project) | 5 | 2 | 0 | 3 | 0 | 0 | 40.0 % |
 | [`schematic`](#schematic) | 9 | 6 | 1 | 1 | 1 | 0 | 66.7 % |
-| [`symbols`](#symbols) | 19 | 16 | 2 | 1 | 0 | 0 | 84.2 % |
+| [`symbols`](#symbols) | 19 | 17 | 1 | 1 | 0 | 0 | 89.5 % |
 | [`wires`](#wires) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`nets`](#nets) | 25 | 11 | 13 | 1 | 0 | 0 | 44.0 % |
 | [`labels`](#labels) | 6 | 6 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -83,7 +83,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`drill`](#drill) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`pick_place`](#pick_place) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`datasheet`](#datasheet) | 2 | 2 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`sourcing`](#sourcing) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
+| [`sourcing`](#sourcing) | 5 | 4 | 0 | 0 | 1 | 0 | 80.0 % |
 | [`export`](#export) | 11 | 10 | 1 | 0 | 0 | 0 | 90.9 % |
 | [`review`](#review) | 6 | 0 | 6 | 0 | 0 | 0 | 0.0 % |
 | [`config`](#config) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -149,7 +149,7 @@ Not covered by any tool:
 | `list_schematic_components` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/probes/graph.yaml` |  |
 | `move_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `rotate_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `move_connected` | `sch_components` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | moves the symbol only — wire stubs are not stretched, so wires attached to the moved pins are left behind and the connection is lost (J.2.3.2) |
+| `move_connected` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `move_region` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `annotate_schematic` | `sch_components` | `cli` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `get_schematic_pin_locations` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
@@ -444,7 +444,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `download_jlcpcb_database` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| `download_jlcpcb_database` | `integration` | `external` | GAP | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | the source URL is dead: https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db returns HTTP 404 (checked 2026-08-17), so the database cannot be fetched and every JLCPCB tool stays unusable until a working source replaces it (J.2.4.3) |
 | `search_jlcpcb_parts` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
 | `get_jlcpcb_part` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
 | `suggest_jlcpcb_alternatives` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |

@@ -424,14 +424,7 @@ pub static MANIFEST: &[Capability] = &[
     cap("list_schematic_components", Domain::Symbols, Adapter::Sexpr),
     cap("move_schematic_component", Domain::Symbols, Adapter::Sexpr),
     cap("rotate_schematic_component", Domain::Symbols, Adapter::Sexpr),
-    cap_lim(
-        "move_connected",
-        Domain::Symbols,
-        Adapter::Sexpr,
-        Limitation::Partial(
-            "moves the symbol only — wire stubs are not stretched, so wires attached to the moved pins are left behind and the connection is lost (J.2.3.2)",
-        ),
-    ),
+    cap("move_connected", Domain::Symbols, Adapter::Sexpr),
     cap("move_region", Domain::Symbols, Adapter::Sexpr),
     cap("annotate_schematic", Domain::Symbols, Adapter::Cli),
     cap("get_schematic_pin_locations", Domain::Symbols, Adapter::Sexpr),
@@ -649,7 +642,14 @@ pub static MANIFEST: &[Capability] = &[
     cap("search_footprints", Domain::Footprints, Adapter::Sexpr),
     cap("get_symbol_info", Domain::Libraries, Adapter::Sexpr),
     // ── integration ─────────────────────────────────────────────────────────
-    cap("download_jlcpcb_database", Domain::Sourcing, Adapter::External),
+    cap_lim(
+        "download_jlcpcb_database",
+        Domain::Sourcing,
+        Adapter::External,
+        Limitation::Gap(
+            "the source URL is dead: https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db returns HTTP 404 (checked 2026-08-17), so the database cannot be fetched and every JLCPCB tool stays unusable until a working source replaces it (J.2.4.3)",
+        ),
+    ),
     cap("search_jlcpcb_parts", Domain::Sourcing, Adapter::External),
     cap("get_jlcpcb_part", Domain::Sourcing, Adapter::External),
     cap(

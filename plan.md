@@ -996,14 +996,22 @@ whose fix is real work.
 None.
 
 ### Tâches
-- [ ] J.2.4.1 `edit_schematic_component` cannot set a field the symbol has no
-      property for: `footprint` on a symbol with no `Footprint` property comes
-      back "'R2' has no 'Footprint' property". Adding it is what
-      `add_component_annotation` already does
-- [ ] J.2.4.2 `move_connected` does not stretch wire stubs — it delegates to
-      `move_schematic_component`. Now declared `PARTIAL` with its description
-      corrected (J.2.3.2); implementing the stretch retires the limitation and
-      flips `moving_connected_leaves_the_attached_wire_behind`
+- [x] J.2.4.1 `edit_schematic_component` could not set a field the symbol has no
+      property for — `footprint` on a symbol without one came back "'R2' has no
+      'Footprint' property", which is the commonest edit after placement. A
+      missing property is now created, in the same shape
+      `add_component_annotation` writes, and setting it again edits it rather
+      than adding a second
+- [x] J.2.4.2 `move_connected` drags the wire ends that were on the moved pins,
+      matched per pin number so a rotation still lands each wire on its own pin.
+      Reports `wire_ends_dragged`; the `PARTIAL` limitation is retired and the
+      description says what it now does
+- [ ] J.2.4.3 `download_jlcpcb_database` cannot fetch anything: its source,
+      `https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db`, returns HTTP
+      404 (checked 2026-08-17) while the upstream project still exists, so the
+      file moved. Declared a `GAP` and pinned by an `#[ignore]`d probe asserting
+      the failure is reported and leaves no file behind. Fixing it needs the new
+      URL, which is an external lookup this session could not make
 
 ### Validation
 Each fix lands with the test that proved the defect, and the `PARTIAL` row it

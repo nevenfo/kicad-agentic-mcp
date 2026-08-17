@@ -151,9 +151,9 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "move_connected",
-            "Move a symbol. Wire stubs are NOT stretched: the wires stay where they are and \
-             the connection to the moved pins is lost, exactly as move_schematic_component \
-             would leave it. Redraw the affected wires, or move the symbol before wiring it.",
+            "Move a symbol and drag the wire ends that were sitting on its pins along with it, \
+             so the connections survive the move. Reports how many wire ends were dragged; \
+             wires that touched nothing are left where they were drawn.",
             json!({
                 "type": "object",
                 "properties": {
@@ -489,41 +489,31 @@ async fn handle_edit_schematic_component(
     let expected = content.clone();
     let mut changed = Vec::new();
 
-    // Helper: update a property field value in-place within the symbol block
-    // for `ref_`. Returns the reason on failure so the caller can report it
-    // instead of silently claiming success.
-    let update_field =
-        |content: &str, ref_: &str, field: &str, new_val: &str| -> Result<String, String> {
-            let (sym_start, sym_end) = find_symbol_instance_block(content, ref_)
-                .ok_or_else(|| format!("symbol '{ref_}' not found in this schematic"))?;
-            let sym_block = &content[sym_start..sym_end];
-            let field_search = format!(r#"(property "{field}" ""#);
-            let field_offset = sym_block
-                .find(&field_search)
-                .map(|o| sym_start + o + field_search.len())
-                .ok_or_else(|| format!("'{ref_}' has no '{field}' property"))?;
-            // Find the closing quote of the current value
-            let val_end = content[field_offset..]
-                .find('"')
-                .map(|o| field_offset + o)
-                .ok_or_else(|| format!("'{field}' property on '{ref_}' is malformed"))?;
-            Ok(format!(
-                "{}{}{}",
-                &content[..field_offset],
-                new_val,
-                &content[val_end..]
-            ))
-        };
-
     let mut errors: Vec<String> = Vec::new();
-    let mut apply = |content: &mut String, field: &str, new_val: &str| match update_field(
-        content, &reference, field, new_val,
-    ) {
-        Ok(updated) => {
-            *content = updated;
-            changed.push(format!("{} → {}", field, new_val));
+    // Set a property, adding it when the symbol has none.
+    //
+    // A symbol carries only the properties it was given: a part placed without
+    // a footprint has no `Footprint` property at all, and refusing to set one
+    // made the tool unable to do the single most common edit after placement
+    // (J.2.4.1). A missing property is now created, exactly as
+    // `add_component_annotation` creates one.
+    let mut apply = |content: &mut String, field: &str, new_val: &str| {
+        match update_field(content, &reference, field, new_val) {
+            Ok(updated) => {
+                *content = updated;
+                changed.push(format!("{} → {}", field, new_val));
+            }
+            Err(FieldError::MissingProperty) => {
+                match insert_property(content, &reference, field, new_val) {
+                    Ok(updated) => {
+                        *content = updated;
+                        changed.push(format!("{} → {} (added)", field, new_val));
+                    }
+                    Err(why) => errors.push(format!("{field}: {why}")),
+                }
+            }
+            Err(other) => errors.push(format!("{field}: {other}")),
         }
-        Err(why) => errors.push(format!("{field}: {why}")),
     };
 
     // Every field is located by looking the symbol up by `reference`, so the
@@ -579,6 +569,84 @@ async fn handle_edit_schematic_component(
         result["errors"] = json!(errors);
     }
     Ok(CallToolResult::json(&result))
+}
+
+/// Why a property edit could not be applied. Separated from a plain string so
+/// the caller can tell "the symbol has no such property" — which is fixable by
+/// adding one — from a failure that is not.
+enum FieldError {
+    SymbolNotFound(String),
+    MissingProperty,
+    Malformed(String),
+}
+
+impl std::fmt::Display for FieldError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldError::SymbolNotFound(reference) => {
+                write!(f, "symbol '{reference}' not found in this schematic")
+            }
+            FieldError::MissingProperty => write!(f, "the symbol has no such property"),
+            FieldError::Malformed(field) => write!(f, "'{field}' property is malformed"),
+        }
+    }
+}
+
+/// Replace the value of a property the symbol already carries.
+fn update_field(
+    content: &str,
+    reference: &str,
+    field: &str,
+    new_val: &str,
+) -> Result<String, FieldError> {
+    let (sym_start, sym_end) = find_symbol_instance_block(content, reference)
+        .ok_or_else(|| FieldError::SymbolNotFound(reference.to_string()))?;
+    let sym_block = &content[sym_start..sym_end];
+    let field_search = format!(r#"(property "{field}" ""#);
+    let field_offset = sym_block
+        .find(&field_search)
+        .map(|o| sym_start + o + field_search.len())
+        .ok_or(FieldError::MissingProperty)?;
+    let val_end = content[field_offset..]
+        .find('"')
+        .map(|o| field_offset + o)
+        .ok_or_else(|| FieldError::Malformed(field.to_string()))?;
+    Ok(format!(
+        "{}{}{}",
+        &content[..field_offset],
+        new_val,
+        &content[val_end..]
+    ))
+}
+
+/// Add a property the symbol does not carry yet, hidden and at the origin —
+/// the same shape `add_component_annotation` writes, so a field added by
+/// either tool looks the same in the file.
+fn insert_property(
+    content: &str,
+    reference: &str,
+    field: &str,
+    value: &str,
+) -> Result<String, FieldError> {
+    let (sym_start, sym_end) = find_symbol_instance_block(content, reference)
+        .ok_or_else(|| FieldError::SymbolNotFound(reference.to_string()))?;
+    let sym_block = &content[sym_start..sym_end];
+    // Before `instances` if there is one, otherwise before the block's close.
+    let insert_rel = sym_block
+        .find("(instances")
+        .or_else(|| sym_block.rfind(')'))
+        .ok_or_else(|| FieldError::Malformed(field.to_string()))?;
+    let insert_abs = sym_start + insert_rel;
+
+    let property = format!(
+        "(property \"{field}\" \"{value}\"\n      (at 0 0 0)\n      (effects (font (size 1.27 1.27)) (hide yes))\n    )\n    "
+    );
+    Ok(format!(
+        "{}{}{}",
+        &content[..insert_abs],
+        property,
+        &content[insert_abs..]
+    ))
 }
 
 /// Point a renamed symbol's `instances` entries at its new designator.
@@ -744,12 +812,93 @@ async fn handle_rotate_schematic_component(
     }
 }
 
+/// Absolute pin positions of `reference`, keyed by pin number.
+///
+/// Returns an empty map rather than an error when the component or its
+/// embedded definition cannot be resolved: the caller uses this to *decide
+/// whether* a wire end belongs to a pin, and having no pins to match simply
+/// means nothing moves.
+fn pin_positions(sch_path: &std::path::Path, reference: &str) -> Vec<(String, (f64, f64))> {
+    let Ok((_, tree)) = read_schematic(sch_path) else {
+        return Vec::new();
+    };
+    let instances = extract_symbol_instances(&tree);
+    let Some(inst) = instances.iter().find(|i| i.reference == reference) else {
+        return Vec::new();
+    };
+    let lib_syms = tree
+        .find("lib_symbols")
+        .map(|n| n.find_all("symbol"))
+        .unwrap_or_default();
+    let Some(sym) = lib_syms
+        .iter()
+        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
+    else {
+        return Vec::new();
+    };
+    let transform = inst.pin_transform();
+    extract_lib_pins_for_unit(sym, inst.unit)
+        .iter()
+        .map(|pin| (pin.number.clone(), pin_endpoint(pin, transform)))
+        .collect()
+}
+
+/// Move a symbol and drag the wire ends that were sitting on its pins along
+/// with it (J.2.4.2).
+///
+/// This used to delegate to the plain move, which left every attached wire
+/// behind and silently broke the connection the caller was trying to preserve.
+/// The pins are measured before and after the move, and a wire end coincident
+/// with an old pin position is rewritten to the new one — matched per pin
+/// number, so a rotation that reorders the pins still lands each wire on the
+/// pin it was on.
 async fn handle_move_connected(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
-    // For now: delegate to simple move. Wire adjustment is a Phase 2 enhancement.
-    handle_move_schematic_component(args, ctx).await
+    let sch_path = get_path(args, "schematic")?;
+    let reference = match require_str(args, "reference") {
+        Ok(r) => r.to_string(),
+        Err(e) => return Ok(e),
+    };
+
+    let before = pin_positions(&sch_path, &reference);
+    let moved = handle_move_schematic_component(args, ctx).await?;
+    if moved.is_error {
+        return Ok(moved);
+    }
+    let after = pin_positions(&sch_path, &reference);
+
+    let mut sch = cse::Schematic::load(&sch_path)?;
+    let mut dragged = 0usize;
+    for (number, old) in &before {
+        let Some((_, new)) = after.iter().find(|(n, _)| n == number) else {
+            continue;
+        };
+        if konnect_sexp::geometry::points_coincident(old.0, old.1, new.0, new.1, 1e-9) {
+            continue;
+        }
+        for wire in sch.wires.iter_mut() {
+            for end in [&mut wire.start, &mut wire.end] {
+                if konnect_sexp::geometry::points_coincident(end.0, end.1, old.0, old.1, 0.01) {
+                    *end = *new;
+                    dragged += 1;
+                }
+            }
+        }
+    }
+    if dragged > 0 {
+        sch.overwrite()?;
+    }
+
+    let mut body: serde_json::Value = match moved.content.first() {
+        Some(crate::mcp::protocol::ToolContent::Text { text }) => {
+            serde_json::from_str(text).unwrap_or_else(|_| json!({ "moved": reference }))
+        }
+        _ => json!({ "moved": reference }),
+    };
+    body["wire_ends_dragged"] = json!(dragged);
+    Ok(CallToolResult::json(&body))
 }
 
 async fn handle_move_region(
