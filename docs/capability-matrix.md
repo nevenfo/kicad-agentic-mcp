@@ -107,6 +107,25 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 | `external` | 8 | no |
 | `process` | 3 | yes |
 
+## Meta-tools
+
+The always-visible gateway/discovery tools (`crates/konnect-core/src/router/meta_tools.rs`), classified separately from the domain tools above because none of their names carry a verb `tool_effect`'s table recognises — they would otherwise all fall back to `write`, which is the false positive that made the `read_only` bench tier reject `find_capabilities` and `load_tools`. `effect` means the same thing here as in the table above: whether the call can mutate the *project* on disk. A call that only changes this server's own session state — which tools `tools/list` currently exposes — is `read` by that measure, even though it does change something.
+
+| tool | effect | why |
+|---|---|---|
+| `find_capabilities` | `read` | ranks tool names by relevance; writes nothing |
+| `load_tools` | `read` | exposes tool names in tools/list; no project file touched |
+| `kicad_describe` | `read` | hands out input schemas; no project file touched |
+| `list_toolboxes` | `read` | lists toolset metadata and load state |
+| `load_toolset` | `read` | exposes a toolset's tools in tools/list; session state only |
+| `unload_toolset` | `read` | removes a toolset's tools from tools/list; session state only |
+| `get_active_toolsets` | `read` | reads which toolsets are loaded |
+| `get_recent_calls` | `read` | reads the shared call log |
+| `server_stats` | `read` | reads uptime/call counters |
+| `kicad_invoke` | `write` | carries an arbitrary batch, including MANIFEST writers; D57: the audit keys on each inner call's own `tool` field, not on this name |
+| `kicad_agent` | `write` | NO_LLM/ESCALATE/LOCAL touch only task state; `execute: true` applies a compiled Plan IR to `document` via agent_loop::execute — a real write |
+| `kicad_agent_verify` | `read` | runs/reads cached kicad-cli ERC/DRC and records the verdict in task state; writes no project file |
+
 ## Detail
 
 `effect` is `write` when a call can leave something behind — a project document, a file on disk (an export or a report counts), or the state of the loaded KiCAD — and `read` when it leaves nothing. It is derived from the tool's verb plus a short list of named exceptions, and a tool no rule covers is `write`: over-reporting a writer costs a refusal someone can see, while under-reporting one lets a mutation through a context that believed itself safe.

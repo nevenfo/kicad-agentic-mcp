@@ -362,6 +362,74 @@ pub fn tool_effect(tool: &str) -> Effect {
     classify(tool).unwrap_or(Effect::Write)
 }
 
+/// Effect of each always-visible meta-tool
+/// (`crates/konnect-core/src/router/meta_tools.rs`), decided by reading its
+/// handler — never by [`tool_effect`]'s verb table, which only covers
+/// [`MANIFEST`] and would fall back to `Write` for every meta-tool (none of
+/// their names carry a verb the table recognises), exactly the false
+/// positive that made the `read_only` bench tier unusable for
+/// `find_capabilities` and `load_tools`.
+///
+/// [`Effect`] keeps the meaning [`tool_effect`] gives it: can the call mutate
+/// the *project on disk*, the thing `$WORK`'s fingerprint checks
+/// independently of this table. A meta-tool that only changes this server's
+/// own session state — which tools `tools/list` currently exposes
+/// (`load_tools`, `load_toolset`, `unload_toolset`) — moves nothing on disk,
+/// so it is `Read` by that measure even though it does mutate *something*.
+/// Collapsing that distinction would make `read_only` unusable for exactly
+/// the discovery/toolset calls a read-only task has to make.
+///
+/// Exhaustiveness against `router::meta_tools::META_TOOL_NAMES` (itself
+/// generated from the same list that builds `handle_meta_tool`'s dispatch
+/// `match`) is asserted by
+/// `crates/konnect-core/tests/capability_matrix.rs::every_meta_tool_has_a_declared_effect`.
+pub const META_TOOL_EFFECTS: &[(&str, Effect)] = &[
+    // ── discovery: ranks or exposes tool names, writes nothing ─────────────
+    ("find_capabilities", Effect::Read),
+    ("load_tools", Effect::Read),
+    ("kicad_describe", Effect::Read),
+    ("list_toolboxes", Effect::Read),
+    ("load_toolset", Effect::Read),
+    ("unload_toolset", Effect::Read),
+    ("get_active_toolsets", Effect::Read),
+    // ── observability: reads the shared call log / stats ───────────────────
+    ("get_recent_calls", Effect::Read),
+    ("server_stats", Effect::Read),
+    // Carries an arbitrary batch of inner tool calls by name, including
+    // MANIFEST writers (`handle_kicad_invoke`,
+    // `router::meta_tools::handle_kicad_invoke`). D57: in gateway mode the
+    // audit reads the `tool` field of each *inner* result, not `kicad_invoke`
+    // itself, so classifying the envelope `Write` changes nothing about what
+    // the audit already sees — verified by grepping the bench's audit path
+    // for `kicad_invoke` (there is none; it keys on the batch's `tool`
+    // entries).
+    ("kicad_invoke", Effect::Write),
+    // NO_LLM/ESCALATE and LOCAL without `execute` only touch durable task
+    // state (`Supervisor::run`, `kam-runtime/src/lib.rs`). `execute: true`
+    // calls `agent_loop::execute`, which applies a compiled Plan IR to the
+    // named `document` — a real write, gated by one argument this table
+    // cannot see. A tool that *can* write is classified `Write`.
+    ("kicad_agent", Effect::Write),
+    // Reads or runs kicad-cli ERC/DRC (`VerificationAgent::verify`) and
+    // records the verdict in durable task state — no output file is written
+    // to the project. `Read` by the disk-mutation measure, even though it is
+    // not side-effect-free against task state.
+    ("kicad_agent_verify", Effect::Read),
+];
+
+/// Effect of a meta-tool, or `None` when `tool` is not one of
+/// [`META_TOOL_EFFECTS`]'s names.
+///
+/// Kept separate from a fallback (unlike [`tool_effect`], which has one by
+/// design) so a caller cannot mistake "not a meta-tool" for "classified
+/// read": [`render::render`] and the bench both need to tell the two apart.
+pub fn meta_tool_effect(tool: &str) -> Option<Effect> {
+    META_TOOL_EFFECTS
+        .iter()
+        .find(|(name, _)| *name == tool)
+        .map(|(_, effect)| *effect)
+}
+
 // ─── Limitations ─────────────────────────────────────────────────────────────
 
 /// A fact about a capability that no amount of testing changes.

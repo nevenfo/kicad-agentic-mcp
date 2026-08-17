@@ -9,7 +9,10 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use super::coverage::{Coverage, Proof};
-use super::{baseline, Adapter, Capability, Domain, Status, ALL_DOMAINS, MANIFEST, MISSING};
+use super::{
+    baseline, Adapter, Capability, Domain, Status, ALL_DOMAINS, MANIFEST, META_TOOL_EFFECTS,
+    MISSING,
+};
 
 /// Which toolset each tool belongs to, read from the registry rather than
 /// stored in the manifest, so the two cannot disagree.
@@ -239,6 +242,27 @@ pub fn render(coverage: &Coverage) -> String {
     }
     let _ = writeln!(out);
 
+    // ── Meta-tools ──────────────────────────────────────────────────────────
+    let _ = writeln!(out, "## Meta-tools\n");
+    let _ = writeln!(
+        out,
+        "The always-visible gateway/discovery tools (`crates/konnect-core/src/router/meta_tools.rs`), \
+         classified separately from the domain tools above because none of their names carry a verb \
+         `tool_effect`'s table recognises — they would otherwise all fall back to `write`, which is \
+         the false positive that made the `read_only` bench tier reject `find_capabilities` and \
+         `load_tools`. `effect` means the same thing here as in the table above: whether the call can \
+         mutate the *project* on disk. A call that only changes this server's own session state — \
+         which tools `tools/list` currently exposes — is `read` by that measure, even though it does \
+         change something.\n"
+    );
+    let _ = writeln!(out, "| tool | effect | why |");
+    let _ = writeln!(out, "|---|---|---|");
+    for (tool, effect) in META_TOOL_EFFECTS {
+        let why = meta_tool_note(tool);
+        let _ = writeln!(out, "| `{}` | `{}` | {} |", tool, effect.label(), why);
+    }
+    let _ = writeln!(out);
+
     // ── Per-domain detail ───────────────────────────────────────────────────
     let _ = writeln!(out, "## Detail\n");
     let _ = writeln!(
@@ -368,6 +392,36 @@ fn row(out: &mut String, label: &str, counts: &Counts) {
         counts.out_of_scope,
         counts.percent()
     );
+}
+
+/// One line explaining why a meta-tool got the effect it did — the same
+/// reasoning as the comment beside its entry in `META_TOOL_EFFECTS`, kept in
+/// sync by hand since the table only carries `(name, Effect)`.
+fn meta_tool_note(tool: &str) -> &'static str {
+    match tool {
+        "find_capabilities" => "ranks tool names by relevance; writes nothing",
+        "load_tools" => "exposes tool names in tools/list; no project file touched",
+        "kicad_describe" => "hands out input schemas; no project file touched",
+        "list_toolboxes" => "lists toolset metadata and load state",
+        "load_toolset" => "exposes a toolset's tools in tools/list; session state only",
+        "unload_toolset" => "removes a toolset's tools from tools/list; session state only",
+        "get_active_toolsets" => "reads which toolsets are loaded",
+        "get_recent_calls" => "reads the shared call log",
+        "server_stats" => "reads uptime/call counters",
+        "kicad_invoke" => {
+            "carries an arbitrary batch, including MANIFEST writers; D57: the audit \
+             keys on each inner call's own `tool` field, not on this name"
+        }
+        "kicad_agent" => {
+            "NO_LLM/ESCALATE/LOCAL touch only task state; `execute: true` applies a \
+             compiled Plan IR to `document` via agent_loop::execute — a real write"
+        }
+        "kicad_agent_verify" => {
+            "runs/reads cached kicad-cli ERC/DRC and records the verdict in task \
+             state; writes no project file"
+        }
+        _ => "",
+    }
 }
 
 fn escape(text: &str) -> String {

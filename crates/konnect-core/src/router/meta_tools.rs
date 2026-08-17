@@ -288,27 +288,50 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
     ]
 }
 
-/// Attempt to handle a meta-tool call. Returns `None` if the name is not a meta-tool.
-pub async fn handle_meta_tool(
-    name: &str,
-    args: &Value,
-    ctx: &std::sync::Arc<ToolContext>,
-) -> Option<CallToolResult> {
-    match name {
-        "find_capabilities" => Some(handle_find_capabilities(args, ctx).await),
-        "load_tools" => Some(handle_load_tools(args, ctx).await),
-        "kicad_describe" => Some(handle_kicad_describe(args, ctx).await),
-        "kicad_invoke" => Some(handle_kicad_invoke(args, ctx).await),
-        "kicad_agent" => Some(handle_kicad_agent(args, ctx).await),
-        "kicad_agent_verify" => Some(handle_kicad_agent_verify(args, ctx).await),
-        "list_toolboxes" => Some(handle_list_toolboxes(ctx).await),
-        "load_toolset" => Some(handle_load_toolset(args, ctx).await),
-        "unload_toolset" => Some(handle_unload_toolset(args, ctx).await),
-        "get_active_toolsets" => Some(handle_get_active_toolsets(ctx).await),
-        "get_recent_calls" => Some(handle_get_recent_calls(args, ctx).await),
-        "server_stats" => Some(handle_server_stats(ctx).await),
-        _ => None,
-    }
+/// Generates the meta-tool dispatch `match` and [`META_TOOL_NAMES`] from one
+/// list, so the two cannot drift: a new arm added only to one would be a
+/// second macro invocation, not an edit to this one.
+///
+/// `capability::META_TOOL_EFFECTS` is checked against `META_TOOL_NAMES` by
+/// `crates/konnect-core/tests/capability_matrix.rs`
+/// (`every_meta_tool_has_a_declared_effect`), which is how a meta-tool added
+/// here without a declared [`crate::capability::Effect`] fails a named test
+/// instead of silently reaching the `read_only` bench's "unknown tool" guard.
+macro_rules! define_meta_tools {
+    ($args:ident, $ctx:ident; $($name:literal => $body:expr),+ $(,)?) => {
+        /// Every name `handle_meta_tool` dispatches, in the order declared
+        /// below. The single source of truth for "which meta-tools exist" —
+        /// see the macro doc comment above.
+        pub const META_TOOL_NAMES: &[&str] = &[$($name),+];
+
+        /// Attempt to handle a meta-tool call. Returns `None` if the name is not a meta-tool.
+        pub async fn handle_meta_tool(
+            name: &str,
+            $args: &Value,
+            $ctx: &std::sync::Arc<ToolContext>,
+        ) -> Option<CallToolResult> {
+            match name {
+                $($name => Some($body),)+
+                _ => None,
+            }
+        }
+    };
+}
+
+define_meta_tools! {
+    args, ctx;
+    "find_capabilities" => handle_find_capabilities(args, ctx).await,
+    "load_tools" => handle_load_tools(args, ctx).await,
+    "kicad_describe" => handle_kicad_describe(args, ctx).await,
+    "kicad_invoke" => handle_kicad_invoke(args, ctx).await,
+    "kicad_agent" => handle_kicad_agent(args, ctx).await,
+    "kicad_agent_verify" => handle_kicad_agent_verify(args, ctx).await,
+    "list_toolboxes" => handle_list_toolboxes(ctx).await,
+    "load_toolset" => handle_load_toolset(args, ctx).await,
+    "unload_toolset" => handle_unload_toolset(args, ctx).await,
+    "get_active_toolsets" => handle_get_active_toolsets(ctx).await,
+    "get_recent_calls" => handle_get_recent_calls(args, ctx).await,
+    "server_stats" => handle_server_stats(ctx).await,
 }
 
 /// Explicit deterministic verification companion to `kicad_agent`.
