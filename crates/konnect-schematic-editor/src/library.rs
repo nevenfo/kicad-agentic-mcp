@@ -753,39 +753,97 @@ fn all_libraries_with_symbols() -> std::sync::Arc<Vec<(String, Vec<String>)>> {
 
 /// A cheap-to-recompute fingerprint of one resolved symbol directory, used to
 /// validate the on-disk index cache without re-walking every library inside
-/// it: the directory's own mtime plus its immediate entry count (number of
-/// `.kicad_symdir`/`.kicad_sym` top-level entries). Both come from the same
-/// top-level `read_dir(base)` + one `metadata()` call the scan already makes,
-/// so computing this costs nothing extra on the scan path.
+/// it: the directory's own mtime, its immediate entry count, and a digest of
+/// each top-level library entry's own name and mtime. All three come from the
+/// same top-level `read_dir(base)` the scan already makes — on Windows a
+/// `DirEntry`'s metadata is served from the directory enumeration itself — so
+/// computing this costs nothing extra on the scan path.
 ///
-/// Deliberately shallow: this catches a library being added/removed/replaced
-/// (a KiCAD version change, or the test suite's `KICAD10_SYMBOL_DIR` swap),
-/// which is the E26 case (a fresh process, same install, repeated lookup). It
-/// does NOT notice a symbol file added inside an *existing* `.kicad_symdir`
-/// without touching the parent directory's mtime — accepted because this
-/// cache only ever feeds [`suggest_lib_ids`]'s did-you-mean candidates, never
-/// `resolve_lib_symbol`'s success path: a stale entry here can at worst omit
-/// or miss a very recently added symbol from a suggestion list, never return
-/// a wrong "resolved" answer (the resolve path always reads the real file).
+/// `children` is the one that stopped being optional (L.1.3). The fingerprint
+/// used to be the base directory alone, and its documented justification was
+/// that a stale index could only omit a symbol from [`suggest_lib_ids`]'s
+/// did-you-mean list, never change a resolution — the resolve path always
+/// reads the real file. H.6.1 ended that: [`canonical_lib_id`] reads this same
+/// index and rewrites a `lib_id` when it finds *exactly one* owner for a
+/// symbol name. A symbol added inside an existing `.kicad_symdir` does not
+/// touch the base directory's mtime or its entry count, so a shallow
+/// fingerprint would keep serving an index in which a now-ambiguous name still
+/// looks unique — and the rewrite that is documented to refuse all ambiguity
+/// would silently pick one. Hashing each library entry's own mtime closes
+/// exactly that hole: writing a file into a directory updates that
+/// directory's mtime, whatever it does to its parent's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DirFingerprint {
     path: PathBuf,
-    mtime_secs: u64,
+    mtime_millis: u64,
     entry_count: u64,
+    children: u64,
 }
 
-fn dir_fingerprint(base: &PathBuf, entry_count: u64) -> DirFingerprint {
-    let mtime_secs = std::fs::metadata(base)
-        .and_then(|m| m.modified())
+/// Milliseconds, not seconds: two edits inside the same second are ordinary
+/// (an installer unpacking libraries, a test writing a fixture), and a
+/// second-resolution fingerprint calls the second one "unchanged".
+fn mtime_millis_of(meta: &std::fs::Metadata) -> u64 {
+    meta.modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn dir_fingerprint(base: &PathBuf, entry_count: u64, children: u64) -> DirFingerprint {
+    let mtime_millis = std::fs::metadata(base)
+        .as_ref()
+        .map(mtime_millis_of)
         .unwrap_or(0);
     DirFingerprint {
         path: base.clone(),
-        mtime_secs,
+        mtime_millis,
         entry_count,
+        children,
     }
+}
+
+/// The cheap top-level probe both the scan and the cache validation run, so
+/// the two can never disagree about what they measured: the number of entries
+/// directly under `base`, and an order-independent digest of `(name, mtime)`
+/// for each library entry among them.
+///
+/// XOR rather than a running hash because `read_dir` promises no order, and
+/// two processes that enumerate the same directory differently must still
+/// produce the same fingerprint. The per-entry hash mixes the name in, so
+/// two libraries swapping mtimes does not cancel out.
+fn probe_dir(base: &PathBuf) -> (u64, u64) {
+    use std::hash::{Hash, Hasher};
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return (0, 0);
+    };
+    let mut entry_count = 0u64;
+    let mut children = 0u64;
+    for entry in entries.flatten() {
+        entry_count += 1;
+        let path = entry.path();
+        let is_library = matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("kicad_symdir") | Some("kicad_sym")
+        );
+        if !is_library {
+            continue;
+        }
+        // `std::fs::metadata(path)`, never the `DirEntry`'s own: on Windows
+        // the timestamps a directory enumeration hands back come from the
+        // parent's index entry, which NTFS updates lazily, so a
+        // just-modified library can still enumerate with its old mtime. The
+        // whole point here is to see that modification.
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        entry.file_name().hash(&mut hasher);
+        mtime_millis_of(&meta).hash(&mut hasher);
+        children ^= hasher.finish();
+    }
+    (entry_count, children)
 }
 
 /// Where the on-disk symbol index cache lives, and how its filename is keyed:
@@ -815,7 +873,10 @@ fn symbol_index_cache_path(dirs: &[PathBuf]) -> PathBuf {
     root.join(format!("{key:016x}.cache"))
 }
 
-const SYMBOL_INDEX_CACHE_MAGIC: &str = "KAM_SYM_INDEX_V1";
+/// V2 since L.1.3 widened the per-directory fingerprint. A V1 file left by an
+/// older build fails the magic check and is rescanned, which is the same
+/// degradation as any other unreadable cache — never a wrong answer.
+const SYMBOL_INDEX_CACHE_MAGIC: &str = "KAM_SYM_INDEX_V2";
 
 /// Reads and validates the on-disk index cache for `dirs`. Returns `None` on
 /// ANY of: no cache file, wrong magic, malformed content, or a fingerprint
@@ -838,22 +899,20 @@ fn load_symbol_index_cache(dirs: &[PathBuf]) -> Option<Vec<(String, Vec<String>)
     }
     for base in dirs {
         let line = lines.next()?;
-        let mut fields = line.splitn(3, '\t');
-        let mtime_secs: u64 = fields.next()?.parse().ok()?;
+        let mut fields = line.splitn(4, '\t');
+        let mtime_millis: u64 = fields.next()?.parse().ok()?;
         let entry_count: u64 = fields.next()?.parse().ok()?;
+        let children: u64 = fields.next()?.parse().ok()?;
         let stored_path = fields.next()?;
-        let live = dir_fingerprint(base, {
-            // Recompute the live entry count the same cheap way the scan
-            // does — one `read_dir` per base dir, of which there are only a
-            // handful (never the 222-library count this cache exists to
-            // avoid).
-            std::fs::read_dir(base)
-                .map(|e| e.flatten().count() as u64)
-                .unwrap_or(0)
-        });
+        // Recomputed through the same probe the scan uses — one `read_dir`
+        // per base dir, of which there are only a handful (never the
+        // 222-library count this cache exists to avoid).
+        let (live_count, live_children) = probe_dir(base);
+        let live = dir_fingerprint(base, live_count, live_children);
         if stored_path != live.path.to_string_lossy()
-            || mtime_secs != live.mtime_secs
+            || mtime_millis != live.mtime_millis
             || entry_count != live.entry_count
+            || children != live.children
         {
             return None; // stale: install changed since the cache was written
         }
@@ -900,9 +959,10 @@ fn write_symbol_index_cache(
     out.push('\n');
     for fp in fingerprints {
         out.push_str(&format!(
-            "{}\t{}\t{}\n",
-            fp.mtime_secs,
+            "{}\t{}\t{}\t{}\n",
+            fp.mtime_millis,
             fp.entry_count,
+            fp.children,
             fp.path.to_string_lossy()
         ));
     }
@@ -952,13 +1012,16 @@ fn scan_libraries_with_symbols(
     let mut work: Vec<LibraryWorkItem> = Vec::new();
     let mut fingerprints: Vec<DirFingerprint> = Vec::new();
     for base in dirs {
+        // The fingerprint comes from `probe_dir` rather than from this loop's
+        // own count: the cache validation calls the same function, and two
+        // slightly different measurements of "what is in this directory"
+        // would make a fresh cache read as stale forever.
+        let (entry_count, children) = probe_dir(base);
         let Ok(entries) = std::fs::read_dir(base) else {
-            fingerprints.push(dir_fingerprint(base, 0));
+            fingerprints.push(dir_fingerprint(base, 0, 0));
             continue;
         };
-        let mut entry_count: u64 = 0;
         for entry in entries.flatten() {
-            entry_count += 1;
             let path = entry.path();
             let ext = path.extension().and_then(|e| e.to_str());
             match ext {
@@ -983,7 +1046,7 @@ fn scan_libraries_with_symbols(
                 _ => {}
             }
         }
-        fingerprints.push(dir_fingerprint(base, entry_count));
+        fingerprints.push(dir_fingerprint(base, entry_count, children));
     }
 
     // I/O-bound, not CPU-bound: oversubscribe cores heavily, since each
@@ -1497,6 +1560,55 @@ mod suggestion_tests {
         let _fixture = write_device_r_fixture();
         // Already valid: no rewrite, and no claim of one.
         assert_eq!(canonical_lib_id("Device:R"), None);
+    }
+
+    /// L.1.3: a symbol written into an *existing* library directory must make
+    /// the on-disk index stale.
+    ///
+    /// The fingerprint used to be the base directory's own mtime and entry
+    /// count, and adding `Device.kicad_symdir/AMS1117.kicad_sym` changes
+    /// neither — the base directory still holds exactly one library. That was
+    /// documented as harmless while the index only fed did-you-mean lists.
+    /// `canonical_lib_id` reads the same index and rewrites a `lib_id` when it
+    /// finds exactly one owner, so a stale index there is a rewrite that skips
+    /// an ambiguity it was written to refuse. The library entries' own mtimes
+    /// are part of the fingerprint for this reason.
+    #[test]
+    fn a_symbol_added_inside_an_existing_library_makes_the_index_stale() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let fixture = write_device_r_fixture();
+        let dirs = vec![fixture.path().to_path_buf()];
+
+        let (fingerprints, scanned) = scan_libraries_with_symbols(&dirs);
+        write_symbol_index_cache(&dirs, &fingerprints, &scanned);
+        assert!(
+            load_symbol_index_cache(&dirs).is_some(),
+            "the cache this test just wrote must read back as fresh"
+        );
+
+        std::fs::write(
+            fixture.path().join("Device.kicad_symdir").join("AMS1117.kicad_sym"),
+            "(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"AMS1117\"\n\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t(property \"Value\" \"AMS1117\" (at 0 0 0))\n\t)\n)\n",
+        )
+        .unwrap();
+
+        assert!(
+            load_symbol_index_cache(&dirs).is_none(),
+            "a symbol added inside an existing library left the index looking fresh"
+        );
+        // And the rescan behind it sees the new symbol, so the invalidation is
+        // worth something: this is the name `canonical_lib_id` would otherwise
+        // have called unique on the strength of a stale file.
+        let (_, rescanned) = scan_libraries_with_symbols(&dirs);
+        let device = rescanned
+            .iter()
+            .find(|(lib, _)| lib == "Device")
+            .expect("the Device library is still there");
+        assert!(
+            device.1.iter().any(|s| s == "AMS1117"),
+            "the rescan missed the added symbol: {:?}",
+            device.1
+        );
     }
 
     #[test]

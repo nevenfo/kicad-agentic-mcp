@@ -1159,12 +1159,22 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       whose guard is `Send`, so the test futures survive a move to
       `multi_thread` and no longer poison. `FOOTPRINT_DIR_ENV` had the same
       defect hidden inside a wrapper struct clippy could not see through
-- [ ] L.1.2 The operation-library anti-drift test checks examples rather than
-      parsing signatures. Strengthen it so a signature change cannot pass
-- [ ] L.1.3 The persistent symbol index is keyed on directory mtime and entry
+- [x] L.1.2 The operation-library anti-drift test checks examples rather than
+      parsing signatures. Strengthen it so a signature change cannot pass. Done:
+      the `*_SIGNATURE` DSL is now parsed into a flat field list (nested
+      objects, arrays of objects, and both union shapes), and the minimal
+      examples are checked against it from both directions — nothing an example
+      uses may be undocumented, and every field documented required and outside
+      a union must make `expand` fail, naming that field, when removed. Both
+      directions verified by negative control
+- [x] L.1.3 The persistent symbol index is keyed on directory mtime and entry
       count: a symbol added inside an existing library directory without touching
       its mtime is not seen. Blast radius is a did-you-mean list, never a wrong
-      resolution — revisit only if that changes
+      resolution — revisit only if that changes. **It changed**: H.6.1's
+      `canonical_lib_id` reads that same index and rewrites a `lib_id` when it
+      finds exactly one owner, so a stale index turns a refusal into a silent
+      pick. The fingerprint now includes each library entry's own mtime (D51),
+      at a measured 3.7 ms for the 223 libraries of a stock KiCad 10 install
 - [ ] L.1.4 The gate is a gate nowhere: `ci.yml` triggers on `main` only, and
       this fork's default *and* working branch is `agentic/main`, so no push has
       ever run it. Its `clippy` step also omits `--all-targets` (which is why
