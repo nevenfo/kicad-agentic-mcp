@@ -326,6 +326,104 @@ pub fn library_exists(library_name: &str) -> bool {
     })
 }
 
+/// The one library whose symbol names carry a leading polarity sign as a
+/// naming convention rather than as part of the part name (`power:+5V`,
+/// `power:-12V`, `power:GND`). [`canonical_lib_id`]'s second rule is scoped to
+/// it, so toggling a sign can never rewrite a real part number elsewhere.
+const POWER_LIBRARY: &str = "power";
+
+/// Deterministically rewrite a `lib_id` that does not resolve into the one
+/// installed `lib_id` it can only have meant — or `None`.
+///
+/// This is **not** [`suggest_lib_ids`]'s fuzzy ranking promoted to an
+/// auto-substitution. Nothing here scores, ranks or approximates: a rewrite is
+/// returned only when the installed libraries admit exactly one answer, and
+/// any ambiguity at all yields `None` so the caller still fails with its
+/// did-you-mean list. Two rules, both measured on the E26 model-fit run
+/// (H.6.1), where 16 of 60 attempts failed to apply on an unresolvable
+/// `lib_id`:
+///
+/// 1. **Wrong library, right symbol.** The caller wrote the symbol name
+///    correctly and invented the library around it — `regulator/AMS1117-3.3`,
+///    `MICROCHIP/AMS1117-3.3`, `regulators/linear/AMS1117`, `Device:PWR_FLAG`,
+///    bare `R`. Split on the last `:` or `/`, then look the stem up across
+///    every installed library: exactly one owner means the library name was
+///    never carrying information, and 8 of the 16 failures are that.
+/// 2. **Power-symbol polarity sign.** `power:5V` for `power:+5V`, `power:+GND`
+///    for `power:GND` — 2 more. Only tried after (1) misses, only inside
+///    [`POWER_LIBRARY`], and still only on a unique match.
+///
+/// The remaining 6 are not deterministic and stay failures: `Resistor_SMD:R_0805`
+/// asks for a footprint as a symbol, `Regulator:LDO_AMS1117-3.3` invents the
+/// symbol name too, `power:VPU` matches nothing. Guessing at those is exactly
+/// what this function refuses to do.
+///
+/// Case is compared insensitively but the *returned* id is the installed
+/// spelling, so the result is always directly placeable.
+pub fn canonical_lib_id(lib_id: &str) -> Option<String> {
+    if resolve_lib_symbol(lib_id).is_some() {
+        return None; // already valid — nothing to canonicalize
+    }
+    canonical_lib_id_from(&all_libraries_with_symbols(), lib_id)
+}
+
+/// Pure core of [`canonical_lib_id`], taking the installed-library listing as
+/// data — unit-testable against a fixed fixture, like [`suggest_lib_ids_from`].
+///
+/// Assumes the caller already knows `lib_id` does not resolve; it does not
+/// re-check the filesystem.
+fn canonical_lib_id_from(libraries: &[(String, Vec<String>)], lib_id: &str) -> Option<String> {
+    let stem = lib_id.rsplit([':', '/']).next()?;
+    if stem.is_empty() {
+        return None;
+    }
+
+    // Rule 1 — the stem names exactly one installed symbol, anywhere.
+    if let Some(unique) = sole_owner(libraries, stem, None) {
+        return Some(unique);
+    }
+
+    // Rule 2 — the same stem with its polarity sign toggled, power library only.
+    let toggled = match stem.strip_prefix(['+', '-']) {
+        Some(rest) => rest.to_string(),
+        None => format!("+{stem}"),
+    };
+    if toggled.is_empty() {
+        return None;
+    }
+    sole_owner(libraries, &toggled, Some(POWER_LIBRARY))
+}
+
+/// `Library:Symbol` when `stem` names exactly one symbol across `libraries`
+/// (optionally restricted to `only_library`), `None` when it names none or
+/// several. Distinct libraries spelling the same symbol name count as several:
+/// that is the ambiguity this whole function exists to refuse.
+fn sole_owner(
+    libraries: &[(String, Vec<String>)],
+    stem: &str,
+    only_library: Option<&str>,
+) -> Option<String> {
+    let wanted = stem.to_lowercase();
+    let mut found: Option<String> = None;
+    for (lib, syms) in libraries {
+        if only_library.is_some_and(|only| !lib.eq_ignore_ascii_case(only)) {
+            continue;
+        }
+        for sym in syms {
+            if sym.to_lowercase() != wanted {
+                continue;
+            }
+            let hit = format!("{lib}:{sym}");
+            match &found {
+                Some(first) if *first == hit => {}
+                Some(_) => return None, // two different owners — ambiguous
+                None => found = Some(hit),
+            }
+        }
+    }
+    found
+}
+
 /// Process-wide answer cache for [`suggest_symbols`], same shape and same
 /// invalidation rule as [`SUGGESTION_CACHE`] above: keyed on
 /// `(installed dirs, lib_id, limit)`, so a `find_symbol_dirs()` change (env
@@ -1302,6 +1400,103 @@ mod suggestion_tests {
             "expected Device:R among {candidates:?}"
         );
         assert!(candidates.len() <= 8);
+    }
+
+    /// Fixture for [`canonical_lib_id_from`]: the libraries the E26 failures
+    /// actually reached for, plus a deliberate duplicate symbol name across two
+    /// libraries to pin the ambiguity refusal.
+    fn canonicalization_libraries() -> Vec<(String, Vec<String>)> {
+        vec![
+            ("Device".to_string(), vec!["R".to_string(), "C".to_string()]),
+            (
+                "Regulator_Linear".to_string(),
+                vec!["AMS1117".to_string(), "AMS1117-3.3".to_string()],
+            ),
+            (
+                "power".to_string(),
+                vec!["+5V".to_string(), "GND".to_string(), "PWR_FLAG".to_string()],
+            ),
+            // Same name in two libraries: an unresolvable lib_id naming it must
+            // stay unresolvable.
+            ("Amplifier_Operational".to_string(), vec!["U".to_string()]),
+            ("Simulation_SPICE".to_string(), vec!["U".to_string()]),
+        ]
+    }
+
+    #[test]
+    fn canonicalization_fixes_an_invented_library_around_a_real_symbol() {
+        let libs = canonicalization_libraries();
+        // Verbatim from the E26 model-fit run: four spellings of a library that
+        // does not exist, wrapped around a symbol name that is exactly right.
+        for asked in [
+            "regulator/AMS1117-3.3",
+            "MICROCHIP/AMS1117-3.3",
+            "regulators/AMS1117-3.3",
+            "device/AMS1117-3.3",
+        ] {
+            assert_eq!(
+                canonical_lib_id_from(&libs, asked).as_deref(),
+                Some("Regulator_Linear:AMS1117-3.3"),
+                "expected the one installed owner of the symbol for {asked}"
+            );
+        }
+        // A nested path and a bare symbol name with no library at all.
+        assert_eq!(
+            canonical_lib_id_from(&libs, "regulators/linear/AMS1117").as_deref(),
+            Some("Regulator_Linear:AMS1117")
+        );
+        assert_eq!(
+            canonical_lib_id_from(&libs, "R").as_deref(),
+            Some("Device:R")
+        );
+        // Right symbol, wrong-but-real library — the library name was never
+        // carrying information once the symbol name is globally unique.
+        assert_eq!(
+            canonical_lib_id_from(&libs, "Device:PWR_FLAG").as_deref(),
+            Some("power:PWR_FLAG")
+        );
+    }
+
+    #[test]
+    fn canonicalization_toggles_the_power_polarity_sign_both_ways() {
+        let libs = canonicalization_libraries();
+        assert_eq!(
+            canonical_lib_id_from(&libs, "power:5V").as_deref(),
+            Some("power:+5V")
+        );
+        assert_eq!(
+            canonical_lib_id_from(&libs, "power:+GND").as_deref(),
+            Some("power:GND")
+        );
+    }
+
+    #[test]
+    fn canonicalization_refuses_everything_it_cannot_prove() {
+        let libs = canonicalization_libraries();
+        // Two libraries own "U": no unique answer, so no rewrite — the caller
+        // gets its did-you-mean list instead.
+        assert_eq!(canonical_lib_id_from(&libs, "MCU:U"), None);
+        // The rest of the E26 residue, which is not a naming slip at all:
+        // a footprint asked for as a symbol, an invented symbol name, and a
+        // net name that matches nothing.
+        assert_eq!(canonical_lib_id_from(&libs, "Resistor_SMD:R_0805"), None);
+        assert_eq!(
+            canonical_lib_id_from(&libs, "Regulator:LDO_AMS1117-3.3"),
+            None
+        );
+        assert_eq!(canonical_lib_id_from(&libs, "power:VPU"), None);
+        assert_eq!(canonical_lib_id_from(&libs, ""), None);
+        // The sign rule is scoped to `power`: toggling must not reach a part
+        // number in another library.
+        assert_eq!(canonical_lib_id_from(&libs, "Device:+R"), None);
+    }
+
+    #[test]
+    fn canonical_lib_id_leaves_a_resolvable_lib_id_alone() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let _fixture = write_device_r_fixture();
+        // Already valid: no rewrite, and no claim of one.
+        assert_eq!(canonical_lib_id("Device:R"), None);
     }
 
     #[test]

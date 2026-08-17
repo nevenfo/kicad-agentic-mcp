@@ -391,12 +391,31 @@ pub(crate) fn place_one_component(
 ) -> Result<serde_json::Value, CallToolResult> {
     // Snap to 1.27mm grid
     let (x, y) = snap_point(x, y, 1.27);
-    let val_str = value.unwrap_or(lib_id.split(':').next_back().unwrap_or("?"));
 
-    // Embed the library symbol definition
-    if !cse::library::ensure_lib_symbol(sch, lib_id) {
-        return Err(crate::tools::lib_symbol_not_found_error(lib_id));
+    // Embed the library symbol definition. A lib_id that names the right symbol
+    // in a library that doesn't exist (`regulator/AMS1117-3.3`, bare `R`) is not
+    // a failure worth reporting back and paying another model call for — the
+    // installed libraries answer it outright when they answer it uniquely
+    // (H.6.1). The direct attempt runs first, so a valid lib_id pays nothing for
+    // this: `canonical_lib_id` is only ever reached once placement has failed.
+    // `ensure_lib_symbol` leaves the schematic untouched when it returns false,
+    // so the second attempt starts from the same state as the first.
+    let requested = lib_id;
+    let mut canonicalized_from = None;
+    let mut lib_id = std::borrow::Cow::Borrowed(lib_id);
+    if !cse::library::ensure_lib_symbol(sch, &lib_id) {
+        match cse::library::canonical_lib_id(&lib_id) {
+            Some(canonical) if cse::library::ensure_lib_symbol(sch, &canonical) => {
+                canonicalized_from = Some(requested.to_string());
+                lib_id = std::borrow::Cow::Owned(canonical);
+            }
+            // Report the id the caller actually asked for: its did-you-mean
+            // list is the one they can act on.
+            _ => return Err(crate::tools::lib_symbol_not_found_error(requested)),
+        }
     }
+    let lib_id = lib_id.as_ref();
+    let val_str = value.unwrap_or(lib_id.split(':').next_back().unwrap_or("?"));
 
     // Validate the unit against the resolved symbol BEFORE writing anything:
     // eeschema silently renders an out-of-range unit as unit 1 and the
@@ -441,14 +460,21 @@ pub(crate) fn place_one_component(
     let uuid = sym.uuid.clone();
     sch.add_symbol(sym);
 
-    Ok(json!({
+    let mut result = json!({
         "added": lib_id,
         "reference": reference,
         "value": val_str,
         "x": x, "y": y,
         "unit": unit,
         "uuid": uuid
-    }))
+    });
+    // Substituting silently would let a caller believe a lib_id it invented is
+    // real and reuse it. `added` is already the placed id; this says what it
+    // replaced.
+    if let Some(from) = canonicalized_from {
+        result["lib_id_canonicalized_from"] = json!(from);
+    }
+    Ok(result)
 }
 
 async fn handle_delete_schematic_component(
@@ -1522,6 +1548,79 @@ pub(crate) mod tests {
         assert!(
             sym.has_instance_path("amp", &format!("/{}", root_uuid)),
             "instance path must be /<root-uuid> under the file-stem project name"
+        );
+    }
+
+    /// H.6.1: an invented library around a real symbol name is a naming slip
+    /// the installed libraries settle by themselves. 10 of the 16 apply
+    /// failures in the E26 model-fit run were this shape; failing them back to
+    /// the caller buys a whole extra model call for no new information.
+    #[tokio::test]
+    async fn add_component_canonicalizes_an_invented_library_and_says_so() {
+        let (_symdir, _env) = stub_symbol_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("canon.kicad_sch");
+        let ctx = test_ctx();
+
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        let result = handle_add_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "lib_id": "resistors/R",
+                "x": 100.0, "y": 80.0,
+                "reference": "R1"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !result.is_error,
+            "'resistors/R' names exactly one installed symbol: {}",
+            content_text(&result)
+        );
+
+        let out: serde_json::Value = serde_json::from_str(&content_text(&result)).unwrap();
+        assert_eq!(out["added"], "Device:R");
+        assert_eq!(
+            out["lib_id_canonicalized_from"], "resistors/R",
+            "a substitution the caller cannot see is one it will repeat"
+        );
+        let sch = cse::Schematic::load(&path).unwrap();
+        assert_eq!(sch.symbols.by_reference("R1").unwrap().lib_id, "Device:R");
+    }
+
+    /// The other half of the same rule: no unique answer, no rewrite. A
+    /// footprint name asked for as a symbol still fails with its did-you-mean
+    /// list rather than landing on whatever ranked first.
+    #[tokio::test]
+    async fn add_component_refuses_to_guess_an_ambiguous_lib_id() {
+        let (_symdir, _env) = stub_symbol_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("noguess.kicad_sch");
+        let ctx = test_ctx();
+
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        let result = handle_add_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "lib_id": "Resistor_SMD:R_0805",
+                "x": 100.0, "y": 80.0,
+                "reference": "R1"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error, "R_0805 is a footprint, not a symbol");
+        assert!(
+            content_text(&result).contains("Resistor_SMD:R_0805"),
+            "the error must name the id the caller asked for: {}",
+            content_text(&result)
         );
     }
 

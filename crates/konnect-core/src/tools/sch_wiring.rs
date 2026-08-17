@@ -1276,14 +1276,32 @@ async fn handle_add_power_symbol(
         .count();
     let pwr_ref = format!("#PWR{:03}", pwr_count + 1);
 
-    // Embed the power symbol definition in lib_symbols
-    let lib_id = format!("power:{}", power_net);
+    // Embed the power symbol definition in lib_symbols. `power_net` arrives as
+    // the caller wrote it — `5V` for `+5V`, `+GND` for `GND` — and the polarity
+    // sign is a naming convention of the `power` library, not information the
+    // caller supplied. Canonicalize before embedding rather than fail and pay
+    // another model call for the sign (H.6.1); `power_net` follows the placed
+    // symbol so its Value property and the id agree.
+    let asked_lib_id = format!("power:{}", power_net);
+    let mut canonicalized_from = None;
+    let mut lib_id = asked_lib_id.clone();
     if !cse::library::ensure_lib_symbol(&mut sch, &lib_id) {
-        return Ok(crate::tools::lib_symbol_not_found_error(&lib_id));
+        match cse::library::canonical_lib_id(&lib_id) {
+            Some(canonical) if cse::library::ensure_lib_symbol(&mut sch, &canonical) => {
+                canonicalized_from = Some(asked_lib_id.clone());
+                lib_id = canonical;
+            }
+            // The id the caller asked for, so the did-you-mean list is theirs.
+            _ => return Ok(crate::tools::lib_symbol_not_found_error(&asked_lib_id)),
+        }
     }
+    let power_net = lib_id
+        .split_once(':')
+        .map(|(_, sym)| sym.to_string())
+        .unwrap_or(power_net);
 
     // Build the Symbol struct
-    let mut sym = cse::Symbol::new(format!("power:{}", power_net), x, y);
+    let mut sym = cse::Symbol::new(lib_id.clone(), x, y);
     sym.at.rotation = Some(rotation);
     sym.unit = 1;
     sym.in_bom = true;
@@ -1331,6 +1349,11 @@ async fn handle_add_power_symbol(
     if let Some(requested) = requested {
         result["requested"] = requested;
         result["snapped_to_grid"] = json!(true);
+    }
+    // Never substitute silently: a caller that keeps reusing `5V` should see
+    // that `+5V` is what landed.
+    if let Some(from) = canonicalized_from {
+        result["lib_id_canonicalized_from"] = json!(from);
     }
     Ok(CallToolResult::json(&result))
 }
@@ -2388,6 +2411,72 @@ mod power_symbol_tests {
         assert!(
             !after.contains("(property \"Reference\" \"#PWR001\")\n"),
             "must not write a bare Reference with no (at)"
+        );
+    }
+
+    /// H.6.1: the polarity sign is a naming convention of the `power` library,
+    /// not information the caller supplied. `5V` for `+5V` cost two apply
+    /// failures in the E26 model-fit run; the installed library settles it.
+    #[tokio::test]
+    async fn add_power_symbol_canonicalizes_the_polarity_sign_and_says_so() {
+        // Same env-var lock the component tests take: `KICAD10_SYMBOL_DIR` is
+        // process-global and cargo runs these on multiple threads.
+        let _env = crate::tools::sch_components::tests::SYMBOL_DIR_ENV
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let libdir = tempfile::tempdir().unwrap();
+        let symdir = libdir.path().join("power.kicad_symdir");
+        std::fs::create_dir_all(&symdir).unwrap();
+        std::fs::write(
+            symdir.join("+5V.kicad_sym"),
+            "(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"+5V\"\n\t\t(property \"Reference\" \"#PWR\" (at 0 0 0))\n\t\t(property \"Value\" \"+5V\" (at 0 0 0))\n\t)\n)\n",
+        )
+        .unwrap();
+        std::env::set_var("KICAD10_SYMBOL_DIR", libdir.path());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sign.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n)\n",
+        )
+        .unwrap();
+
+        let result = handle_add_power_symbol(
+            &json!({
+                "schematic": path.display().to_string(),
+                "power_net": "5V",
+                "x": 100.0,
+                "y": 80.0
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let text = match result.content.first() {
+            Some(crate::mcp::protocol::ToolContent::Text { text }) => text.clone(),
+            other => panic!("expected text content, got {other:?}"),
+        };
+        let out: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(out["added_power"], "+5V");
+        assert_eq!(out["lib_id_canonicalized_from"], "power:5V");
+
+        let sch = cse::Schematic::load(&path).unwrap();
+        let sym = sch
+            .symbols
+            .iter()
+            .find(|s| s.reference() == Some("#PWR001"))
+            .expect("power symbol instance");
+        assert_eq!(
+            sym.lib_id, "power:+5V",
+            "the placed symbol must be the one that exists, not the one asked for"
+        );
+        let val = sym.properties.iter().find(|p| p.name == "Value").unwrap();
+        assert_eq!(
+            val.value, "+5V",
+            "Value must match the placed symbol, or the netlist names a net nobody asked for"
         );
     }
 
