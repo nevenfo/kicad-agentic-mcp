@@ -86,10 +86,20 @@ function Enable-ApiServer {
         # up front means there is nothing to report. No live test reads a
         # rendered canvas, so nothing is given up. An existing profile is left
         # alone: that is a real user's rendering preference.
+        # `do_not_show_again` answers the first-run wizard's Updates & Privacy
+        # page before it is asked. The wizard is modal, so an unanswered page is
+        # indistinguishable from a hung KiCad; and answering it here is the
+        # conservative answer either way, since it declines outbound update
+        # checks and anonymous data collection on a machine that is not a user's.
         New-Item -ItemType Directory -Force (Split-Path $config) | Out-Null
-        '{ "api": { "enable_server": true }, "graphics": { "canvas_type": 2 } }' |
-            Set-Content $config -Encoding utf8
-        Write-Host "Created $config with the API server enabled and software rendering."
+        @'
+{
+  "api": { "enable_server": true },
+  "graphics": { "canvas_type": 2 },
+  "do_not_show_again": { "data_collection_prompt": true, "update_check_prompt": true }
+}
+'@ | Set-Content $config -Encoding utf8
+        Write-Host "Created ${config}: API server on, software rendering, first-run prompts answered."
         return $true
     }
     $json = Get-Content $config -Raw | ConvertFrom-Json
