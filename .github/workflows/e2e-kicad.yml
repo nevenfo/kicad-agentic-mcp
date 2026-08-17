@@ -96,3 +96,33 @@ jobs:
             dist/
             e2e-artifacts/
           if-no-files-found: ignore
+
+  # The `e2e` job above covers the kicad-cli path only. This one covers the IPC
+  # path, which needs a *running* pcbnew — J.3.1 established that this needs a
+  # desktop session but no human: the script starts pcbnew, drives it over the
+  # deterministic API pipe, and stops it. See DEV.md, "Driving the PCB path
+  # unattended". Separate job so an IPC failure and a CLI failure stay
+  # distinguishable at a glance.
+  live-ipc:
+    name: Live IPC against a running pcbnew
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: live-ipc
+
+      - name: Install KiCAD
+        run: choco install kicad --version=10.0.5 --no-progress --yes
+
+      - name: Live PCB E2E (pcbnew + IPC, unattended)
+        shell: pwsh
+        run: ./scripts/live-pcb-e2e.ps1

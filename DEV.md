@@ -126,6 +126,38 @@ Konnect/
 - Scope: **PCB editor only** — full CRUD on all board items, layer management, design rules
 - Schematic editor IPC: export-only (SVG, PDF, BOM, netlist) — NO item CRUD
 
+### Driving the PCB path unattended
+
+Measured on KiCad 10.0.3 / Windows 11 (J.3.1), because the answer decides
+whether the PCB half of the suite can be a gate or only a manual ritual.
+`scripts/live-pcb-e2e.ps1` is the executable form of everything below: it
+starts pcbnew on a throwaway copy of the board fixture, runs both live suites,
+and stops pcbnew, exiting non-zero if either fails.
+
+- **A desktop session is required; a human is not.** pcbnew is a GUI binary
+  with no headless mode, so something must own a window station — but nothing
+  in the loop needs a person, and no window is ever clicked.
+- **`KICAD_API_SOCKET` is not inherited by an external client.** KiCad sets it
+  for plugins *it* launches. A separate process does not need it handed over:
+  the server listens on a deterministic path,
+  `%LOCALAPPDATA%\Temp\kicad\api.sock`, surfaced as the Windows named pipe
+  `\\.\pipe\<that path>`. Construct it; do not read it out of the Preferences
+  dialog.
+- **PowerShell's `Test-Path` reports `False` for that live pipe** — the
+  FileSystem provider chokes on the embedded drive letter. Enumerate with
+  `[System.IO.Directory]::GetFiles('\\.\pipe\')` instead.
+- **`KICAD_API_TOKEN` may be empty.** KiCad issues a token to plugins it
+  launches; it does not demand one from other clients.
+- **`api.enable_server` must already be true** in
+  `%APPDATA%\kicad\10.0\kicad_common.json`. It is off in a fresh profile and
+  cannot be switched on over IPC — there is no server yet to ask. The script
+  sets it before starting KiCad.
+- **The pipe appears before KiCad will answer on it.** A client that connects
+  the instant the pipe exists is told `AS_NOT_READY`. Every live test therefore
+  polls for an open document itself rather than depending on a previous test
+  having warmed KiCad up; with `--test-threads=1` the alphabetically first test
+  is the one that pays.
+
 ### S-Expression File Editing (Schematic — offline)
 - Direct read/write of `.kicad_sch` files
 - Symbol definitions auto-embedded from KiCAD 10's `.kicad_symdir` format
@@ -268,6 +300,7 @@ Run all: `PROTOC=<path> cargo test --workspace --lib --tests`
 | `konnect-core` unit tests | Router load/unload, starter-kit, registry invariants, observability, error taxonomy, arg helpers |
 | `konnect-core` integration tests | Fixture files: parse, edit, write, observability, structured errors |
 | `konnect-schematic-editor` tests | Typed schematic model + round-tripping |
+| `scripts/live-pcb-e2e.ps1` | The `#[ignore]`d live-KiCad PCB suites, start to finish, against a pcbnew the script launches and stops itself (see "Driving the PCB path unattended") |
 
 `schematic-viewer` is **excluded from the workspace** (`Cargo.toml`'s `[workspace] exclude`) since
 it's a Tauri app built separately — `cargo test --workspace` never touches it, and neither does

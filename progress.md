@@ -2,43 +2,45 @@
 
 ## Phase actuelle
 
-J — scope expansion. J.1, J.2 and J.4 are closed; J.2.4 has one item left that
-needs an external lookup; J.3 is the only untouched lot.
+J — scope expansion. J.1, J.2, J.3 and J.4 are closed. One residue is left:
+J.2.4.3, which needs an external lookup.
 
 ## Tâche actuelle
 
-J.3.1 — determine by experiment whether KiCad 10.0.3 on Windows exposes
-`KICAD_API_SOCKET` reliably enough for unattended PCB E2E, or whether the PCB
-path needs a live GUI session. **Needs a decision first: the experiment launches
-the KiCad GUI on this machine.**
+J.2.4.3 — `download_jlcpcb_database`'s source URL 404s and the file moved.
+Needs the new upstream location before the tool can stop being a `GAP`.
 
 ## Dernière tâche validée
 
-J.2.4 — fix the two defects the coverage work surfaced (J.2.4.1, J.2.4.2) and
-record the third (J.2.4.3).
+J.3 — PCB E2E without a GUI session. The answer is *both*: an unattended PCB
+E2E is possible, and a desktop session is still required.
 
 Validation :
-- `cargo test --workspace`: 949 PASS, 26 ignored
-- ignored suite with `KICAD_CLI` set: 15 PASS against KiCad 10.0.3 and the
-  network
+- `scripts/live-pcb-e2e.ps1`: three cold runs, the last one 3/3 live tests, exit 0
+- `cargo test --workspace`: 949 passed, 0 failed, 26 ignored — unchanged
 - `cargo clippy -p konnect-core --lib -- -D warnings`: PASS
-- matrix regenerated; V1 comparison 22.6 % (baseline) against 72.6 % (135 of
-  the frozen 186), 0 regressions
 
 ## Décisions actives
 
+- D47 — driving the PCB path needs a *desktop session* but no human. KiCad
+  never hands `KICAD_API_SOCKET` to a process it did not spawn; the client
+  constructs the deterministic `%LOCALAPPDATA%\Temp\kicad\api.sock` instead,
+  with an empty `KICAD_API_TOKEN`. `api.enable_server` must be true before
+  KiCad starts. The pipe appears *before* KiCad will answer on it, so every
+  live test polls for an open document itself. Full detail: DEV.md, "Driving
+  the PCB path unattended".
+- D26 stands: the live suites keep their `#[ignore]` and stay `gated` in the
+  matrix. The matrix scores what the default suite proves, and the default
+  suite has no KiCad. The `live-ipc` CI job is where they actually run.
 - D44 — `CAPABILITY_COVERAGE`'s comparison target is frozen: the 187 tools the
   baseline registers at `5cd6454` (this fork registers all 187, so no name
   mapping), minus what KiCAD gives no API for → denominator 186. Both numerators
   come from the same scanner pointed at each tree. Met only when strictly ahead
   *and* no tool the baseline proved is unproved here.
 - D45 — an `ipc` tool is never "proved" by its own "KiCAD must be running"
-  error, and a `cli` tool is never proved by failing to spawn. What a running
-  test may claim is what the server decides before it calls out; the rest is an
-  `#[ignore]`d live probe that reads `gated` and claims nothing.
+  error, and a `cli` tool is never proved by failing to spawn.
 - D46 — a third party is not a test dependency. The JLCPCB/LCSC/Freerouting
-  tools are tested for what they do when it is absent, which is the state every
-  fresh install is in.
+  tools are tested for what they do when it is absent.
 - D43 — Direct/Agent is an explicit gateway entry-point choice; `ESCALATE`
   returns structured failure to the caller.
 - D42 — Agent retrieval must combine task-specific electrical and Plan IR
@@ -57,30 +59,31 @@ Validation :
 ## Blocage actif
 
 1. **`git push` cannot authenticate here** — "Unable to persist credentials with
-   the 'wincredman' credential store", and no tty for a prompt. Eleven commits
-   from `c17138f` to `dd2be6b` are local only on `agentic/main`. Run `git push`
-   from an interactive shell.
+   the 'wincredman' credential store", and no tty for a prompt. Commits from
+   `c17138f` onward are local only on `agentic/main`. Run `git push` from an
+   interactive shell.
 2. **J.2.4.3 needs an external lookup** this session could not make: the JLCPCB
    parts database moved and the old URL 404s. The tool is declared a `GAP`
    meanwhile.
 3. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
    `kicad-cli api-server` it needs.
+4. The `live-ipc` CI job (J.3.3) is proven locally but has never run on a
+   GitHub runner. Unknowns there: whether `windows-latest` gives pcbnew a usable
+   window station, and whether a minimal `kicad_common.json` is enough for a
+   profile KiCad has never written.
 
 ## Fichiers / zones utiles
 
+- `scripts/live-pcb-e2e.ps1` — the live PCB harness: starts pcbnew, runs both
+  live suites, stops pcbnew. Run it with no arguments.
+- `crates/konnect-ipc/tests/live_kicad_test.rs`,
+  `crates/konnect/tests/live_kicad_tools.rs` — the live suites
 - `crates/konnect-core/tests/harness/mod.rs` — shared rig: calls a tool through
   `ToolRouter` by name; `BLANK_BOARD`, `TWO_RESISTORS`, `pins::*`
-- `crates/konnect-core/tests/` — the J.2.3 lots: `nets_and_wires.rs`,
-  `symbols_and_schematic.rs`, `config_and_rules.rs`, `design_review.rs`,
-  `libraries_and_footprints.rs`, `board_and_labels.rs`, `cli_tools.rs`,
-  `sourcing_and_manufacturing.rs`; live probes in `bus_live.rs`,
-  `drill_export_live.rs`
-- `crates/konnect-core/src/capability/baseline.rs` — frozen V1 target
-- `crates/konnect-core/src/capability/mod.rs` — `MANIFEST`, `MISSING`
-- `crates/konnect-core/tests/capability_matrix.rs` — regenerate with
+- `crates/konnect-core/src/capability/` — `baseline.rs` (frozen V1 target),
+  `mod.rs` (`MANIFEST`, `MISSING`); regenerate the matrix with
   `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
-- `crates/konnect-core/src/tools/sch_buses.rs` — J.2.2.2 toolset
-- Run every live probe with
+- Run the non-IPC live probes with
   `KICAD_CLI=<path> cargo test -p konnect-core -- --ignored`; the path is in
   `bench/konnect.bench.toml`
 - Pre-existing H.6.1–H.6.5 changes are still uncommitted in `bench/`,
@@ -92,7 +95,7 @@ Validation :
 
 ## NEXT ACTION
 
-Ask whether J.3.1 may launch the KiCad GUI on this machine; if yes, run the
-experiment and record either an unattended PCB E2E in the gate or a written
-platform constraint with evidence (J.3.2). Twenty-six tools — the `ipc` and
-`process` ones — stay `NOT_TESTED` until that question is answered.
+Close J.2.4.3: find where `jlcpcb_parts.db` moved upstream (delegate the lookup
+to `web-research`), point `download_jlcpcb_database` at it, and turn the
+`#[ignore]`d failure probe into one that proves the fetch — or, if the file is
+genuinely gone, record that as the `GAP`'s reason instead of a stale 404.

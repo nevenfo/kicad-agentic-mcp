@@ -87,18 +87,16 @@ fn load_board(path: &Path) -> SexpNode {
     parse_sexp(&source).expect("failed to parse live KiCad board")
 }
 
-#[test]
-#[ignore = "requires a running KiCad GUI with its IPC API enabled"]
-fn moving_and_rotating_footprint_preserves_child_geometry() {
-    let board = std::env::var("KONNECT_LIVE_KICAD_BOARD")
-        .expect("KONNECT_LIVE_KICAD_BOARD must name the disposable open board");
-    let reference = std::env::var("KONNECT_LIVE_KICAD_REFERENCE").unwrap_or_else(|_| "MH1".into());
-    let socket = std::env::var("KICAD_API_SOCKET").expect("KICAD_API_SOCKET is required");
-    let client = KiCadIpcClient::new(socket);
+/// KiCad's API pipe appears seconds before KiCad will answer on it: a client
+/// that connects the moment the pipe shows up is told `AS_NOT_READY`. Under
+/// `--test-threads=1` the alphabetically first test is the one that pays for
+/// that, so every test in this file waits for the document itself rather than
+/// relying on another test having warmed KiCad up (J.3.1).
+fn wait_for_open_document(client: &KiCadIpcClient) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         match client.get_open_documents() {
-            Ok(documents) if !documents.is_empty() => break,
+            Ok(documents) if !documents.is_empty() => return,
             Ok(_) if std::time::Instant::now() < deadline => {}
             Ok(_) => panic!("KiCad has no PCB document open"),
             Err(error)
@@ -108,6 +106,17 @@ fn moving_and_rotating_footprint_preserves_child_geometry() {
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
+}
+
+#[test]
+#[ignore = "requires a running KiCad GUI with its IPC API enabled"]
+fn moving_and_rotating_footprint_preserves_child_geometry() {
+    let board = std::env::var("KONNECT_LIVE_KICAD_BOARD")
+        .expect("KONNECT_LIVE_KICAD_BOARD must name the disposable open board");
+    let reference = std::env::var("KONNECT_LIVE_KICAD_REFERENCE").unwrap_or_else(|_| "MH1".into());
+    let socket = std::env::var("KICAD_API_SOCKET").expect("KICAD_API_SOCKET is required");
+    let client = KiCadIpcClient::new(socket);
+    wait_for_open_document(&client);
 
     client.save_board().expect("initial board save failed");
     let before_tree = load_board(Path::new(&board));
@@ -170,6 +179,7 @@ fn adding_a_via_actually_creates_it_on_the_board() {
         .expect("KONNECT_LIVE_KICAD_BOARD must name the disposable open board");
     let socket = std::env::var("KICAD_API_SOCKET").expect("KICAD_API_SOCKET is required");
     let client = KiCadIpcClient::new(socket);
+    wait_for_open_document(&client);
 
     let net = client
         .get_nets()

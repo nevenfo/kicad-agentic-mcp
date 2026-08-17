@@ -1017,7 +1017,7 @@ None.
 Each fix lands with the test that proved the defect, and the `PARTIAL` row it
 retires disappears from the generated matrix.
 
-## J.3 — PCB E2E without a GUI session
+## J.3 — PCB E2E without a GUI session — DONE
 
 ### Objectif
 Open question, and it currently blocks PCB benchmark coverage entirely: does
@@ -1028,12 +1028,30 @@ E2E, or does the PCB path need a live GUI session?
 None. Blocks D.9's validation and most of J.2's PCB half.
 
 ### Tâches
-- [ ] J.3.1 Determine it by experiment, not by reading
-- [ ] J.3.2 If a GUI session is required, record it as a platform constraint and
-      keep the `#[ignore]`d tests reading `gated` in the matrix (D26)
+- [x] J.3.1 Determine it by experiment, not by reading — done, and the answer is
+      *both*: an unattended PCB E2E is possible, and a desktop session is still
+      required. `KICAD_API_SOCKET` is never handed to a process KiCad did not
+      spawn, but it does not have to be: the server listens on the deterministic
+      `%LOCALAPPDATA%\Temp\kicad\api.sock`, exposed as a named pipe, with an
+      empty `KICAD_API_TOKEN` accepted. `scripts/live-pcb-e2e.ps1` is the
+      experiment made repeatable — it starts pcbnew, runs both live suites and
+      stops pcbnew, with no window ever touched. Three cold runs, 3/3 tests, exit 0.
+- [x] J.3.2 If a GUI session is required, record it as a platform constraint and
+      keep the `#[ignore]`d tests reading `gated` in the matrix (D26) — a
+      *desktop session* is required (pcbnew has no headless mode) while a human
+      is not. Recorded in DEV.md, "Driving the PCB path unattended", with the
+      three findings that cost a run each: `api.enable_server` must be true
+      before KiCad starts and cannot be set over IPC; PowerShell's `Test-Path`
+      is blind to the live pipe; the pipe appears before KiCad will answer on
+      it. The tests keep their `#[ignore]` and stay `gated` — D26 is unchanged,
+      since the matrix scores what the default suite proves.
+- [x] J.3.3 Give the answer a gate: `live-ipc` job in `.github/workflows/e2e-kicad.yml`,
+      separate from `e2e` so an IPC failure and a kicad-cli failure stay
+      distinguishable. Locally proven; its first CI run is still unobserved.
 
 ### Validation
 Either an unattended PCB E2E in the gate, or a written constraint with evidence.
+Both, as it turned out.
 
 ## J.4 — Adapter matrix — DONE
 
