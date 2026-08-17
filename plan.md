@@ -943,7 +943,11 @@ F.4 (the matrix is the instrument).
         exporting the old designator while the tool reported success (live
         probe). The third, `move_connected` not stretching wires, is recorded
         below rather than hidden
-  - [ ] J.2.3.3 `config` (7 `internal`) and `rules` (5 `sexpr`)
+  - [x] J.2.3.3 `config` and `rules` — `tests/config_and_rules.rs`. The
+        user-scoped config is a real file in the user's profile, so `APPDATA` /
+        `HOME` is redirected into a tempdir under a mutex; the tests assert the
+        behaviour that matters at two scopes — the project scope wins the merge,
+        and a project rule does not leak into another project
   - [ ] J.2.3.4 `review` (6 `sexpr`) — heuristic audits; assert the shape of the
         finding, never that the advice is right
   - [ ] J.2.3.5 `footprints` (6 `sexpr`) and `libraries` (4)

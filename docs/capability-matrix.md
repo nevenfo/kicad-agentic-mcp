@@ -36,8 +36,8 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 77 | 17 | 68 | 2 | 5 | 47.0 % |
-| server's own | 40 | 15 | 3 | 22 | 0 | 0 | 37.5 % |
+| KiCAD domains | 169 | 82 | 17 | 63 | 2 | 5 | 50.0 % |
+| server's own | 40 | 22 | 3 | 15 | 0 | 0 | 55.0 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
 
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 80 | 43.0 % |
+| this fork | 186 | 92 | 49.5 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -72,7 +72,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`zones`](#zones) | 3 | 1 | 0 | 2 | 0 | 0 | 33.3 % |
 | [`stackup`](#stackup) | 4 | 0 | 0 | 3 | 0 | 1 | 0.0 % |
-| [`rules`](#rules) | 5 | 0 | 0 | 5 | 0 | 0 | 0.0 % |
+| [`rules`](#rules) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`erc`](#erc) | 2 | 1 | 1 | 0 | 0 | 0 | 50.0 % |
 | [`drc`](#drc) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
 | [`bom`](#bom) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -86,7 +86,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`sourcing`](#sourcing) | 5 | 2 | 0 | 3 | 0 | 0 | 40.0 % |
 | [`export`](#export) | 11 | 6 | 0 | 5 | 0 | 0 | 54.5 % |
 | [`review`](#review) | 6 | 0 | 0 | 6 | 0 | 0 | 0.0 % |
-| [`config`](#config) | 7 | 0 | 0 | 7 | 0 | 0 | 0.0 % |
+| [`config`](#config) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`templates`](#templates) | 4 | 3 | 0 | 1 | 0 | 0 | 75.0 % |
 | [`task`](#task) | 4 | 4 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`plan`](#plan) | 2 | 2 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -202,7 +202,7 @@ Not covered by any tool:
 | `validate_wire_connections` | `sch_batch` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `validate_component_connections` | `sch_batch` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_batch.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `fix_connectivity` | `sch_export` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `add_net` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `add_net` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 | `get_nets_list` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
 
 ### labels
@@ -355,11 +355,11 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `create_netclass` | `pcb_routing` | `sexpr` | NOT_TESTED | — | — |  |
-| `assign_net_to_class` | `pcb_routing` | `sexpr` | NOT_TESTED | — | — |  |
-| `set_design_rules` | `verification` | `sexpr` | NOT_TESTED | — | — |  |
-| `get_design_rules` | `verification` | `sexpr` | NOT_TESTED | — | — |  |
-| `set_layer_constraints` | `verification` | `sexpr` | NOT_TESTED | — | — |  |
+| `create_netclass` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `assign_net_to_class` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `set_design_rules` | `verification` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `get_design_rules` | `verification` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `set_layer_constraints` | `verification` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 
 ### erc
 
@@ -481,13 +481,13 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `load_user_config` | `config` | `internal` | NOT_TESTED | — | — |  |
-| `save_user_config` | `config` | `internal` | NOT_TESTED | — | — |  |
-| `load_project_config` | `config` | `internal` | NOT_TESTED | — | — |  |
-| `save_project_config` | `config` | `internal` | NOT_TESTED | — | — |  |
-| `get_effective_config` | `config` | `internal` | NOT_TESTED | — | — |  |
-| `add_design_rule` | `config` | `internal` | NOT_TESTED | — | — |  |
-| `list_design_rules` | `config` | `internal` | NOT_TESTED | — | — |  |
+| `load_user_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `save_user_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `load_project_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `save_project_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `get_effective_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `add_design_rule` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `list_design_rules` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 
 ### templates
 
@@ -532,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-90 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+78 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -576,8 +576,6 @@ Not covered by any tool:
 | `query_traces` | `routing` | `ipc` | none |
 | `get_nets_list` | `nets` | `ipc` | none |
 | `modify_trace` | `routing` | `ipc` | none |
-| `create_netclass` | `rules` | `sexpr` | none |
-| `assign_net_to_class` | `rules` | `sexpr` | none |
 | `route_differential_pair` | `routing` | `ipc` | none |
 | `export_gerber` | `gerber` | `cli` | gated — `crates/konnect/tests/e2e_kicad.rs` |
 | `export_pdf` | `export` | `cli` | none |
@@ -602,20 +600,10 @@ Not covered by any tool:
 | `get_datasheet_url` | `datasheet` | `external` | none |
 | `check_freerouting` | `routing` | `external` | none |
 | `run_drc` | `drc` | `cli` | gated — `crates/konnect/tests/e2e_kicad.rs` |
-| `set_design_rules` | `rules` | `sexpr` | none |
-| `get_design_rules` | `rules` | `sexpr` | none |
 | `check_kicad_ui` | `ui` | `process` | none |
 | `launch_kicad_ui` | `ui` | `process` | none |
 | `copy_routing_pattern` | `routing` | `sexpr` | none |
-| `set_layer_constraints` | `rules` | `sexpr` | none |
 | `check_clearance` | `drc` | `sexpr` | none |
-| `load_user_config` | `config` | `internal` | none |
-| `save_user_config` | `config` | `internal` | none |
-| `load_project_config` | `config` | `internal` | none |
-| `save_project_config` | `config` | `internal` | none |
-| `get_effective_config` | `config` | `internal` | none |
-| `add_design_rule` | `config` | `internal` | none |
-| `list_design_rules` | `config` | `internal` | none |
 | `audit_decoupling` | `review` | `sexpr` | none |
 | `audit_connections` | `review` | `sexpr` | none |
 | `audit_power_rails` | `review` | `sexpr` | none |
