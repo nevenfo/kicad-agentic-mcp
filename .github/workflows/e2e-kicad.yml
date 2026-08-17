@@ -14,6 +14,11 @@ name: E2E (real KiCAD)
 # it — a red E2E next to a published release is advisory signal, not a
 # contradiction (it happened at v0.2.0). Fold into release.yml as a `needs:`
 # if release gating is ever wanted.
+#
+# On demand, name the fork explicitly — `gh` resolves a bare invocation to the
+# `upstream` remote, where a dispatch is a 403:
+#
+#     gh workflow run e2e-kicad.yml -R nevenfo/kicad-agentic-mcp --ref agentic/main
 
 on:
   schedule:
