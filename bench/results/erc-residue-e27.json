@@ -1,0 +1,609 @@
+[
+ {
+  "task": "model_divider",
+  "hint": "minimal",
+  "index": 0,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 5,
+  "got_erc": 5,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Label not connected: Label 'VOUT'",
+   "Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_divider",
+  "hint": "none",
+  "index": 0,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 4,
+  "got_erc": 4,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]",
+   "Pin not connected: Symbol R2 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol R2 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_divider",
+  "hint": "none",
+  "index": 2,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 5,
+  "got_erc": 5,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Label not connected: Label 'VOUT'",
+   "Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "full",
+  "index": 0,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 6,
+  "got_erc": 6,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "full",
+  "index": 1,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "full",
+  "index": 2,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "full",
+  "index": 4,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 9,
+  "got_erc": 9,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol C1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol C1 Pin 2 [Passive, Line]",
+   "Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]",
+   "Pin not connected: Symbol C2 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol C2 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "minimal",
+  "index": 0,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 4,
+  "got_erc": 4,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [ADJ, Input, Line]",
+   "Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "minimal",
+  "index": 1,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 5,
+  "got_erc": 5,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "minimal",
+  "index": 2,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 5,
+  "got_erc": 5,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "minimal",
+  "index": 4,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 6,
+  "got_erc": 6,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "none",
+  "index": 0,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 5,
+  "got_erc": 5,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "none",
+  "index": 1,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 8,
+  "got_erc": 8,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol GND Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol +5V Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol +3V3 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "none",
+  "index": 2,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 7,
+  "got_erc": 7,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_ldo",
+  "hint": "none",
+  "index": 4,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 11,
+  "got_erc": 11,
+  "apply_error": null,
+  "violations": [
+   "Label not connected: Label '+5V'",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]",
+   "Label not connected: Label 'GND'",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]",
+   "Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]",
+   "Label not connected: Label '+3.3V'"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "full",
+  "index": 0,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "full",
+  "index": 1,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "full",
+  "index": 2,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "full",
+  "index": 3,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "full",
+  "index": 4,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "minimal",
+  "index": 0,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 3,
+  "got_erc": 3,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "minimal",
+  "index": 1,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "minimal",
+  "index": 2,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "minimal",
+  "index": 3,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 3,
+  "got_erc": 3,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "minimal",
+  "index": 4,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 8,
+  "got_erc": 8,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol C10 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol C10 Pin 2 [Passive, Line]",
+   "Pin not connected: Symbol C11 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol C11 Pin 2 [Passive, Line]",
+   "Pin not connected: Symbol C12 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol C12 Pin 2 [Passive, Line]",
+   "Pin not connected: Symbol C13 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol C13 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "none",
+  "index": 0,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "none",
+  "index": 1,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_decoupling_bank",
+  "hint": "none",
+  "index": 4,
+  "grade": 3,
+  "failure_kind": null,
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]",
+   "Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "full",
+  "index": 1,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 1,
+  "got_erc": 1,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R2 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "full",
+  "index": 2,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "full",
+  "index": 3,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "minimal",
+  "index": 2,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "minimal",
+  "index": 3,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 3,
+  "got_erc": 3,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol #FLG01 Pin 1 [Power output, Line]",
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "minimal",
+  "index": 4,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 1,
+  "got_erc": 1,
+  "apply_error": null,
+  "violations": [
+   "Label not connected: Label 'VPU'"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "none",
+  "index": 0,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 1,
+  "got_erc": 1,
+  "apply_error": null,
+  "violations": [
+   "Label not connected: Label 'VPU'"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "none",
+  "index": 1,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]",
+   "Label not connected: Label 'VPU'"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "none",
+  "index": 2,
+  "grade": 2,
+  "failure_kind": "erc_budget",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]",
+   "Label not connected: Label 'VPU'"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "none",
+  "index": 3,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 3,
+  "got_erc": 3,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol #FLG01 Pin 1 [Power output, Line]",
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]"
+  ]
+ },
+ {
+  "task": "model_reference_chain",
+  "hint": "none",
+  "index": 4,
+  "grade": 2,
+  "failure_kind": "invariant",
+  "expected_erc": 2,
+  "got_erc": 2,
+  "apply_error": null,
+  "violations": [
+   "Pin not connected: Symbol R1 Pin 1 [Passive, Line]",
+   "Pin not connected: Symbol R1 Pin 2 [Passive, Line]"
+  ]
+ }
+]

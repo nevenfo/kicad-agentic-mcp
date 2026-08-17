@@ -1,0 +1,199 @@
+model_divider            minimal  #0 expected=5 got=5
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Label not connected: Label 'VOUT'
+       Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_divider            none     #0 expected=4 got=4
+       Pin not connected: Symbol R1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+       Pin not connected: Symbol R2 Pin 1 [Passive, Line]
+       Pin not connected: Symbol R2 Pin 2 [Passive, Line]
+model_divider            none     #2 expected=5 got=5
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Label not connected: Label 'VOUT'
+       Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_ldo                full     #0 expected=6 got=6
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_ldo                full     #1 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+model_ldo                full     #2 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+model_ldo                full     #4 expected=9 got=9
+       Pin not connected: Symbol C1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol C1 Pin 2 [Passive, Line]
+       Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]
+       Pin not connected: Symbol C2 Pin 1 [Passive, Line]
+       Pin not connected: Symbol C2 Pin 2 [Passive, Line]
+model_ldo                minimal  #0 expected=4 got=4
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [ADJ, Input, Line]
+       Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]
+model_ldo                minimal  #1 expected=5 got=5
+       Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]
+model_ldo                minimal  #2 expected=5 got=5
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]
+model_ldo                minimal  #4 expected=6 got=6
+       Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+       Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+model_ldo                none     #0 expected=5 got=5
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]
+       Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]
+model_ldo                none     #1 expected=8 got=8
+       Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol GND Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol +5V Pin 1 [Power input, Line]
+       Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol +3V3 Pin 1 [Power input, Line]
+       Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]
+model_ldo                none     #2 expected=7 got=7
+       Pin not connected: Symbol #PWR002 Pin 1 [Power input, Line]
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Pin not connected: Symbol #PWR003 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]
+model_ldo                none     #4 expected=11 got=11
+       Label not connected: Label '+5V'
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Pin not connected: Symbol U1 Pin 3 [VI, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 3 [VI, Power input, Line]
+       Label not connected: Label 'GND'
+       Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]
+       Pin not connected: Symbol U1 Pin 1 [GND, Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol U1 Pin 1 [GND, Power input, Line]
+       Pin not connected: Symbol U1 Pin 2 [VO, Power output, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+       Label not connected: Label '+3.3V'
+model_decoupling_bank    full     #0 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    full     #1 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    full     #2 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    full     #3 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    full     #4 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    minimal  #0 expected=3 got=3
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]
+model_decoupling_bank    minimal  #1 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    minimal  #2 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    minimal  #3 expected=3 got=3
+       Pin not connected: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR003 Pin 1 [Power input, Line]
+model_decoupling_bank    minimal  #4 expected=8 got=8
+       Pin not connected: Symbol C10 Pin 1 [Passive, Line]
+       Pin not connected: Symbol C10 Pin 2 [Passive, Line]
+       Pin not connected: Symbol C11 Pin 1 [Passive, Line]
+       Pin not connected: Symbol C11 Pin 2 [Passive, Line]
+       Pin not connected: Symbol C12 Pin 1 [Passive, Line]
+       Pin not connected: Symbol C12 Pin 2 [Passive, Line]
+       Pin not connected: Symbol C13 Pin 1 [Passive, Line]
+       Pin not connected: Symbol C13 Pin 2 [Passive, Line]
+model_decoupling_bank    none     #0 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    none     #1 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_decoupling_bank    none     #4 expected=2 got=2
+       Input Power pin not driven by any Output Power pins: Symbol #PWR001 Pin 1 [Power input, Line]
+       Input Power pin not driven by any Output Power pins: Symbol #PWR002 Pin 1 [Power input, Line]
+model_reference_chain    full     #1 expected=1 got=1
+       Pin not connected: Symbol R2 Pin 2 [Passive, Line]
+model_reference_chain    full     #2 expected=2 got=2
+       Pin not connected: Symbol R1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+model_reference_chain    full     #3 expected=2 got=2
+       Pin not connected: Symbol R1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+model_reference_chain    minimal  #2 expected=2 got=2
+       Pin not connected: Symbol R1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+model_reference_chain    minimal  #3 expected=3 got=3
+       Pin not connected: Symbol R1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol #FLG01 Pin 1 [Power output, Line]
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+model_reference_chain    minimal  #4 expected=1 got=1
+       Label not connected: Label 'VPU'
+model_reference_chain    none     #0 expected=1 got=1
+       Label not connected: Label 'VPU'
+model_reference_chain    none     #1 expected=2 got=2
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+       Label not connected: Label 'VPU'
+model_reference_chain    none     #2 expected=2 got=2
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+       Label not connected: Label 'VPU'
+model_reference_chain    none     #3 expected=3 got=3
+       Pin not connected: Symbol R1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol #FLG01 Pin 1 [Power output, Line]
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+model_reference_chain    none     #4 expected=2 got=2
+       Pin not connected: Symbol R1 Pin 1 [Passive, Line]
+       Pin not connected: Symbol R1 Pin 2 [Passive, Line]
+
+== violations (139 over 39 applied attempts) ==
+  68   48.9%  Pin not connected
+  62   44.6%  Input Power pin not driven
+   9    6.5%  Label not connected
+
+== attempts by violation-class set ==
+  12  Input Power pin not driven
+  11  Input Power pin not driven + Pin not connected
+   9  Pin not connected
+   3  Input Power pin not driven + Label not connected + Pin not connected
+   2  Label not connected
+   2  Label not connected + Pin not connected
+
+== the same, restricted to attempts the budget actually failed ==
+   6  Input Power pin not driven + Pin not connected
+   2  Input Power pin not driven + Label not connected + Pin not connected
+   2  Input Power pin not driven
+   2  Pin not connected
+   2  Label not connected
+   2  Label not connected + Pin not connected

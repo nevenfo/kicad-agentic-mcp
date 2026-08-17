@@ -1,0 +1,82 @@
+stable prefix: 2015 tk (rules 255 + schema 942 + ops 818)
+run: model=openai/gpt-oss-20b temperature=0.2 strict_json=False reasoning_effort='medium' repair=0 loaded_context_length=32768
+  model_divider hint=full [1/5] calls=1 grade=3 outcome=success error=None
+  model_divider hint=full [2/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "op6", "kind": "invalid_argument", "reason": "operation 'op6' (connect) could not be expanded: invalid_argument (connections[3].pin1): required", "transient": "none"}, "message": "The plan did not compile, so nothing was applied: operation 'op6' (connect) could not be expanded: invalid_argument (connections[3].pin1): required"}
+  model_divider hint=full [3/5] calls=1 grade=3 outcome=success error=None
+  model_divider hint=full [4/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VOUT'] found=['+3V3', 'GND']
+  model_divider hint=full [5/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "op2", "kind": "invalid_argument", "reason": "operation 'op2' (defaults) could not be expanded: unknown_op: 'defaults' is not a known plan operation", "transient": "none"}, "message": "The plan did not compile, so nothing was applied: operation 'op2' (defaults) could not be expanded: unknown_op: 'defaults' is not a known plan operation"}
+  model_divider hint=minimal [1/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=5 limit=0
+  model_divider hint=minimal [2/5] calls=1 grade=2 outcome=applied_invalid error=missing=['R1', 'R2'] found=[]; missing=['VOUT'] found=[]
+  model_divider hint=minimal [3/5] calls=1 grade=2 outcome=not_applied error={"error": {"errors": ["{\"error\":{\"candidates\":[\"Simulation_SPICE:0\",\"Device:C\",\"Device:R\",\"Transistor_BJT:R_0805_2012Metric\",\"Transistor_FET:R_0805_2012Metric\",\"Transistor_IGBT:R_0805_2012Metric\",\"Transistor_Array:R_0805_2012Metric\"],\"kind\":\"handler_error\",\"reason\":\"Library 'Resistor_SMD' not found in the installed KiCAD symbol libraries (lib_id 'Resistor_SMD:R_0805_2012Me
+  model_divider hint=minimal [4/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "op2", "kind": "invalid_argument", "reason": "operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan", "transient": "none"}, "message": "The plan did not compile, so nothing was applied: operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan"}
+  model_divider hint=minimal [5/5] calls=1 grade=2 outcome=not_applied error={"error": {"errors": ["{\"error\":{\"candidates\":[\"Simulation_SPICE:0\",\"Device:R\",\"Timer_RTC:AB0805\",\"MCU_Intel:8080\",\"MCU_Intel:8080A\",\"Timer_RTC:AB0815\",\"Timer_RTC:AB1805\",\"Regulator_Linear:L7805\"],\"kind\":\"handler_error\",\"reason\":\"Library 'Resistor_SMD' not found in the installed KiCAD symbol libraries (lib_id 'Resistor_SMD:R_0805'). Check the library name, the KiCAD inst
+  model_divider hint=none [1/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VOUT'] found=[]; erc errors=4 limit=0
+  model_divider hint=none [2/5] calls=1 grade=2 outcome=applied_invalid error=list_schematic_components call failed: {"error": "IO error: Le fichier sp\u00e9cifi\u00e9 est introuvable. (os error 2)", "kind": "io"}; list_schematic_nets call failed: {"error": "IO error: Le fichier sp\u00e9cifi\u00e9 est introuvable. (os error 2)", "kind": "io"}; run_erc call failed: {"error": "kicad-cli exited with 3: \u00c9chec du chargement de la sch\u00e9matique", "kind": "handler_error"}
+  model_divider hint=none [3/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=5 limit=0
+  model_divider hint=none [4/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "op2", "kind": "invalid_argument", "reason": "operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan", "transient": "none"}, "message": "The plan did not compile, so nothing was applied: operation 'op2' refers to ${proj.schematic}, but no operation 'proj' exists in this plan"}
+  model_divider hint=none [5/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "op2", "kind": "invalid_argument", "reason": "operation 'op2' (defaults) could not be expanded: unknown_op: 'defaults' is not a known plan operation", "transient": "none"}, "message": "The plan did not compile, so nothing was applied: operation 'op2' (defaults) could not be expanded: unknown_op: 'defaults' is not a known plan operation"}
+  model_ldo hint=full [1/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=6 limit=0
+  model_ldo hint=full [2/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=2 limit=0
+  model_ldo hint=full [3/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=2 limit=0
+  model_ldo hint=full [4/5] calls=1 grade=3 outcome=success error=None
+  model_ldo hint=full [5/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=9 limit=0
+  model_ldo hint=minimal [1/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=4 limit=0
+  model_ldo hint=minimal [2/5] calls=1 grade=2 outcome=applied_invalid error=missing=['C1', 'C2'] found=['U1']; erc errors=5 limit=0
+  model_ldo hint=minimal [3/5] calls=1 grade=2 outcome=applied_invalid error=missing=['C1', 'C2'] found=['#PWR001', '#PWR002', '#PWR003', 'U1']; erc errors=5 limit=0
+  model_ldo hint=minimal [4/5] calls=1 grade=2 outcome=not_applied error={"error": "Pin 'VO' not found on 'U1' (unit 1)", "error_kind": "handler_error", "failed_at": 9, "failed_op": "connect", "failed_step": "op4/4", "not_run": 2, "ok": 9, "ops": 4, "rollback": true, "steps": 12}
+  model_ldo hint=minimal [5/5] calls=1 grade=2 outcome=applied_invalid error=missing=['C1', 'C2', 'U1'] found=['#PWR001', '#PWR002', '#PWR003']; erc errors=6 limit=0
+  model_ldo hint=none [1/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=5 limit=0
+  model_ldo hint=none [2/5] calls=1 grade=2 outcome=applied_invalid error=missing=['C1', 'C2'] found=['+3V3', '+5V', 'GND', 'U1']; erc errors=8 limit=0
+  model_ldo hint=none [3/5] calls=1 grade=2 outcome=applied_invalid error=missing=['C1', 'C2'] found=['#PWR001', '#PWR002', '#PWR003', 'U1']; erc errors=7 limit=0
+  model_ldo hint=none [4/5] calls=1 grade=3 outcome=success error=None
+  model_ldo hint=none [5/5] calls=1 grade=2 outcome=applied_invalid error=missing=['C1', 'C2'] found=['#PWR001', '#PWR002', '#PWR003', 'U1']; erc errors=11 limit=0
+  model_decoupling_bank hint=full [1/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=full [2/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=full [3/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=full [4/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=full [5/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=minimal [1/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=3 limit=2
+  model_decoupling_bank hint=minimal [2/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=minimal [3/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=minimal [4/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=3 limit=2
+  model_decoupling_bank hint=minimal [5/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=8 limit=2
+  model_decoupling_bank hint=none [1/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=none [2/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=none [3/5] calls=1 grade=2 outcome=not_applied error={"error": {"error": {"candidates": ["power:+10V", "power:+10V_0_1", "power:+10V_1_1", "power:+12C", "power:+12C_0_1", "power:+12C_1_1", "power:+12L", "power:+12LF"], "kind": "handler_error", "reason": "Library symbol 'power:1' not found in the installed KiCAD libraries. Did you mean: power:+10V, power:+10V_0_1, power:+10V_1_1? (KiCAD 10 renamed several older symbol names)", "transient": "none"}, "
+  model_decoupling_bank hint=none [4/5] calls=1 grade=2 outcome=not_applied error={"error": "IO error: Le fichier sp\u00e9cifi\u00e9 est introuvable. (os error 2)", "error_kind": "io", "failed_at": 0, "failed_op": "decouple", "failed_step": "op1/0", "not_run": 8, "ok": 0, "ops": 1, "rollback": true, "steps": 9}
+  model_decoupling_bank hint=none [5/5] calls=1 grade=3 outcome=success error=None
+  model_reference_chain hint=full [1/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "op2", "kind": "invalid_argument", "reason": "operation 'op2' (place) could not be expanded: invalid_argument (schematic): required", "transient": "none"}, "message": "The plan did not compile, so nothing was applied: operation 'op2' (place) could not be expanded: invalid_argument (schematic): required"}
+  model_reference_chain hint=full [2/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=1 limit=0
+  model_reference_chain hint=full [3/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=2 limit=0
+  model_reference_chain hint=full [4/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=2 limit=0
+  model_reference_chain hint=full [5/5] calls=1 grade=3 outcome=success error=None
+  model_reference_chain hint=minimal [1/5] calls=1 grade=3 outcome=success error=None
+  model_reference_chain hint=minimal [2/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "op7", "kind": "invalid_argument", "reason": "operation 'op7' (connect) could not be expanded: invalid_argument (connections[0].pin1): required", "transient": "none"}, "message": "The plan did not compile, so nothing was applied: operation 'op7' (connect) could not be expanded: invalid_argument (connections[0].pin1): required"}
+  model_reference_chain hint=minimal [3/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=2 limit=0
+  model_reference_chain hint=minimal [4/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=3 limit=0
+  model_reference_chain hint=minimal [5/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=1 limit=0
+  model_reference_chain hint=none [1/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=1 limit=0
+  model_reference_chain hint=none [2/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=2 limit=0
+  model_reference_chain hint=none [3/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=2 limit=0
+  model_reference_chain hint=none [4/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=3 limit=0
+  model_reference_chain hint=none [5/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=2 limit=0
+
+=== openai/gpt-oss-20b ===
+  model_divider            hint=full    success=40.0%  histogram={0: 0, 1: 2, 2: 1, 3: 2}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 2, 'not_applied': 0, 'applied_invalid': 1, 'success': 2}
+  model_divider            hint=minimal success=0.0%  histogram={0: 0, 1: 1, 2: 4, 3: 0}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 1, 'not_applied': 2, 'applied_invalid': 2, 'success': 0}
+  model_divider            hint=none    success=0.0%  histogram={0: 0, 1: 2, 2: 3, 3: 0}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 2, 'not_applied': 0, 'applied_invalid': 3, 'success': 0}
+  model_ldo                hint=full    success=20.0%  histogram={0: 0, 1: 0, 2: 4, 3: 1}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 4, 'success': 1}
+  model_ldo                hint=minimal success=0.0%  histogram={0: 0, 1: 0, 2: 5, 3: 0}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 1, 'applied_invalid': 4, 'success': 0}
+  model_ldo                hint=none    success=20.0%  histogram={0: 0, 1: 0, 2: 4, 3: 1}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 4, 'success': 1}
+  model_decoupling_bank    hint=full    success=100.0%  histogram={0: 0, 1: 0, 2: 0, 3: 5}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 0, 'success': 5}
+  model_decoupling_bank    hint=minimal success=40.0%  histogram={0: 0, 1: 0, 2: 3, 3: 2}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 3, 'success': 2}
+  model_decoupling_bank    hint=none    success=60.0%  histogram={0: 0, 1: 0, 2: 2, 3: 3}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 2, 'applied_invalid': 0, 'success': 3}
+  model_reference_chain    hint=full    success=20.0%  histogram={0: 0, 1: 1, 2: 3, 3: 1}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 1, 'not_applied': 0, 'applied_invalid': 3, 'success': 1}
+  model_reference_chain    hint=minimal success=20.0%  histogram={0: 0, 1: 1, 2: 3, 3: 1}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 1, 'not_applied': 0, 'applied_invalid': 3, 'success': 1}
+  model_reference_chain    hint=none    success=0.0%  histogram={0: 0, 1: 0, 2: 5, 3: 0}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 5, 'success': 0}
+
+  ACROSS TASKS hint=full    success=45.0%  histogram={0: 0, 1: 3, 2: 8, 3: 9}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 3, 'not_applied': 0, 'applied_invalid': 8, 'success': 9}
+  ACROSS TASKS hint=minimal success=15.0%  histogram={0: 0, 1: 2, 2: 15, 3: 3}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 2, 'not_applied': 3, 'applied_invalid': 12, 'success': 3}
+  ACROSS TASKS hint=none    success=20.0%  histogram={0: 0, 1: 2, 2: 14, 3: 4}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 2, 'not_applied': 2, 'applied_invalid': 12, 'success': 4}
+
+written to bench\results\model-fit-gpt-oss-20b-medium-e27.json
