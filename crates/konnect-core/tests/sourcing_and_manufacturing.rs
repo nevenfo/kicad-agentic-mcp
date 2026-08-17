@@ -126,16 +126,10 @@ async fn a_cost_estimate_scales_with_quantity_and_admits_what_it_is() {
     let board = harness::as_str(&h.fixture("test.kicad_pcb")).to_string();
 
     let five = h
-        .json(
-            "estimate_cost",
-            json!({ "board": board, "quantity": 5 }),
-        )
+        .json("estimate_cost", json!({ "board": board, "quantity": 5 }))
         .await;
     let fifty = h
-        .json(
-            "estimate_cost",
-            json!({ "board": board, "quantity": 50 }),
-        )
+        .json("estimate_cost", json!({ "board": board, "quantity": 50 }))
         .await;
 
     let total = |v: &serde_json::Value| {
@@ -267,43 +261,66 @@ async fn copying_a_routing_pattern_needs_a_board_and_a_region() {
 
 // ─── Reaches a third party ───────────────────────────────────────────────────
 
-/// `download_jlcpcb_database` cannot fetch anything: its source URL,
-/// `https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db`, returns HTTP
-/// 404 (checked 2026-08-17). The upstream project still exists, so this is a
-/// moved file rather than a retired one — recorded as J.2.4.3 and declared a
-/// `GAP` in the matrix, because every JLCPCB tool is unusable until it is
-/// fixed.
+/// `download_jlcpcb_database` against the real host. Everything about the
+/// download path — chunk manifest, concatenation, inflation, validation, atomic
+/// rename — is proved without a third party in
+/// `crates/konnect-core/src/tools/integration.rs`; what only the real host can
+/// tell us is whether it still publishes the artifacts under the names this
+/// expects. That is what this probe is for, and it is the check to run when a
+/// download starts failing (J.2.4.3).
 ///
-/// What this probe pins is that the failure is *reported*, not swallowed: a
-/// download that quietly leaves no file behind while claiming success is how a
-/// caller ends up believing the database is there. `#[ignore]`d because it
-/// reaches the network:
+/// It fetches `basic-preferred` — ~350 KB, the smallest non-empty library — so
+/// the probe stays cheap. Assertions stay loose about the catalogue's contents,
+/// which change daily; the schema and the plumbing are what is pinned.
+/// `#[ignore]`d because it reaches the network:
 ///
 ///     cargo test -p konnect-core --test sourcing_and_manufacturing -- --ignored
 #[tokio::test]
 #[ignore = "reaches the network; run with --ignored"]
-async fn the_dead_database_url_fails_loudly_rather_than_silently() {
+async fn the_published_database_still_downloads_and_answers_a_query() {
     let h = Harness::new();
     let db = h.path("jlcpcb.sqlite3");
 
-    let outcome = h
-        .call(
+    let downloaded = h
+        .json(
             "download_jlcpcb_database",
-            json!({ "output_path": harness::as_str(&db), "force": true }),
+            json!({
+                "output_path": harness::as_str(&db),
+                "library": "basic-preferred",
+                "force": true
+            }),
         )
         .await;
-    let reported = match outcome {
-        Ok(result) => harness::body(&result).to_string(),
-        Err(e) => e.to_string(),
-    };
-    assert!(
-        reported.contains("404") || reported.to_lowercase().contains("failed"),
-        "the download failed and the caller was not told: {reported}"
+    assert_eq!(
+        downloaded["success"],
+        json!(true),
+        "the published database could not be fetched: {downloaded}"
     );
     assert!(
-        !db.exists(),
-        "a failed download left a file behind at {}",
-        db.display()
+        downloaded["part_count"].as_i64().unwrap_or(0) > 100,
+        "a Basic/Preferred library with almost no parts is not the real one: {downloaded}"
+    );
+    assert!(db.exists(), "no database at {}", db.display());
+
+    // The point of the download is that the query tools can read it.
+    let found = h
+        .json(
+            "search_jlcpcb_parts",
+            json!({ "query": "0402", "output_path": harness::as_str(&db), "limit": 5 }),
+        )
+        .await;
+    assert!(
+        found["count"].as_u64().unwrap_or(0) > 0,
+        "the downloaded database answered nothing for '0402': {found}"
+    );
+    let part = &found["results"][0];
+    assert!(
+        part["lcsc"].as_str().is_some_and(|id| id.starts_with('C')),
+        "an LCSC part number is expected: {part}"
+    );
+    assert!(
+        part["stock"].as_i64().is_some(),
+        "the published Stock is text and has to come back parsed: {part}"
     );
 }
 

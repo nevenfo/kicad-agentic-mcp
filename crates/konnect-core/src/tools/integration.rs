@@ -28,12 +28,22 @@ pub fn tools() -> Vec<ToolDef> {
     vec![
         tool!(
             "download_jlcpcb_database",
-            "Download or update the local JLCPCB component parts database cache (SQLite).",
+            "Download or update the local JLCPCB component parts database cache (SQLite). \
+             Fetches the chunked archive published by kicad-jlcpcb-tools and inflates it. \
+             Sizes differ by orders of magnitude between libraries: 'basic-preferred' is ~2 MB, \
+             'current-parts' ~780 MB, 'all-parts' several GB.",
             json!({
                 "type": "object",
                 "properties": {
                     "output_path": { "type": "string", "description": "Local path to store the SQLite database file (optional, uses config default)" },
-                    "force": { "type": "boolean", "description": "Force re-download even if cache exists", "default": false }
+                    "force": { "type": "boolean", "description": "Force re-download even if cache exists", "default": false },
+                    "library": {
+                        "type": "string",
+                        "description": "Which published parts library to fetch",
+                        "enum": ["basic-preferred", "current-parts", "all-parts", "empty"],
+                        "default": "basic-preferred"
+                    },
+                    "base_url": { "type": "string", "description": "Override the upstream base URL, e.g. an internal mirror (optional)" }
                 },
                 "required": []
             }),
@@ -148,6 +158,63 @@ pub fn tools() -> Vec<ToolDef> {
     ]
 }
 
+// ─── The published JLCPCB parts database ─────────────────────────────────────
+//
+// `kicad-jlcpcb-tools` publishes the database on GitHub Pages, split into
+// 80 MB chunks of one deflate archive: `<db-file>.zip.001`, `.002`, ... The
+// chunks are numbered from 1 and a plain-text manifest holds how many there
+// are. There is no single-file download and no `jlcpcb_parts.db` — that name,
+// which this tool used to fetch, has never existed at this host in this form
+// (J.2.4.3).
+
+/// Base of every published artifact. Overridable per call for a mirror.
+const JLCPCB_BASE_URL: &str = "https://bouni.github.io/kicad-jlcpcb-tools";
+
+/// The table the published database keeps its parts in (an FTS5 virtual table).
+const JLCPCB_PARTS_TABLE: &str = "parts";
+
+/// Fetching the whole catalogue by default would mean ~780 MB of SQLite for a
+/// caller who asked for "the database"; the Basic/Preferred subset is ~2 MB and
+/// is what an assembly-cost decision actually needs. The larger libraries are a
+/// deliberate opt-in through `library`.
+const DEFAULT_JLCPCB_LIBRARY: &str = "basic-preferred";
+
+struct JlcpcbLibrary {
+    /// Tool-facing name.
+    name: &'static str,
+    /// Published file name, which is also the archive-entry name.
+    db_file_name: &'static str,
+    /// Plain-text file holding the chunk count.
+    chunk_manifest: &'static str,
+}
+
+const JLCPCB_LIBRARIES: [JlcpcbLibrary; 4] = [
+    JlcpcbLibrary {
+        name: "basic-preferred",
+        db_file_name: "basic-parts-fts5.db",
+        chunk_manifest: "chunk_num_basic_parts_fts5.txt",
+    },
+    JlcpcbLibrary {
+        name: "current-parts",
+        db_file_name: "current-parts-fts5.db",
+        chunk_manifest: "chunk_num_current_parts_fts5.txt",
+    },
+    JlcpcbLibrary {
+        name: "all-parts",
+        db_file_name: "parts-fts5.db",
+        chunk_manifest: "chunk_num_fts5.txt",
+    },
+    JlcpcbLibrary {
+        name: "empty",
+        db_file_name: "empty-parts-fts5.db",
+        chunk_manifest: "chunk_num_empty_parts_fts5.txt",
+    },
+];
+
+fn jlcpcb_library(name: &str) -> Option<&'static JlcpcbLibrary> {
+    JLCPCB_LIBRARIES.iter().find(|v| v.name == name)
+}
+
 // ─── JLCPCB database path helper ─────────────────────────────────────────────
 
 fn default_jlcpcb_db_path() -> PathBuf {
@@ -259,36 +326,201 @@ async fn handle_download_jlcpcb(
         ));
     }
 
-    // JLCPCB parts database is distributed as a CSV or SQLite download.
-    // The official URL changes — we use a known community mirror format.
-    let url = "https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db";
+    let library = args["library"].as_str().unwrap_or(DEFAULT_JLCPCB_LIBRARY);
+    let Some(variant) = jlcpcb_library(library) else {
+        return Ok(CallToolResult::error(format!(
+            "Unknown library '{}'. Available: {}",
+            library,
+            JLCPCB_LIBRARIES
+                .iter()
+                .map(|v| v.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    };
+    let base_url = args["base_url"]
+        .as_str()
+        .unwrap_or(JLCPCB_BASE_URL)
+        .trim_end_matches('/')
+        .to_string();
 
     if let Some(parent) = db_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
 
+    // Both temporaries sit next to the destination so the final step is a
+    // same-filesystem rename, and so a failure never leaves a half-written or
+    // un-inflated file where a query tool would find it and read it as the
+    // database.
+    let archive_path = sibling(&db_path, "download");
+    let inflated_path = sibling(&db_path, "inflating");
+    let discard = || async {
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        let _ = tokio::fs::remove_file(&inflated_path).await;
+    };
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()?;
 
-    let resp = get_with_backoff(&client, url).await?;
-    if !resp.status().is_success() {
+    // The archive is split into fixed-size chunks; a plain-text manifest holds
+    // how many, and they are numbered from 1.
+    let manifest_url = format!("{}/{}", base_url, variant.chunk_manifest);
+    let manifest = get_with_backoff(&client, &manifest_url).await?;
+    if !manifest.status().is_success() {
         return Ok(CallToolResult::error(format!(
-            "Download failed: HTTP {}",
-            resp.status()
+            "Could not read the chunk manifest at {}: HTTP {}",
+            manifest_url,
+            manifest.status()
         )));
     }
-    let bytes = resp.bytes().await?;
-    tokio::fs::write(&db_path, &bytes).await?;
+    let manifest_body = manifest.text().await?;
+    let Ok(chunk_count) = manifest_body.trim().parse::<u32>() else {
+        return Ok(CallToolResult::error(format!(
+            "The chunk manifest at {} is not a chunk count: {:?}",
+            manifest_url,
+            manifest_body.chars().take(80).collect::<String>()
+        )));
+    };
+    if chunk_count == 0 {
+        return Ok(CallToolResult::error(format!(
+            "The chunk manifest at {manifest_url} reports 0 chunks, so there is nothing to fetch"
+        )));
+    }
+
+    let mut downloaded_bytes: u64 = 0;
+    {
+        let mut archive = tokio::fs::File::create(&archive_path).await?;
+        for index in 1..=chunk_count {
+            let chunk_url = format!("{}/{}.zip.{:03}", base_url, variant.db_file_name, index);
+            let mut resp = match get_with_backoff(&client, &chunk_url).await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    drop(archive);
+                    discard().await;
+                    return Ok(CallToolResult::error(format!(
+                        "Chunk {index}/{chunk_count} could not be fetched from {chunk_url}: {e}"
+                    )));
+                }
+            };
+            if !resp.status().is_success() {
+                let status = resp.status();
+                drop(archive);
+                discard().await;
+                return Ok(CallToolResult::error(format!(
+                    "Chunk {index}/{chunk_count} failed: HTTP {status} for {chunk_url}"
+                )));
+            }
+            while let Some(bytes) = resp.chunk().await? {
+                downloaded_bytes += bytes.len() as u64;
+                tokio::io::AsyncWriteExt::write_all(&mut archive, &bytes).await?;
+            }
+        }
+        tokio::io::AsyncWriteExt::flush(&mut archive).await?;
+    }
+
+    let inflate = tokio::task::spawn_blocking({
+        let archive_path = archive_path.clone();
+        let inflated_path = inflated_path.clone();
+        let library = variant.name.to_string();
+        let source = format!("{}/{}", base_url, variant.db_file_name);
+        move || inflate_and_validate(&archive_path, &inflated_path, &library, &source)
+    })
+    .await?;
+
+    let part_count = match inflate {
+        Ok(count) => count,
+        Err(e) => {
+            discard().await;
+            return Ok(CallToolResult::error(format!(
+                "The downloaded archive is not a usable JLCPCB database: {e}"
+            )));
+        }
+    };
+
+    let size_bytes = tokio::fs::metadata(&inflated_path).await?.len();
+    tokio::fs::rename(&inflated_path, &db_path).await?;
+    let _ = tokio::fs::remove_file(&archive_path).await;
 
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
             "success": true,
             "path": db_path.to_str().unwrap_or(""),
-            "size_bytes": bytes.len()
+            "library": variant.name,
+            "chunks": chunk_count,
+            "downloaded_bytes": downloaded_bytes,
+            "size_bytes": size_bytes,
+            "part_count": part_count
         }))
         .unwrap(),
     ))
+}
+
+/// A temporary beside `path`, distinguished by suffix rather than by
+/// `with_extension` so `jlcpcb.db` and `jlcpcb.sqlite3` cannot collide.
+fn sibling(path: &std::path::Path, suffix: &str) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".{suffix}"));
+    path.with_file_name(name)
+}
+
+/// Inflate the single database entry out of the concatenated chunks, then prove
+/// the result is really the parts database before anything is renamed into
+/// place: a 200 that served an error page, a truncated chunk set, or a schema
+/// change upstream all land here rather than in a query tool later.
+///
+/// Returns the part count.
+fn inflate_and_validate(
+    archive_path: &std::path::Path,
+    inflated_path: &std::path::Path,
+    library: &str,
+    source_url: &str,
+) -> anyhow::Result<i64> {
+    let file = std::fs::File::open(archive_path)?;
+    let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file))
+        .map_err(|e| anyhow::anyhow!("not a ZIP archive: {e}"))?;
+    let entry_name = (0..archive.len())
+        .filter_map(|i| archive.name_for_index(i).map(String::from))
+        .find(|n| n.ends_with(".db"))
+        .ok_or_else(|| anyhow::anyhow!("the archive holds no .db entry"))?;
+    {
+        let mut entry = archive.by_name(&entry_name)?;
+        let mut out = std::io::BufWriter::new(std::fs::File::create(inflated_path)?);
+        std::io::copy(&mut entry, &mut out)?;
+        std::io::Write::flush(&mut out)?;
+    }
+
+    let conn = rusqlite::Connection::open(inflated_path)?;
+    let part_count: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM {JLCPCB_PARTS_TABLE}"),
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| {
+            anyhow::anyhow!("no readable '{JLCPCB_PARTS_TABLE}' table in {entry_name}: {e}")
+        })?;
+
+    // Which library this is cannot be read back out of the file, and the
+    // difference between 1 600 parts and 700 000 decides whether "not found"
+    // means "not stocked" or "wrong library". Record it.
+    let downloaded_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS konnect_source \
+         (library TEXT, source_url TEXT, downloaded_at_unix INTEGER, part_count INTEGER)",
+        [],
+    )?;
+    conn.execute("DELETE FROM konnect_source", [])?;
+    conn.execute(
+        "INSERT INTO konnect_source (library, source_url, downloaded_at_unix, part_count) \
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![library, source_url, downloaded_at, part_count],
+    )?;
+
+    Ok(part_count)
 }
 
 /// Build a deterministic cache key from a tool name, the resolved DB path
@@ -332,23 +564,22 @@ async fn handle_search_jlcpcb_parts(
         return Ok(CallToolResult::text(serde_json::to_string(&body).unwrap()));
     }
 
+    let searched_db = db_path.clone();
     let results = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<serde_json::Value>> {
         let conn = rusqlite::Connection::open(&db_path)?;
 
-        // The JLCPCB db schema has columns: LCSC, MFR_Part, Package, Solder_Joint,
-        // Manufacturer, Library_Type, Description, Datasheet, Price, Stock
-        let mut sql = String::from(
-            "SELECT LCSC, MFR_Part, Package, Manufacturer, Library_Type, Description, Price, Stock \
-             FROM components WHERE (Description LIKE ?1 OR MFR_Part LIKE ?1)"
+        let mut sql = format!(
+            "SELECT {JLCPCB_PART_COLUMNS} FROM {JLCPCB_PARTS_TABLE} \
+             WHERE (Description LIKE ?1 OR \"MFR.Part\" LIKE ?1)"
         );
         if basic_only {
-            sql.push_str(" AND Library_Type = 'Basic'");
+            sql.push_str(" AND \"Library Type\" = 'Basic'");
         }
         if in_stock {
-            sql.push_str(" AND Stock > 0");
+            sql.push_str(" AND CAST(Stock AS INTEGER) > 0");
         }
-        if let Some(ref _cat) = category {
-            sql.push_str(" AND Category LIKE ?2");
+        if category.is_some() {
+            sql.push_str(" AND (\"First Category\" LIKE ?2 OR \"Second Category\" LIKE ?2)");
         }
         sql.push_str(&format!(" LIMIT {}", limit));
 
@@ -369,19 +600,56 @@ async fn handle_search_jlcpcb_parts(
     })
     .await??;
 
-    let body = json!({
+    let mut body = json!({
         "query": args["query"].as_str().unwrap_or(""),
         "count": results.len(),
         "results": results
     });
+    // A search that finds nothing in the ~1 600-part Basic/Preferred subset and
+    // one that finds nothing in the full catalogue mean different things, and
+    // the caller cannot see which database is on disk.
+    if results.is_empty() {
+        if let Some(note) = provenance_note(&searched_db).await {
+            body["note"] = json!(note);
+        }
+    }
     ctx.jlcpcb_cache.put(key, body.clone());
 
-    let mut body = body;
     body["cached"] = json!(false);
     Ok(CallToolResult::text(serde_json::to_string(&body).unwrap()))
 }
 
+/// The columns of the published `parts` table, in the order `row_to_part_json`
+/// reads them. Quoted: the published names carry spaces and a dot.
+const JLCPCB_PART_COLUMNS: &str = "\"LCSC Part\", \"MFR.Part\", Package, Manufacturer, \
+     \"Library Type\", Description, Datasheet, Price, Stock, \"First Category\", \
+     \"Second Category\"";
+
+/// `Price` is a tier string — `1-199:0.018,200-599:0.015,...` — not a number,
+/// so a `price` field and an `ORDER BY Price` both need parsing first. This is
+/// the unit price at quantity 1, i.e. the first tier.
+fn unit_price_usd(tiers: &str) -> Option<f64> {
+    tiers
+        .split(',')
+        .next()?
+        .rsplit(':')
+        .next()?
+        .trim()
+        .parse::<f64>()
+        .ok()
+}
+
 fn row_to_part_json(row: &rusqlite::Row) -> rusqlite::Result<serde_json::Value> {
+    let price_tiers: String = row.get::<_, String>(7).unwrap_or_default();
+    // `Stock` is stored as text as well.
+    let stock = row
+        .get::<_, String>(8)
+        .unwrap_or_default()
+        .trim()
+        .parse::<i64>()
+        .unwrap_or(0);
+    let first_category: String = row.get::<_, String>(9).unwrap_or_default();
+    let second_category: String = row.get::<_, String>(10).unwrap_or_default();
     Ok(json!({
         "lcsc": row.get::<_, String>(0).unwrap_or_default(),
         "mpn": row.get::<_, String>(1).unwrap_or_default(),
@@ -389,9 +657,37 @@ fn row_to_part_json(row: &rusqlite::Row) -> rusqlite::Result<serde_json::Value> 
         "manufacturer": row.get::<_, String>(3).unwrap_or_default(),
         "library_type": row.get::<_, String>(4).unwrap_or_default(),
         "description": row.get::<_, String>(5).unwrap_or_default(),
-        "price": row.get::<_, f64>(6).unwrap_or(0.0),
-        "stock": row.get::<_, i64>(7).unwrap_or(0)
+        "datasheet": row.get::<_, String>(6).unwrap_or_default(),
+        "price": unit_price_usd(&price_tiers),
+        "price_tiers": price_tiers,
+        "stock": stock,
+        "category": if second_category.is_empty() { first_category.clone() } else { format!("{first_category} / {second_category}") }
     }))
+}
+
+/// What `download_jlcpcb_database` recorded about the database on disk, phrased
+/// for a caller who got no results. `None` when the file predates the
+/// provenance table or is not readable.
+async fn provenance_note(db_path: &std::path::Path) -> Option<String> {
+    let db_path = db_path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let conn = rusqlite::Connection::open(&db_path).ok()?;
+        let (library, part_count): (String, i64) = conn
+            .query_row(
+                "SELECT library, part_count FROM konnect_source LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()?;
+        Some(format!(
+            "searched the '{library}' library ({part_count} parts); \
+             re-run download_jlcpcb_database with library='current-parts' or 'all-parts' \
+             for the full catalogue"
+        ))
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 async fn handle_get_jlcpcb_part(
@@ -417,10 +713,10 @@ async fn handle_get_jlcpcb_part(
     let result =
         tokio::task::spawn_blocking(move || -> anyhow::Result<Option<serde_json::Value>> {
             let conn = rusqlite::Connection::open(&db_path)?;
-            let mut stmt = conn.prepare(
-            "SELECT LCSC, MFR_Part, Package, Manufacturer, Library_Type, Description, Price, Stock \
-             FROM components WHERE LCSC = ?1 LIMIT 1"
-        )?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {JLCPCB_PART_COLUMNS} FROM {JLCPCB_PARTS_TABLE} \
+                 WHERE \"LCSC Part\" = ?1 LIMIT 1"
+            ))?;
             let mut rows = stmt.query_map(rusqlite::params![lcsc_id], row_to_part_json)?;
             Ok(rows.next().and_then(|r| r.ok()))
         })
@@ -486,20 +782,32 @@ async fn handle_suggest_alternatives(
         let like_val = format!("%{}%", value);
         let like_pkg = format!("%{}%", package_hint);
 
-        let mut sql = String::from(
-            "SELECT LCSC, MFR_Part, Package, Manufacturer, Library_Type, Description, Price, Stock \
-             FROM components WHERE Description LIKE ?1 AND Package LIKE ?2 AND Stock > 0"
+        // `Price` is a tier string, so neither the `max_price_usd` cut nor the
+        // cheapest-first ordering can be done in SQL. A bounded candidate pool
+        // is read out and both are applied to the parsed unit price.
+        let sql = format!(
+            "SELECT {JLCPCB_PART_COLUMNS} FROM {JLCPCB_PARTS_TABLE} \
+             WHERE Description LIKE ?1 AND Package LIKE ?2 AND CAST(Stock AS INTEGER) > 0 \
+             LIMIT {}",
+            (limit * 20).max(100)
         );
-        if let Some(max_p) = max_price {
-            sql.push_str(&format!(" AND Price <= {}", max_p));
-        }
-        sql.push_str(&format!(" ORDER BY Price ASC LIMIT {}", limit));
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt
+        let mut rows: Vec<serde_json::Value> = stmt
             .query_map(rusqlite::params![like_val, like_pkg], row_to_part_json)?
             .filter_map(|r| r.ok())
+            .filter(|part| match (max_price, part["price"].as_f64()) {
+                (Some(max_p), Some(price)) => price <= max_p,
+                // An unpriced part cannot be shown to meet a price cap.
+                (Some(_), None) => false,
+                (None, _) => true,
+            })
             .collect();
+        rows.sort_by(|a, b| {
+            let key = |p: &serde_json::Value| p["price"].as_f64().unwrap_or(f64::MAX);
+            key(a).total_cmp(&key(b))
+        });
+        rows.truncate(limit);
         Ok(rows)
     })
     .await??;
@@ -534,12 +842,35 @@ async fn handle_jlcpcb_stats(
     let meta = tokio::fs::metadata(&db_path).await?;
     let size_bytes = meta.len();
 
-    let count = tokio::task::spawn_blocking({
+    let stats = tokio::task::spawn_blocking({
         let db_path = db_path.clone();
-        move || -> anyhow::Result<i64> {
+        move || -> anyhow::Result<DatabaseStats> {
             let conn = rusqlite::Connection::open(&db_path)?;
-            let count: i64 = conn.query_row("SELECT COUNT(*) FROM components", [], |r| r.get(0))?;
-            Ok(count)
+            let part_count: i64 = conn.query_row(
+                &format!("SELECT COUNT(*) FROM {JLCPCB_PARTS_TABLE}"),
+                [],
+                |r| r.get(0),
+            )?;
+            // Written by `download_jlcpcb_database`; absent if the file came
+            // from somewhere else.
+            let source = conn
+                .query_row(
+                    "SELECT library, downloaded_at_unix FROM konnect_source LIMIT 1",
+                    [],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+                )
+                .ok();
+            Ok(DatabaseStats {
+                part_count,
+                library: source.as_ref().map(|s| s.0.clone()),
+                downloaded_at_unix: source.map(|s| s.1),
+                // Written by the upstream build: when the catalogue was scraped.
+                upstream_last_update: conn
+                    .query_row("SELECT last_update FROM meta LIMIT 1", [], |r| {
+                        r.get::<_, String>(0)
+                    })
+                    .ok(),
+            })
         }
     })
     .await??;
@@ -549,10 +880,23 @@ async fn handle_jlcpcb_stats(
             "exists": true,
             "path": db_path.to_str().unwrap_or(""),
             "size_bytes": size_bytes,
-            "part_count": count
+            "part_count": stats.part_count,
+            "library": stats.library,
+            "downloaded_at_unix": stats.downloaded_at_unix,
+            "upstream_last_update": stats.upstream_last_update
         }))
         .unwrap(),
     ))
+}
+
+/// What can be read back out of a downloaded database: its size in parts, and
+/// the two provenance records — ours (which library, when fetched) and
+/// upstream's (when the catalogue was scraped).
+struct DatabaseStats {
+    part_count: i64,
+    library: Option<String>,
+    downloaded_at_unix: Option<i64>,
+    upstream_last_update: Option<String>,
 }
 
 async fn handle_enrich_datasheets(
@@ -938,35 +1282,71 @@ mod jlcpcb_cache_tests {
         )
     }
 
-    /// Builds a temp SQLite file with a `components` table matching the
-    /// schema the handlers query, seeded with one part.
+    /// Builds a temp SQLite file with the schema the *published* database
+    /// actually has — the FTS5 `parts` table, its quoted column names, and its
+    /// text `Price` tier strings and text `Stock` — seeded with one part.
+    ///
+    /// It matters that this is the upstream DDL verbatim: the handlers used to
+    /// query a `components` table with numeric `Price`, which no published
+    /// database has ever had, and a fixture inventing that schema is what let
+    /// the mismatch stand (J.2.4.4).
     fn seed_test_db() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("jlcpcb.db");
         let conn = rusqlite::Connection::open(&db_path).expect("open db");
-        conn.execute(
-            "CREATE TABLE components (
-                LCSC TEXT, MFR_Part TEXT, Package TEXT, Manufacturer TEXT,
-                Library_Type TEXT, Description TEXT, Price REAL, Stock INTEGER
-            )",
-            [],
+        create_published_schema(&conn);
+        insert_part(
+            &conn,
+            "C14663",
+            "RC0402FR-0710KL",
+            "0402",
+            "Basic",
+            "10k resistor 0402",
+            "1-199:0.01,200-:0.008",
+            "5000",
+        );
+        (dir, db_path)
+    }
+
+    /// The published DDL, copied from a downloaded `basic-parts-fts5.db`.
+    pub(super) fn create_published_schema(conn: &rusqlite::Connection) {
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE parts using fts5 (
+                'LCSC Part', 'First Category', 'Second Category', 'MFR.Part',
+                'Package', 'Solder Joint' unindexed, 'Manufacturer',
+                'Library Type', 'Description', 'Datasheet' unindexed,
+                'Price' unindexed, 'Stock' unindexed
+            , tokenize=\"trigram\");
+             CREATE TABLE meta ('filename', 'size', 'partcount', 'date', 'last_update');",
         )
-        .unwrap();
+        .expect("published schema");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn insert_part(
+        conn: &rusqlite::Connection,
+        lcsc: &str,
+        mpn: &str,
+        package: &str,
+        library_type: &str,
+        description: &str,
+        price_tiers: &str,
+        stock: &str,
+    ) {
         conn.execute(
-            "INSERT INTO components VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO parts VALUES (?1, 'Resistors', 'Chip Resistor - Surface Mount', ?2, \
+             ?3, '2', 'YAGEO', ?4, ?5, 'https://example.invalid/ds.pdf', ?6, ?7)",
             rusqlite::params![
-                "C14663",
-                "RC0402FR-0710KL",
-                "0402",
-                "YAGEO",
-                "Basic",
-                "10k resistor 0402",
-                0.01,
-                5000
+                lcsc,
+                mpn,
+                package,
+                library_type,
+                description,
+                price_tiers,
+                stock
             ],
         )
-        .unwrap();
-        (dir, db_path)
+        .expect("insert part");
     }
 
     #[tokio::test]
@@ -1037,10 +1417,579 @@ mod jlcpcb_cache_tests {
         assert_eq!(response_json(&second)["cached"], json!(true));
     }
 
-    fn response_json(result: &CallToolResult) -> serde_json::Value {
+    pub(super) fn response_json(result: &CallToolResult) -> serde_json::Value {
         match &result.content[0] {
             crate::mcp::protocol::ToolContent::Text { text } => serde_json::from_str(text).unwrap(),
             _ => panic!("expected text content"),
         }
+    }
+}
+
+/// The published database, and reading it: `download_jlcpcb_database` fetching
+/// the chunked archive (J.2.4.3), and the query tools speaking the schema that
+/// archive contains (J.2.4.4).
+///
+/// The archive is served from a throwaway loopback server rather than from
+/// GitHub Pages, so the whole path — manifest, 1-based chunk numbering,
+/// concatenation, inflation, validation, atomic rename — is proved without a
+/// third party. The gated probe in
+/// `crates/konnect-core/tests/sourcing_and_manufacturing.rs` is what checks the
+/// real host still publishes what this expects.
+#[cfg(test)]
+mod jlcpcb_published_database_tests {
+    use super::jlcpcb_cache_tests::{create_published_schema, insert_part, response_json};
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    /// Answers `GET /<name>` from `routes` and 404s everything else. Returns the
+    /// base URL to hand to `base_url`.
+    async fn serve(routes: Vec<(String, Vec<u8>)>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let routes = routes.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let read = socket.read(&mut buf).await.unwrap_or(0);
+                    let request = String::from_utf8_lossy(&buf[..read]).to_string();
+                    let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
+                    let body = routes
+                        .iter()
+                        .find(|(name, _)| path == format!("/{name}"))
+                        .map(|(_, body)| body.clone());
+                    let response = match body {
+                        Some(body) => {
+                            let mut out = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                                body.len()
+                            )
+                            .into_bytes();
+                            out.extend_from_slice(&body);
+                            out
+                        }
+                        None => b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec(),
+                    };
+                    let _ = socket.write_all(&response).await;
+                    let _ = socket.flush().await;
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// A real SQLite database with the published schema and two parts, wrapped
+    /// in a single-entry deflate archive the way upstream publishes it.
+    fn published_archive(dir: &std::path::Path) -> Vec<u8> {
+        let source = dir.join("published-source.db");
+        let conn = rusqlite::Connection::open(&source).unwrap();
+        create_published_schema(&conn);
+        insert_part(
+            &conn,
+            "C14663",
+            "RC0402FR-0710KL",
+            "0402",
+            "Basic",
+            "10k resistor 0402",
+            "1-199:0.01,200-:0.008",
+            "5000",
+        );
+        insert_part(
+            &conn,
+            "C25744",
+            "RC0402FR-071KL",
+            "0402",
+            "Extended",
+            "1k resistor 0402",
+            "1-199:0.004,200-:0.003",
+            "0",
+        );
+        drop(conn);
+
+        let bytes = std::fs::read(&source).unwrap();
+        let mut zipped = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zipped
+            .start_file(
+                "basic-parts-fts5.db",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated),
+            )
+            .unwrap();
+        std::io::Write::write_all(&mut zipped, &bytes).unwrap();
+        zipped.finish().unwrap().into_inner()
+    }
+
+    /// The upstream artifact names for the default library, split into `chunks`
+    /// pieces — the manifest first, then the chunks numbered from 1.
+    fn routes(archive: &[u8], chunks: usize) -> Vec<(String, Vec<u8>)> {
+        let size = archive.len().div_ceil(chunks);
+        let mut routes = vec![(
+            "chunk_num_basic_parts_fts5.txt".to_string(),
+            chunks.to_string().into_bytes(),
+        )];
+        for (index, piece) in archive.chunks(size).enumerate() {
+            routes.push((
+                format!("basic-parts-fts5.db.zip.{:03}", index + 1),
+                piece.to_vec(),
+            ));
+        }
+        routes
+    }
+
+    fn temporaries_gone(db_path: &std::path::Path) {
+        for suffix in ["download", "inflating"] {
+            let leftover = sibling(db_path, suffix);
+            assert!(
+                !leftover.exists(),
+                "a temporary was left behind at {}",
+                leftover.display()
+            );
+        }
+    }
+
+    /// The whole download: two chunks, concatenated, inflated, validated, and
+    /// then actually queried. Nothing here names a library — the default is
+    /// what a caller who just wants "the database" gets.
+    #[tokio::test]
+    async fn a_chunked_download_lands_a_database_the_query_tools_can_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = published_archive(dir.path());
+        let base_url = serve(routes(&archive, 2)).await;
+        let db_path = dir.path().join("jlcpcb.db");
+        let ctx = test_ctx();
+
+        let result = handle_download_jlcpcb(
+            &json!({ "output_path": db_path.to_str().unwrap(), "base_url": base_url }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let body = response_json(&result);
+
+        assert_eq!(body["success"], json!(true), "download failed: {body}");
+        assert_eq!(
+            body["chunks"],
+            json!(2),
+            "both chunks should be used: {body}"
+        );
+        assert_eq!(body["library"], json!(DEFAULT_JLCPCB_LIBRARY));
+        assert_eq!(body["part_count"], json!(2), "{body}");
+        assert!(db_path.exists(), "no database at {}", db_path.display());
+        temporaries_gone(&db_path);
+
+        let found = response_json(
+            &handle_search_jlcpcb_parts(
+                &json!({ "query": "10k", "output_path": db_path.to_str().unwrap() }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(
+            found["count"],
+            json!(1),
+            "the download is not queryable: {found}"
+        );
+        assert_eq!(found["results"][0]["lcsc"], json!("C14663"));
+    }
+
+    /// What the download recorded is readable afterwards, and a search that
+    /// finds nothing says which library it searched — the difference between
+    /// "not stocked" and "wrong library" is invisible otherwise.
+    #[tokio::test]
+    async fn stats_and_an_empty_result_name_the_library_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = published_archive(dir.path());
+        let base_url = serve(routes(&archive, 1)).await;
+        let db_path = dir.path().join("jlcpcb.db");
+        let ctx = test_ctx();
+
+        handle_download_jlcpcb(
+            &json!({ "output_path": db_path.to_str().unwrap(), "base_url": base_url }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        let stats = response_json(
+            &handle_jlcpcb_stats(&json!({ "output_path": db_path.to_str().unwrap() }), &ctx)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(stats["exists"], json!(true), "{stats}");
+        assert_eq!(stats["library"], json!(DEFAULT_JLCPCB_LIBRARY), "{stats}");
+        assert_eq!(stats["part_count"], json!(2), "{stats}");
+
+        let nothing = response_json(
+            &handle_search_jlcpcb_parts(
+                &json!({ "query": "STM32H747", "output_path": db_path.to_str().unwrap() }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(nothing["count"], json!(0));
+        let note = nothing["note"].as_str().unwrap_or_default();
+        assert!(
+            note.contains(DEFAULT_JLCPCB_LIBRARY) && note.contains("all-parts"),
+            "an empty result should say which library was searched: {nothing}"
+        );
+    }
+
+    /// A chunk set the manifest promises but the host does not have is a
+    /// truncated archive. The failure has to be reported *and* leave nothing
+    /// behind: a half-written file at the destination is worse than no file,
+    /// because every query tool would then read it as the database.
+    #[tokio::test]
+    async fn a_missing_chunk_leaves_no_database_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = published_archive(dir.path());
+        let mut incomplete = routes(&archive, 2);
+        incomplete.pop(); // the manifest still says 2
+        let base_url = serve(incomplete).await;
+        let db_path = dir.path().join("jlcpcb.db");
+
+        let result = handle_download_jlcpcb(
+            &json!({ "output_path": db_path.to_str().unwrap(), "base_url": base_url }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(result.is_error, "the failure was not reported");
+        let text = format!("{:?}", result.content);
+        assert!(
+            text.contains("Chunk 2/2") && text.contains("404"),
+            "the error should name the chunk that failed: {text}"
+        );
+        assert!(
+            !db_path.exists(),
+            "a failed download left a database behind"
+        );
+        temporaries_gone(&db_path);
+    }
+
+    /// GitHub Pages answers 200 with an HTML error page for some missing paths,
+    /// which is how the old URL used to be "fetched" successfully. Content that
+    /// is not the database must not be renamed into place.
+    #[tokio::test]
+    async fn a_two_hundred_serving_something_else_is_not_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let base_url = serve(vec![
+            ("chunk_num_basic_parts_fts5.txt".to_string(), b"1".to_vec()),
+            (
+                "basic-parts-fts5.db.zip.001".to_string(),
+                b"<html><body>404</body></html>".to_vec(),
+            ),
+        ])
+        .await;
+        let db_path = dir.path().join("jlcpcb.db");
+
+        let result = handle_download_jlcpcb(
+            &json!({ "output_path": db_path.to_str().unwrap(), "base_url": base_url }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(result.is_error);
+        assert!(
+            !db_path.exists(),
+            "an HTML page was accepted as the database"
+        );
+        temporaries_gone(&db_path);
+    }
+
+    /// A database whose `parts` table is missing is not the parts database,
+    /// however well-formed the archive is.
+    #[tokio::test]
+    async fn an_archive_without_the_parts_table_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let wrong = dir.path().join("wrong.db");
+        let conn = rusqlite::Connection::open(&wrong).unwrap();
+        conn.execute("CREATE TABLE something_else (a)", []).unwrap();
+        drop(conn);
+        let mut zipped = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zipped
+            .start_file(
+                "basic-parts-fts5.db",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated),
+            )
+            .unwrap();
+        std::io::Write::write_all(&mut zipped, &std::fs::read(&wrong).unwrap()).unwrap();
+        let archive = zipped.finish().unwrap().into_inner();
+
+        let base_url = serve(routes(&archive, 1)).await;
+        let db_path = dir.path().join("jlcpcb.db");
+        let result = handle_download_jlcpcb(
+            &json!({ "output_path": db_path.to_str().unwrap(), "base_url": base_url }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(result.is_error);
+        let text = format!("{:?}", result.content);
+        assert!(
+            text.contains("parts"),
+            "the error should say what is missing: {text}"
+        );
+        assert!(!db_path.exists());
+        temporaries_gone(&db_path);
+    }
+
+    /// An unknown library name is a caller mistake, and the answer is the list
+    /// of names that work — without touching the network first.
+    #[tokio::test]
+    async fn an_unknown_library_names_the_ones_that_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = handle_download_jlcpcb(
+            &json!({
+                "output_path": dir.path().join("jlcpcb.db").to_str().unwrap(),
+                "library": "everything"
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(result.is_error);
+        let text = format!("{:?}", result.content);
+        for name in JLCPCB_LIBRARIES.iter().map(|v| v.name) {
+            assert!(text.contains(name), "'{name}' is missing from: {text}");
+        }
+    }
+
+    // ─── The schema the published database actually has (J.2.4.4) ────────────
+
+    fn seeded(dir: &std::path::Path) -> std::path::PathBuf {
+        let db_path = dir.join("jlcpcb.db");
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        create_published_schema(&conn);
+        insert_part(
+            &conn,
+            "C14663",
+            "RC0402FR-0710KL",
+            "0402",
+            "Basic",
+            "10k resistor 0402",
+            "1-199:0.0123,200-:0.008",
+            "5000",
+        );
+        insert_part(
+            &conn,
+            "C25744",
+            "RC0402FR-0710KX",
+            "0402",
+            "Extended",
+            "10k resistor 0402 thin film",
+            "1-99:0.0041,100-:0.003",
+            "12000",
+        );
+        insert_part(
+            &conn,
+            "C99999",
+            "RC0402FR-0710KZ",
+            "0402",
+            "Basic",
+            "10k resistor 0402 out of stock",
+            "1-99:0.001",
+            "0",
+        );
+        db_path
+    }
+
+    /// `Price` is a tier string and `Stock` is text in the published schema, so
+    /// a caller reading `price` or comparing `stock` gets a parsed number, and
+    /// the raw tiers stay available for a quantity decision.
+    #[tokio::test]
+    async fn a_result_row_carries_the_parsed_unit_price_and_stock() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = seeded(dir.path());
+        let found = response_json(
+            &handle_search_jlcpcb_parts(
+                &json!({ "query": "RC0402FR-0710KL", "output_path": db_path.to_str().unwrap() }),
+                &test_ctx(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let part = &found["results"][0];
+        assert_eq!(part["price"], json!(0.0123), "unit price at qty 1: {part}");
+        assert_eq!(part["price_tiers"], json!("1-199:0.0123,200-:0.008"));
+        assert_eq!(part["stock"], json!(5000), "{part}");
+        assert_eq!(part["library_type"], json!("Basic"));
+        assert_eq!(
+            part["category"],
+            json!("Resistors / Chip Resistor - Surface Mount")
+        );
+        assert!(part["datasheet"]
+            .as_str()
+            .is_some_and(|d| d.contains("http")));
+    }
+
+    /// The two filters that cut the result set have to work against the real
+    /// column names and the real text `Stock`.
+    #[tokio::test]
+    async fn basic_only_and_in_stock_filter_on_the_published_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = seeded(dir.path());
+        let ctx = test_ctx();
+        let path = db_path.to_str().unwrap().to_string();
+
+        let all = response_json(
+            &handle_search_jlcpcb_parts(
+                &json!({ "query": "10k resistor", "output_path": path, "in_stock": false }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(all["count"], json!(3), "{all}");
+
+        let stocked = response_json(
+            &handle_search_jlcpcb_parts(
+                &json!({ "query": "10k resistor", "output_path": path, "in_stock": true }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(
+            stocked["count"],
+            json!(2),
+            "a text '0' is out of stock: {stocked}"
+        );
+
+        let basic = response_json(
+            &handle_search_jlcpcb_parts(
+                &json!({
+                    "query": "10k resistor", "output_path": path,
+                    "in_stock": false, "basic_only": true
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(
+            basic["count"],
+            json!(2),
+            "Extended should be excluded: {basic}"
+        );
+
+        let categorised = response_json(
+            &handle_search_jlcpcb_parts(
+                &json!({
+                    "query": "10k resistor", "output_path": path,
+                    "in_stock": false, "category": "Chip Resistor"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        assert_eq!(
+            categorised["count"],
+            json!(3),
+            "the category lives in two columns, not one called 'Category': {categorised}"
+        );
+    }
+
+    /// Cheapest-first and `max_price_usd` are decided on the parsed unit price;
+    /// `ORDER BY Price` on a tier string would sort "1-199:0.02" before
+    /// "1-99:0.9" by text.
+    #[tokio::test]
+    async fn alternatives_are_ordered_by_unit_price_and_respect_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = seeded(dir.path());
+        let ctx = test_ctx();
+        let path = db_path.to_str().unwrap().to_string();
+
+        let cheapest = response_json(
+            &handle_suggest_alternatives(
+                &json!({ "value": "10k", "footprint": "Resistor_SMD:R_0402", "output_path": path }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        let alternatives = cheapest["alternatives"].as_array().unwrap();
+        assert_eq!(
+            alternatives.len(),
+            2,
+            "out-of-stock parts are not alternatives: {cheapest}"
+        );
+        assert_eq!(
+            alternatives[0]["lcsc"],
+            json!("C25744"),
+            "the 0.0041 part should come first: {cheapest}"
+        );
+
+        let capped = response_json(
+            &handle_suggest_alternatives(
+                &json!({
+                    "value": "10k", "footprint": "Resistor_SMD:R_0402",
+                    "output_path": path, "max_price_usd": 0.005
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        );
+        let capped = capped["alternatives"].as_array().unwrap();
+        assert_eq!(capped.len(), 1, "0.0123 is over the cap: {capped:?}");
+        assert_eq!(capped[0]["lcsc"], json!("C25744"));
+    }
+
+    #[test]
+    fn a_price_tier_string_yields_the_quantity_one_price() {
+        assert_eq!(
+            unit_price_usd("1-199:0.018,200-599:0.015,600-:0.013"),
+            Some(0.018)
+        );
+        assert_eq!(unit_price_usd("1-:1.5"), Some(1.5));
+        // No tiers at all, or a tier without a price, is not a price of zero.
+        assert_eq!(unit_price_usd(""), None);
+        assert_eq!(unit_price_usd("1-199"), None);
+    }
+
+    #[test]
+    fn every_published_library_has_a_distinct_artifact_pair() {
+        for variant in JLCPCB_LIBRARIES.iter() {
+            assert!(variant.db_file_name.ends_with(".db"));
+            assert!(variant.chunk_manifest.starts_with("chunk_num_"));
+            assert_eq!(
+                JLCPCB_LIBRARIES
+                    .iter()
+                    .filter(|other| other.db_file_name == variant.db_file_name)
+                    .count(),
+                1,
+                "'{}' is not a distinct artifact",
+                variant.name
+            );
+        }
+        assert!(jlcpcb_library(DEFAULT_JLCPCB_LIBRARY).is_some());
+        assert!(jlcpcb_library("nope").is_none());
     }
 }

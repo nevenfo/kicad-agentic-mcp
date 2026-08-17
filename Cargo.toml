@@ -57,6 +57,11 @@ reqwest = { version = "0.13", features = ["json", "stream"] }
 # SQLite (JLCPCB database)
 rusqlite = { version = "0.40", features = ["bundled"] }
 
+# ZIP (the JLCPCB parts database ships as a chunked deflate archive).
+# `deflate-flate2` only: decompression through the flate2 already in the tree,
+# no compression backend, no other codec.
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
+
 # Error handling
 anyhow = "1"
 thiserror = "1"

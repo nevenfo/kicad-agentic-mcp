@@ -2,26 +2,37 @@
 
 ## Phase actuelle
 
-J — scope expansion. J.1, J.2, J.3 and J.4 are closed. One residue is left:
-J.2.4.3, which needs an external lookup.
+J — scope expansion. J.1, J.2, J.3 and J.4 are closed, J.2.4 residue included.
 
 ## Tâche actuelle
 
-J.2.4.3 — `download_jlcpcb_database`'s source URL 404s and the file moved.
-Needs the new upstream location before the tool can stop being a `GAP`.
+None assigned. Phase J is closed; the next phase is a decision, not a task —
+see NEXT ACTION.
 
 ## Dernière tâche validée
 
-J.3 — PCB E2E without a GUI session. The answer is *both*: an unattended PCB
-E2E is possible, and a desktop session is still required.
+J.2.4.3 + J.2.4.4 — the JLCPCB parts database. The old URL 404'd because
+upstream publishes chunked archives, not a single `.db`; and the query tools were
+reading a schema no published database has ever had.
 
 Validation :
-- `scripts/live-pcb-e2e.ps1`: three cold runs, the last one 3/3 live tests, exit 0
-- `cargo test --workspace`: 949 passed, 0 failed, 26 ignored — unchanged
+- `cargo test --workspace`: 960 passed, 0 failed
+- `cargo test -p konnect-core --lib jlcpcb`: 15 passed (download path + schema,
+  loopback-served archive, no third party)
+- `cargo test -p konnect-core --test sourcing_and_manufacturing -- --ignored
+  the_published_database`: PASS against the real host
 - `cargo clippy -p konnect-core --lib -- -D warnings`: PASS
+- `docs/capability-matrix.md` regenerated: sourcing 100 %, the `GAP` is gone,
+  KiCAD domains 72.6 % → 73.2 %, fork-vs-baseline 72.0 % → 72.6 %
 
 ## Décisions actives
 
+- D48 — `download_jlcpcb_database` defaults to the `basic-preferred` library
+  (~2 MB) rather than upstream's own default `current-parts` (~780 MB inflated):
+  a caller who asks for "the database" should not get a 175 MB download it cannot
+  see the progress of. `library` opts into `current-parts` or `all-parts`, and
+  the fetched library is recorded in the file so an empty search result can say
+  which one it searched.
 - D47 — driving the PCB path needs a *desktop session* but no human. KiCad
   never hands `KICAD_API_SOCKET` to a process it did not spawn; the client
   constructs the deterministic `%LOCALAPPDATA%\Temp\kicad\api.sock` instead,
@@ -40,7 +51,8 @@ Validation :
 - D45 — an `ipc` tool is never "proved" by its own "KiCAD must be running"
   error, and a `cli` tool is never proved by failing to spawn.
 - D46 — a third party is not a test dependency. The JLCPCB/LCSC/Freerouting
-  tools are tested for what they do when it is absent.
+  tools are tested for what they do when it is absent; where a real payload is
+  needed, it is served from a loopback server built from the published DDL.
 - D43 — Direct/Agent is an explicit gateway entry-point choice; `ESCALATE`
   returns structured failure to the caller.
 - D42 — Agent retrieval must combine task-specific electrical and Plan IR
@@ -58,17 +70,20 @@ Validation :
 
 ## Blocage actif
 
-1. **J.2.4.3 needs an external lookup**: the JLCPCB parts database moved and the
-   old URL 404s. The tool is declared a `GAP` meanwhile.
-2. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
+1. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
    `kicad-cli api-server` it needs.
-3. The `live-ipc` CI job (J.3.3) has never run on a GitHub runner. One unknown
+2. The `live-ipc` CI job (J.3.3) has never run on a GitHub runner. One unknown
    left: whether `windows-latest` gives pcbnew a usable window station. The
    fresh-profile half was rehearsed locally with `APPDATA` pointed at an empty
    directory — 3/3, exit 0.
 
 ## Fichiers / zones utiles
 
+- `crates/konnect-core/src/tools/integration.rs` — the JLCPCB tools; the
+  published-database constants (`JLCPCB_LIBRARIES`, `JLCPCB_PART_COLUMNS`) and
+  both test modules live here. The scanner counts `#[cfg(test)]` blocks under
+  `crates/konnect-core/src/tools` as proof, which is why the hermetic download
+  tests sit in the source file rather than in `tests/`
 - `scripts/live-pcb-e2e.ps1` — the live PCB harness: starts pcbnew, runs both
   live suites, stops pcbnew. Run it with no arguments.
 - `crates/konnect-ipc/tests/live_kicad_test.rs`,
@@ -85,12 +100,15 @@ Validation :
   `sch_components.rs`, `sch_wiring.rs`, `library.rs`, `docs/benchmark.md`,
   `docs/local-agents.md`. `sch_components.rs` also holds committed J.2.3/J.2.4
   hunks: stage from that file by filtered patch, never whole-file
-- `cargo clippy --tests` fails inside those uncommitted changes
+- `cargo fmt` is not a gate: the tree has pre-existing drift in several crates,
+  so format only the files a task touches (`rustfmt --edition 2021 <file>` pulls
+  in `mod` siblings — revert those)
+- `cargo clippy --tests` fails inside the uncommitted H.6 changes
   (`await_holding_lock`), which is why the project's clippy gate is `--lib`
 
 ## NEXT ACTION
 
-Close J.2.4.3: find where `jlcpcb_parts.db` moved upstream (delegate the lookup
-to `web-research`), point `download_jlcpcb_database` at it, and turn the
-`#[ignore]`d failure probe into one that proves the fetch — or, if the file is
-genuinely gone, record that as the `GAP`'s reason instead of a stale 404.
+Phase J has no open task. Decide what phase K is — the two candidates on the
+table are (a) run the `live-ipc` CI job on a GitHub runner to close the last
+J.3.3 unknown, and (b) the PCB benchmark coverage that J.3 unblocked. Both need
+a user decision on priority before any work starts.

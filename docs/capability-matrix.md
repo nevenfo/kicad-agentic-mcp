@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 119 | 19 | 23 | 3 | 5 | 72.6 % |
+| KiCAD domains | 169 | 120 | 19 | 23 | 2 | 5 | 73.2 % |
 | server's own | 40 | 27 | 10 | 3 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 134 | 72.0 % |
+| this fork | 186 | 135 | 72.6 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -83,7 +83,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`drill`](#drill) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`pick_place`](#pick_place) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`datasheet`](#datasheet) | 2 | 2 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`sourcing`](#sourcing) | 5 | 4 | 0 | 0 | 1 | 0 | 80.0 % |
+| [`sourcing`](#sourcing) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`export`](#export) | 11 | 10 | 1 | 0 | 0 | 0 | 90.9 % |
 | [`review`](#review) | 6 | 0 | 6 | 0 | 0 | 0 | 0.0 % |
 | [`config`](#config) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -444,7 +444,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `download_jlcpcb_database` | `integration` | `external` | GAP | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | the source URL is dead: https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db returns HTTP 404 (checked 2026-08-17), so the database cannot be fetched and every JLCPCB tool stays unusable until a working source replaces it (J.2.4.3) |
+| `download_jlcpcb_database` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
 | `search_jlcpcb_parts` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
 | `get_jlcpcb_part` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
 | `suggest_jlcpcb_alternatives` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |

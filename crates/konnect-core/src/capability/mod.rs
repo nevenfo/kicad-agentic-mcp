@@ -642,14 +642,7 @@ pub static MANIFEST: &[Capability] = &[
     cap("search_footprints", Domain::Footprints, Adapter::Sexpr),
     cap("get_symbol_info", Domain::Libraries, Adapter::Sexpr),
     // ── integration ─────────────────────────────────────────────────────────
-    cap_lim(
-        "download_jlcpcb_database",
-        Domain::Sourcing,
-        Adapter::External,
-        Limitation::Gap(
-            "the source URL is dead: https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db returns HTTP 404 (checked 2026-08-17), so the database cannot be fetched and every JLCPCB tool stays unusable until a working source replaces it (J.2.4.3)",
-        ),
-    ),
+    cap("download_jlcpcb_database", Domain::Sourcing, Adapter::External),
     cap("search_jlcpcb_parts", Domain::Sourcing, Adapter::External),
     cap("get_jlcpcb_part", Domain::Sourcing, Adapter::External),
     cap(

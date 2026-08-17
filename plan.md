@@ -1006,16 +1006,39 @@ None.
       matched per pin number so a rotation still lands each wire on its own pin.
       Reports `wire_ends_dragged`; the `PARTIAL` limitation is retired and the
       description says what it now does
-- [ ] J.2.4.3 `download_jlcpcb_database` cannot fetch anything: its source,
-      `https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db`, returns HTTP
-      404 (checked 2026-08-17) while the upstream project still exists, so the
-      file moved. Declared a `GAP` and pinned by an `#[ignore]`d probe asserting
-      the failure is reported and leaves no file behind. Fixing it needs the new
-      URL, which is an external lookup this session could not make
+- [x] J.2.4.3 `download_jlcpcb_database` could not fetch anything: its source,
+      `https://bouni.github.io/kicad-jlcpcb-tools/jlcpcb_parts.db`, returned HTTP
+      404 (checked 2026-08-17). The host had not moved — the *shape* of the
+      artifact had: upstream publishes each library as one deflate archive split
+      into 80 MB chunks, `<name>.db.zip.001` upwards, with a plain-text manifest
+      holding the chunk count. Four libraries exist, from `basic-preferred`
+      (~2 MB) to `all-parts` (several GB), so `library` selects one and the
+      default is the small one. The tool now reads the manifest, concatenates the
+      chunks, inflates, proves the result is really the parts database, and only
+      then renames it into place; a failure at any step leaves nothing behind.
+      The `GAP` is retired
+- [x] J.2.4.4 the JLCPCB query tools were querying a schema no published
+      database has ever had — `SELECT LCSC, MFR_Part, ... FROM components` with a
+      numeric `Price` — while the published file holds an FTS5 `parts` table with
+      quoted column names (`"LCSC Part"`, `"MFR.Part"`, `"Library Type"`,
+      `"First Category"`), a `Price` that is a tier *string*
+      (`1-199:0.018,200-:0.015`) and a text `Stock`. Nothing caught it because the
+      only fixture was one that invented the `components` schema, and every other
+      probe asserted the absent-database path. All four tools now speak the
+      published schema; `price` is the parsed quantity-1 unit price with the raw
+      tiers alongside, cheapest-first ordering and `max_price_usd` are applied to
+      that parsed price rather than to a string, and `category` filters the two
+      columns that actually carry it. `download_jlcpcb_database` records which
+      library it fetched, so a search that finds nothing can say whether it
+      searched 1 600 parts or the whole catalogue
 
 ### Validation
 Each fix lands with the test that proved the defect, and the `PARTIAL` row it
-retires disappears from the generated matrix.
+retires disappears from the generated matrix. For J.2.4.3/J.2.4.4 the fixture is
+the published DDL verbatim and the archive is served from a loopback server, so
+the download path and the schema are proved without a third party; one
+`#[ignore]`d probe fetches the real `basic-preferred` library and is the check to
+run when a download starts failing.
 
 ## J.3 — PCB E2E without a GUI session — DONE
 

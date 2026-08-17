@@ -308,7 +308,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 
 | Tool | Description |
 |------|-------------|
-| `download_jlcpcb_database` | Download or update the local JLCPCB parts database cache (SQLite). |
+| `download_jlcpcb_database` | Download or update the local JLCPCB parts database cache (SQLite). Fetches the chunked archive published by kicad-jlcpcb-tools; `library` picks which one (`basic-preferred` ~2 MB by default, up to `all-parts`). |
 | `search_jlcpcb_parts` | Search the local JLCPCB database by keyword, value, or category. |
 | `get_jlcpcb_part` | Retrieve full details for a single JLCPCB part by LCSC part number. |
 | `suggest_jlcpcb_alternatives` | Suggest JLCPCB-stocked alternatives for a given component value and footprint. |
