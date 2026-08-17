@@ -23,6 +23,14 @@ hints:
     capacitors' bottom pins to U1's GND pin along one rail. Anchor +5V at C1's
     top pin, +3V3 at C2's top pin, and GND at U1's GND pin, each with its own
     power symbol.
+  geometry: |
+    Regulator_Linear:AMS1117-3.3 pin offsets from its own symbol origin:
+    pin 1 GND at (x, y + 7.62); pin 2 VO at (x + 7.62, y); pin 3 VI at
+    (x - 7.62, y). Device:C pin 1 sits at (x, y - 3.81), pin 2 at
+    (x, y + 3.81). Every coordinate below is already a 1.27mm-grid multiple:
+      U1 at (101.60, 88.90)  -> VI (93.98, 88.90)  VO (109.22, 88.90)  GND (101.60, 96.52)
+      C1 at (86.36, 92.71)   -> pins at (86.36, 88.90) and (86.36, 96.52)
+      C2 at (116.84, 92.71)  -> pins at (116.84, 88.90) and (116.84, 96.52)
   minimal: |
     The schematic grid is 1.27mm; every coordinate you write in a
     place/power/label/wire/decouple operation is snapped to it. A coordinate

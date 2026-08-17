@@ -171,13 +171,15 @@ def stable_prefix(schema_block: str, op_library_block: str) -> str:
     return "\n\n".join([IMMUTABLE_SYSTEM_RULES, schema_block, op_library_block])
 
 
-HINT_LEVELS = ("full", "minimal", "none")
+HINT_LEVELS = ("full", "geometry", "minimal", "none")
+DEFAULT_HINT_LEVELS = ("full", "minimal", "none")
 
 
 def task_hint(task: dict[str, Any], hint_level: str) -> str:
     """The `notes` block at a given hint level. `full` is the geometry-complete
-    block (coordinates, pin offsets, PWR_FLAG); `minimal` is only what is not
-    electronics and not guessable (the grid, the ${...}-in-a-coordinate
+    block plus task-specific semantic advice; `geometry` keeps only symbol pin
+    offsets and the coordinates derived from them; `minimal` is only what is
+    not electronics and not guessable (the grid, the ${...}-in-a-coordinate
     refusal); `none` is empty — the objective is all the model gets.
     """
     return (task.get("hints") or {}).get(hint_level, "")
@@ -872,7 +874,7 @@ def run_selftest(args: argparse.Namespace) -> None:
     print(f"  OPERATION LIBRARY       {tokens(op_block):>6} tk")
     print(f"  stable prefix (total)   {tokens(prefix):>6} tk")
 
-    # Same task, three hint levels. The prefix must not move: a hint belongs
+    # Same task, every supported hint level. The prefix must not move: a hint belongs
     # to the dynamic part, never the stable one.
     task0 = tasks[0]
     envs_by_hint = {level: fresh_env(task0) for level in HINT_LEVELS}
@@ -1058,8 +1060,9 @@ def main() -> None:
     ap.add_argument("--tasks", default=None, help="comma-separated task ids; default all of bench/model_tasks")
     ap.add_argument(
         "--hints",
-        default=",".join(HINT_LEVELS),
-        help="comma-separated hint levels to run, from full/minimal/none (default: all three)",
+        default=",".join(DEFAULT_HINT_LEVELS),
+        help="comma-separated hint levels to run, from full/geometry/minimal/none "
+        "(default: full,minimal,none; geometry is the H.6.5 isolation arm)",
     )
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--out", default=None)

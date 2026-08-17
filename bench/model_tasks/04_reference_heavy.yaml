@@ -27,6 +27,11 @@ hints:
     ${create.schematic} in every subsequent operation's "schematic" argument
     instead of writing $WORK/$NAME.kicad_sch by hand. A coordinate field may
     never carry a ${...} reference — only the schematic path may.
+  geometry: |
+    Device:R pins sit at (component_x, component_y - 3.81) for pin 1 and
+    (component_x, component_y + 3.81) for pin 2, so R1 at (101.6, 88.9) has
+    pin 1 at (101.6, 85.09) and pin 2 at (101.6, 92.71) — both already
+    multiples of the 1.27mm grid.
   minimal: |
     The schematic grid is 1.27mm; every coordinate you write in a
     place/power/label/wire/decouple operation is snapped to it. A coordinate

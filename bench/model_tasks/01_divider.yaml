@@ -14,6 +14,8 @@ objective: |
 #   full    — everything: coordinates, pin offsets, PWR_FLAG requirement.
 #             A grade 3 here proves the model can transcribe given geometry
 #             into valid Plan IR — the floor, not the whole measurement.
+#   geometry — pin offsets and the coordinates derived from them, without
+#             task-specific semantic advice such as the PWR_FLAG requirement.
 #   minimal — only what is not electronics and not guessable: the grid and
 #             the ${...}-in-a-coordinate refusal (D23). No coordinates, no
 #             pin offsets, no PWR_FLAG mention.
@@ -27,6 +29,14 @@ hints:
     midpoint (100.33, 87.63). Each power rail needs a PWR_FLAG anchored at the
     same coordinate as its power symbol or ERC reports the rail as not driven:
     +3V3 and a PWR_FLAG at (100.33, 76.2), GND and a PWR_FLAG at
+    (100.33, 99.06). Every coordinate above is already a multiple of the
+    1.27mm schematic grid.
+  geometry: |
+    Device:R pins sit at (component_x, component_y - 3.81) for pin 1 and
+    (component_x, component_y + 3.81) for pin 2. Place R1 at (100.33, 80.01)
+    and R2 at (100.33, 95.25), so R1's pin 2 is at (100.33, 83.82), R2's pin
+    1 is at (100.33, 91.44), and the VOUT label midpoint is at
+    (100.33, 87.63). The outer pins are at (100.33, 76.2) and
     (100.33, 99.06). Every coordinate above is already a multiple of the
     1.27mm schematic grid.
   minimal: |

@@ -1,0 +1,32 @@
+stable prefix: 2015 tk (rules 255 + schema 942 + ops 818)
+run: model=openai/gpt-oss-20b:2 temperature=0.2 strict_json=False reasoning_effort='medium' repair=0 loaded_context_length=32768
+  model_divider hint=geometry [1/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=5 limit=0
+  model_divider hint=geometry [2/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=3 limit=0
+  model_divider hint=geometry [3/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=2 limit=0
+  model_divider hint=geometry [4/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VOUT'] found=[]; erc errors=4 limit=0
+  model_divider hint=geometry [5/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=3 limit=0
+  model_ldo hint=geometry [1/5] calls=1 grade=2 outcome=applied_invalid error=run_erc call failed: {"error": "kicad-cli exited with 3: \u00c9chec du chargement de la sch\u00e9matique", "kind": "handler_error"}
+  model_ldo hint=geometry [2/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=2 limit=0
+  model_ldo hint=geometry [3/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=9 limit=0
+  model_ldo hint=geometry [4/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=2 limit=0
+  model_ldo hint=geometry [5/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=9 limit=0
+  model_decoupling_bank hint=geometry [1/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=geometry [2/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=geometry [3/5] calls=1 grade=3 outcome=success error=None
+  model_decoupling_bank hint=geometry [4/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=8 limit=2
+  model_decoupling_bank hint=geometry [5/5] calls=1 grade=2 outcome=applied_invalid error=erc errors=4 limit=2
+  model_reference_chain hint=geometry [1/5] calls=1 grade=2 outcome=applied_invalid error=missing=['R1'] found=[]; missing=['VPU'] found=[]
+  model_reference_chain hint=geometry [2/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=2 limit=0
+  model_reference_chain hint=geometry [3/5] calls=1 grade=2 outcome=applied_invalid error=missing=['R1'] found=[]; missing=['VPU'] found=[]
+  model_reference_chain hint=geometry [4/5] calls=1 grade=1 outcome=compile_failed error={"error": {"field": "plan", "kind": "invalid_argument", "reason": "a plan needs at least one operation", "transient": "none"}, "message": "The plan was refused before anything ran: a plan needs at least one operation"}
+  model_reference_chain hint=geometry [5/5] calls=1 grade=2 outcome=applied_invalid error=missing=['VPU'] found=[]; erc errors=1 limit=0
+
+=== openai/gpt-oss-20b:2 ===
+  model_divider            hint=geometry success=0.0%  histogram={0: 0, 1: 0, 2: 5, 3: 0}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 5, 'success': 0}
+  model_ldo                hint=geometry success=0.0%  histogram={0: 0, 1: 0, 2: 5, 3: 0}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 5, 'success': 0}
+  model_decoupling_bank    hint=geometry success=60.0%  histogram={0: 0, 1: 0, 2: 2, 3: 3}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 0, 'not_applied': 0, 'applied_invalid': 2, 'success': 3}
+  model_reference_chain    hint=geometry success=0.0%  histogram={0: 0, 1: 1, 2: 4, 3: 0}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 1, 'not_applied': 0, 'applied_invalid': 4, 'success': 0}
+
+  ACROSS TASKS hint=geometry success=15.0%  histogram={0: 0, 1: 1, 2: 16, 3: 3}  outcomes={'invalid_json': 0, 'truncated': 0, 'compile_failed': 1, 'not_applied': 0, 'applied_invalid': 16, 'success': 3}
+
+written to bench\results\model-fit-gpt-oss-20b-medium-e28.json

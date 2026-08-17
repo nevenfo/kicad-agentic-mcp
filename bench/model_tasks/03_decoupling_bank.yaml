@@ -22,6 +22,9 @@ hints:
     3.81mm above the capacitor's own y, pin 2 sits 3.81mm below it. A
     capacitor that sits "on a rail" (as opposed to being wired to an IC pin)
     gets a power symbol on each of its two pins instead of a wire to anything.
+  geometry: |
+    Device:C pin 1 sits at (component_x, component_y - 3.81), and pin 2 sits
+    at (component_x, component_y + 3.81).
   minimal: |
     The schematic grid is 1.27mm; every coordinate you write in a
     place/power/label/wire/decouple operation is snapped to it. A coordinate

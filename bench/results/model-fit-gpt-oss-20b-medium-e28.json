@@ -1,0 +1,1134 @@
+{
+  "model": "openai/gpt-oss-20b:2",
+  "base_url": "http://127.0.0.1:1234/v1",
+  "temperature": 0.2,
+  "repeat": 5,
+  "strict_json": false,
+  "reasoning_effort": "medium",
+  "loaded_context_length": 32768,
+  "repair": 0,
+  "hint_levels": [
+    "geometry"
+  ],
+  "stable_prefix_tokens": 2015,
+  "tasks": {
+    "model_divider": {
+      "geometry": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2513,
+          "local_output_tokens": 4451,
+          "local_reasoning_tokens": 4171,
+          "finish_reason": "stop",
+          "ttft_ms": 4685.356700000057,
+          "tokens_per_second": 192.23738776971,
+          "wall_clock_ms": 27839.021300000015,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 5,
+          "error": "erc errors=5 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-7g9gy_6z\",\"name\":\"divider\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":100.33,\"y\":80.01},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\",\"x\":100.33,\"y\":95.25}]}},{\"op\":\"power\",\"with\":{\"symbols\":[{\"net\":\"+3V3\",\"x\":88.9,\"y\":78.74},{\"net\":\"GND\",\"x\":88.9,\"y\":99.06}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"from\":\"R1.1\",\"to\":\"+3V3\"},{\"from\":\"R2.2\",\"to\":\"GND\"},{\"ref1\":\"R1\",\"pin1\":\"2\",\"net\":\"VOUT\"},{\"ref1\":\"R2\",\"pin1\":\"1\",\"net\":\"VOUT\"}]}},{\"op\":\"label\",\"with\":{\"labels\":[{\"net\":\"VOUT\",\"x\":100.33,\"y\":87.63}]}}],\"plan_id\":\"divider_plan\",\"documents\":[],\"rollback_policy\":\"none\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-7g9gy_6z\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 100.33, \"y\": 80.01}, {\"lib_id\": \"Device:R\", \"reference\": \"R2\", \"value\": \"10k\", \"x\": 100.33, \"y\": 95.25}]}}, {\"op\": \"power\", \"with\": {\"symbols\": [{\"net\": \"+3V3\", \"x\": 88.9, \"y\": 78.74}, {\"net\": \"GND\", \"x\": 88.9, \"y\": 99.06}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"from\": \"R1.1\", \"to\": \"+3V3\"}, {\"from\": \"R2.2\", \"to\": \"GND\"}, {\"ref1\": \"R1\", \"pin1\": \"2\", \"net\": \"VOUT\"}, {\"ref1\": \"R2\", \"pin1\": \"1\", \"net\": \"VOUT\"}]}}, {\"op\": \"label\", \"with\": {\"labels\": [{\"net\": \"VOUT\", \"x\": 100.33, \"y\": 87.63}]}}], \"plan_id\": \"divider_plan\", \"documents\": [], \"rollback_policy\": \"none\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=5 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2505,
+          "local_output_tokens": 2935,
+          "local_reasoning_tokens": 2657,
+          "finish_reason": "stop",
+          "ttft_ms": 179.81470000017907,
+          "tokens_per_second": 203.29336498041906,
+          "wall_clock_ms": 14617.078800000172,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 3,
+          "error": "erc errors=3 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-z_3jxz30\",\"name\":\"divider\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":100.33,\"y\":80.01},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\",\"x\":100.33,\"y\":95.25}]}},{\"op\":\"power\",\"with\":{\"symbols\":[{\"net\":\"+3V3\",\"x\":100.33,\"y\":76.2},{\"net\":\"GND\",\"x\":100.33,\"y\":99.06}]}},{\"op\":\"label\",\"with\":{\"labels\":[{\"net\":\"VOUT\",\"x\":100.33,\"y\":87.63}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"ref1\":\"R1\",\"pin1\":\"1\",\"net\":\"+3V3\"},{\"ref1\":\"R1\",\"pin1\":\"2\",\"net\":\"VOUT\"},{\"ref1\":\"R2\",\"pin1\":\"1\",\"net\":\"VOUT\"},{\"ref1\":\"R2\",\"pin1\":\"2\",\"net\":\"GND\"}]}}],\"plan_id\":\"\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-z_3jxz30\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 100.33, \"y\": 80.01}, {\"lib_id\": \"Device:R\", \"reference\": \"R2\", \"value\": \"10k\", \"x\": 100.33, \"y\": 95.25}]}}, {\"op\": \"power\", \"with\": {\"symbols\": [{\"net\": \"+3V3\", \"x\": 100.33, \"y\": 76.2}, {\"net\": \"GND\", \"x\": 100.33, \"y\": 99.06}]}}, {\"op\": \"label\", \"with\": {\"labels\": [{\"net\": \"VOUT\", \"x\": 100.33, \"y\": 87.63}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"ref1\": \"R1\", \"pin1\": \"1\", \"net\": \"+3V3\"}, {\"ref1\": \"R1\", \"pin1\": \"2\", \"net\": \"VOUT\"}, {\"ref1\": \"R2\", \"pin1\": \"1\", \"net\": \"VOUT\"}, {\"ref1\": \"R2\", \"pin1\": \"2\", \"net\": \"GND\"}]}}], \"plan_id\": \"\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=3 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2509,
+          "local_output_tokens": 3636,
+          "local_reasoning_tokens": 3284,
+          "finish_reason": "stop",
+          "ttft_ms": 145.4498999999032,
+          "tokens_per_second": 204.28718571208697,
+          "wall_clock_ms": 17943.92309999989,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 2,
+          "error": "erc errors=2 limit=0",
+          "raw_response": "{ \"ops\":[ { \"op\":\"create\", \"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-a19p3c1w\",\"name\":\"divider\"} }, { \"op\":\"place\", \"with\":{\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":100.33,\"y\":80.01},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\",\"x\":100.33,\"y\":95.25}],\"schematic\":\"${create.schematic}\" } }, { \"op\":\"power\", \"with\":{\"symbols\":[{\"net\":\"+3V3\",\"x\":90.17,\"y\":80},{\"net\":\"GND\",\"x\":90.17,\"y\":94.18}],\"schematic\":\"${create.schematic}\" } }, { \"op\":\"wire\", \"with\":{\"segments\":[{\"x1\":90.17,\"y1\":80,\"x2\":100.33,\"y2\":76.2},{\"x1\":100.33,\"y1\":83.82,\"x2\":100.33,\"y2\":91.44},{\"x1\":100.33,\"y1\":99.06,\"x2\":90.17,\"y2\":94.18}],\"schematic\":\"${create.schematic}\" } }, { \"op\":\"label\", \"with\":{\"labels\":[{\"net\":\"VOUT\",\"x\":100.33,\"y\":87.63}],\"schematic\":\"${create.schematic}\" } } ], \"plan_id\":\"divider_resistive_divider\" }",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-a19p3c1w\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 100.33, \"y\": 80.01}, {\"lib_id\": \"Device:R\", \"reference\": \"R2\", \"value\": \"10k\", \"x\": 100.33, \"y\": 95.25}], \"schematic\": \"${create.schematic}\"}}, {\"op\": \"power\", \"with\": {\"symbols\": [{\"net\": \"+3V3\", \"x\": 90.17, \"y\": 80}, {\"net\": \"GND\", \"x\": 90.17, \"y\": 94.18}], \"schematic\": \"${create.schematic}\"}}, {\"op\": \"wire\", \"with\": {\"segments\": [{\"x1\": 90.17, \"y1\": 80, \"x2\": 100.33, \"y2\": 76.2}, {\"x1\": 100.33, \"y1\": 83.82, \"x2\": 100.33, \"y2\": 91.44}, {\"x1\": 100.33, \"y1\": 99.06, \"x2\": 90.17, \"y2\": 94.18}], \"schematic\": \"${create.schematic}\"}}, {\"op\": \"label\", \"with\": {\"labels\": [{\"net\": \"VOUT\", \"x\": 100.33, \"y\": 87.63}], \"schematic\": \"${create.schematic}\"}}], \"plan_id\": \"divider_resistive_divider\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=2 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2501,
+          "local_output_tokens": 1884,
+          "local_reasoning_tokens": 1744,
+          "finish_reason": "stop",
+          "ttft_ms": 124.87179999993714,
+          "tokens_per_second": 204.75546301758433,
+          "wall_clock_ms": 9326.091499999848,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 4,
+          "error": "missing=['VOUT'] found=[]; erc errors=4 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"id\":\"proj\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-_g4adjay\",\"name\":\"divider\"}},{\"op\":\"place\",\"with\":{\"schematic\":\"${proj.schematic}\",\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":100.33,\"y\":80.01},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\",\"x\":100.33,\"y\":95.25}]}}],\"plan_id\":\"divider_plan\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"id\": \"proj\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-_g4adjay\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"schematic\": \"${proj.schematic}\", \"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 100.33, \"y\": 80.01}, {\"lib_id\": \"Device:R\", \"reference\": \"R2\", \"value\": \"10k\", \"x\": 100.33, \"y\": 95.25}]}}], \"plan_id\": \"divider_plan\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "invariant",
+            "message": "missing=['VOUT'] found=[]; erc errors=4 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "invariant"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2509,
+          "local_output_tokens": 1761,
+          "local_reasoning_tokens": 1473,
+          "finish_reason": "stop",
+          "ttft_ms": 138.03299999995033,
+          "tokens_per_second": 203.31291525955967,
+          "wall_clock_ms": 8799.558499999875,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 3,
+          "error": "erc errors=3 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-3j7z11yi\",\"name\":\"divider\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":100.33,\"y\":80.01},{\"lib_id\":\"Device:R\",\"reference\":\"R2\",\"value\":\"10k\",\"x\":100.33,\"y\":95.25}]}},{\"op\":\"power\",\"with\":{\"symbols\":[{\"net\":\"+3V3\",\"x\":100.33,\"y\":76.2},{\"net\":\"GND\",\"x\":100.33,\"y\":99.06}]}},{\"op\":\"label\",\"with\":{\"labels\":[{\"net\":\"VOUT\",\"x\":100.33,\"y\":87.63}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"ref1\":\"R1\",\"pin1\":\"1\",\"net\":\"+3V3\"},{\"ref1\":\"R2\",\"pin1\":\"2\",\"net\":\"GND\"},{\"ref1\":\"R1\",\"pin1\":\"2\",\"net\":\"VOUT\"},{\"ref1\":\"R2\",\"pin1\":\"1\",\"net\":\"VOUT\"}]}}],\"plan_id\":\"divider_plan\",\"documents\":[],\"rollback_policy\":\"none\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_divider-3j7z11yi\", \"name\": \"divider\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 100.33, \"y\": 80.01}, {\"lib_id\": \"Device:R\", \"reference\": \"R2\", \"value\": \"10k\", \"x\": 100.33, \"y\": 95.25}]}}, {\"op\": \"power\", \"with\": {\"symbols\": [{\"net\": \"+3V3\", \"x\": 100.33, \"y\": 76.2}, {\"net\": \"GND\", \"x\": 100.33, \"y\": 99.06}]}}, {\"op\": \"label\", \"with\": {\"labels\": [{\"net\": \"VOUT\", \"x\": 100.33, \"y\": 87.63}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"ref1\": \"R1\", \"pin1\": \"1\", \"net\": \"+3V3\"}, {\"ref1\": \"R2\", \"pin1\": \"2\", \"net\": \"GND\"}, {\"ref1\": \"R1\", \"pin1\": \"2\", \"net\": \"VOUT\"}, {\"ref1\": \"R2\", \"pin1\": \"1\", \"net\": \"VOUT\"}]}}], \"plan_id\": \"divider_plan\", \"documents\": [], \"rollback_policy\": \"none\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=3 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        }
+      ]
+    },
+    "model_ldo": {
+      "geometry": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2616,
+          "local_output_tokens": 3283,
+          "local_reasoning_tokens": 2990,
+          "finish_reason": "stop",
+          "ttft_ms": 157.1116999998594,
+          "tokens_per_second": 203.6534321546053,
+          "wall_clock_ms": 16277.63549999986,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "run_erc call failed: {\"error\": \"kicad-cli exited with 3: \\u00c9chec du chargement de la sch\\u00e9matique\", \"kind\": \"handler_error\"}",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-ay2eqpnk\",\"name\":\"ldo\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Regulator_Linear:AMS1117-3.3\",\"reference\":\"U1\",\"x\":101.60,\"y\":88.90},{\"lib_id\":\"Device:C\",\"reference\":\"C1\",\"value\":\"10uF\",\"x\":86.36,\"y\":92.71,\"rotation\":-90},{\"lib_id\":\"Device:C\",\"reference\":\"C2\",\"value\":\"22uF\",\"x\":116.84,\"y\":92.71,\"rotation\":-90}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"ref1\":\"U1\",\"pin1\":\"3\",\"net\":\"+5V\"},{\"ref1\":\"C1\",\"pin1\":\"1\",\"net\":\"+5V\"},{\"ref1\":\"C1\",\"pin1\":\"2\",\"net\":\"GND\"},{\"ref1\":\"U1\",\"pin1\":\"2\",\"net\":\"+3V3\"},{\"ref1\":\"C2\",\"pin1\":\"1\",\"net\":\"+3V3\"},{\"ref1\":\"C2\",\"pin1\":\"2\",\"net\":\"GND\"},{\"ref1\":\"U1\",\"pin1\":\"1\",\"net\":\"GND\"}]}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-ay2eqpnk\", \"name\": \"ldo\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Regulator_Linear:AMS1117-3.3\", \"reference\": \"U1\", \"x\": 101.6, \"y\": 88.9}, {\"lib_id\": \"Device:C\", \"reference\": \"C1\", \"value\": \"10uF\", \"x\": 86.36, \"y\": 92.71, \"rotation\": -90}, {\"lib_id\": \"Device:C\", \"reference\": \"C2\", \"value\": \"22uF\", \"x\": 116.84, \"y\": 92.71, \"rotation\": -90}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"ref1\": \"U1\", \"pin1\": \"3\", \"net\": \"+5V\"}, {\"ref1\": \"C1\", \"pin1\": \"1\", \"net\": \"+5V\"}, {\"ref1\": \"C1\", \"pin1\": \"2\", \"net\": \"GND\"}, {\"ref1\": \"U1\", \"pin1\": \"2\", \"net\": \"+3V3\"}, {\"ref1\": \"C2\", \"pin1\": \"1\", \"net\": \"+3V3\"}, {\"ref1\": \"C2\", \"pin1\": \"2\", \"net\": \"GND\"}, {\"ref1\": \"U1\", \"pin1\": \"1\", \"net\": \"GND\"}]}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "run_erc call failed: {\"error\": \"kicad-cli exited with 3: \\u00c9chec du chargement de la sch\\u00e9matique\", \"kind\": \"handler_error\"}"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2620,
+          "local_output_tokens": 4256,
+          "local_reasoning_tokens": 3989,
+          "finish_reason": "stop",
+          "ttft_ms": 147.0612999999048,
+          "tokens_per_second": 202.23800395651853,
+          "wall_clock_ms": 21191.572799999904,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 2,
+          "error": "erc errors=2 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-5zojuqi3\",\"name\":\"ldo\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Regulator_Linear:AMS1117-3.3\",\"x\":101.60,\"y\":88.90,\"reference\":\"U1\",\"value\":\"AMS1117-3.3\"},{\"lib_id\":\"Device:C\",\"x\":86.36,\"y\":92.71,\"reference\":\"C1\",\"value\":\"10uF\"},{\"lib_id\":\"Device:C\",\"x\":116.84,\"y\":92.71,\"reference\":\"C2\",\"value\":\"22uF\"}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"from\":\"U1.3\",\"to\":\"VIN\"},{\"from\":\"C1.2\",\"to\":\"VIN\"},{\"from\":\"C1.1\",\"to\":\"GND\"},{\"from\":\"U1.1\",\"to\":\"GND\"},{\"from\":\"U1.2\",\"to\":\"VOUT\"},{\"from\":\"C2.1\",\"to\":\"VOUT\"},{\"from\":\"C2.2\",\"to\":\"GND\"}]}}],\"plan_id\":\"\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-5zojuqi3\", \"name\": \"ldo\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Regulator_Linear:AMS1117-3.3\", \"x\": 101.6, \"y\": 88.9, \"reference\": \"U1\", \"value\": \"AMS1117-3.3\"}, {\"lib_id\": \"Device:C\", \"x\": 86.36, \"y\": 92.71, \"reference\": \"C1\", \"value\": \"10uF\"}, {\"lib_id\": \"Device:C\", \"x\": 116.84, \"y\": 92.71, \"reference\": \"C2\", \"value\": \"22uF\"}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"from\": \"U1.3\", \"to\": \"VIN\"}, {\"from\": \"C1.2\", \"to\": \"VIN\"}, {\"from\": \"C1.1\", \"to\": \"GND\"}, {\"from\": \"U1.1\", \"to\": \"GND\"}, {\"from\": \"U1.2\", \"to\": \"VOUT\"}, {\"from\": \"C2.1\", \"to\": \"VOUT\"}, {\"from\": \"C2.2\", \"to\": \"GND\"}]}}], \"plan_id\": \"\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=2 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2616,
+          "local_output_tokens": 3498,
+          "local_reasoning_tokens": 3324,
+          "finish_reason": "stop",
+          "ttft_ms": 147.90679999987333,
+          "tokens_per_second": 203.2256996268369,
+          "wall_clock_ms": 17360.296800000015,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 9,
+          "error": "erc errors=9 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-for56u7s\",\"name\":\"ldo\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Regulator_Linear:AMS1117-3.3\",\"reference\":\"U1\",\"x\":101.60,\"y\":88.90},{\"lib_id\":\"Device:C\",\"reference\":\"C1\",\"value\":\"10uF\",\"rotation\":180,\"x\":86.36,\"y\":92.71},{\"lib_id\":\"Device:C\",\"reference\":\"C2\",\"value\":\"22uF\",\"rotation\":180,\"x\":116.84,\"y\":92.71}]}}],\"plan_id\":\"ldo_ldo_plan\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-for56u7s\", \"name\": \"ldo\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Regulator_Linear:AMS1117-3.3\", \"reference\": \"U1\", \"x\": 101.6, \"y\": 88.9}, {\"lib_id\": \"Device:C\", \"reference\": \"C1\", \"value\": \"10uF\", \"rotation\": 180, \"x\": 86.36, \"y\": 92.71}, {\"lib_id\": \"Device:C\", \"reference\": \"C2\", \"value\": \"22uF\", \"rotation\": 180, \"x\": 116.84, \"y\": 92.71}]}}], \"plan_id\": \"ldo_ldo_plan\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=9 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2616,
+          "local_output_tokens": 5093,
+          "local_reasoning_tokens": 4793,
+          "finish_reason": "stop",
+          "ttft_ms": 124.9576000000161,
+          "tokens_per_second": 201.20390095371502,
+          "wall_clock_ms": 25437.588100000085,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 2,
+          "error": "erc errors=2 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-ha8fbdlp\",\"name\":\"ldo\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Regulator_Linear:AMS1117-3.3\",\"reference\":\"U1\",\"x\":101.60,\"y\":88.90},{\"lib_id\":\"Device:C\",\"reference\":\"C1\",\"x\":86.36,\"y\":92.71},{\"lib_id\":\"Device:C\",\"reference\":\"C2\",\"x\":116.84,\"y\":92.71}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"ref1\":\"U1\",\"pin1\":\"3\",\"net\":\"+5V\"},{\"ref1\":\"C1\",\"pin1\":\"1\",\"net\":\"+5V\"}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"ref1\":\"U1\",\"pin1\":\"2\",\"net\":\"+3.3V\"},{\"ref1\":\"C2\",\"pin1\":\"1\",\"net\":\"+3.3V\"}]}},{\"op\":\"connect\",\"with\":{\"connections\":[{\"ref1\":\"U1\",\"pin1\":\"1\",\"net\":\"GND\"},{\"ref1\":\"C1\",\"pin1\":\"2\",\"net\":\"GND\"},{\"ref1\":\"C2\",\"pin1\":\"2\",\"net\":\"GND\"}]}}],\"plan_id\":\"\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-ha8fbdlp\", \"name\": \"ldo\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Regulator_Linear:AMS1117-3.3\", \"reference\": \"U1\", \"x\": 101.6, \"y\": 88.9}, {\"lib_id\": \"Device:C\", \"reference\": \"C1\", \"x\": 86.36, \"y\": 92.71}, {\"lib_id\": \"Device:C\", \"reference\": \"C2\", \"x\": 116.84, \"y\": 92.71}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"ref1\": \"U1\", \"pin1\": \"3\", \"net\": \"+5V\"}, {\"ref1\": \"C1\", \"pin1\": \"1\", \"net\": \"+5V\"}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"ref1\": \"U1\", \"pin1\": \"2\", \"net\": \"+3.3V\"}, {\"ref1\": \"C2\", \"pin1\": \"1\", \"net\": \"+3.3V\"}]}}, {\"op\": \"connect\", \"with\": {\"connections\": [{\"ref1\": \"U1\", \"pin1\": \"1\", \"net\": \"GND\"}, {\"ref1\": \"C1\", \"pin1\": \"2\", \"net\": \"GND\"}, {\"ref1\": \"C2\", \"pin1\": \"2\", \"net\": \"GND\"}]}}], \"plan_id\": \"\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=2 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2620,
+          "local_output_tokens": 2817,
+          "local_reasoning_tokens": 2642,
+          "finish_reason": "stop",
+          "ttft_ms": 150.22989999988567,
+          "tokens_per_second": 204.33549285314746,
+          "wall_clock_ms": 13936.381099999835,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 9,
+          "error": "erc errors=9 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-jlo3n9cp\",\"name\":\"ldo\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Regulator_Linear:AMS1117-3.3\",\"reference\":\"U1\",\"value\":\"AMS1117-3.3\",\"x\":101.60,\"y\":88.90},{\"lib_id\":\"Device:C\",\"reference\":\"C1\",\"value\":\"10uF\",\"x\":86.36,\"y\":92.71},{\"lib_id\":\"Device:C\",\"reference\":\"C2\",\"value\":\"22uF\",\"x\":116.84,\"y\":92.71}]}}],\"plan_id\":\"ldo_plan\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_ldo-jlo3n9cp\", \"name\": \"ldo\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Regulator_Linear:AMS1117-3.3\", \"reference\": \"U1\", \"value\": \"AMS1117-3.3\", \"x\": 101.6, \"y\": 88.9}, {\"lib_id\": \"Device:C\", \"reference\": \"C1\", \"value\": \"10uF\", \"x\": 86.36, \"y\": 92.71}, {\"lib_id\": \"Device:C\", \"reference\": \"C2\", \"value\": \"22uF\", \"x\": 116.84, \"y\": 92.71}]}}], \"plan_id\": \"ldo_plan\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=9 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        }
+      ]
+    },
+    "model_decoupling_bank": {
+      "geometry": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2432,
+          "local_output_tokens": 1415,
+          "local_reasoning_tokens": 1256,
+          "finish_reason": "stop",
+          "ttft_ms": 155.2088000000822,
+          "tokens_per_second": 205.62671418567152,
+          "wall_clock_ms": 7036.610399999972,
+          "vram_peak_mib": 12804,
+          "grade": 3,
+          "outcome": "success",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": true,
+          "erc_errors": 2,
+          "error": null,
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-e09t7u_2\",\"name\":\"bank\"}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"${create.schematic}\",\"at\":{\"x\":120.65,\"y\":80.01},\"pitch\":7.62,\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\"},{\"reference\":\"C11\",\"rail\":\"+3V3\"},{\"reference\":\"C12\",\"rail\":\"+3V3\"},{\"reference\":\"C13\",\"rail\":\"+3V3\"}],\"ground\":\"GND\",\"lib_id\":\"Device:C\",\"value\":\"100n\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-e09t7u_2\", \"name\": \"bank\"}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"${create.schematic}\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"pitch\": 7.62, \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\"}], \"ground\": \"GND\", \"lib_id\": \"Device:C\", \"value\": \"100n\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": null,
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 3,
+              "outcome": "success",
+              "failure_kind": null
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2428,
+          "local_output_tokens": 1853,
+          "local_reasoning_tokens": 1664,
+          "finish_reason": "stop",
+          "ttft_ms": 96.95230000011179,
+          "tokens_per_second": 203.69053166713695,
+          "wall_clock_ms": 9194.08599999997,
+          "vram_peak_mib": 12804,
+          "grade": 3,
+          "outcome": "success",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": true,
+          "erc_errors": 2,
+          "error": null,
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-pd9qqu1t\",\"name\":\"bank\"}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-pd9qqu1t/bank.kicad_sch\",\"at\":{\"x\":120.65,\"y\":80.01},\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\"},{\"reference\":\"C11\",\"rail\":\"+3V3\"},{\"reference\":\"C12\",\"rail\":\"+3V3\"},{\"reference\":\"C13\",\"rail\":\"+3V3\"}],\"pitch\":7.62,\"ground\":\"GND\",\"lib_id\":\"Device:C\",\"value\":\"100nF\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-pd9qqu1t\", \"name\": \"bank\"}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-pd9qqu1t/bank.kicad_sch\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\"}], \"pitch\": 7.62, \"ground\": \"GND\", \"lib_id\": \"Device:C\", \"value\": \"100nF\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": null,
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 3,
+              "outcome": "success",
+              "failure_kind": null
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2424,
+          "local_output_tokens": 1820,
+          "local_reasoning_tokens": 1645,
+          "finish_reason": "stop",
+          "ttft_ms": 112.73049999999785,
+          "tokens_per_second": 203.48274810651333,
+          "wall_clock_ms": 9056.977700000061,
+          "vram_peak_mib": 12804,
+          "grade": 3,
+          "outcome": "success",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": true,
+          "erc_errors": 2,
+          "error": null,
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9idhm85s\",\"name\":\"bank\"}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9idhm85s/bank.kicad_sch\",\"at\":{\"x\":120.65,\"y\":80.01},\"pitch\":7.62,\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\"},{\"reference\":\"C11\",\"rail\":\"+3V3\"},{\"reference\":\"C12\",\"rail\":\"+3V3\"},{\"reference\":\"C13\",\"rail\":\"+3V3\"}],\"ground\":\"GND\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9idhm85s\", \"name\": \"bank\"}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9idhm85s/bank.kicad_sch\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"pitch\": 7.62, \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\"}], \"ground\": \"GND\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": null,
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 3,
+              "outcome": "success",
+              "failure_kind": null
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2436,
+          "local_output_tokens": 3422,
+          "local_reasoning_tokens": 3179,
+          "finish_reason": "stop",
+          "ttft_ms": 116.51380000012068,
+          "tokens_per_second": 201.37938523252126,
+          "wall_clock_ms": 17109.315700000025,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 8,
+          "error": "erc errors=8 limit=2",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9p7a6jmy\",\"name\":\"bank\"}},{\"op\":\"place\",\"with\":{\"components\":[{\"lib_id\":\"Device:C\",\"reference\":\"C10\",\"x\":120.65,\"y\":80.01,\"value\":\"100nF\"},{\"lib_id\":\"Device:C\",\"reference\":\"C11\",\"x\":128.27,\"y\":80.01,\"value\":\"100nF\"},{\"lib_id\":\"Device:C\",\"reference\":\"C12\",\"x\":135.89,\"y\":80.01,\"value\":\"100nF\"},{\"lib_id\":\"Device:C\",\"reference\":\"C13\",\"x\":143.51,\"y\":80.01,\"value\":\"100nF\"}],\"schematic\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9p7a6jmy/bank.kicad_sch\"}}],\"plan_id\":\"bank-decouple\",\"documents\":[],\"rollback_policy\":\"none\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9p7a6jmy\", \"name\": \"bank\"}}, {\"op\": \"place\", \"with\": {\"components\": [{\"lib_id\": \"Device:C\", \"reference\": \"C10\", \"x\": 120.65, \"y\": 80.01, \"value\": \"100nF\"}, {\"lib_id\": \"Device:C\", \"reference\": \"C11\", \"x\": 128.27, \"y\": 80.01, \"value\": \"100nF\"}, {\"lib_id\": \"Device:C\", \"reference\": \"C12\", \"x\": 135.89, \"y\": 80.01, \"value\": \"100nF\"}, {\"lib_id\": \"Device:C\", \"reference\": \"C13\", \"x\": 143.51, \"y\": 80.01, \"value\": \"100nF\"}], \"schematic\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-9p7a6jmy/bank.kicad_sch\"}}], \"plan_id\": \"bank-decouple\", \"documents\": [], \"rollback_policy\": \"none\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=8 limit=2"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2424,
+          "local_output_tokens": 3241,
+          "local_reasoning_tokens": 2925,
+          "finish_reason": "stop",
+          "ttft_ms": 119.41579999984242,
+          "tokens_per_second": 204.17097296174762,
+          "wall_clock_ms": 15993.366699999797,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 4,
+          "error": "erc errors=4 limit=2",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z\",\"name\":\"bank\"}},{\"op\":\"power\",\"with\":{\"schematic\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z/bank.kicad_sch\",\"symbols\":[{\"net\":\"+3V3\",\"x\":120.65,\"y\":70}]}},{\"op\":\"power\",\"with\":{\"schematic\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z/bank.kicad_sch\",\"symbols\":[{\"net\":\"GND\",\"x\":120.65,\"y\":90}]}},{\"op\":\"decouple\",\"with\":{\"schematic\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z/bank.kicad_sch\",\"at\":{\"x\":120.65,\"y\":80.01},\"pitch\":7.62,\"caps\":[{\"reference\":\"C10\",\"rail\":\"+3V3\"},{\"reference\":\"C11\",\"rail\":\"+3V3\"},{\"reference\":\"C12\",\"rail\":\"+3V3\"},{\"reference\":\"C13\",\"rail\":\"+3V3\"}],\"ground\":\"GND\",\"lib_id\":\"Device:C\",\"value\":\"100nF\"}}]}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z\", \"name\": \"bank\"}}, {\"op\": \"power\", \"with\": {\"schematic\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z/bank.kicad_sch\", \"symbols\": [{\"net\": \"+3V3\", \"x\": 120.65, \"y\": 70}]}}, {\"op\": \"power\", \"with\": {\"schematic\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z/bank.kicad_sch\", \"symbols\": [{\"net\": \"GND\", \"x\": 120.65, \"y\": 90}]}}, {\"op\": \"decouple\", \"with\": {\"schematic\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_decoupling_bank-gh109q0z/bank.kicad_sch\", \"at\": {\"x\": 120.65, \"y\": 80.01}, \"pitch\": 7.62, \"caps\": [{\"reference\": \"C10\", \"rail\": \"+3V3\"}, {\"reference\": \"C11\", \"rail\": \"+3V3\"}, {\"reference\": \"C12\", \"rail\": \"+3V3\"}, {\"reference\": \"C13\", \"rail\": \"+3V3\"}], \"ground\": \"GND\", \"lib_id\": \"Device:C\", \"value\": \"100nF\"}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "erc_budget",
+            "message": "erc errors=4 limit=2"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "erc_budget"
+            }
+          ]
+        }
+      ]
+    },
+    "model_reference_chain": {
+      "geometry": [
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2509,
+          "local_output_tokens": 2301,
+          "local_reasoning_tokens": 2235,
+          "finish_reason": "stop",
+          "ttft_ms": 143.03130000007513,
+          "tokens_per_second": 204.47777717567322,
+          "wall_clock_ms": 11396.087899999884,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1'] found=[]; missing=['VPU'] found=[]",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"id\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-okccltjy\",\"name\":\"pullup\"}}],\"plan_id\":\"pullup_plan\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"id\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-okccltjy\", \"name\": \"pullup\"}}], \"plan_id\": \"pullup_plan\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "invariant",
+            "message": "missing=['R1'] found=[]; missing=['VPU'] found=[]"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "invariant"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2512,
+          "local_output_tokens": 3277,
+          "local_reasoning_tokens": 3172,
+          "finish_reason": "stop",
+          "ttft_ms": 141.06670000001031,
+          "tokens_per_second": 202.957776700058,
+          "wall_clock_ms": 16287.282199999936,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 2,
+          "error": "missing=['VPU'] found=[]; erc errors=2 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-h7u41zri\",\"name\":\"pullup\"}},{\"op\":\"place\",\"with\":{\"schematic\":\"${create.schematic}\",\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":101.6,\"y\":88.9}]}}] }",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-h7u41zri\", \"name\": \"pullup\"}}, {\"op\": \"place\", \"with\": {\"schematic\": \"${create.schematic}\", \"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 101.6, \"y\": 88.9}]}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "invariant",
+            "message": "missing=['VPU'] found=[]; erc errors=2 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "invariant"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2509,
+          "local_output_tokens": 3726,
+          "local_reasoning_tokens": 3662,
+          "finish_reason": "stop",
+          "ttft_ms": 152.04209999978957,
+          "tokens_per_second": 202.4079560820148,
+          "wall_clock_ms": 18560.4093999998,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 0,
+          "error": "missing=['R1'] found=[]; missing=['VPU'] found=[]",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"id\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-99bpmroy\",\"name\":\"pullup\"}}],\"plan_id\":\"\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"id\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-99bpmroy\", \"name\": \"pullup\"}}], \"plan_id\": \"\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "invariant",
+            "message": "missing=['R1'] found=[]; missing=['VPU'] found=[]"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "invariant"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2515,
+          "local_output_tokens": 2878,
+          "local_reasoning_tokens": 2858,
+          "finish_reason": "stop",
+          "ttft_ms": 152.74429999999484,
+          "tokens_per_second": 202.642998415085,
+          "wall_clock_ms": 14355.06079999982,
+          "vram_peak_mib": 12804,
+          "grade": 1,
+          "outcome": "compile_failed",
+          "valid_json": true,
+          "compiles": false,
+          "applies": false,
+          "invariants_pass": false,
+          "erc_errors": null,
+          "error": "{\"error\": {\"field\": \"plan\", \"kind\": \"invalid_argument\", \"reason\": \"a plan needs at least one operation\", \"transient\": \"none\"}, \"message\": \"The plan was refused before anything ran: a plan needs at least one operation\"}",
+          "raw_response": "{\"ops\":[],\"plan_id\":\"\"}",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [], \"plan_id\": \"\"}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": "plan",
+            "kind": "invalid_argument",
+            "message": "{\"error\": {\"field\": \"plan\", \"kind\": \"invalid_argument\", \"reason\": \"a plan needs at least one operation\", \"transient\": \"none\"}, \"message\": \"The plan was refused before anything ran: a plan needs at least one operation\"}"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 1,
+              "outcome": "compile_failed",
+              "failure_kind": "invalid_argument"
+            }
+          ]
+        },
+        {
+          "llm_calls": 1,
+          "local_input_tokens": 2506,
+          "local_output_tokens": 4191,
+          "local_reasoning_tokens": 4061,
+          "finish_reason": "stop",
+          "ttft_ms": 148.07070000006206,
+          "tokens_per_second": 200.11562777425684,
+          "wall_clock_ms": 21090.962799999943,
+          "vram_peak_mib": 12804,
+          "grade": 2,
+          "outcome": "applied_invalid",
+          "valid_json": true,
+          "compiles": true,
+          "applies": true,
+          "invariants_pass": false,
+          "erc_errors": 1,
+          "error": "missing=['VPU'] found=[]; erc errors=1 limit=0",
+          "raw_response": "{\"ops\":[{\"op\":\"create\",\"with\":{\"path\":\"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-waahisrn\",\"name\":\"pullup\"}},{\"op\":\"place\",\"with\":{\"schematic\":\"${create.schematic}\",\"components\":[{\"lib_id\":\"Device:R\",\"reference\":\"R1\",\"value\":\"10k\",\"x\":101.6,\"y\":88.9},{\"lib_id\":\"Device:PWR_FLAG\",\"reference\":\"#FLG01\",\"x\":101.6,\"y\":85.09}]}}] }",
+          "raw_response_truncated": false,
+          "compiled_plan": "{\"ops\": [{\"op\": \"create\", \"with\": {\"path\": \"C:/Users/FlowUP/AppData/Local/Temp/kam-modelfit-model_reference_chain-waahisrn\", \"name\": \"pullup\"}}, {\"op\": \"place\", \"with\": {\"schematic\": \"${create.schematic}\", \"components\": [{\"lib_id\": \"Device:R\", \"reference\": \"R1\", \"value\": \"10k\", \"x\": 101.6, \"y\": 88.9}, {\"lib_id\": \"Device:PWR_FLAG\", \"reference\": \"#FLG01\", \"x\": 101.6, \"y\": 85.09}]}}]}",
+          "compiled_plan_truncated": false,
+          "failure": {
+            "op": null,
+            "kind": "invariant",
+            "message": "missing=['VPU'] found=[]; erc errors=1 limit=0"
+          },
+          "repair_rounds": 0,
+          "kept_round": 0,
+          "rounds_run": 1,
+          "rounds": [
+            {
+              "round": 0,
+              "grade": 2,
+              "outcome": "applied_invalid",
+              "failure_kind": "invariant"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "aggregate": {
+    "by_task_hint": {
+      "model_divider": {
+        "geometry": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 0,
+            "2": 5,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 0,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 5,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2509,
+            "p95": 2509,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 2935,
+            "p95": 3636,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 2657,
+            "p95": 3284,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 145.4498999999032,
+            "p95": 179.81470000017907,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 203.31291525955967,
+            "p95": 204.28718571208697,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 14617.078800000172,
+            "p95": 17943.92309999989,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12804,
+            "p95": 12804,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 3,
+            "p95": 4,
+            "n": 5
+          }
+        }
+      },
+      "model_ldo": {
+        "geometry": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 0,
+            "2": 5,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 0,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 5,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2616,
+            "p95": 2620,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 3498,
+            "p95": 4256,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 3324,
+            "p95": 3989,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 147.90679999987333,
+            "p95": 150.22989999988567,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 203.2256996268369,
+            "p95": 203.6534321546053,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 17360.296800000015,
+            "p95": 21191.572799999904,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12804,
+            "p95": 12804,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 5.5,
+            "p95": 9,
+            "n": 4
+          }
+        }
+      },
+      "model_decoupling_bank": {
+        "geometry": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.6,
+          "grade_histogram": {
+            "0": 0,
+            "1": 0,
+            "2": 2,
+            "3": 3
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 0,
+            "compile_failed": 0,
+            "not_applied": 0,
+            "applied_invalid": 2,
+            "success": 3
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2428,
+            "p95": 2432,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 1853,
+            "p95": 3241,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 1664,
+            "p95": 2925,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 116.51380000012068,
+            "p95": 119.41579999984242,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 203.69053166713695,
+            "p95": 204.17097296174762,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 9194.08599999997,
+            "p95": 15993.366699999797,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12804,
+            "p95": 12804,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 2,
+            "p95": 4,
+            "n": 5
+          }
+        }
+      },
+      "model_reference_chain": {
+        "geometry": {
+          "attempts": 5,
+          "graded": 5,
+          "success_rate": 0.0,
+          "grade_histogram": {
+            "0": 0,
+            "1": 1,
+            "2": 4,
+            "3": 0
+          },
+          "outcome_histogram": {
+            "invalid_json": 0,
+            "truncated": 0,
+            "compile_failed": 1,
+            "not_applied": 0,
+            "applied_invalid": 4,
+            "success": 0
+          },
+          "llm_calls": {
+            "median": 1,
+            "p95": 1,
+            "n": 5
+          },
+          "local_input_tokens": {
+            "median": 2509,
+            "p95": 2512,
+            "n": 5
+          },
+          "local_output_tokens": {
+            "median": 3277,
+            "p95": 3726,
+            "n": 5
+          },
+          "local_reasoning_tokens": {
+            "median": 3172,
+            "p95": 3662,
+            "n": 5
+          },
+          "ttft_ms": {
+            "median": 148.07070000006206,
+            "p95": 152.04209999978957,
+            "n": 5
+          },
+          "tokens_per_second": {
+            "median": 202.642998415085,
+            "p95": 202.957776700058,
+            "n": 5
+          },
+          "wall_clock_ms": {
+            "median": 16287.282199999936,
+            "p95": 18560.4093999998,
+            "n": 5
+          },
+          "vram_peak_mib": {
+            "median": 12804,
+            "p95": 12804,
+            "n": 5
+          },
+          "erc_errors": {
+            "median": 0.5,
+            "p95": 1,
+            "n": 4
+          }
+        }
+      }
+    },
+    "by_hint": {
+      "geometry": {
+        "attempts": 20,
+        "graded": 20,
+        "success_rate": 0.15,
+        "grade_histogram": {
+          "0": 0,
+          "1": 1,
+          "2": 16,
+          "3": 3
+        },
+        "outcome_histogram": {
+          "invalid_json": 0,
+          "truncated": 0,
+          "compile_failed": 1,
+          "not_applied": 0,
+          "applied_invalid": 16,
+          "success": 3
+        },
+        "llm_calls": {
+          "median": 1.0,
+          "p95": 1,
+          "n": 20
+        },
+        "local_input_tokens": {
+          "median": 2509.0,
+          "p95": 2620,
+          "n": 20
+        },
+        "local_output_tokens": {
+          "median": 3259.0,
+          "p95": 4451,
+          "n": 20
+        },
+        "local_reasoning_tokens": {
+          "median": 2957.5,
+          "p95": 4171,
+          "n": 20
+        },
+        "ttft_ms": {
+          "median": 146.255599999904,
+          "p95": 179.81470000017907,
+          "n": 20
+        },
+        "tokens_per_second": {
+          "median": 203.30314011998937,
+          "p95": 204.75546301758433,
+          "n": 20
+        },
+        "wall_clock_ms": {
+          "median": 16135.501099999829,
+          "p95": 25437.588100000085,
+          "n": 20
+        },
+        "vram_peak_mib": {
+          "median": 12804.0,
+          "p95": 12804,
+          "n": 20
+        },
+        "erc_errors": {
+          "median": 2.0,
+          "p95": 9,
+          "n": 18
+        }
+      }
+    }
+  }
+}
