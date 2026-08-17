@@ -109,14 +109,22 @@ if (-not $Board) {
 # `Test-Path` reports False for a live named pipe whose name embeds a drive
 # letter — the FileSystem provider chokes on the colon. Enumerating the pipe
 # namespace is the only reading that matches reality.
-function Test-ApiPipe {
-    param([string]$Name)
+#
+# And the name is matched by *shape*, not by equality with the path this script
+# computed. KiCad builds its own socket path, and it does not have to spell it
+# the way `$env:LOCALAPPDATA` does: on a GitHub runner it came up as
+# `C:\Users\RUNNER~1\...` — the 8.3 short name — against a `runneradmin` in the
+# environment. A pipe name is a literal in a namespace with no path resolution,
+# so the client has to be handed the name that exists rather than the one that
+# ought to. Returns the real name, or $null.
+function Get-ApiPipe {
     try {
-        return [bool]([System.IO.Directory]::GetFiles('\\.\pipe\') |
-                Where-Object { $_ -eq $Name })
+        return [System.IO.Directory]::GetFiles('\\.\pipe\') |
+            Where-Object { $_ -like '*\kicad\api.sock' } |
+            Select-Object -First 1
     }
     catch {
-        return $false
+        return $null
     }
 }
 
@@ -164,15 +172,30 @@ $proc = Start-Process -FilePath $pcbnewPath -ArgumentList $Board -PassThru
 $exit = 0
 try {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while (-not (Test-ApiPipe $pipe)) {
+    $actualPipe = Get-ApiPipe
+    while (-not $actualPipe) {
         if ($proc.HasExited) { throw "pcbnew exited with $($proc.ExitCode) before the API pipe appeared" }
         if ((Get-Date) -ge $deadline) {
             Write-PipeDiagnostics -Process $proc
-            throw "API pipe $pipe did not appear within ${TimeoutSeconds}s"
+            throw "no \\.\pipe\*\kicad\api.sock appeared within ${TimeoutSeconds}s (expected around $pipe)"
         }
         Start-Sleep -Milliseconds 500
+        $actualPipe = Get-ApiPipe
     }
-    Write-Host "API pipe is up."
+
+    # Hand the suites the name KiCad actually opened. They read
+    # KICAD_API_SOCKET and connect to it verbatim, so a mismatch here is not a
+    # cosmetic difference — it is a connection to a pipe that does not exist.
+    $actualSocket = $actualPipe.Substring('\\.\pipe\'.Length)
+    if ($actualSocket -ne $socketFile) {
+        Write-Host "API pipe is up under a different spelling than expected:"
+        Write-Host "  expected: $socketFile"
+        Write-Host "  actual  : $actualSocket"
+        $env:KICAD_API_SOCKET = "ipc://$actualSocket"
+    }
+    else {
+        Write-Host "API pipe is up."
+    }
 
     # The suites poll get_open_documents themselves until KiCad answers, so no
     # extra settle time is needed here.
