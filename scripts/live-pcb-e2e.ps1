@@ -93,8 +93,47 @@ function Enable-ApiServer {
     return $true
 }
 
+# A profile with no library tables is a profile KiCad stops to talk about: it
+# creates a default copy and says so in a modal `Information` dialog, and a modal
+# dialog is why a runner's pcbnew answers `AS_NOT_READY` on a pipe that is
+# otherwise up. Writing the tables first is the same content KiCad would have
+# written, minus the dialog. Idempotent: existing tables are left untouched.
+function Initialize-LibraryTables {
+    param([string]$PcbnewPath)
+
+    # ...\bin\pcbnew.exe → the installation root that holds share\kicad\template.
+    $install = Split-Path (Split-Path $PcbnewPath)
+    $template = Join-Path $install 'share\kicad\template'
+    $profile = Join-Path $env:APPDATA 'kicad\10.0'
+    New-Item -ItemType Directory -Force $profile | Out-Null
+
+    foreach ($table in @(
+            @{ File = 'fp-lib-table';  Tag = 'fp_lib_table' },
+            @{ File = 'sym-lib-table'; Tag = 'sym_lib_table' })) {
+        $target = Join-Path $profile $table.File
+        if (Test-Path $target) { continue }
+
+        $source = Join-Path $template $table.File
+        $entry = if (Test-Path $source) {
+            # The same single "Table" entry a fresh KiCad profile gets: an
+            # indirection to the installation's own table, forward slashes and
+            # all.
+            $uri = $source -replace '\\', '/'
+            "`n`t(lib (name `"KiCad`") (type `"Table`") (uri `"$uri`") (options `"`") (descr `"Default KiCad libraries`"))"
+        }
+        else {
+            # Nothing installed to point at. An empty table still keeps the
+            # dialog away.
+            ''
+        }
+        "($($table.Tag)`n`t(version 7)$entry`n)" | Set-Content $target -Encoding utf8
+        Write-Host "Wrote $target (KiCad would have created it and said so in a dialog)."
+    }
+}
+
 $pcbnewPath = Resolve-Pcbnew -Explicit $Pcbnew
 Enable-ApiServer | Out-Null
+Initialize-LibraryTables -PcbnewPath $pcbnewPath
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "konnect-live-pcb-$PID"
 New-Item -ItemType Directory -Force $work | Out-Null
@@ -137,6 +176,55 @@ Write-Host "pcbnew : $pcbnewPath"
 Write-Host "board  : $Board"
 Write-Host "socket : $env:KICAD_API_SOCKET"
 
+# A pcbnew that holds a modal dialog answers `AS_NOT_READY` on a pipe that is
+# perfectly up, and the dialog's text is the only thing that says which dialog.
+# Enumerate every window the process owns, and every static/button child, because
+# the message lives in the children rather than in the caption.
+function Write-WindowDiagnostics {
+    param([int]$ProcessId)
+    if (-not ('Konnect.Win32' -as [type])) {
+        Add-Type -Namespace Konnect -Name Win32 -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);
+[DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr h, EnumProc cb, IntPtr p);
+[DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+public delegate bool EnumProc(IntPtr h, IntPtr p);
+'@
+    }
+    $caption = {
+        param([IntPtr]$Handle)
+        $sb = New-Object System.Text.StringBuilder 512
+        [void][Konnect.Win32]::GetWindowText($Handle, $sb, $sb.Capacity)
+        return $sb.ToString()
+    }
+    Write-Host "windows owned by pcbnew:"
+    # `$script:` on both sides: the callback runs as a delegate, and a plain
+    # assignment inside it would write to its own scope and be lost.
+    $script:seen = $false
+    $onWindow = [Konnect.Win32+EnumProc] {
+        param([IntPtr]$handle, [IntPtr]$_unused)
+        $owner = 0
+        [void][Konnect.Win32]::GetWindowThreadProcessId($handle, [ref]$owner)
+        if ($owner -ne $ProcessId) { return $true }
+        $title = & $caption $handle
+        $visible = [Konnect.Win32]::IsWindowVisible($handle)
+        if (-not $title -and -not $visible) { return $true }
+        $script:seen = $true
+        Write-Host "  [$(if ($visible) { 'visible' } else { 'hidden ' })] '$title'"
+        $onChild = [Konnect.Win32+EnumProc] {
+            param([IntPtr]$child, [IntPtr]$_alsoUnused)
+            $text = & $caption $child
+            if ($text) { Write-Host "      child: '$text'" }
+            return $true
+        }
+        [void][Konnect.Win32]::EnumChildWindows($handle, $onChild, [IntPtr]::Zero)
+        return $true
+    }
+    [void][Konnect.Win32]::EnumWindows($onWindow, [IntPtr]::Zero)
+    if (-not $script:seen) { Write-Host '  (none)' }
+}
+
 # When the pipe never appears, "it timed out" is not a diagnosis. A live pcbnew
 # with no main window and no CPU time is stuck before it reaches its API server;
 # one with a window and a spinning CPU is stuck on something modal. Both readings
@@ -165,6 +253,7 @@ function Write-PipeDiagnostics {
     catch {
         Write-Host "the pipe namespace could not be enumerated: $_"
     }
+    Write-WindowDiagnostics -ProcessId $Process.Id
     Write-Host "-----------------------------------------------"
 }
 
@@ -207,7 +296,18 @@ try {
         # in the order it happened; without it the two buffer separately and a
         # captured log reads as if the suites ran before their banners.
         & cargo test -p $suite.Package --test $suite.Test -- --ignored --test-threads=1 --nocapture 2>&1 | Out-Host
-        if ($LASTEXITCODE -ne 0 -and $exit -eq 0) { $exit = $LASTEXITCODE }
+        if ($LASTEXITCODE -ne 0) {
+            # A suite failing while the pipe is up is the `AS_NOT_READY` shape:
+            # KiCad is reachable and not answering, which a modal dialog explains
+            # and nothing else in the log does. Take the reading once, before the
+            # next suite muddies it.
+            if ($exit -eq 0) {
+                Write-Host "--- diagnostics: a suite failed with the pipe up ---"
+                Write-WindowDiagnostics -ProcessId $proc.Id
+                Write-Host "----------------------------------------------------"
+                $exit = $LASTEXITCODE
+            }
+        }
     }
 }
 finally {
