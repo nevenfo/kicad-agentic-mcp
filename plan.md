@@ -1135,7 +1135,9 @@ The handoff must be harness-agnostic: another agent, notably Codex, resumes from
 F.3 (the gateway is the whole external surface).
 
 ### Tâches
-- [ ] K.1.1 Run the golden suite through each harness
+- [ ] K.1.1 Run the golden suite through each harness. The runner exists and
+      works (K.1.3); what is missing is the measurement itself, and it is
+      gated on K.1.4's two external blockers, not on code
 - [x] K.1.2 Adopt the eval design: `expected_tools`, `allowed_tools`,
       `forbidden_tools`, a `safety` tier checked against the capability registry
       (a `read_only` case rejects *any* write tool), `max_calls`, and an
@@ -1149,13 +1151,67 @@ F.3 (the gateway is the whole external surface).
       fingerprint of `$WORK` that catches a registry which lies (D56). New
       task `sch_inspection` — the tier's only exercise, since every other
       golden task authors something
-
-### Validation
+- [x] K.1.3 `bench/harness_runner.py` — the same golden suite, driven by a real
+      agent instead of the oracle path. `bench/runner.py` replays each task's
+      scripted calls and so measures what the server costs when the reasoning
+      is free; this one states the task in plain language
+      (`bench/agent_prompts.yaml`, no tool names — naming one would measure
+      instruction-following, not retrieval) and scores the result with the
+      *same* `audit()`, `fingerprint()`, `check_assertion()` and thresholds,
+      imported rather than reimplemented, because that is the only reason the
+      two numbers are comparable. Each harness declares an `isolation` level:
+      `tools-off` for Claude Code, whose built-ins `--tools ""` genuinely
+      removes, and `read-only-sandbox` for the two that cannot remove theirs.
+      The report therefore carries two rates — `SUCCESS_RATE`, strict, where
+      any off-server call is contamination, comparable only at equal isolation;
+      and `DESIGN_PASS_RATE`, which ignores contamination and is comparable
+      across harnesses — and prints the isolation level next to them, so the
+      two are never silently compared. Proven end-to-end by a real scored
+      Claude Code run
+- [ ] K.1.4 The codex and agy harnesses. Both adapters are written and their
+      transcript parsers proven against real output, but neither can produce a
+      measurement yet, for reasons outside the code: the Codex account is at
+      its usage limit until 2026-08-20, and `agy` 1.1.13 ignores workspace MCP
+      configuration — both `.mcp.json` and the officially documented
+      `.agents/mcp_config.json` were tested and left it reporting no MCP server
+      at all (antigravity-cli#60), so it solved the task with its own file
+      tools and measured nothing of Konnect. Its only working wiring is the
+      global `~/.gemini/config/mcp_config.json`, which is the user's own file:
+      `AgyMcpConfigGuard` writes the entry for the duration of an agy run and
+      restores the original bytes on every exit path, refusing to start at all
+      if `konnect` is already declared or a previous run left a backup behind.
+      Exercised offline against three starting states and both refusals; never
+      against a real agy run
+- [x] K.1.5 The meta-tools had no declared effect, and the first real agentic
+      run found it: a `read_only` task was failed for calling
+      `find_capabilities` and `load_tools` — the discovery tools an agent
+      *must* call — because the matrix covers only MANIFEST tools, so
+      `bench/capabilities.py`'s "unknown ⇒ write" fail-safe caught them. The
+      fail-safe was right to exist and wrong to be the answer, which is exactly
+      what D58 forbids. All twelve gateway tools now carry a hand-decided
+      effect (`META_TOOL_EFFECTS`), rendered as its own section of the
+      generated matrix. `effect` keeps its D56 meaning — can this call mutate
+      the *project on disk* — so `load_tools`, `load_toolset` and
+      `unload_toolset` are `read` even though they do change which tools
+      `tools/list` exposes; that distinction is written down where the table
+      is, since it is the kind of nuance a later reader would otherwise invert.
+      `kicad_invoke` is `write` (it carries arbitrary batches) with no effect
+      on any run, because D57 already unwraps it to its inner calls before the
+      audit. The exhaustiveness guarantee is structural rather than a copied
+      list: a `define_meta_tools!` macro generates the dispatch `match` and
+      `META_TOOL_NAMES` from one invocation, so a new meta-tool without an
+      effect fails a test naming it
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 `max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
 `bench/runner.py --enforce`, which exits non-zero on any of them; met by
 `--load-mode gateway --repeat 3` and `--load-mode tools --repeat 2`
 (`search` is exempt — its failure rate measures retrieval, not the server).
+
+`bench/harness_runner.py` applies the same four thresholds to the agentic runs,
+plus `off_server_calls == 0` — enforced at `tools-off` isolation, skipped with a
+stated reason at `read-only-sandbox`, where the harness cannot remove its own
+tools. K.1.1 is met when every harness that can be measured has been, and every
+one that cannot has its reason recorded here rather than a missing number.
 
 ---
 
@@ -1328,9 +1384,30 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       `icacls` (needing `DE` on the file *and* `DC` on the parent, since
       `FILE_DELETE_CHILD` otherwise grants the deletion regardless of the
       file's own ACL) and restores it from a `Drop` guard
+- [x] L.2.6 L.2.3's GUI stand-in could tear the file it raced. Found by CI, not
+      locally: every job had been dying at `arduino/setup-protoc` on a
+      `codeload` 429 since before L.2 closed, so `agentic/main` had never
+      actually run this test on ubuntu or macos. Once the 429 cleared, the test
+      failed on all three OSes with `Parse error at byte 0: Unexpected end of
+      input` classified `handler_error`, where the assertion demands
+      `conflict`. The defect was in the test: `spawn_gui_writer` saved with a
+      bare `std::fs::write`, which truncates before it writes, so the batch's
+      `read_consistent` could land on a zero-byte file and the run measured a
+      torn read instead of the per-write compare-and-swap it claims to prove.
+      The stand-in now writes a sibling temp file and renames it over the
+      target — a *truer* GUI, not a weaker one, since KiCad saves atomically,
+      and the rename still lands mid-batch and still makes `expected` stale,
+      which is the only thing the test needs from it. A rename Windows refuses
+      because the target is open is uncounted and non-fatal; `gui_writes > 0`
+      still holds. The lesson is about the gate, not the race: a green
+      `gate.ps1` on one OS is not a green CI, and a CI red for an
+      infrastructure reason hides the failures underneath it
 
 ### Validation
 Silent corruption stays 0 under injection; no partial batch survives a failure.
+L.2.6 additionally: 20 consecutive release runs of the test locally, then CI
+green on ubuntu, macos and windows (run 32060085312) — the first green
+`agentic/main` of the phase.
 
 ---
 

@@ -1,0 +1,112 @@
+# What a *real* agent is asked to do, per golden task.
+#
+# Separate from `tasks/*.yaml` on purpose. A task's `steps` are the scripted
+# oracle path — the exact calls a perfect agent would make, used to measure what
+# the server costs when the reasoning is free. A prompt is the opposite: the
+# intent, with the reasoning left in. The same prompt has to be fair to every
+# harness, while the steps are only meaningful to `bench/runner.py`.
+#
+# Rules these prompts follow, and must keep following:
+#
+#   * **No tool names.** Naming a tool measures instruction-following, not
+#     capability retrieval, and it would make the numbers incomparable to
+#     `--load-mode search`.
+#   * **Every fact an assertion checks is stated.** The assertions look for
+#     exact references (`R1`), exact net names (`VOUT`) and exact output paths.
+#     An agent that produces a correct divider labelled `OUT` has not failed at
+#     design, so the prompt names them. What is being measured is whether the
+#     agent can drive the server, not whether it can guess a convention.
+#   * **Nothing else is prescribed.** Coordinates, order, and which capability
+#     to reach for are the agent's problem — that is the part being scored.
+#
+# `$WORK` is substituted with the run's temporary directory, `$NAME` with the
+# task's `project_name`, and `$SCH` with the schematic path, exactly as in
+# `bench/runner.py`.
+
+sch_divider: |
+  In the directory $WORK, create a KiCad project named "$NAME" and draw a
+  resistive divider in its schematic:
+
+  - two 10k resistors, referenced R1 and R2, in series between a +3V3 rail and
+    a GND rail;
+  - the junction between them labelled VOUT;
+  - power flags where they are needed so the supplies are driven.
+
+  The finished schematic must pass ERC with zero errors. Report what you did
+  and the final ERC result.
+
+sch_ldo: |
+  In the directory $WORK, create a KiCad project named "$NAME" and draw an
+  AMS1117-3.3 linear regulator stage in its schematic:
+
+  - the regulator itself, referenced U1, fed from a +5V rail and producing
+    +3V3;
+  - a 10uF input capacitor referenced C1 and a 22uF output capacitor
+    referenced C2, each between its rail and GND;
+  - a shared GND rail, and power flags where they are needed.
+
+  Wires must actually connect: a symbol placed next to a pin is not a
+  connection. The finished schematic must pass ERC with zero errors. Report
+  what you did and the final ERC result.
+
+sch_template_stm32: |
+  In the directory $WORK, create a KiCad project named "$NAME". The server
+  ships reference circuits you can instantiate rather than draw by hand — find
+  the minimal STM32 one and place it in the schematic at roughly the centre of
+  the sheet.
+
+  Then run ERC and report what it says. Do not try to bring the error count to
+  zero: a reference circuit is expected to have unconnected pins, and fixing
+  them is not the task.
+
+sch_hierarchy: |
+  In the directory $WORK, create a KiCad project named "$NAME" and give its
+  schematic a hierarchy:
+
+  - a hierarchical sheet named "Power", backed by the file power.kicad_sch;
+  - three sheet pins on it — VIN as an input, +3V3 as an output, and GND as
+    passive;
+  - then a second sheet that is a copy of the first, named "Power2" and backed
+    by power2.kicad_sch.
+
+  Both sheet files must exist on disk when you are done. Report the resulting
+  hierarchy.
+
+manufacturing_exports: |
+  In the directory $WORK, create a KiCad project named "$NAME" and draw a
+  resistive divider in its schematic: two 10k resistors R1 and R2 in series
+  between +3V3 and GND, the junction labelled VOUT, and power flags where they
+  are needed. It must pass ERC with zero errors.
+
+  Then produce the manufacturing outputs, at exactly these paths:
+
+  - a bill of materials at $WORK/bom.csv
+  - a netlist at $WORK/exports.net
+  - an SVG of the schematic at $WORK/sch.svg
+
+  Report the final ERC result and confirm the three files exist.
+
+recovery: |
+  In the directory $WORK, create a KiCad project named "$NAME" and draw a
+  resistive divider in its schematic: two 10k resistors R1 and R2 in series
+  between a +3V3 rail and a GND rail, with power flags where they are needed.
+  The finished schematic must pass ERC with zero errors.
+
+  Work from what the server tells you. If a call is refused, read the refusal
+  and correct the request rather than working around it — the design must be
+  built through the server, and a refusal is information, not an obstacle.
+  Report what you did, including anything you had to correct.
+
+sch_inspection: |
+  The directory $WORK already contains a KiCad project named "$NAME". Read its
+  schematic and report:
+
+  - every component, with its reference and value;
+  - every net;
+  - the pin positions of R1;
+  - whether any net has only a single pin on it.
+
+  This is an inspection. Do not modify the project in any way — not the
+  schematic, not the project files, not anything else in that directory. If
+  something looks wrong with the design, say so in your report rather than
+  fixing it.
