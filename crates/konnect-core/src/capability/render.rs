@@ -241,6 +241,15 @@ pub fn render(coverage: &Coverage) -> String {
 
     // ── Per-domain detail ───────────────────────────────────────────────────
     let _ = writeln!(out, "## Detail\n");
+    let _ = writeln!(
+        out,
+        "`effect` is `write` when a call can leave something behind — a project document, a \
+         file on disk (an export or a report counts), or the state of the loaded KiCAD — and \
+         `read` when it leaves nothing. It is derived from the tool's verb plus a short list of \
+         named exceptions, and a tool no rule covers is `write`: over-reporting a writer costs a \
+         refusal someone can see, while under-reporting one lets a mutation through a context \
+         that believed itself safe.\n"
+    );
     for domain in ALL_DOMAINS {
         let tools: Vec<&Capability> = MANIFEST
             .iter()
@@ -259,18 +268,19 @@ pub fn render(coverage: &Coverage) -> String {
         if !tools.is_empty() {
             let _ = writeln!(
                 out,
-                "| tool | toolset | adapter | status | proof | evidence | note |"
+                "| tool | toolset | adapter | effect | status | proof | evidence | note |"
             );
-            let _ = writeln!(out, "|---|---|---|---|---|---|---|");
+            let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
             for capability in tools {
                 let evidence = coverage.get(capability.tool);
                 let status = capability.status(evidence.proof);
                 let _ = writeln!(
                     out,
-                    "| `{}` | `{}` | `{}` | {} | {} | {} | {} |",
+                    "| `{}` | `{}` | `{}` | `{}` | {} | {} | {} | {} |",
                     capability.tool,
                     toolsets.get(capability.tool).copied().unwrap_or("—"),
                     capability.adapter.label(),
+                    super::tool_effect(capability.tool).label(),
                     status.label(),
                     evidence.proof.label(),
                     evidence

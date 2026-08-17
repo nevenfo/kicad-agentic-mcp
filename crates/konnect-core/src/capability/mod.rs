@@ -230,6 +230,138 @@ impl Adapter {
     }
 }
 
+// ─── Effect ──────────────────────────────────────────────────────────────────
+
+/// Whether a call can leave something behind.
+///
+/// * [`Effect::Write`] — the call may modify persistent state: a document of
+///   the project, a file on disk (an export or a report counts), or the state
+///   of the loaded KiCAD application.
+/// * [`Effect::Read`] — the call leaves nothing behind. A scratch file the
+///   handler deletes before returning is still `Read`, because nothing of it
+///   survives the call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Effect {
+    Read,
+    Write,
+}
+
+impl Effect {
+    pub fn label(self) -> &'static str {
+        match self {
+            Effect::Read => "read",
+            Effect::Write => "write",
+        }
+    }
+}
+
+/// The verb a tool name starts with, and what it implies.
+///
+/// Longest-match is not needed: no entry is a prefix of another. A tool whose
+/// verb classifies it wrongly belongs in [`TOOL_EFFECTS`], not here.
+const VERB_EFFECTS: &[(&str, Effect)] = &[
+    // ── observers ───────────────────────────────────────────────────────────
+    ("audit_", Effect::Read),
+    ("check_", Effect::Read),
+    ("estimate_", Effect::Read),
+    ("expand_", Effect::Read),
+    ("find_", Effect::Read),
+    ("get_", Effect::Read),
+    ("graph_", Effect::Read),
+    ("list_", Effect::Read),
+    ("preview_", Effect::Read),
+    ("query_", Effect::Read),
+    ("search_", Effect::Read),
+    ("suggest_", Effect::Read),
+    ("trace_", Effect::Read),
+    ("validate_", Effect::Read),
+    // ── mutators ────────────────────────────────────────────────────────────
+    ("add_", Effect::Write),
+    ("align_", Effect::Write),
+    ("annotate_", Effect::Write),
+    ("apply_", Effect::Write),
+    ("assign_", Effect::Write),
+    ("batch_", Effect::Write),
+    ("bulk_", Effect::Write),
+    ("connect_", Effect::Write),
+    ("copy_", Effect::Write),
+    ("create_", Effect::Write),
+    ("delete_", Effect::Write),
+    ("download_", Effect::Write),
+    ("duplicate_", Effect::Write),
+    ("edit_", Effect::Write),
+    ("enrich_", Effect::Write),
+    ("export_", Effect::Write),
+    ("fix_", Effect::Write),
+    ("generate_", Effect::Write),
+    ("group_", Effect::Write),
+    ("import_", Effect::Write),
+    ("launch_", Effect::Write),
+    ("load_", Effect::Write),
+    ("modify_", Effect::Write),
+    ("move_", Effect::Write),
+    ("open_", Effect::Write),
+    ("place_", Effect::Write),
+    ("refill_", Effect::Write),
+    ("register_", Effect::Write),
+    ("renumber_", Effect::Write),
+    ("replace_", Effect::Write),
+    ("rotate_", Effect::Write),
+    ("route_", Effect::Write),
+    ("run_", Effect::Write),
+    ("save_", Effect::Write),
+    ("set_", Effect::Write),
+    ("snapshot_", Effect::Write),
+    ("split_", Effect::Write),
+    ("start_", Effect::Write),
+    ("update_", Effect::Write),
+];
+
+/// Tools whose verb lies about them. Each entry was decided by reading the
+/// handler, not the name; a stale entry is a test failure
+/// (`every_exception_names_a_real_tool`).
+const TOOL_EFFECTS: &[(&str, Effect)] = &[
+    // No verb at all. It drives the Freerouting round trip on the board.
+    ("autoroute", Effect::Write),
+    // `batch_` is a mutating verb everywhere else; this one only reads pins.
+    ("batch_get_schematic_pin_locations", Effect::Read),
+    // `get_`, but it runs kicad-cli DRC and writes the report when asked
+    // (`tools::pcb_export::handle_get_drc_violations`).
+    ("get_drc_violations", Effect::Write),
+    // Reads the project config; unlike `load_user_config` it never seeds a file.
+    ("load_project_config", Effect::Read),
+    // `load_`, but it writes a default user config when none exists
+    // (`tools::config::handle_load_user_config`).
+    ("load_user_config", Effect::Write),
+    // `run_`, but it only aggregates the read-only `audit_*` heuristics.
+    ("run_design_review", Effect::Read),
+];
+
+/// Look up `tool`'s effect, or `None` when no rule covers it.
+///
+/// Separate from [`tool_effect`] so a test can tell "classified" from "fell
+/// through to the fail-safe" — the fail-safe must never be load-bearing.
+fn classify(tool: &str) -> Option<Effect> {
+    if let Some((_, effect)) = TOOL_EFFECTS.iter().find(|(name, _)| *name == tool) {
+        return Some(*effect);
+    }
+    VERB_EFFECTS
+        .iter()
+        .find(|(verb, _)| tool.starts_with(verb))
+        .map(|(_, effect)| *effect)
+}
+
+/// Whether calling `tool` can change persistent state.
+///
+/// An unknown tool is [`Effect::Write`]. The two errors are not symmetric:
+/// calling a read tool a writer costs a refusal the caller can see and work
+/// around, while calling a writer a reader lets a mutation through a context
+/// that believed itself safe. The exhaustiveness test keeps this fallback from
+/// ever being the answer for a tool in [`MANIFEST`].
+pub fn tool_effect(tool: &str) -> Effect {
+    classify(tool).unwrap_or(Effect::Write)
+}
+
 // ─── Limitations ─────────────────────────────────────────────────────────────
 
 /// A fact about a capability that no amount of testing changes.
@@ -819,3 +951,62 @@ pub static MISSING: &[MissingCapability] = &[
         ),
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `Write` fallback in [`tool_effect`] is a safety net, not a
+    /// classifier: every tool the server registers must be decided by a verb or
+    /// by a named exception, so adding a tool with a new verb fails here rather
+    /// than silently becoming a writer.
+    #[test]
+    fn every_manifest_tool_is_classified() {
+        let unclassified: Vec<&str> = MANIFEST
+            .iter()
+            .map(|c| c.tool)
+            .filter(|tool| classify(tool).is_none())
+            .collect();
+        assert!(
+            unclassified.is_empty(),
+            "tools reaching the Write fail-safe instead of a rule: {unclassified:?} — \
+             add a verb to VERB_EFFECTS or a named entry to TOOL_EFFECTS"
+        );
+    }
+
+    /// An exception that names no tool is a claim about a handler nobody can
+    /// check any more; it would also hide the fact that the rule it overrides
+    /// is now unopposed.
+    #[test]
+    fn every_exception_names_a_real_tool() {
+        let dead: Vec<&str> = TOOL_EFFECTS
+            .iter()
+            .map(|(tool, _)| *tool)
+            .filter(|tool| !MANIFEST.iter().any(|c| c.tool == *tool))
+            .collect();
+        assert!(
+            dead.is_empty(),
+            "TOOL_EFFECTS entries matching no MANIFEST tool: {dead:?}"
+        );
+    }
+
+    /// A verb that is a prefix of another would make [`classify`] depend on the
+    /// order of the table.
+    #[test]
+    fn no_verb_shadows_another() {
+        for (a, _) in VERB_EFFECTS {
+            for (b, _) in VERB_EFFECTS {
+                assert!(
+                    a == b || !b.starts_with(a),
+                    "verb `{a}` shadows `{b}`: classification would depend on table order"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_tool_is_write() {
+        assert_eq!(classify("frobnicate_board"), None);
+        assert_eq!(tool_effect("frobnicate_board"), Effect::Write);
+    }
+}

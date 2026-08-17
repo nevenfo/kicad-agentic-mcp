@@ -109,28 +109,30 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 
 ## Detail
 
+`effect` is `write` when a call can leave something behind — a project document, a file on disk (an export or a report counts), or the state of the loaded KiCAD — and `read` when it leaves nothing. It is derived from the tool's verb plus a short list of named exceptions, and a tool no rule covers is `write`: over-reporting a writer costs a refusal someone can see, while under-reporting one lets a mutation through a context that believed itself safe.
+
 ### project
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `create_project` | `project` | `sexpr` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
-| `open_project` | `project` | `ipc` | NOT_TESTED | — | — |  |
-| `save_project` | `project` | `ipc` | NOT_TESTED | — | — |  |
-| `get_project_info` | `project` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/project.rs` |  |
-| `snapshot_project` | `project` | `internal` | NOT_TESTED | gated | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `create_project` | `project` | `sexpr` | `write` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
+| `open_project` | `project` | `ipc` | `write` | NOT_TESTED | — | — |  |
+| `save_project` | `project` | `ipc` | `write` | NOT_TESTED | — | — |  |
+| `get_project_info` | `project` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/project.rs` |  |
+| `snapshot_project` | `project` | `internal` | `write` | NOT_TESTED | gated | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
 
 ### schematic
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `create_schematic` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `add_component_annotation` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/design_review.rs` |  |
-| `get_schematic_view` | `sch_components` | `cli` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `find_orphan_items` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `check_schematic_overlaps` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `batch_delete` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
-| `add_schematic_text` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `get_schematic_layout` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `create_schematic` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
+| `add_component_annotation` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/design_review.rs` |  |
+| `get_schematic_view` | `sch_components` | `cli` | `read` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `find_orphan_items` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `check_schematic_overlaps` | `sch_analysis` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `batch_delete` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
+| `add_schematic_text` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `get_schematic_layout` | `sch_batch` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 
 Not covered by any tool:
 
@@ -140,162 +142,162 @@ Not covered by any tool:
 
 ### symbols
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/probes/symbol_lookup_cost.yaml` |  |
-| `delete_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `edit_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `get_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `list_schematic_components` | `sch_components` | `sexpr` | SUPPORTED | bench | `bench/probes/graph.yaml` |  |
-| `move_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `rotate_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `move_connected` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `move_region` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `annotate_schematic` | `sch_components` | `cli` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `get_schematic_pin_locations` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `batch_get_schematic_pin_locations` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `group_components` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `replace_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `add_power_symbol` | `sch_wiring` | `sexpr` | PARTIAL | bench | `bench/probes/divider.yaml` | does not snap to the 1.27 mm grid (E6): a power symbol placed at a component's nominal coordinate lands 0.33 mm off the pin and ERC reports it unconnected. A plan's `power` operation snaps before calling it; the direct path does not |
-| `batch_place_components` | `sch_batch` | `sexpr` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
-| `bulk_move_schematic_components` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `batch_delete_schematic_components` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | bench | `bench/probes/symbol_lookup_cost.yaml` |  |
+| `delete_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `edit_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `get_schematic_component` | `sch_components` | `sexpr` | `read` | SUPPORTED | bench | `bench/tasks/07_sch_inspection.yaml` |  |
+| `list_schematic_components` | `sch_components` | `sexpr` | `read` | SUPPORTED | bench | `bench/probes/graph.yaml` |  |
+| `move_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `rotate_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `move_connected` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `move_region` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `annotate_schematic` | `sch_components` | `cli` | `write` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `get_schematic_pin_locations` | `sch_components` | `sexpr` | `read` | SUPPORTED | bench | `bench/tasks/07_sch_inspection.yaml` |  |
+| `batch_get_schematic_pin_locations` | `sch_components` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `group_components` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `replace_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
+| `add_power_symbol` | `sch_wiring` | `sexpr` | `write` | PARTIAL | bench | `bench/probes/divider.yaml` | does not snap to the 1.27 mm grid (E6): a power symbol placed at a component's nominal coordinate lands 0.33 mm off the pin and ERC reports it unconnected. A plan's `power` operation snaps before calling it; the direct path does not |
+| `batch_place_components` | `sch_batch` | `sexpr` | `write` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
+| `bulk_move_schematic_components` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `batch_delete_schematic_components` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 
 ### wires
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_wire` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `batch_add_wire` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
-| `delete_schematic_wire` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `batch_delete_schematic_wire` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `split_wire_at_point` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `add_junction` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `batch_add_junction` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
-| `list_schematic_wires` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_wire` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
+| `batch_add_wire` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
+| `delete_schematic_wire` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `batch_delete_schematic_wire` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `split_wire_at_point` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
+| `add_junction` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `batch_add_junction` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
+| `list_schematic_wires` | `sch_analysis` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 
 ### nets
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_no_connect` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `delete_no_connect` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `batch_delete_no_connect` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `connect_to_net` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `connect_pins` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
-| `add_schematic_connection` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `list_schematic_nets` | `sch_analysis` | `sexpr` | PARTIAL | bench | `bench/probes/divider.yaml` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_net_connections` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_net_connectivity` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_pin_connections` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_pin_net_name` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_component_nets` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_net_components` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `trace_from_point` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `find_shorted_nets` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `find_single_pin_nets` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_connected_items` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `batch_connect_to_net` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/plan/ops.rs` |  |
-| `batch_connect_pins` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
-| `connect_passthrough` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `validate_wire_connections` | `sch_batch` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `validate_component_connections` | `sch_batch` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/sch_batch.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `fix_connectivity` | `sch_export` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `add_net` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `get_nets_list` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_no_connect` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `delete_no_connect` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
+| `batch_delete_no_connect` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
+| `connect_to_net` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `connect_pins` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
+| `add_schematic_connection` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `list_schematic_nets` | `sch_analysis` | `sexpr` | `read` | PARTIAL | bench | `bench/probes/divider.yaml` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_net_connections` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_net_connectivity` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_pin_connections` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_pin_net_name` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_component_nets` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_net_components` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `trace_from_point` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `find_shorted_nets` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `find_single_pin_nets` | `sch_analysis` | `sexpr` | `read` | PARTIAL | bench | `bench/tasks/07_sch_inspection.yaml` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_connected_items` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `batch_connect_to_net` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/plan/ops.rs` |  |
+| `batch_connect_pins` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
+| `connect_passthrough` | `sch_batch` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `validate_wire_connections` | `sch_batch` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `validate_component_connections` | `sch_batch` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/src/tools/sch_batch.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `fix_connectivity` | `sch_export` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `add_net` | `pcb_routing` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `get_nets_list` | `pcb_routing` | `ipc` | `read` | NOT_TESTED | — | — |  |
 
 ### labels
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_schematic_net_label` | `sch_wiring` | `sexpr` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
-| `delete_schematic_net_label` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `rotate_schematic_label` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `move_labels_by_offset` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
-| `batch_rotate_labels` | `sch_wiring` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `list_schematic_labels` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_schematic_net_label` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
+| `delete_schematic_net_label` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `rotate_schematic_label` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `move_labels_by_offset` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
+| `batch_rotate_labels` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `list_schematic_labels` | `sch_analysis` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 ### buses
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_bus` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
-| `add_bus_entry` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
-| `add_bus_alias` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
-| `list_buses` | `sch_buses` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
-| `expand_bus` | `sch_buses` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_bus` | `sch_buses` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `add_bus_entry` | `sch_buses` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `add_bus_alias` | `sch_buses` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `list_buses` | `sch_buses` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
+| `expand_bus` | `sch_buses` | `internal` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_buses.rs` |  |
 
 ### hierarchy
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_hierarchical_sheet` | `sch_hierarchy` | `sexpr` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
-| `edit_sheet` | `sch_hierarchy` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
-| `move_sheet` | `sch_hierarchy` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
-| `delete_sheet` | `sch_hierarchy` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
-| `duplicate_sheet` | `sch_hierarchy` | `sexpr` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
-| `get_sheet_hierarchy` | `sch_hierarchy` | `sexpr` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
-| `renumber_sheet_pages` | `sch_hierarchy` | `sexpr` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
-| `import_sheet_pins` | `sch_hierarchy` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
-| `add_sheet_pin` | `sch_hierarchy` | `sexpr` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
-| `edit_sheet_pin` | `sch_hierarchy` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
-| `delete_sheet_pin` | `sch_hierarchy` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
-| `validate_sheet_pins` | `sch_hierarchy` | `sexpr` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_hierarchical_sheet` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
+| `edit_sheet` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
+| `move_sheet` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
+| `delete_sheet` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
+| `duplicate_sheet` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
+| `get_sheet_hierarchy` | `sch_hierarchy` | `sexpr` | `read` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
+| `renumber_sheet_pages` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
+| `import_sheet_pins` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
+| `add_sheet_pin` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
+| `edit_sheet_pin` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
+| `delete_sheet_pin` | `sch_hierarchy` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_hierarchy.rs` |  |
+| `validate_sheet_pins` | `sch_hierarchy` | `sexpr` | `read` | SUPPORTED | bench | `bench/tasks/04_sch_hierarchy.yaml` |  |
 
 ### libraries
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `register_footprint_library` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `list_footprint_libraries` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
-| `create_symbol` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
-| `delete_symbol` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `list_symbols_in_library` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
-| `register_symbol_library` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `list_symbol_libraries` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `search_symbols` | `library` | `sexpr` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
-| `get_symbol_info` | `library` | `sexpr` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `register_footprint_library` | `library` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `list_footprint_libraries` | `library` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
+| `create_symbol` | `library` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
+| `delete_symbol` | `library` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `list_symbols_in_library` | `library` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
+| `register_symbol_library` | `library` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `list_symbol_libraries` | `library` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `search_symbols` | `library` | `sexpr` | `read` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
+| `get_symbol_info` | `library` | `sexpr` | `read` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
 
 ### footprints
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `get_component_pads` | `pcb_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `get_pad_position` | `pcb_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `create_footprint` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
-| `edit_footprint_pad` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `list_library_footprints` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `get_footprint_info` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `search_footprints` | `library` | `sexpr` | NOT_TESTED | gated | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `get_component_pads` | `pcb_components` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_pad_position` | `pcb_components` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `create_footprint` | `library` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
+| `edit_footprint_pad` | `library` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `list_library_footprints` | `library` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_footprint_info` | `library` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `search_footprints` | `library` | `sexpr` | `read` | NOT_TESTED | gated | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 
 ### pcb
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `set_board_size` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `get_board_info` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `get_board_extents` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `add_board_outline` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `add_mounting_hole` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `add_board_text` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `import_svg_logo` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
-| `get_board_2d_view` | `pcb_components` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `set_board_size` | `pcb_board` | `ipc→sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `get_board_info` | `pcb_board` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `get_board_extents` | `pcb_board` | `ipc→sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_board_outline` | `pcb_board` | `ipc→sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_mounting_hole` | `pcb_board` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_board_text` | `pcb_board` | `ipc→sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `import_svg_logo` | `pcb_board` | `ipc→sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
+| `get_board_2d_view` | `pcb_components` | `cli` | `read` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### placement
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `place_component` | `pcb_components` | `ipc` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
-| `move_component` | `pcb_components` | `ipc` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
-| `rotate_component` | `pcb_components` | `ipc` | NOT_TESTED | — | — |  |
-| `delete_component` | `pcb_components` | `ipc` | NOT_TESTED | — | — |  |
-| `edit_component` | `pcb_components` | `ipc` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
-| `find_component` | `pcb_components` | `ipc` | NOT_TESTED | — | — |  |
-| `get_component_list` | `pcb_components` | `ipc` | NOT_TESTED | — | — |  |
-| `place_component_array` | `pcb_components` | `ipc` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
-| `align_components` | `pcb_components` | `ipc` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
-| `duplicate_component` | `pcb_components` | `ipc` | NOT_TESTED | — | — |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `place_component` | `pcb_components` | `ipc` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
+| `move_component` | `pcb_components` | `ipc` | `write` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
+| `rotate_component` | `pcb_components` | `ipc` | `write` | NOT_TESTED | — | — |  |
+| `delete_component` | `pcb_components` | `ipc` | `write` | NOT_TESTED | — | — |  |
+| `edit_component` | `pcb_components` | `ipc` | `write` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
+| `find_component` | `pcb_components` | `ipc` | `read` | NOT_TESTED | — | — |  |
+| `get_component_list` | `pcb_components` | `ipc` | `read` | NOT_TESTED | — | — |  |
+| `place_component_array` | `pcb_components` | `ipc` | `write` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
+| `align_components` | `pcb_components` | `ipc` | `write` | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
+| `duplicate_component` | `pcb_components` | `ipc` | `write` | NOT_TESTED | — | — |  |
 
 Not covered by any tool:
 
@@ -305,17 +307,17 @@ Not covered by any tool:
 
 ### routing
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `route_trace` | `pcb_routing` | `ipc` | SUPPORTED | test | `crates/konnect-core/tests/integration_test.rs` |  |
-| `route_pad_to_pad` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
-| `delete_trace` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
-| `query_traces` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
-| `modify_trace` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
-| `route_differential_pair` | `pcb_routing` | `ipc` | NOT_TESTED | — | — | one straight segment per net, offset perpendicular by (gap + width) / 2: no length matching, no skew budget, no impedance target and no vias |
-| `autoroute` | `integration` | `external` | GUI_ONLY_NO_API | — | — | kicad-cli 10 dropped Specctra DSN export and SES import, so the Freerouting round trip exists only in the PCB editor; the handler always fails and names the GUI steps |
-| `check_freerouting` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
-| `copy_routing_pattern` | `verification` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `route_trace` | `pcb_routing` | `ipc` | `write` | SUPPORTED | test | `crates/konnect-core/tests/integration_test.rs` |  |
+| `route_pad_to_pad` | `pcb_routing` | `ipc` | `write` | NOT_TESTED | — | — |  |
+| `delete_trace` | `pcb_routing` | `ipc` | `write` | NOT_TESTED | — | — |  |
+| `query_traces` | `pcb_routing` | `ipc` | `read` | NOT_TESTED | — | — |  |
+| `modify_trace` | `pcb_routing` | `ipc` | `write` | NOT_TESTED | — | — |  |
+| `route_differential_pair` | `pcb_routing` | `ipc` | `write` | NOT_TESTED | — | — | one straight segment per net, offset perpendicular by (gap + width) / 2: no length matching, no skew budget, no impedance target and no vias |
+| `autoroute` | `integration` | `external` | `write` | GUI_ONLY_NO_API | — | — | kicad-cli 10 dropped Specctra DSN export and SES import, so the Freerouting round trip exists only in the PCB editor; the handler always fails and names the GUI steps |
+| `check_freerouting` | `integration` | `external` | `read` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| `copy_routing_pattern` | `verification` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
 
 Not covered by any tool:
 
@@ -325,25 +327,25 @@ Not covered by any tool:
 
 ### vias
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_via` | `pcb_routing` | `ipc` | NOT_TESTED | — | — |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_via` | `pcb_routing` | `ipc` | `write` | NOT_TESTED | — | — |  |
 
 ### zones
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `add_zone` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/mcp/error.rs` |  |
-| `add_copper_pour` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `refill_zones` | `pcb_export` | `ipc` | NOT_TESTED | — | — |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `add_zone` | `pcb_board` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/mcp/error.rs` |  |
+| `add_copper_pour` | `pcb_routing` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `refill_zones` | `pcb_export` | `ipc` | `write` | NOT_TESTED | — | — |  |
 
 ### stackup
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `get_layer_list` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `add_layer` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `set_active_layer` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `get_layer_list` | `pcb_board` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_layer` | `pcb_board` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `set_active_layer` | `pcb_board` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 Not covered by any tool:
 
@@ -353,19 +355,19 @@ Not covered by any tool:
 
 ### rules
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `create_netclass` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `assign_net_to_class` | `pcb_routing` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `set_design_rules` | `verification` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `get_design_rules` | `verification` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `set_layer_constraints` | `verification` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `create_netclass` | `pcb_routing` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `assign_net_to_class` | `pcb_routing` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `set_design_rules` | `verification` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `get_design_rules` | `verification` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `set_layer_constraints` | `verification` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 
 ### erc
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `run_erc` | `sch_export` | `cli` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `run_erc` | `sch_export` | `cli` | `write` | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
 
 Not covered by any tool:
 
@@ -375,23 +377,23 @@ Not covered by any tool:
 
 ### drc
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `get_drc_violations` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `run_drc` | `verification` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `check_clearance` | `verification` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | geometric clearance computed in-process from the file, against no rule set — kicad-cli DRC is the verdict |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `get_drc_violations` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `run_drc` | `verification` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `check_clearance` | `verification` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | geometric clearance computed in-process from the file, against no rule set — kicad-cli DRC is the verdict |
 
 ### bom
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `export_bom` | `sch_export` | `cli` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `export_bom` | `sch_export` | `cli` | `write` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
 
 ### 3d
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `export_3d` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `export_3d` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 Not covered by any tool:
 
@@ -409,126 +411,126 @@ Not covered by any tool:
 
 ### manufacturing
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `export_manufacturing_package` | `manufacturing` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `validate_for_manufacturing` | `manufacturing` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `estimate_cost` | `manufacturing` | `internal` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | an order-of-magnitude estimate from stored per-fab-house rates, not a quote |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `export_manufacturing_package` | `manufacturing` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `validate_for_manufacturing` | `manufacturing` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `estimate_cost` | `manufacturing` | `internal` | `read` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | an order-of-magnitude estimate from stored per-fab-house rates, not a quote |
 
 ### gerber
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `export_gerber` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `export_gerber` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### drill
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `export_drill` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `export_drill` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
 
 ### pick_place
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `export_position_file` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `export_position_file` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### datasheet
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `enrich_datasheets` | `integration` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
-| `get_datasheet_url` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `enrich_datasheets` | `integration` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| `get_datasheet_url` | `integration` | `external` | `read` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
 
 ### sourcing
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `download_jlcpcb_database` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
-| `search_jlcpcb_parts` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
-| `get_jlcpcb_part` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
-| `suggest_jlcpcb_alternatives` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
-| `get_jlcpcb_database_stats` | `integration` | `external` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `download_jlcpcb_database` | `integration` | `external` | `write` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| `search_jlcpcb_parts` | `integration` | `external` | `read` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
+| `get_jlcpcb_part` | `integration` | `external` | `read` | EXTERNAL_TOOL | test | `crates/konnect-core/src/tools/integration.rs` |  |
+| `suggest_jlcpcb_alternatives` | `integration` | `external` | `read` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| `get_jlcpcb_database_stats` | `integration` | `external` | `read` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
 
 ### export
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `export_schematic_svg` | `sch_export` | `cli` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
-| `export_schematic_pdf` | `sch_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `generate_netlist` | `sch_export` | `cli` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
-| `export_netlist_summary` | `sch_export` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `export_pdf` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `export_svg` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `export_netlist` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `export_dxf` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
-| `export_gencad` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
-| `export_ipc2581` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
-| `export_odb` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `export_schematic_svg` | `sch_export` | `cli` | `write` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
+| `export_schematic_pdf` | `sch_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `generate_netlist` | `sch_export` | `cli` | `write` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
+| `export_netlist_summary` | `sch_export` | `sexpr` | `write` | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `export_pdf` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_svg` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_netlist` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_dxf` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
+| `export_gencad` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
+| `export_ipc2581` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
+| `export_odb` | `pcb_export` | `cli` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
 
 ### review
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `audit_decoupling` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `audit_connections` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `audit_power_rails` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `audit_manufacturing` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `run_design_review` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
-| `check_bom_health` | `design_review` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `audit_decoupling` | `design_review` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `audit_connections` | `design_review` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `audit_power_rails` | `design_review` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `audit_manufacturing` | `design_review` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `run_design_review` | `design_review` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `check_bom_health` | `design_review` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/design_review.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
 
 ### config
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `load_user_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `save_user_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `load_project_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `save_project_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `get_effective_config` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `add_design_rule` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `list_design_rules` | `config` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `load_user_config` | `config` | `internal` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `save_user_config` | `config` | `internal` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `load_project_config` | `config` | `internal` | `read` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `save_project_config` | `config` | `internal` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `get_effective_config` | `config` | `internal` | `read` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `add_design_rule` | `config` | `internal` | `write` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `list_design_rules` | `config` | `internal` | `read` | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 
 ### templates
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `search_templates` | `templates` | `internal` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
-| `get_template` | `templates` | `internal` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `apply_template` | `templates` | `sexpr` | SUPPORTED | bench | `bench/tasks/03_sch_template_stm32.yaml` |  |
-| `list_template_categories` | `templates` | `internal` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `search_templates` | `templates` | `internal` | `read` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
+| `get_template` | `templates` | `internal` | `read` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `apply_template` | `templates` | `sexpr` | `write` | SUPPORTED | bench | `bench/tasks/03_sch_template_stm32.yaml` |  |
+| `list_template_categories` | `templates` | `internal` | `read` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
 
 ### task
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `start_task` | `task` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/plan.rs` |  |
-| `update_task` | `task` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/task.rs` |  |
-| `get_task` | `task` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/task.rs` |  |
-| `list_tasks` | `task` | `internal` | SUPPORTED | test | `crates/konnect/tests/protocol_stdio.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `start_task` | `task` | `internal` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/plan.rs` |  |
+| `update_task` | `task` | `internal` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/task.rs` |  |
+| `get_task` | `task` | `internal` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/task.rs` |  |
+| `list_tasks` | `task` | `internal` | `read` | SUPPORTED | test | `crates/konnect/tests/protocol_stdio.rs` |  |
 
 ### plan
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `preview_plan` | `plan` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/plan.rs` |  |
-| `apply_plan` | `plan` | `internal` | SUPPORTED | test | `crates/konnect-core/src/tools/plan.rs` |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `preview_plan` | `plan` | `internal` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/plan.rs` |  |
+| `apply_plan` | `plan` | `internal` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/plan.rs` |  |
 
 ### ui
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `open_schematic_viewer` | `project` | `process` | NOT_TESTED | — | — |  |
-| `check_kicad_ui` | `verification` | `process` | NOT_TESTED | — | — |  |
-| `launch_kicad_ui` | `verification` | `process` | NOT_TESTED | — | — |  |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `open_schematic_viewer` | `project` | `process` | `write` | NOT_TESTED | — | — |  |
+| `check_kicad_ui` | `verification` | `process` | `read` | NOT_TESTED | — | — |  |
+| `launch_kicad_ui` | `verification` | `process` | `write` | NOT_TESTED | — | — |  |
 
 ### graph
 
-| tool | toolset | adapter | status | proof | evidence | note |
-|---|---|---|---|---|---|---|
-| `graph_query` | `graph` | `sexpr` | PARTIAL | bench | `bench/probes/graph.yaml` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
-| `graph_neighbors` | `graph` | `sexpr` | PARTIAL | test | `crates/konnect-core/src/tools/graph.rs` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
-| `graph_stats` | `graph` | `sexpr` | PARTIAL | bench | `bench/probes/graph.yaml` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
+| tool | toolset | adapter | effect | status | proof | evidence | note |
+|---|---|---|---|---|---|---|---|
+| `graph_query` | `graph` | `sexpr` | `read` | PARTIAL | bench | `bench/probes/graph.yaml` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
+| `graph_neighbors` | `graph` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/src/tools/graph.rs` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
+| `graph_stats` | `graph` | `sexpr` | `read` | PARTIAL | bench | `bench/probes/graph.yaml` | indexes only what the documents state — no .kicad_sch item ever carries a derived `net`; the connectivity verdict comes from run_erc, never from this tool (E7) |
 
 ## Not tested
 
