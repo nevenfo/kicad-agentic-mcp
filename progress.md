@@ -7,27 +7,28 @@ L.2 (failure injection and concurrency) is in progress.
 
 ## Tâche actuelle
 
-L.2.2 — inject failures per `TransientClass` and assert the recovery policy.
-What exists today is the *classification*: `ToolErrorKind::transient_class()`
-in `crates/konnect-core/src/mcp/error.rs` maps each error to
-`None | Network | Timeout | Lock | State`, and its unit tests check that map.
-What does not exist is the injection: nothing provokes a real held lock, a real
-stale revision or a real timeout and then asserts the policy the class
-advertises actually holds end to end — `Lock` retries as is and succeeds,
-`State` stays failing until the caller re-reads, and no partial batch survives.
+L.2.3 — concurrent user edits: a GUI holding the same file open is outside the
+file-level rollback (D12); prove `base_revisions` catches it. Note that L.2.2
+already proves `base_revisions` catches an *out-of-band* edit; what L.2.3 adds
+is the case where the other writer is a live KiCad GUI holding the file open,
+which is a different failure (a held handle, and KiCad's own save path) — check
+first how much of it can be proved without a GUI session before assuming it is
+gated like phase I.
 
 ## Dernière tâche validée
 
-L.2.1 — the writer-side round trip is fuzzed.
+L.2.2 — the recovery policy each `TransientClass` advertises is now proved,
+not just the classification.
 
 Validation :
-- `cargo test -p konnect-sexp`: 93 + 8 + 7 unit/property tests + doctests, all
-  pass; `cargo clippy -p konnect-sexp --locked --all-targets -- -D warnings`
-  clean; `cargo fmt --all -- --check` clean
-- negative control: removing string-awareness from `find_block_starts` fails
-  the health property, shrunk to `(kicad_sch (symbol "(label 😀)"))`
-- no production bug found, and `writer.rs` is unchanged. See L.2.1 in `plan.md`
-  for why the UTF-8 boundary hazard this task targeted cannot fire
+- `cargo test -p konnect`: 32 passed in `protocol_stdio`, 0 failed;
+  `cargo test -p konnect-core --test lock_recovery`: 1 passed
+- `cargo clippy --workspace --locked --all-targets -- -D warnings` clean;
+  `cargo fmt --all -- --check` clean
+- negative control: flipping `OperationInFlight => Lock` to `=> None` in
+  `transient_class()` fails `lock_recovery` on `left: "none" right: "lock"`
+- no production bug found. `Timeout`/`Network` deliberately uncovered — see
+  L.2.2 in `plan.md`
 
 ## Décisions actives
 
@@ -93,7 +94,11 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
   carries its own ground truth — never assert one finder against another
 - `crates/konnect-core/src/mcp/error.rs` — `TransientClass`,
   `retry_after_ms()` (Lock 250 ms, Network/Timeout 1 s, None/State none) and
-  `ToolErrorKind::transient_class()`. L.2.2's subject
+  `ToolErrorKind::transient_class()`
+- `crates/konnect-core/tests/lock_recovery.rs` — how to race two
+  `kicad_invoke` calls deterministically: two tokio tasks sharing one
+  `ToolContext`, the loser fired only after the winner's writes are visible on
+  disk. It cannot be done over stdio (see L.2.4)
 - `.github/workflows/ci.yml` — triggers on `agentic/main` as well as `main`;
   clippy is `--all-targets` and the `check` job fetches full history. Dispatch
   the KiCad E2E one as `gh workflow run e2e-kicad.yml -R
@@ -116,6 +121,6 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Implement L.2.2 — provoke a real failure of each `TransientClass` and assert
-the recovery policy end to end, then run `cargo test -p konnect-core` and
-`cargo clippy -p konnect-core --locked --all-targets -- -D warnings`.
+Implement L.2.3 — prove `base_revisions` catches an edit made by a KiCad GUI
+holding the same file open, then run `cargo test -p konnect` and
+`cargo clippy --workspace --locked --all-targets -- -D warnings`.

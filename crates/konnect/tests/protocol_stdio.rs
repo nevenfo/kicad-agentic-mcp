@@ -1488,3 +1488,210 @@ fn a_continue_on_error_batch_is_not_rolled_back_by_default() {
         "the call that succeeded after the failure must survive"
     );
 }
+
+// ─── L.2.2: the recovery policy a `transient` class promises ────────────────
+//
+// `kicad_invoke_refuses_a_stale_base_revision_without_applying_anything`
+// (above) proves the refusal half of `state`. The other half — that
+// reconciling (re-read, recompute, retry) actually works, and that a blind
+// identical retry does not — is proved here, since a class nobody can act on
+// successfully is a documentation bug wearing a test as a disguise.
+
+/// `state`: the identical batch fails identically forever; only reconciling
+/// (re-reading the revision and retrying with it) recovers. Also pins that a
+/// `state` error never carries `retry_after_ms` — inviting a wait would be a
+/// lie, since waiting changes nothing about a stale revision.
+#[test]
+fn kicad_invoke_recovers_from_a_stale_revision_by_reconciling_not_by_blind_retry() {
+    let scratch = Scratch::new("state-recover");
+    let mut p = McpProcess::spawn();
+    let created = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "sr"}}
+        ]}),
+    ));
+
+    let sch = scratch.sch("sr");
+    let root = created["revisions_root"].as_str().map(String::from);
+    let key = match &root {
+        Some(_) => "sr.kicad_sch".to_string(),
+        None => sch.to_string_lossy().into_owned(),
+    };
+    let r0 = created["revisions"][&key]
+        .as_str()
+        .unwrap_or_else(|| panic!("no revision for {key}: {created:#?}"))
+        .to_string();
+
+    let mut stale_args = json!({
+        "base_revisions": {key.clone(): r0.clone()},
+        "calls": [{"tool": "add_schematic_net_label",
+                   "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}}]
+    });
+    if let Some(root) = &root {
+        stale_args["base_revisions_root"] = json!(root);
+    }
+    let applied = McpProcess::tool_body(&p.call_tool("kicad_invoke", stale_args.clone()));
+    assert_eq!(applied["ok"].as_u64(), Some(1), "{applied:#?}");
+    let after_first = std::fs::read_to_string(&sch).unwrap();
+
+    // A blind retry of the exact same batch, against the now-stale r0, is
+    // refused — twice in a row, identically. If retrying ever "worked" by
+    // accident (e.g. only the first replay is checked), that would be worse
+    // than never checking at all: it would teach a recovery loop that
+    // hammering the same call eventually gets through.
+    for attempt in 0..2 {
+        let stale = p.call_tool("kicad_invoke", stale_args.clone());
+        let body = McpProcess::tool_body(&stale);
+        assert_eq!(
+            stale["isError"],
+            json!(true),
+            "attempt {attempt}: {body:#?}"
+        );
+        assert_eq!(body["error"]["kind"], "stale_revision", "attempt {attempt}");
+        assert_eq!(body["error"]["transient"], "state", "attempt {attempt}");
+        assert!(
+            body["error"].get("retry_after_ms").is_none(),
+            "attempt {attempt}: a blind retry never fixes a stale revision, so do not invite one: {body:#?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&sch).unwrap(),
+            after_first,
+            "attempt {attempt}: a refused batch must not have touched the file"
+        );
+    }
+
+    // Reconciling — re-read the current revision, rebuild the batch against
+    // it — recovers. This is the other half of the policy `state` promises.
+    //
+    // A batch's own `revisions` map always reports absolute paths, even when
+    // the batch was built with `base_revisions_root` for brevity — only
+    // `create_project`'s response uses the relative form. `key` above is
+    // whichever form was right for building the *request*; reading the
+    // response back needs the absolute form regardless.
+    let abs_key = sch.to_string_lossy().into_owned();
+    let r1 = applied["revisions"][&abs_key]
+        .as_str()
+        .unwrap_or_else(|| panic!("no revision after the first apply: {applied:#?}"))
+        .to_string();
+    let mut reconciled_args = json!({
+        "base_revisions": {key.clone(): r1},
+        "calls": [{"tool": "add_schematic_net_label",
+                   "args": {"schematic": sch, "net": "VIN", "x": 50.8, "y": 87.63}}]
+    });
+    if let Some(root) = &root {
+        reconciled_args["base_revisions_root"] = json!(root);
+    }
+    let recovered = McpProcess::tool_body(&p.call_tool("kicad_invoke", reconciled_args));
+    assert_eq!(
+        recovered["ok"].as_u64(),
+        Some(1),
+        "reconciling the revision before retrying must succeed: {recovered:#?}"
+    );
+    assert_ne!(
+        std::fs::read_to_string(&sch).unwrap(),
+        after_first,
+        "the reconciled retry must have actually applied"
+    );
+}
+
+/// `none`: a deterministic rejection (bad arguments) is refused identically on
+/// every replay, carries no `retry_after_ms`, and never touches the file —
+/// there is nothing here for a retry loop to wait for or gain from.
+#[test]
+fn kicad_invoke_none_class_errors_stay_identical_and_free_of_a_retry_hint() {
+    let scratch = Scratch::new("none-class");
+    let mut p = McpProcess::spawn();
+    p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "nc"}}
+        ]}),
+    );
+    let sch = scratch.sch("nc");
+    let before = std::fs::read_to_string(&sch).unwrap();
+
+    // `net` is required and missing — deterministic by construction.
+    let bad_args = json!({"calls": [
+        {"tool": "add_schematic_net_label", "args": {"schematic": sch, "x": 1.0, "y": 1.0}}
+    ]});
+
+    let mut bodies = Vec::new();
+    for attempt in 0..2 {
+        let result = p.call_tool("kicad_invoke", bad_args.clone());
+        let body = McpProcess::tool_body(&result);
+        // The batch envelope itself is not `isError` (D-series behavior): the
+        // per-call failure lives in `results[0]`.
+        let call = &body["results"][0];
+        let error = &call["result"]["error"];
+        assert_eq!(call["ok"], json!(false), "attempt {attempt}: {body:#?}");
+        assert_eq!(
+            error["kind"], "invalid_argument",
+            "attempt {attempt}: {call:#?}"
+        );
+        assert_eq!(
+            error["transient"], "none",
+            "attempt {attempt}: a bad argument does not get better by waiting"
+        );
+        assert!(
+            error.get("retry_after_ms").is_none(),
+            "attempt {attempt}: nothing here to wait for: {error:#?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&sch).unwrap(),
+            before,
+            "attempt {attempt}: a failed call must not have written anything"
+        );
+        bodies.push(error.clone());
+    }
+    assert_eq!(
+        bodies[0], bodies[1],
+        "an identical bad request must fail identically every time"
+    );
+}
+
+/// A real `std::io::Error` (missing parent directory — portable across
+/// Windows/macOS/Linux, unlike a permission-denied probe) must survive
+/// `SexpError` → `anyhow` and come out the other end as `Io { code }`, not as
+/// an opaque `HandlerError` with `transient: none` earned by default rather
+/// than by classification. A transient IO failure misclassified this way
+/// would make a recovery loop give up on a call that a moment's wait — or a
+/// created directory — would have let through.
+///
+/// `Timeout` and `Network` are not covered here: nothing in this repo can
+/// provoke them without a live KiCAD IPC session (phase I is gated — this
+/// machine runs KiCad 10, not 11). They are exercised by the live IPC suites
+/// gated behind `#[ignore]` (decision D26), never simulated here.
+#[test]
+fn a_missing_parent_directory_is_classified_as_io_not_swallowed_into_handler_error() {
+    let scratch = Scratch::new("io-class");
+    let mut p = McpProcess::spawn();
+
+    let ghost_sch = scratch
+        .dir
+        .join("does-not-exist")
+        .join("also-does-not-exist.kicad_sch");
+
+    // `add_schematic_net_label` lives in the `sch_wiring` toolset, which is
+    // not part of the starter kit — load it explicitly so this is a direct
+    // `tools/call` (the full structured single-call error body, with
+    // `error.code`) rather than a `kicad_invoke` batch entry (which only
+    // carries `error_kind`/`transient`, not `code`).
+    p.call_tool("load_toolset", json!({"name": "sch_wiring"}));
+
+    let result = p.call_tool(
+        "add_schematic_net_label",
+        json!({"schematic": ghost_sch, "net": "VOUT", "x": 1.0, "y": 1.0}),
+    );
+    let body = McpProcess::tool_body(&result);
+    assert_eq!(result["isError"], json!(true), "{body:#?}");
+    assert_eq!(
+        body["error"]["kind"], "io",
+        "a real io::Error must classify as Io, not handler_error: {body:#?}"
+    );
+    assert_eq!(body["error"]["code"], "not_found", "{body:#?}");
+    assert_eq!(
+        body["error"]["transient"], "none",
+        "an unrecognised io code stays 'none' rather than a class it has not earned"
+    );
+}

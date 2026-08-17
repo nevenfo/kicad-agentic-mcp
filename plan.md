@@ -1221,9 +1221,34 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       emoji alike. The properties still earn their place: the negative control
       (removing string-awareness from `find_block_starts`) is caught and
       shrunk to `(kicad_sch (symbol "(label 😀)"))`
-- [ ] L.2.2 Inject failures per `TransientClass` and assert the recovery policy
+- [x] L.2.2 Inject failures per `TransientClass` and assert the recovery policy.
+      What already existed proved *which class* an error carries; what was
+      missing is that the policy each class advertises actually holds. Now
+      pinned: `state` fails identically on a blind retry — twice, so nothing
+      teaches a loop that hammering eventually gets through — carries no
+      `retry_after_ms`, touches no file, and yields only to reconciliation;
+      `lock` is provoked by a genuine race (two tasks, one `ToolContext`, one
+      `operation_id`) and the loser gets `retry_after_ms 250` while the winner
+      finishes intact and the replay is memoized, not re-applied; `none`
+      repeats byte-identically with no retry hint. A real `io::Error` is also
+      shown to survive `SexpError` → `anyhow` and come out as `Io { code }`
+      rather than an opaque `HandlerError` — the failure mode that would make
+      a recovery loop abandon a call that would have worked. `Timeout` and
+      `Network` are **not** covered: nothing here provokes them without a live
+      KiCAD IPC session (phase I gated), and they were left to the `#[ignore]`
+      live suites (D26) rather than simulated
 - [ ] L.2.3 Concurrent user edits: a GUI holding the same file open is outside
       the file-level rollback (D12); prove `base_revisions` catches it
+- [ ] L.2.4 The race in L.2.2 had to be driven in-process, because
+      `run_stdio` (`crates/konnect/src/transport/stdio.rs`) reads one JSON-RPC
+      line and awaits it to completion before reading the next: over stdio a
+      single process can never have two `kicad_invoke` calls in flight, and the
+      idempotency ledger is in-memory per `ToolContext`, so two processes would
+      not race either. `OperationInFlight` is therefore only reachable through
+      the HTTP transport, whose `axum::serve` does handle requests
+      concurrently. Decide whether that is the intent — if the ledger is meant
+      to protect across processes it needs to outlive one, and if it is not,
+      say so where a reader of `OperationInFlight` will find it
 
 ### Validation
 Silent corruption stays 0 under injection; no partial batch survives a failure.
