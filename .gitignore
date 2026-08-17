@@ -9,6 +9,11 @@ crates/schematic-viewer/target/
 *.bak
 .konnect-transaction-*.json
 .konnect-transaction-*.abandoned.json
+
+# KiCad's per-user local project settings, written beside any project it opens.
+# The live PCB suite opens the committed fixtures, so pcbnew leaves one there on
+# every run: a UI state file, never evidence.
+*.kicad_prl
 dist/
 
 # Benchmark output. Named result files under bench/results/ are committed
