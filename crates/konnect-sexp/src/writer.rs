@@ -1187,6 +1187,58 @@ mod atomic_write_tests {
             .is_symlink());
     }
 
+    /// The literal "GUI holding the file open" case from the task, on the one
+    /// OS where an open handle can block a rename outright: opening without
+    /// `FILE_SHARE_DELETE` (what `std::fs::File::open` does *not* do by
+    /// default — Rust's default share mode already includes it, which is why
+    /// this needs `OpenOptionsExt::share_mode` to reproduce honestly) makes
+    /// Windows refuse the rename `write_atomic_unlocked` needs to publish the
+    /// scratch file. This is a real failure forced by a real held handle, not
+    /// a simulated one.
+    #[cfg(windows)]
+    #[test]
+    fn a_handle_held_without_delete_sharing_blocks_the_publishing_rename() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        std::fs::write(&path, "original").unwrap();
+
+        // FILE_SHARE_READ only — no FILE_SHARE_WRITE, no FILE_SHARE_DELETE.
+        // This is what a GUI that has the document open for editing, not
+        // merely watching it, looks like from the outside.
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        let _held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&path)
+            .expect("failed to open with a restrictive share mode");
+
+        let error = write_atomic_unlocked(&path, "edited").unwrap_err();
+
+        let SexpError::Io(io) = &error else {
+            panic!("expected an io error from the blocked rename, got {error:?}");
+        };
+        // The observed OS error is ERROR_ACCESS_DENIED (raw 5), which
+        // `std::io::ErrorKind` maps to `PermissionDenied` — indistinguishable,
+        // once inside `ToolErrorKind::Io { code: "permission_denied", .. }`,
+        // from a genuine ACL failure, which is not transient. A GUI holding
+        // the file, closing it, and the same write succeeding is exactly the
+        // "worth waiting for" case `TransientClass::Lock` exists to name, but
+        // reclassifying `permission_denied` in general would misclassify the
+        // ACL case, which is out of scope here — see the final report.
+        assert_eq!(io.kind(), std::io::ErrorKind::PermissionDenied, "{io}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "original",
+            "a blocked rename must not have left the document half-replaced: {io}"
+        );
+        assert!(
+            !leftover_scratch_files(directory.path()),
+            "a failed rename must not litter the project directory"
+        );
+    }
+
     #[test]
     fn atomic_create_never_overwrites_an_existing_file() {
         let directory = tempfile::tempdir().unwrap();

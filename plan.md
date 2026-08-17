@@ -1237,8 +1237,34 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       `Network` are **not** covered: nothing here provokes them without a live
       KiCAD IPC session (phase I gated), and they were left to the `#[ignore]`
       live suites (D26) rather than simulated
-- [ ] L.2.3 Concurrent user edits: a GUI holding the same file open is outside
-      the file-level rollback (D12); prove `base_revisions` catches it
+- [x] L.2.3 Concurrent user edits: a GUI holding the same file open is outside
+      the file-level rollback (D12). The premise as written was wrong and the
+      task corrected it: `base_revisions` does **not** catch this. It is
+      checked once, before the batch starts, so it only rejects a *stale
+      start* — a GUI save landing mid-batch is invisible to it. What actually
+      catches it is the per-write compare-and-swap in
+      `write_atomic_if_unchanged`: every schematic tool does `read_consistent`
+      → compute → conditional write, and a foreign save between those two
+      steps makes `expected` stale. `tests/concurrent_gui_edit.rs` drives a
+      real racing writer (a plain `std::fs::write` thread that never opens the
+      advisory lock — the honest stand-in for "applications that do not honor
+      the lock, including KiCad itself") against a 300-call batch and pins:
+      the conflict surfaces as `error_kind: conflict` / `transient: state`,
+      not as an opaque `handler_error`; the final file is always one coherent
+      version — the rolled-back original or the GUI's own last save, never a
+      torn mix and never the batch's edits on top of a discarded GUI save; and
+      the identical call succeeds on replay once the world settles, which is
+      what makes `state` the honest class. That path needed a production fix:
+      `ToolErrorKind::from_anyhow` walked the cause chain for `io::Error`
+      only, and a write conflict carries none, so it decayed to
+      `HandlerError`/`None` — a client told "deterministic, fix your request"
+      for the one error meaning "re-read and recompute". New
+      `ToolErrorKind::Conflict { path }`, classified `State`. Separately, the
+      *literal* held-handle case is pinned on Windows in `writer.rs`: a handle
+      opened without `FILE_SHARE_DELETE` blocks the publishing rename, and the
+      document survives intact with no scratch left behind — but it arrives as
+      `permission_denied`, indistinguishable from a genuine ACL failure, so it
+      is deliberately **not** reclassified as `Lock`; see L.2.5
 - [ ] L.2.4 The race in L.2.2 had to be driven in-process, because
       `run_stdio` (`crates/konnect/src/transport/stdio.rs`) reads one JSON-RPC
       line and awaits it to completion before reading the next: over stdio a
@@ -1249,6 +1275,16 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       concurrently. Decide whether that is the intent — if the ledger is meant
       to protect across processes it needs to outlive one, and if it is not,
       say so where a reader of `OperationInFlight` will find it
+- [ ] L.2.5 A held file handle and a denied ACL both arrive as
+      `permission_denied` (found by L.2.3, pinned on Windows in
+      `writer.rs::a_handle_held_without_delete_sharing_blocks_the_publishing_rename`).
+      One is worth waiting for — the GUI closes the document and the same write
+      works — and the other never is, but `ToolErrorKind::Io { code:
+      "permission_denied" }` gives a recovery loop no way to tell them apart.
+      Decide whether the two can be separated at the source (the failing
+      operation is the rename, and the path's own ACL is queryable) and either
+      classify the held-handle case `Lock` or state, where a reader of
+      `permission_denied` will find it, that waiting is a caller decision
 
 ### Validation
 Silent corruption stays 0 under injection; no partial batch survives a failure.

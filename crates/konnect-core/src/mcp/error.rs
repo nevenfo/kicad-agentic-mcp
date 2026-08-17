@@ -110,6 +110,15 @@ pub enum ToolErrorKind {
     /// The same `operation_id` is already executing. Retrying now risks a
     /// double-apply; wait for the first call to answer.
     OperationInFlight { operation_id: String },
+    /// A write's compare-and-swap found the file had changed since it was
+    /// read — a concurrent writer (another Konnect process, or a GUI like
+    /// KiCad itself that does not honor the advisory lock) saved in between.
+    /// Distinct from `StaleRevision`: this is caught mid-batch by the exact
+    /// content comparison in `write_atomic_if_unchanged`, not by the
+    /// `base_revisions` check done once before the batch starts. Re-read the
+    /// document and recompute — the same edit reapplied blindly will race
+    /// again.
+    Conflict { path: String },
     /// A filesystem failure, with a stable code independent of the OS locale.
     ///
     /// `detail` keeps the operating system's own message — useful to a human,
@@ -168,6 +177,7 @@ impl ToolErrorKind {
             Self::NotFound { .. } => "not_found",
             Self::StaleRevision { .. } => "stale_revision",
             Self::OperationInFlight { .. } => "operation_in_flight",
+            Self::Conflict { .. } => "conflict",
             Self::Io { .. } => "io",
             Self::HandlerError { .. } => "handler_error",
             Self::PostconditionFailed { .. } => "postcondition_failed",
@@ -180,7 +190,9 @@ impl ToolErrorKind {
             // The tool exists and the fix is mechanical, but it is a *different*
             // call (load_toolset) that has to happen first — the world, not the
             // request, is wrong.
-            Self::ToolsetNotLoaded { .. } | Self::StaleRevision { .. } => TransientClass::State,
+            Self::ToolsetNotLoaded { .. } | Self::StaleRevision { .. } | Self::Conflict { .. } => {
+                TransientClass::State
+            }
             Self::OperationInFlight { .. } => TransientClass::Lock,
             Self::UnknownTool { .. }
             | Self::InvalidArgument { .. }
@@ -214,6 +226,18 @@ impl ToolErrorKind {
     /// being given a class it has not earned.
     pub fn from_anyhow(err: &anyhow::Error) -> Self {
         for cause in err.chain() {
+            // Checked before the io::Error case below: a write conflict
+            // carries no io::Error at all — write_atomic_if_unchanged
+            // returns it as soon as the re-read content differs, not as an
+            // OS failure — so preserving the type here is the only way to
+            // classify it as `state` rather than losing it to `HandlerError`.
+            if let Some(konnect_schematic_editor::error::Error::Conflict(path)) =
+                cause.downcast_ref::<konnect_schematic_editor::error::Error>()
+            {
+                return Self::Conflict {
+                    path: path.display().to_string(),
+                };
+            }
             if let Some(io) = cause.downcast_ref::<std::io::Error>() {
                 return Self::Io {
                     code: io_code(io.kind()),
@@ -373,6 +397,9 @@ mod tests {
             ToolErrorKind::OperationInFlight {
                 operation_id: "op_1".into(),
             },
+            ToolErrorKind::Conflict {
+                path: "a.kicad_sch".into(),
+            },
             ToolErrorKind::Io {
                 code: "not_found",
                 detail: "d".into(),
@@ -471,6 +498,25 @@ mod tests {
         let kind = ToolErrorKind::from_anyhow(&err);
         assert_eq!(kind.short_code(), "handler_error");
         assert_eq!(kind.transient_class(), TransientClass::None);
+    }
+
+    #[test]
+    fn a_write_conflict_is_classified_as_state_not_lost_to_handler_error() {
+        // write_atomic_if_unchanged raises this the moment its re-read content
+        // differs from what was expected — no io::Error involved — so this is
+        // the case from_anyhow's io-only chain walk used to miss entirely,
+        // falling back to HandlerError/None: a client told "deterministic, fix
+        // your request" for the one error that means "re-read and recompute".
+        let path = std::path::PathBuf::from("board.kicad_sch");
+        let inner = konnect_schematic_editor::error::Error::Conflict(path.clone());
+        let err = anyhow::Error::new(inner).context("Failed to write schematic");
+        let kind = ToolErrorKind::from_anyhow(&err);
+        match &kind {
+            ToolErrorKind::Conflict { path: p } => assert_eq!(p, "board.kicad_sch"),
+            other => panic!("expected a conflict kind, got {other:?}"),
+        }
+        assert_eq!(kind.transient_class(), TransientClass::State);
+        assert_eq!(kind.transient_class().retry_after_ms(), None);
     }
 
     #[test]

@@ -7,31 +7,43 @@ L.2 (failure injection and concurrency) is in progress.
 
 ## Tâche actuelle
 
-L.2.3 — concurrent user edits: a GUI holding the same file open is outside the
-file-level rollback (D12); prove `base_revisions` catches it. Note that L.2.2
-already proves `base_revisions` catches an *out-of-band* edit; what L.2.3 adds
-is the case where the other writer is a live KiCad GUI holding the file open,
-which is a different failure (a held handle, and KiCad's own save path) — check
-first how much of it can be proved without a GUI session before assuming it is
-gated like phase I.
+L.2.4 — `OperationInFlight` is only reachable through the HTTP transport
+(`run_stdio` awaits each JSON-RPC line to completion, and the idempotency
+ledger is in-memory per `ToolContext`). Decide whether that is the intent and
+record the answer where a reader of `OperationInFlight` will find it.
 
 ## Dernière tâche validée
 
-L.2.2 — the recovery policy each `TransientClass` advertises is now proved,
-not just the classification.
+L.2.3 — a GUI save racing a batch is caught by the per-write compare-and-swap
+in `write_atomic_if_unchanged`, not by `base_revisions` (which is checked once
+before the batch and only rejects a stale *start*). Fixed a real production
+bug on the way: a write conflict carries no `io::Error`, so `from_anyhow`'s
+io-only chain walk decayed it to `HandlerError`/`None` — new
+`ToolErrorKind::Conflict { path }`, classified `State`.
 
 Validation :
-- `cargo test -p konnect`: 32 passed in `protocol_stdio`, 0 failed;
-  `cargo test -p konnect-core --test lock_recovery`: 1 passed
+- `cargo test -p konnect-core`: 411 passed, 0 failed (incl. the new
+  `concurrent_gui_edit`, run 6× for flakiness — always green);
+  `cargo test -p konnect`: all green, 32 in `protocol_stdio`
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` clean;
   `cargo fmt --all -- --check` clean
-- negative control: flipping `OperationInFlight => Lock` to `=> None` in
-  `transient_class()` fails `lock_recovery` on `left: "none" right: "lock"`
-- no production bug found. `Timeout`/`Network` deliberately uncovered — see
-  L.2.2 in `plan.md`
+- negative control: short-circuiting both compare-and-swap checks in
+  `write_atomic_if_unchanged` to `false` fails `concurrent_gui_edit` — and
+  fails it by *corrupting* the file (`handler_error`, "Parse error at byte 0")
+  rather than by a bookkeeping difference, so both checks are load-bearing
 
 ## Décisions actives
 
+- D53 — a foreign writer landing mid-batch is caught by the per-write
+  compare-and-swap, never by `base_revisions`. `base_revisions` guards the
+  batch's *start*; `write_atomic_if_unchanged` guards each write. Rollback
+  (D12) is deliberately not extended to reach another application's edits —
+  its only promise is that Konnect's own half-applied batch does not survive,
+  and the coherence guarantee comes from the refusal, not the undo.
+- D54 — a held-handle rename failure is left as `permission_denied`, not
+  reclassified as `Lock`: nothing at that layer distinguishes it from a
+  genuine ACL denial, and misclassifying ACL as retryable is the worse error.
+  Tracked as L.2.5.
 - D51 — the symbol index fingerprint includes each library entry's own mtime,
   in milliseconds, read through `std::fs::metadata` rather than the `DirEntry`
   (on Windows the enumeration's timestamps come from the parent's index entry,
@@ -94,7 +106,13 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
   carries its own ground truth — never assert one finder against another
 - `crates/konnect-core/src/mcp/error.rs` — `TransientClass`,
   `retry_after_ms()` (Lock 250 ms, Network/Timeout 1 s, None/State none) and
-  `ToolErrorKind::transient_class()`
+  `ToolErrorKind::transient_class()`. `from_anyhow` downcasts specific error
+  types *before* its `io::Error` fallback — anything without an `io::Error` in
+  its chain decays to `HandlerError` unless matched there first
+- `crates/konnect-core/tests/concurrent_gui_edit.rs` — how to race a foreign
+  writer against a batch deterministically: a thread doing plain
+  `std::fs::write` in a tight loop for the batch's whole duration, so no
+  assertion depends on which call the conflict lands on
 - `crates/konnect-core/tests/lock_recovery.rs` — how to race two
   `kicad_invoke` calls deterministically: two tokio tasks sharing one
   `ToolContext`, the loser fired only after the winner's writes are visible on
@@ -121,6 +139,8 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Implement L.2.3 — prove `base_revisions` catches an edit made by a KiCad GUI
-holding the same file open, then run `cargo test -p konnect` and
+Implement L.2.4 — read `crates/konnect/src/transport/stdio.rs` and the HTTP
+transport, settle whether the idempotency ledger is meant to protect across
+processes, record the answer next to `OperationInFlight` in
+`crates/konnect-core/src/mcp/error.rs`, then run `cargo test -p konnect` and
 `cargo clippy --workspace --locked --all-targets -- -D warnings`.
