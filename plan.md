@@ -140,16 +140,16 @@ Current values: `docs/benchmark.md`. Targets are never moved (INV6).
 - [ ] `LLM_CALLS_PER_SUCCESSFUL_TASK` materially below baseline — measured
       **15 → 5.5** inside the model-fit harness, but **no baseline for this
       metric was ever measured**, so the criterion is not claimed met
-- [x] `CAPABILITY_COVERAGE` > baseline — **29.6 % against the baseline's
+- [x] `CAPABILITY_COVERAGE` > baseline — **72.6 % against the baseline's
       22.6 %**, on a frozen denominator of 186, with no regression. Defined in
       J.2.1 and rendered in `docs/capability-matrix.md` under
       *V1 comparison target*: the 187 tools the baseline registers at `5cd6454`
       (this fork still registers all of them), minus what KiCAD gives no API
-      for, scored on both sides by the same scanner. The headline **28.6 %** is
+      for, scored on both sides by the same scanner. The headline number is
       the whole-surface number and is deliberately not the criterion — its
-      denominator grows with every tool added. Nothing this fork adds can enter
-      the frozen one, so the percentage moves only when a test that runs starts
-      proving a tool
+      denominator grows with every tool added; it stands at **72.6 %** too after
+      J.2.3. Nothing this fork adds can enter the frozen denominator, so that
+      percentage moves only when a test that runs starts proving a tool
 
 ---
 
