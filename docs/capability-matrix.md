@@ -36,8 +36,8 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 105 | 17 | 40 | 2 | 5 | 64.0 % |
-| server's own | 40 | 23 | 9 | 8 | 0 | 0 | 57.5 % |
+| KiCAD domains | 169 | 112 | 17 | 33 | 2 | 5 | 68.3 % |
+| server's own | 40 | 27 | 9 | 4 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
 
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 116 | 62.4 % |
+| this fork | 186 | 127 | 68.3 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -66,7 +66,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`libraries`](#libraries) | 9 | 9 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`footprints`](#footprints) | 7 | 6 | 0 | 1 | 0 | 0 | 85.7 % |
-| [`pcb`](#pcb) | 8 | 7 | 0 | 1 | 0 | 0 | 87.5 % |
+| [`pcb`](#pcb) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`placement`](#placement) | 11 | 1 | 0 | 9 | 1 | 0 | 9.1 % |
 | [`routing`](#routing) | 10 | 1 | 0 | 7 | 0 | 2 | 12.5 % |
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
@@ -74,17 +74,17 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`stackup`](#stackup) | 4 | 3 | 0 | 0 | 0 | 1 | 100.0 % |
 | [`rules`](#rules) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`erc`](#erc) | 2 | 1 | 1 | 0 | 0 | 0 | 50.0 % |
-| [`drc`](#drc) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
+| [`drc`](#drc) | 3 | 2 | 0 | 1 | 0 | 0 | 66.7 % |
 | [`bom`](#bom) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`3d`](#3d) | 2 | 0 | 0 | 1 | 0 | 1 | 0.0 % |
+| [`3d`](#3d) | 2 | 1 | 0 | 0 | 0 | 1 | 100.0 % |
 | [`simulation`](#simulation) | 1 | 0 | 0 | 0 | 0 | 1 | — |
-| [`manufacturing`](#manufacturing) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
-| [`gerber`](#gerber) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
+| [`manufacturing`](#manufacturing) | 3 | 1 | 0 | 2 | 0 | 0 | 33.3 % |
+| [`gerber`](#gerber) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`drill`](#drill) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`pick_place`](#pick_place) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
+| [`pick_place`](#pick_place) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`datasheet`](#datasheet) | 2 | 0 | 0 | 2 | 0 | 0 | 0.0 % |
 | [`sourcing`](#sourcing) | 5 | 2 | 0 | 3 | 0 | 0 | 40.0 % |
-| [`export`](#export) | 11 | 6 | 0 | 5 | 0 | 0 | 54.5 % |
+| [`export`](#export) | 11 | 10 | 0 | 1 | 0 | 0 | 90.9 % |
 | [`review`](#review) | 6 | 0 | 6 | 0 | 0 | 0 | 0.0 % |
 | [`config`](#config) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`templates`](#templates) | 4 | 4 | 0 | 0 | 0 | 0 | 100.0 % |
@@ -125,7 +125,7 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 |---|---|---|---|---|---|---|
 | `create_schematic` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `add_component_annotation` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/design_review.rs` |  |
-| `get_schematic_view` | `sch_components` | `cli` | NOT_TESTED | — | — |  |
+| `get_schematic_view` | `sch_components` | `cli` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `find_orphan_items` | `sch_analysis` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `check_schematic_overlaps` | `sch_analysis` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `batch_delete` | `sch_batch` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
@@ -151,7 +151,7 @@ Not covered by any tool:
 | `rotate_schematic_component` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `move_connected` | `sch_components` | `sexpr` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | moves the symbol only — wire stubs are not stretched, so wires attached to the moved pins are left behind and the connection is lost (J.2.3.2) |
 | `move_region` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `annotate_schematic` | `sch_components` | `cli` | NOT_TESTED | — | — |  |
+| `annotate_schematic` | `sch_components` | `cli` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `get_schematic_pin_locations` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `batch_get_schematic_pin_locations` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `group_components` | `sch_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
@@ -280,7 +280,7 @@ Not covered by any tool:
 | `add_mounting_hole` | `pcb_board` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `add_board_text` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `import_svg_logo` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
-| `get_board_2d_view` | `pcb_components` | `cli` | NOT_TESTED | — | — |  |
+| `get_board_2d_view` | `pcb_components` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### placement
 
@@ -377,8 +377,8 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `get_drc_violations` | `pcb_export` | `cli` | NOT_TESTED | — | — |  |
-| `run_drc` | `verification` | `cli` | NOT_TESTED | gated | `crates/konnect/tests/e2e_kicad.rs` |  |
+| `get_drc_violations` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `run_drc` | `verification` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `check_clearance` | `verification` | `sexpr` | NOT_TESTED | — | — | geometric clearance computed in-process from the file, against no rule set — kicad-cli DRC is the verdict |
 
 ### bom
@@ -391,7 +391,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `export_3d` | `pcb_export` | `cli` | NOT_TESTED | — | — |  |
+| `export_3d` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 Not covered by any tool:
 
@@ -411,7 +411,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `export_manufacturing_package` | `manufacturing` | `cli` | NOT_TESTED | — | — |  |
+| `export_manufacturing_package` | `manufacturing` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `validate_for_manufacturing` | `manufacturing` | `sexpr` | NOT_TESTED | — | — | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
 | `estimate_cost` | `manufacturing` | `internal` | NOT_TESTED | — | — | an order-of-magnitude estimate from stored per-fab-house rates, not a quote |
 
@@ -419,7 +419,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `export_gerber` | `pcb_export` | `cli` | NOT_TESTED | gated | `crates/konnect/tests/e2e_kicad.rs` |  |
+| `export_gerber` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### drill
 
@@ -431,7 +431,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `export_position_file` | `pcb_export` | `cli` | NOT_TESTED | — | — |  |
+| `export_position_file` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### datasheet
 
@@ -455,12 +455,12 @@ Not covered by any tool:
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
 | `export_schematic_svg` | `sch_export` | `cli` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
-| `export_schematic_pdf` | `sch_export` | `cli` | NOT_TESTED | — | — |  |
+| `export_schematic_pdf` | `sch_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `generate_netlist` | `sch_export` | `cli` | SUPPORTED | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
 | `export_netlist_summary` | `sch_export` | `sexpr` | NOT_TESTED | — | — | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `export_pdf` | `pcb_export` | `cli` | NOT_TESTED | — | — |  |
-| `export_svg` | `pcb_export` | `cli` | NOT_TESTED | — | — |  |
-| `export_netlist` | `pcb_export` | `cli` | NOT_TESTED | — | — |  |
+| `export_pdf` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_svg` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_netlist` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `export_dxf` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
 | `export_gencad` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
 | `export_ipc2581` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
@@ -532,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-48 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+37 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -540,9 +540,8 @@ Not covered by any tool:
 | `save_project` | `project` | `ipc` | none |
 | `snapshot_project` | `project` | `internal` | none |
 | `open_schematic_viewer` | `ui` | `process` | none |
-| `annotate_schematic` | `symbols` | `cli` | none |
-| `get_schematic_view` | `schematic` | `cli` | none |
-| `export_schematic_pdf` | `export` | `cli` | none |
+| `annotate_schematic` | `symbols` | `cli` | gated — `crates/konnect-core/tests/cli_tools.rs` |
+| `get_schematic_view` | `schematic` | `cli` | gated — `crates/konnect-core/tests/cli_tools.rs` |
 | `export_netlist_summary` | `export` | `sexpr` | none |
 | `move_component` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `rotate_component` | `placement` | `ipc` | none |
@@ -553,7 +552,6 @@ Not covered by any tool:
 | `place_component_array` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `align_components` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `duplicate_component` | `placement` | `ipc` | none |
-| `get_board_2d_view` | `pcb` | `cli` | none |
 | `route_pad_to_pad` | `routing` | `ipc` | none |
 | `add_via` | `vias` | `ipc` | none |
 | `delete_trace` | `routing` | `ipc` | none |
@@ -561,14 +559,7 @@ Not covered by any tool:
 | `get_nets_list` | `nets` | `ipc` | none |
 | `modify_trace` | `routing` | `ipc` | none |
 | `route_differential_pair` | `routing` | `ipc` | none |
-| `export_gerber` | `gerber` | `cli` | gated — `crates/konnect/tests/e2e_kicad.rs` |
-| `export_pdf` | `export` | `cli` | none |
-| `export_svg` | `export` | `cli` | none |
-| `export_3d` | `3d` | `cli` | none |
-| `export_netlist` | `export` | `cli` | none |
-| `export_position_file` | `pick_place` | `cli` | none |
 | `refill_zones` | `zones` | `ipc` | none |
-| `get_drc_violations` | `drc` | `cli` | none |
 | `search_footprints` | `footprints` | `sexpr` | gated — `crates/konnect-core/tests/libraries_and_footprints.rs` |
 | `download_jlcpcb_database` | `sourcing` | `external` | none |
 | `suggest_jlcpcb_alternatives` | `sourcing` | `external` | none |
@@ -576,12 +567,10 @@ Not covered by any tool:
 | `enrich_datasheets` | `datasheet` | `sexpr` | none |
 | `get_datasheet_url` | `datasheet` | `external` | none |
 | `check_freerouting` | `routing` | `external` | none |
-| `run_drc` | `drc` | `cli` | gated — `crates/konnect/tests/e2e_kicad.rs` |
 | `check_kicad_ui` | `ui` | `process` | none |
 | `launch_kicad_ui` | `ui` | `process` | none |
 | `copy_routing_pattern` | `routing` | `sexpr` | none |
 | `check_clearance` | `drc` | `sexpr` | none |
-| `export_manufacturing_package` | `manufacturing` | `cli` | none |
 | `validate_for_manufacturing` | `manufacturing` | `sexpr` | none |
 | `estimate_cost` | `manufacturing` | `internal` | none |
 

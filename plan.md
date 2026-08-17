@@ -966,8 +966,13 @@ F.4 (the matrix is the instrument).
         `get_layer_list` searched `find_all("")` for entries whose head is the
         layer id, so it returned an empty list on every board, and `add_layer`
         picked a free id from that same empty set
-  - [ ] J.2.3.7 `export` (4 `cli`) and `drc` (2 `cli`) — argument handling
-        without KiCAD, plus a live probe where a fixture makes one possible
+  - [x] J.2.3.7 the thirteen `cli` tools — `tests/cli_tools.rs` covers each
+        twice: a test that runs everywhere pins what the server decides before
+        spawning (required arguments, rejected formats, a closed severity set,
+        the clamped render size), and an `#[ignore]`d live probe checks the file
+        `kicad-cli` actually writes. The live probes use a blank board, not
+        `test.kicad_pcb`: that fixture is a KiCad 8 file and KiCad 10 refuses to
+        load it
   - [ ] J.2.3.8 `sourcing` (3 `external`) — a third party is not a test
         dependency: assert against a recorded response, and keep any live call
         `#[ignore]`d
