@@ -109,6 +109,30 @@ pub enum ToolErrorKind {
     },
     /// The same `operation_id` is already executing. Retrying now risks a
     /// double-apply; wait for the first call to answer.
+    ///
+    /// # Scope: one process, and that is deliberate (L.2.4)
+    ///
+    /// This is only reachable over the HTTP transport. `run_stdio`
+    /// (`konnect/src/transport/stdio.rs`) reads one JSON-RPC line and awaits it
+    /// to completion before reading the next, so a single stdio process can
+    /// never have two `kicad_invoke` calls in flight; `axum::serve` does serve
+    /// requests concurrently over one shared `ToolContext`, which is where two
+    /// claims on one key can actually meet.
+    ///
+    /// Two processes never race here either: `kam_state::IdempotencyLedger` is
+    /// in-memory per `ToolContext`, so a second process starts with an empty
+    /// ledger and sees any key as `Fresh`. That is the intended design, not an
+    /// oversight — the window it protects is a client retrying a call it just
+    /// made, measured in seconds, and making it survive a restart would mean a
+    /// journal on disk whose staleness is its own failure mode.
+    ///
+    /// The cross-process case is covered by a *different* mechanism, and a
+    /// reader looking for it here should look there instead: `base_revisions`
+    /// refuses a batch built against a document another writer has since
+    /// changed ([`Self::StaleRevision`]), and the per-write compare-and-swap
+    /// refuses one that changes mid-batch ([`Self::Conflict`]). Neither is
+    /// keyed on the caller's identity, so neither cares which process — or
+    /// which GUI — moved the document.
     OperationInFlight { operation_id: String },
     /// A write's compare-and-swap found the file had changed since it was
     /// read — a concurrent writer (another Konnect process, or a GUI like

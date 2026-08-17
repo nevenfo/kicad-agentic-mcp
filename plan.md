@@ -1265,7 +1265,7 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       document survives intact with no scratch left behind — but it arrives as
       `permission_denied`, indistinguishable from a genuine ACL failure, so it
       is deliberately **not** reclassified as `Lock`; see L.2.5
-- [ ] L.2.4 The race in L.2.2 had to be driven in-process, because
+- [x] L.2.4 The race in L.2.2 had to be driven in-process, because
       `run_stdio` (`crates/konnect/src/transport/stdio.rs`) reads one JSON-RPC
       line and awaits it to completion before reading the next: over stdio a
       single process can never have two `kicad_invoke` calls in flight, and the
@@ -1274,7 +1274,23 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
       the HTTP transport, whose `axum::serve` does handle requests
       concurrently. Decide whether that is the intent — if the ledger is meant
       to protect across processes it needs to outlive one, and if it is not,
-      say so where a reader of `OperationInFlight` will find it
+      say so where a reader of `OperationInFlight` will find it.
+      **Settled: it is the intent, and it stays in memory.** The window the
+      ledger protects is a client retrying a call it just made, measured in
+      seconds; a journal on disk would buy durability across a restart at the
+      cost of a staleness failure mode of its own. What matters is that the
+      cross-process case is not left uncovered — it is covered by a *different*
+      mechanism, keyed on the document's content rather than the caller's
+      identity: `base_revisions` for a stale start, and the per-write
+      compare-and-swap (L.2.3) for a change landing mid-batch. Neither cares
+      which process, or which GUI, moved the file. That reasoning now sits on
+      the `OperationInFlight` variant itself, where someone debugging one will
+      read it, and
+      `protocol_stdio.rs::an_operation_id_does_not_cross_a_process_boundary_but_base_revisions_does`
+      pins both halves so the prose cannot rot: a second process sees the same
+      key as fresh (no `replayed`, no `operation_in_flight`), and a third
+      presenting the creation-time revision is refused `stale_revision` having
+      run nothing
 - [ ] L.2.5 A held file handle and a denied ACL both arrive as
       `permission_denied` (found by L.2.3, pinned on Windows in
       `writer.rs::a_handle_held_without_delete_sharing_blocks_the_publishing_rename`).

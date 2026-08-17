@@ -7,30 +7,31 @@ L.2 (failure injection and concurrency) is in progress.
 
 ## Tâche actuelle
 
-L.2.4 — `OperationInFlight` is only reachable through the HTTP transport
-(`run_stdio` awaits each JSON-RPC line to completion, and the idempotency
-ledger is in-memory per `ToolContext`). Decide whether that is the intent and
-record the answer where a reader of `OperationInFlight` will find it.
+L.2.5 — a held file handle and a denied ACL both arrive as `permission_denied`
+(D54). Decide whether they can be separated at the source and either classify
+the held-handle case `Lock` or say, where a reader of `permission_denied` will
+find it, that waiting is a caller decision.
 
 ## Dernière tâche validée
 
-L.2.3 — a GUI save racing a batch is caught by the per-write compare-and-swap
-in `write_atomic_if_unchanged`, not by `base_revisions` (which is checked once
-before the batch and only rejects a stale *start*). Fixed a real production
-bug on the way: a write conflict carries no `io::Error`, so `from_anyhow`'s
-io-only chain walk decayed it to `HandlerError`/`None` — new
-`ToolErrorKind::Conflict { path }`, classified `State`.
+L.2.4 — the idempotency ledger is per-process **by design**, and the
+cross-process case is covered by content-keyed mechanisms instead
+(`base_revisions`, and the per-write compare-and-swap from L.2.3). Recorded on
+the `OperationInFlight` variant itself and pinned by a test, no production
+change.
 
 Validation :
-- `cargo test -p konnect-core`: 411 passed, 0 failed (incl. the new
-  `concurrent_gui_edit`, run 6× for flakiness — always green);
-  `cargo test -p konnect`: all green, 32 in `protocol_stdio`
+- `cargo test -p konnect`: all green, 33 in `protocol_stdio` (the new
+  `an_operation_id_does_not_cross_a_process_boundary_but_base_revisions_does`)
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` clean;
   `cargo fmt --all -- --check` clean
-- negative control: short-circuiting both compare-and-swap checks in
-  `write_atomic_if_unchanged` to `false` fails `concurrent_gui_edit` — and
-  fails it by *corrupting* the file (`handler_error`, "Parse error at byte 0")
-  rather than by a bookkeeping difference, so both checks are load-bearing
+- negative control: making `check_base_revisions` return `None` unconditionally
+  fails the new test — the third process applies the batch (`label +1`) instead
+  of being refused, so the `base_revisions` half is load-bearing
+- L.2.3 (previous): `cargo test -p konnect-core` 411 passed; negative control
+  short-circuiting both compare-and-swap checks in `write_atomic_if_unchanged`
+  fails `concurrent_gui_edit` by *corrupting* the file, not by a bookkeeping
+  difference
 
 ## Décisions actives
 
@@ -40,6 +41,12 @@ Validation :
   (D12) is deliberately not extended to reach another application's edits —
   its only promise is that Konnect's own half-applied batch does not survive,
   and the coherence guarantee comes from the refusal, not the undo.
+- D55 — the idempotency ledger (`kam_state::IdempotencyLedger`, in the
+  `ToolContext`) is per-process and stays in memory. It protects a client
+  retrying a call it just made — seconds, not restarts. Cross-process and
+  cross-application safety is content-keyed instead, never caller-keyed:
+  `base_revisions` and the per-write compare-and-swap (D53).
+  `OperationInFlight` is therefore only reachable over HTTP.
 - D54 — a held-handle rename failure is left as `permission_denied`, not
   reclassified as `Lock`: nothing at that layer distinguishes it from a
   genuine ACL denial, and misclassifying ACL as retryable is the worse error.
@@ -139,8 +146,9 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Implement L.2.4 — read `crates/konnect/src/transport/stdio.rs` and the HTTP
-transport, settle whether the idempotency ledger is meant to protect across
-processes, record the answer next to `OperationInFlight` in
-`crates/konnect-core/src/mcp/error.rs`, then run `cargo test -p konnect` and
+Implement L.2.5 — in `crates/konnect-sexp/src/writer.rs`, check whether the
+rename failure in `write_atomic_unlocked` can distinguish a held handle from a
+denied ACL (the path's own ACL is queryable at that point); classify or
+document accordingly in `crates/konnect-core/src/mcp/error.rs`, then run
+`cargo test -p konnect-sexp`, `cargo test -p konnect` and
 `cargo clippy --workspace --locked --all-targets -- -D warnings`.

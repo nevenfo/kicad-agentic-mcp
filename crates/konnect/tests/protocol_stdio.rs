@@ -1452,6 +1452,92 @@ fn kicad_invoke_replays_an_operation_id_instead_of_applying_it_twice() {
     );
 }
 
+/// L.2.4 — the boundary the idempotency ledger deliberately does not cross,
+/// and the mechanism that does.
+///
+/// `IdempotencyLedger` lives in the `ToolContext`, so it is per-process: a
+/// second process sees any `operation_id` as `Fresh`. This pins that as
+/// designed behaviour rather than leaving it to be discovered as a bug, and
+/// pins the answer to "then what stops a cross-process double-apply?" right
+/// next to it — `base_revisions`, which is keyed on the document's content and
+/// so does not care which process moved it.
+#[test]
+fn an_operation_id_does_not_cross_a_process_boundary_but_base_revisions_does() {
+    let scratch = Scratch::new("cross_proc");
+    let mut first_process = McpProcess::spawn();
+    let created = McpProcess::tool_body(&first_process.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "xp"}}
+        ]}),
+    ));
+
+    let sch = scratch.sch("xp");
+    let root = created["revisions_root"].as_str().map(String::from);
+    let key = match &root {
+        Some(_) => "xp.kicad_sch".to_string(),
+        None => sch.to_string_lossy().into_owned(),
+    };
+    let creation_revision = created["revisions"][&key]
+        .as_str()
+        .unwrap_or_else(|| panic!("no revision for {key}: {created:#?}"))
+        .to_string();
+
+    let batch = json!({
+        "operation_id": "op_cross_process",
+        "calls": [{"tool": "add_schematic_net_label",
+                   "args": {"schematic": sch, "net": "VOUT", "x": 100.33, "y": 87.63}}]
+    });
+
+    let applied = McpProcess::tool_body(&first_process.call_tool("kicad_invoke", batch.clone()));
+    assert_eq!(applied["ok"].as_u64(), Some(1), "{applied:#?}");
+    assert!(
+        applied["replayed"].is_null(),
+        "the first run of a key is not a replay: {applied:#?}"
+    );
+
+    // A second process, same key. Its ledger is empty, so the key is `Fresh`
+    // and the batch runs for real — no `replayed` marker, and no
+    // `operation_in_flight` either, since the first process is done and could
+    // not have told this one anything regardless.
+    let mut second_process = McpProcess::spawn();
+    let across = second_process.call_tool("kicad_invoke", batch.clone());
+    let across_body = McpProcess::tool_body(&across);
+    assert!(
+        across_body["replayed"].is_null(),
+        "a second process must not be able to replay the first process's key — \
+         the ledger is per-ToolContext by design: {across_body:#?}"
+    );
+    assert_ne!(
+        across_body["error"]["kind"], "operation_in_flight",
+        "the two processes share no ledger, so they cannot claim against each \
+         other: {across_body:#?}"
+    );
+
+    // What actually stops the cross-process double-apply is content-keyed, not
+    // caller-keyed: a third process presenting the same key *and* the revision
+    // the document had at creation is refused, because the document has moved
+    // since — exactly as it would be for a KiCad GUI having moved it.
+    let mut third_process = McpProcess::spawn();
+    let mut guarded = batch;
+    guarded["base_revisions"] = json!({ key: creation_revision.clone() });
+    if let Some(root) = &root {
+        guarded["base_revisions_root"] = json!(root);
+    }
+    let before_guarded = std::fs::read_to_string(&sch).unwrap();
+    let refused = third_process.call_tool("kicad_invoke", guarded);
+    let refused_body = McpProcess::tool_body(&refused);
+    assert_eq!(refused["isError"], json!(true), "{refused_body:#?}");
+    assert_eq!(refused_body["error"]["kind"], "stale_revision");
+    assert_eq!(refused_body["error"]["transient"], "state");
+    assert_eq!(refused_body["error"]["expected"], creation_revision);
+    assert_eq!(
+        std::fs::read_to_string(&sch).unwrap(),
+        before_guarded,
+        "a refused batch must not have run a single call"
+    );
+}
+
 /// `stop_on_error: false` says the calls are independent and the survivors are
 /// wanted. Rolling them back would be the opposite of the request, so atomic
 /// follows stop_on_error unless it is set explicitly. Found by the benchmark:
