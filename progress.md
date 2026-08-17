@@ -2,94 +2,87 @@
 
 ## Phase actuelle
 
-L — hardening — **closed**. L.1 (known debt) and L.2 (failure injection and
-concurrency, L.2.1 through L.2.5) are all done. Next is M — final benchmark.
+K — multi-harness. K.1.2 is done; K.1.1 is the only thing left in K, and it is
+the last dependency of phase M (final benchmark, which also needs H.6 and H.7 —
+both DONE).
 
 ## Tâche actuelle
 
-K.1.2 — the eval design in `bench/`. M.1 (phase M) depends on H.6, H.7 and
-K.1; H.6/H.7 are DONE but K.1 is not, so K.1 comes first. K.1.1 (running the
-golden suite through Claude Code / Codex / AGY) needs external harnesses and is
-not autonomous; K.1.2 is: add `expected_tools`, `allowed_tools`,
-`forbidden_tools`, a `safety` tier checked against the capability registry (a
-`read_only` case must reject *any* write tool), `max_calls`, and an
-instability rate across repeated runs.
+K.1.1 — run the golden suite through Claude Code, Codex and AGY. All three CLIs
+are installed on this machine (`claude`, `codex`, `agy` on PATH), so it is
+technically autonomous, but every run spends the user's own LLM budget on their
+accounts — that is the user's call, not the agent's. Awaiting that decision.
 
 ## Dernière tâche validée
 
-L.2.5 — a held handle and a denied ACL no longer look alike.
-`refine_rename_failure` (konnect-sexp/src/writer.rs) re-opens the rename's
-target asking only for `DELETE`: a sharing violation means a handle is held →
-`ResourceBusy` → `Io { code: "resource_busy" }` → `TransientClass::Lock`;
-a second access denial means an ACL → left as `permission_denied` → `None`.
-This closes L.2, and with it phase L.
+K.1.2 — the golden suite can now fail for a reason other than a wrong result.
+Tasks declare `expected_tools`, `allowed_tools`, `forbidden_tools`, `safety`
+and `max_calls`; the runner audits the executed path against them and reports
+`SAFETY_VIOLATIONS`, `UNNECESSARY_CALL_RATE` and `INSTABILITY_RATE`.
 
 Validation :
-- `cargo test -p konnect-sexp` 95 passed, `-p konnect-core` 412, `-p konnect`
-  all green (33 in `protocol_stdio`)
-- `cargo clippy --workspace --locked --all-targets -- -D warnings` clean;
-  `cargo fmt --all -- --check` clean
-- negative controls, both directions: forcing the probe to report a sharing
-  violation makes the ACL test fail (`left: ResourceBusy`); forcing it to
-  report access-denied makes the held-handle test fail (`left:
-  PermissionDenied`). The probe does the discrimination, not the test setup
-- earlier in phase L: L.2.4 (ledger boundary, control = `check_base_revisions`
-  neutered → the batch applies instead of being refused) and L.2.3
-  (compare-and-swap, control = both checks short-circuited → the file is
-  *corrupted*, not merely misreported)
-- phase-close check: `gate.ps1` → `GATE PASSED`, exit 0 (fmt, clippy, test,
-  doctest, release build; the optional benchmark steps stay behind their flag)
+- `bench/runner.py --load-mode gateway --repeat 3 --enforce` → 7 tasks / 21
+  runs, 21/21, four thresholds PASS, exit 0. Same with `--load-mode tools
+  --repeat 2` and `--load-mode toolsets --repeat 2`
+- `cargo test -p konnect-core` green; clippy `--all-targets -D warnings` and
+  `cargo fmt --check` clean; the matrix drift test passes without
+  `KAM_UPDATE_MATRIX`
+- negative controls, all on the executed path: a write step in the read-only
+  task → `safety` + `disk_mutation`; the same step with `capabilities.is_write`
+  monkeypatched to `False` → `disk_mutation` *alone* (the disk check does not
+  depend on the registry); `forbidden_tools` / `allowed_tools` /
+  `expected_tools` each fire, with an identical verdict in `gateway` and
+  `toolsets` mode; removing an exception from `TOOL_EFFECTS` makes the Rust
+  exhaustiveness test fail naming the tool
 
 ## Décisions actives
 
+- D56 — `safety: read_only` is checked twice and the second check does not
+  trust the first. The declarative half reads the `effect` column of
+  `docs/capability-matrix.md` (generated from `capability::tool_effect`); the
+  other half fingerprints every byte of `$WORK` before the first step and after
+  the last. If the Rust classification lies, the read-only task fails anyway.
+  Verified with `is_write` forced to `False`, not asserted.
+- D57 — the bench audits the *executed* path, never `task["steps"]`. Judging
+  the YAML against the YAML would make `forbidden_tools` and `missing_expected`
+  unfalsifiable. In `gateway` mode the names come from `kicad_invoke`'s
+  per-entry `tool` field — the server's account of what it ran.
+- D58 — `capability::tool_effect` classifies by verb plus six named exceptions,
+  each decided by reading the handler, and falls back to `Write` for anything
+  unknown. Calling a reader a writer costs a visible refusal; calling a writer a
+  reader lets a mutation through a context that believed itself safe. A test
+  forbids the fallback from ever being the answer for a MANIFEST tool.
 - D53 — a foreign writer landing mid-batch is caught by the per-write
   compare-and-swap, never by `base_revisions`. `base_revisions` guards the
   batch's *start*; `write_atomic_if_unchanged` guards each write. Rollback
-  (D12) is deliberately not extended to reach another application's edits —
-  its only promise is that Konnect's own half-applied batch does not survive,
-  and the coherence guarantee comes from the refusal, not the undo.
-- D55 — the idempotency ledger (`kam_state::IdempotencyLedger`, in the
-  `ToolContext`) is per-process and stays in memory. It protects a client
-  retrying a call it just made — seconds, not restarts. Cross-process and
-  cross-application safety is content-keyed instead, never caller-keyed:
-  `base_revisions` and the per-write compare-and-swap (D53).
+  (D12) is deliberately not extended to reach another application's edits.
+- D55 — the idempotency ledger (`kam_state::IdempotencyLedger`) is per-process
+  and in memory: it protects a client retrying a call it just made, seconds not
+  restarts. Cross-process safety is content-keyed instead (D53).
   `OperationInFlight` is therefore only reachable over HTTP.
-- D54 — a held-handle rename failure *is* separated from an ACL denial, by
-  re-opening the target for `DELETE` and looking for `ERROR_SHARING_VIOLATION`
-  (no ACL denial produces it). Only that case is relabelled `ResourceBusy`;
-  `permission_denied` as a whole keeps `TransientClass::None`, because telling
-  a recovery loop to wait out an ACL is a hang. A probe that succeeds leaves
-  the original error untouched — an unnamed refusal stays honest.
+- D54 — a held-handle rename failure is separated from an ACL denial by
+  re-opening the target for `DELETE` and looking for `ERROR_SHARING_VIOLATION`.
+  Only that case is relabelled `ResourceBusy`; `permission_denied` as a whole
+  keeps `TransientClass::None`, because telling a recovery loop to wait out an
+  ACL is a hang.
 - D51 — the symbol index fingerprint includes each library entry's own mtime,
-  in milliseconds, read through `std::fs::metadata` rather than the `DirEntry`
-  (on Windows the enumeration's timestamps come from the parent's index entry,
-  which NTFS updates lazily). L.1.3's old "a stale index can only cost a
-  suggestion" reasoning died with H.6.1: `canonical_lib_id` reads that index
-  and rewrites a `lib_id` on a unique owner, so a stale index turns a
-  documented refusal into a silent pick. Measured 3.7 ms for 223 libraries.
-- D52 — the test locks that guard process-global env vars are
-  `tokio::sync::Mutex`, taken with `.lock().await`. A `std::sync` guard held
-  across an `.await` is not `Send`, which is what E10 was; five plain `#[test]`s
-  that share those locks became `#[tokio::test]` so each lock has one door.
+  in milliseconds, read through `std::fs::metadata` (on Windows the
+  enumeration's timestamps come from the parent's lazily-updated index entry).
+  Measured 3.7 ms for 223 libraries.
+- D52 — the test locks guarding process-global env vars are
+  `tokio::sync::Mutex`, taken with `.lock().await` (E10).
 - D49 — a KiCad profile this project *creates* is configured for a machine that
-  is nobody's: software rendering (`graphics.canvas_type` 2), the three library
-  tables written, and `do_not_show_again.update_check_prompt` /
-  `.data_collection_prompt` answered. Each of those is a modal dialog KiCad would
-  otherwise serve *before* its API, which is indistinguishable from a hung KiCad.
-  A profile that already exists is a real user's and is never touched.
-- D50 — the API pipe is matched by shape (`*\kicad\api.sock`), never by equality
-  with a computed path, and the name that exists is what gets exported. KiCad may
-  spell it in 8.3 (`RUNNER~1` on a runner); a pipe name is a literal in a
-  namespace with no path resolution, so the difference is a failed connection.
-- D48 — `download_jlcpcb_database` defaults to the `basic-preferred` library
-  (~2 MB) rather than upstream's own default `current-parts` (~780 MB inflated).
-- D47 — driving the PCB path needs a *desktop session* but no human. Full
-  detail: DEV.md, "Driving the PCB path unattended".
-- D26 stands: the live suites keep their `#[ignore]` and stay `gated` in the
-  matrix. The `live-ipc` CI job is where they actually run.
-- D44 — `CAPABILITY_COVERAGE`'s comparison target is frozen: the 187 tools the
-  baseline registers at `5cd6454`, minus what KiCAD gives no API for →
-  denominator 186.
+  is nobody's: software rendering, the three library tables written, and the
+  update-check / data-collection prompts answered. A profile that already
+  exists is a real user's and is never touched.
+- D50 — the API pipe is matched by shape (`*\kicad\api.sock`), never by
+  equality with a computed path.
+- D48 — `download_jlcpcb_database` defaults to `basic-preferred` (~2 MB).
+- D47 — driving the PCB path needs a *desktop session* but no human (DEV.md).
+- D26 — the live suites keep their `#[ignore]` and stay `gated` in the matrix;
+  the `live-ipc` CI job is where they run.
+- D44 — `CAPABILITY_COVERAGE`'s target is frozen at the 187 tools the baseline
+  registers at `5cd6454`, minus what KiCAD gives no API for → denominator 186.
 - D45 — an `ipc` tool is never "proved" by its own "KiCAD must be running"
   error, and a `cli` tool is never proved by failing to spawn.
 - D46 — a third party is not a test dependency.
@@ -112,62 +105,48 @@ Validation :
 Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 `kicad-cli api-server` it needs.
 
-GitHub CI is red on `agentic/main` for an external reason, not the code:
-`codeload.github.com` is returning 429 to the runners, so `Swatinem/rust-cache`
-and `arduino/setup-protoc` fail to download (the latter surfaces as "unable to
-get latest version"). Every job that needs an action download fails at the
-setup step, before any cargo command; `Format`, `Schematic viewer` and `PCM
-packaging validation` pass. `gate.ps1` covers the same ground locally and
-passes. Next attempt: re-run the failed jobs (`gh run rerun <id> --failed -R
-nevenfo/kicad-agentic-mcp`) once the rate limit clears — do not restructure the
-workflows in response to a 429.
+GitHub CI is still red on `agentic/main` for an external reason, not the code:
+`codeload.github.com` returns 429 to the runners, so `dtolnay/rust-toolchain`
+and `arduino/setup-protoc` fail to download and every job needing an action
+download dies at the setup step, before any cargo command. Confirmed again on
+run `32042930726`. `gate.ps1` covers the same ground locally and passes. Next
+attempt: `gh run rerun <id> --failed -R nevenfo/kicad-agentic-mcp` once the
+rate limit clears — do not restructure the workflows in response to a 429.
 
 ## Fichiers / zones utiles
 
-- `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits`,
-  and the block finders (`find_balanced_block`, `find_block_starts`,
-  `find_direct_child_blocks`, `find_enclosing_block`) whose byte offsets feed it
-- `crates/konnect-sexp/tests/proptest_parser.rs` (parser properties) and
-  `tests/proptest_writer.rs` (L.2.1, writer properties). The writer generator
-  carries its own ground truth — never assert one finder against another
-- `crates/konnect-core/src/mcp/error.rs` — `TransientClass`,
-  `retry_after_ms()` (Lock 250 ms, Network/Timeout 1 s, None/State none) and
-  `ToolErrorKind::transient_class()`. `from_anyhow` downcasts specific error
-  types *before* its `io::Error` fallback — anything without an `io::Error` in
-  its chain decays to `HandlerError` unless matched there first
-- `crates/konnect-core/tests/concurrent_gui_edit.rs` — how to race a foreign
-  writer against a batch deterministically: a thread doing plain
-  `std::fs::write` in a tight loop for the batch's whole duration, so no
-  assertion depends on which call the conflict lands on
-- `crates/konnect-core/tests/lock_recovery.rs` — how to race two
-  `kicad_invoke` calls deterministically: two tokio tasks sharing one
-  `ToolContext`, the loser fired only after the winner's writes are visible on
-  disk. It cannot be done over stdio (see L.2.4)
+- `bench/runner.py` — `audit()` (typed violations), `executed_tools()` (why the
+  audit does not read the task file), `fingerprint()` (the check that does not
+  trust the registry), `--enforce`. Run it with `py -3.11`: it is the only
+  interpreter here with `yaml` and `tiktoken`
+- `bench/capabilities.py` — reads the `effect` column out of
+  `docs/capability-matrix.md`; unknown tool ⇒ `write`
+- `bench/fixtures/divider.kicad_sch` — a real server output with `lib_symbols`
+  embedded, so a read-only task has a subject it did not have to author
+- `crates/konnect-core/src/capability/mod.rs` — `MANIFEST`, `Effect`,
+  `VERB_EFFECTS` / `TOOL_EFFECTS` / `tool_effect`, and the tests that keep the
+  fail-safe from being load-bearing. Regenerate the matrix with
+  `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
+- `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits`
+  and the block finders whose byte offsets feed it
+- `crates/konnect-core/src/mcp/error.rs` — `TransientClass`, `retry_after_ms()`,
+  `ToolErrorKind::transient_class()`; `from_anyhow` downcasts specific error
+  types *before* its `io::Error` fallback
+- `crates/konnect-core/tests/concurrent_gui_edit.rs` and `tests/lock_recovery.rs`
+  — how to race a foreign writer, and two `kicad_invoke` calls, deterministically
 - `.github/workflows/ci.yml` — triggers on `agentic/main` as well as `main`;
-  clippy is `--all-targets` and the `check` job fetches full history. Dispatch
-  the KiCad E2E one as `gh workflow run e2e-kicad.yml -R
-  nevenfo/kicad-agentic-mcp --ref agentic/main`; a bare `gh` resolves to
-  `upstream` and 403s
-- `gate.ps1` — the local mirror of CI; every step of it is real now
-- `crates/konnect-core/src/plan/ops.rs` — the operation library; its `tests`
-  module parses the `*_SIGNATURE` DSL, and `minimal_examples()` must stay in
-  `OP_LIBRARY` order
-- `crates/konnect-schematic-editor/src/library.rs` — `canonical_lib_id` (H.6.1)
-  and the on-disk symbol index (`probe_dir`, `DirFingerprint`, cache magic V2)
-- `crates/konnect/tests/protocol_stdio.rs` — `stub_symbol_library()` and
-  `spawn_with_symbols()`: how a stdio test gets a resolvable `lib_id` with no
-  KiCAD installed
-- `scripts/live-pcb-e2e.ps1` — the live PCB harness. Run it with no arguments
+  dispatch the KiCad E2E one as `gh workflow run e2e-kicad.yml -R
+  nevenfo/kicad-agentic-mcp --ref agentic/main` (a bare `gh` resolves to
+  `upstream` and 403s)
+- `gate.ps1` — the local mirror of CI; every step of it is real
 - `crates/konnect-core/tests/harness/mod.rs` — shared rig: calls a tool through
   `ToolRouter` by name; `BLANK_BOARD`, `TWO_RESISTORS`, `pins::*`
-- `crates/konnect-core/src/capability/` — regenerate the matrix with
-  `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
+- `scripts/live-pcb-e2e.ps1` — the live PCB harness. Run it with no arguments
 
 ## NEXT ACTION
 
-Implement K.1.2 — extend the task schema in `bench/tasks/*.yaml` and the runner
-(`bench/runner.py`, scored in `bench/analyze.py`) with `expected_tools`,
-`allowed_tools`, `forbidden_tools`, `safety`, `max_calls` and a repeated-run
-instability rate, checking the `safety` tier against
-`crates/konnect-core/src/capability/`. Then run the suite and
-`cargo clippy --workspace --locked --all-targets -- -D warnings`.
+K.1.1 — decide with the user whether to spend their LLM budget driving the
+golden suite through `claude`, `codex` and `agy` headless (all three are on
+PATH). If yes, build the harness runner under `bench/` and score each harness
+on the same tasks and the same thresholds as `--enforce`. If no, K.1.1 stays
+open and phase M starts without it, recording the gap under INV6.

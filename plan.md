@@ -1136,14 +1136,26 @@ F.3 (the gateway is the whole external surface).
 
 ### Tâches
 - [ ] K.1.1 Run the golden suite through each harness
-- [ ] K.1.2 Adopt the eval design: `expected_tools`, `allowed_tools`,
+- [x] K.1.2 Adopt the eval design: `expected_tools`, `allowed_tools`,
       `forbidden_tools`, a `safety` tier checked against the capability registry
       (a `read_only` case rejects *any* write tool), `max_calls`, and an
-      instability rate across repeated runs
+      instability rate across repeated runs. The registry had no notion of
+      read vs write, so it gained one: `capability::tool_effect` (verb table,
+      six handler-verified exceptions, `Write` fail-safe that a test forbids
+      from ever being load-bearing), rendered as an `effect` column the bench
+      reads without a running server. The audit judges the *executed* path,
+      not the task file, or `forbidden_tools` could never fail. `read_only` is
+      checked twice: declaratively against the registry, and by a byte
+      fingerprint of `$WORK` that catches a registry which lies (D56). New
+      task `sch_inspection` — the tier's only exercise, since every other
+      golden task authors something
 
 ### Validation
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
-`max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`.
+`max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
+`bench/runner.py --enforce`, which exits non-zero on any of them; met by
+`--load-mode gateway --repeat 3` and `--load-mode tools --repeat 2`
+(`search` is exempt — its failure rate measures retrieval, not the server).
 
 ---
 
