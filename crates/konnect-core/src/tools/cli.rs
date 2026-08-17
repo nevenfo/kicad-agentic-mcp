@@ -385,18 +385,109 @@ pub async fn export_gerber(cli: &str, pcb: &Path, output_dir: &Path) -> Result<(
     Ok(())
 }
 
+/// Everything `pcb export drill` can be told, with KiCAD 10's own defaults.
+///
+/// The names are KiCAD's, so a caller reading `kicad-cli pcb export drill
+/// --help` finds the same words. Verified against KiCAD 10.0.
+#[derive(Debug, Clone)]
+pub struct DrillOptions<'a> {
+    /// `excellon` (default) or `gerber`.
+    pub format: &'a str,
+    /// Excellon coordinate units: `mm` (default) or `in`. Ignored by the
+    /// Gerber writer, which is always metric.
+    pub units: &'a str,
+    /// `absolute` (default) or `plot` — the drill origin the coordinates are
+    /// measured from.
+    pub origin: &'a str,
+    /// Write plated and non-plated holes to separate files.
+    pub separate_th: bool,
+    /// Also write a drill map.
+    pub generate_map: bool,
+    /// Map format when `generate_map` is set: `pdf` (default), `gerberx2`,
+    /// `ps`, `dxf`, or `svg`.
+    pub map_format: &'a str,
+}
+
+impl Default for DrillOptions<'_> {
+    fn default() -> Self {
+        DrillOptions {
+            format: "excellon",
+            units: "mm",
+            origin: "absolute",
+            separate_th: false,
+            generate_map: false,
+            map_format: "pdf",
+        }
+    }
+}
+
 /// KiCAD 10: `pcb export drill --output <dir> <input>`
-pub async fn export_drill(cli: &str, pcb: &Path, output: &Path) -> Result<()> {
-    let args = [
+///
+/// `--output` is a **directory**, not a file: KiCAD names the files after the
+/// board (`<board>.drl`, or `<board>-PTH.drl` / `<board>-NPTH.drl` with
+/// `separate_th`, plus `<board>-*-drl_map.<ext>` for a map). Passing a file
+/// path makes KiCAD create a directory of that name and write the real file
+/// inside it — verified against KiCAD 10.0, and the reason this takes
+/// `output_dir`.
+///
+/// Every option is validated here rather than passed through, so a typo comes
+/// back naming the valid values instead of as `kicad-cli` exiting non-zero.
+pub async fn export_drill(
+    cli: &str,
+    pcb: &Path,
+    output_dir: &Path,
+    options: &DrillOptions<'_>,
+) -> Result<()> {
+    let format = one_of(options.format, &["excellon", "gerber"], "drill format")?;
+    let units = one_of(options.units, &["mm", "in"], "drill units")?;
+    let origin = one_of(options.origin, &["absolute", "plot"], "drill origin")?;
+    let map_format = one_of(
+        options.map_format,
+        &["pdf", "gerberx2", "ps", "dxf", "svg"],
+        "drill map format",
+    )?;
+
+    let mut args = vec![
         "pcb",
         "export",
         "drill",
         "--output",
-        output.to_str().unwrap(),
-        pcb.to_str().unwrap(),
+        output_dir.to_str().unwrap(),
+        "--format",
+        format,
+        "--drill-origin",
+        origin,
+        "--excellon-units",
+        units,
     ];
+    if options.separate_th {
+        args.push("--excellon-separate-th");
+    }
+    if options.generate_map {
+        args.push("--generate-map");
+        args.push("--map-format");
+        args.push(map_format);
+    }
+    args.push(pcb.to_str().unwrap());
+
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
+}
+
+/// Accept `value` if KiCAD does, case-insensitively, and return the spelling
+/// `kicad-cli` expects.
+fn one_of<'a>(value: &str, valid: &[&'a str], what: &str) -> Result<&'a str> {
+    let lower = value.to_lowercase();
+    valid
+        .iter()
+        .find(|candidate| **candidate == lower)
+        .copied()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unsupported {what}: '{value}'. Valid options: {}",
+                valid.join(", ")
+            )
+        })
 }
 
 /// KiCAD 10: `pcb export pdf --output <path> [--layers <layer>]... <input>`

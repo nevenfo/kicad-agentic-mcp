@@ -904,6 +904,19 @@ F.4 (the matrix is the instrument).
 - [ ] J.2.2 Fill the highest-value gaps — `MISSING` names buses, a standalone
       drill export, IPC-D-356, and the stackup write KiCad 10 declares and does
       not implement
+  - [x] J.2.2.1 The two `kicad-cli` gaps: `export_drill` exposes format, units,
+        origin, separate PTH/NPTH and the map; `export_netlist(format: "ipc")`
+        routes to `pcb export ipcd356` instead of sending an invalid
+        `sch export netlist --format`. Both `MISSING` rows are gone. The live
+        probe also fixed a real defect: `--output` is a directory, and the two
+        existing callers passed `<dir>/drill.drl`, so KiCAD made a *directory*
+        of that name — `export_manufacturing_package` reported a file path that
+        was not a file
+  - [ ] J.2.2.2 Buses — bus entries, bus aliases, bus-member expansion; the
+        schematic engine handles wires and labels only
+  - [ ] J.2.2.3 Stackup write — record the KiCad 10 limit, do not build. Already
+        `GUI_ONLY_NO_API` and out of the denominator; the task is to confirm
+        `UpdateBoardStackup` is still unimplemented and say so once
 - [ ] J.2.3 Prove the 107-ish tools that have no test that runs
 
 ### Validation

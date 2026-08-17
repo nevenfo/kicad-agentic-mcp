@@ -140,14 +140,16 @@ async fn handle_export_manufacturing_package(
         }
     }
 
-    // 2. Export drill files
-    let drill_path = output_dir.join("drill.drl");
-    match cli::export_drill(cli_path, &board, &drill_path).await {
+    // 2. Export drill files. `--output` is a directory and KiCAD names the
+    //    files after the board, so this reports the directory it filled.
+    let drill_dir = output_dir.join("drill");
+    tokio::fs::create_dir_all(&drill_dir).await?;
+    match cli::export_drill(cli_path, &board, &drill_dir, &cli::DrillOptions::default()).await {
         Ok(()) => {
             info!("[BETA] Drill export succeeded");
             files_generated.push(json!({
                 "type": "drill",
-                "path": drill_path.to_str().unwrap_or("")
+                "path": drill_dir.to_str().unwrap_or("")
             }));
         }
         Err(e) => {

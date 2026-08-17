@@ -608,6 +608,7 @@ pub static MANIFEST: &[Capability] = &[
     ),
     // ── pcb_export ──────────────────────────────────────────────────────────
     cap("export_gerber", Domain::Gerber, Adapter::Cli),
+    cap("export_drill", Domain::Drill, Adapter::Cli),
     cap("export_pdf", Domain::Export, Adapter::Cli),
     cap("export_svg", Domain::Export, Adapter::Cli),
     cap("export_3d", Domain::ThreeD, Adapter::Cli),
@@ -767,20 +768,6 @@ pub static MISSING: &[MissingCapability] = &[
         capability: "bus entries, bus aliases, bus-member expansion",
         limitation: Limitation::Gap(
             "no tool writes or reads a bus; the schematic engine handles wires and labels only, so a bus-based design cannot be authored here",
-        ),
-    },
-    MissingCapability {
-        domain: Domain::Drill,
-        capability: "standalone drill-file export with its own options",
-        limitation: Limitation::Partial(
-            "`cli::export_drill` exists but no tool exposes it: drills come out only as part of export_manufacturing_package, or best-effort alongside export_gerber. Units, format, map file and origin are not reachable",
-        ),
-    },
-    MissingCapability {
-        domain: Domain::Pcb,
-        capability: "IPC-D-356 netlist export",
-        limitation: Limitation::Gap(
-            "`cli::export_ipcd356` is written and has no caller — one tool away, and currently dead code",
         ),
     },
     MissingCapability {

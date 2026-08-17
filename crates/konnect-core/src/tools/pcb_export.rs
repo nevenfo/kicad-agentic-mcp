@@ -62,6 +62,29 @@ pub fn tools() -> Vec<ToolDef> {
             |args, ctx| async move { handle_export_gerber(args, ctx).await }
         ),
         tool!(
+            "export_drill",
+            "Export drill files on their own, with the fabricator's options: Excellon or Gerber, \
+             units, drill origin, separate plated/non-plated files, and a drill map. \
+             `export_gerber` and `export_manufacturing_package` emit drills with KiCAD's \
+             defaults; use this when the fab house asks for anything else. \
+             Writes into a directory — KiCAD names the files after the board.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "board": { "type": "string", "description": "Path to .kicad_pcb file" },
+                    "output_dir": { "type": "string", "description": "Directory to write drill files into" },
+                    "format": { "type": "string", "description": "'excellon' (default) or 'gerber'", "default": "excellon" },
+                    "units": { "type": "string", "description": "Excellon coordinate units: 'mm' (default) or 'in'", "default": "mm" },
+                    "drill_origin": { "type": "string", "description": "'absolute' (default) or 'plot'", "default": "absolute" },
+                    "separate_plated": { "type": "boolean", "description": "Write plated (PTH) and non-plated (NPTH) holes to separate files", "default": false },
+                    "generate_map": { "type": "boolean", "description": "Also write a drill map", "default": false },
+                    "map_format": { "type": "string", "description": "Map format when generate_map is set: 'pdf' (default), 'gerberx2', 'ps', 'dxf', or 'svg'", "default": "pdf" }
+                },
+                "required": ["board", "output_dir"]
+            }),
+            |args, ctx| async move { handle_export_drill(args, ctx).await }
+        ),
+        tool!(
             "export_pdf",
             "Export the PCB layout to a PDF file using kicad-cli.",
             json!({
@@ -293,9 +316,10 @@ async fn handle_export_gerber(
     cli::export_gerber(cli, &board, &output_dir).await?;
 
     if drill {
-        // kicad-cli also has a dedicated drill export
-        let drill_path = output_dir.join("drill.drl");
-        let _ = cli::export_drill(cli, &board, &drill_path).await; // best-effort
+        // kicad-cli also has a dedicated drill export, into the same directory
+        // — its `--output` is a directory and it names the file after the
+        // board. For anything beyond the defaults, call `export_drill`.
+        let _ = cli::export_drill(cli, &board, &output_dir, &cli::DrillOptions::default()).await; // best-effort
     }
 
     // List produced files
@@ -397,6 +421,15 @@ async fn handle_export_3d(
     ))
 }
 
+/// Whether `format` names IPC-D-356, which is a different `kicad-cli` verb
+/// rather than a value `sch export netlist --format` accepts.
+fn is_ipc_d356(format: &str) -> bool {
+    matches!(
+        format.to_lowercase().replace(['-', '_', ' '], "").as_str(),
+        "ipc" | "ipcd356"
+    )
+}
+
 async fn handle_export_netlist(
     args: &serde_json::Value,
     ctx: &ToolContext,
@@ -406,15 +439,62 @@ async fn handle_export_netlist(
     let format = args["format"].as_str().unwrap_or("kicad");
 
     let cli = &ctx.config.kicad_cli;
-    // kicad-cli `sch export netlist` works on both .kicad_sch and .kicad_pcb paths.
-    // For PCB-specific netlist formats (IPC-D-356), delegate same way.
-    cli::export_netlist(cli, &board, &output, format).await?;
+    // `sch export netlist` works on both .kicad_sch and .kicad_pcb paths, but
+    // its --format list has no IPC-D-356: that is `pcb export ipcd356`, a
+    // separate verb. Asking for it here used to reach kicad-cli as an invalid
+    // format, so the tool advertised a format it could not produce.
+    if is_ipc_d356(format) {
+        cli::export_ipcd356(cli, &board, &output).await?;
+    } else {
+        cli::export_netlist(cli, &board, &output, format).await?;
+    }
 
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
             "success": true,
             "format": format,
             "output": output.to_str().unwrap_or("")
+        }))
+        .unwrap(),
+    ))
+}
+
+async fn handle_export_drill(
+    args: &serde_json::Value,
+    ctx: &ToolContext,
+) -> anyhow::Result<CallToolResult> {
+    let board = get_path(args, "board")?;
+    let output_dir = get_path(args, "output_dir")?;
+
+    let options = cli::DrillOptions {
+        format: args["format"].as_str().unwrap_or("excellon"),
+        units: args["units"].as_str().unwrap_or("mm"),
+        origin: args["drill_origin"].as_str().unwrap_or("absolute"),
+        separate_th: args["separate_plated"].as_bool().unwrap_or(false),
+        generate_map: args["generate_map"].as_bool().unwrap_or(false),
+        map_format: args["map_format"].as_str().unwrap_or("pdf"),
+    };
+
+    tokio::fs::create_dir_all(&output_dir).await?;
+    let cli = &ctx.config.kicad_cli;
+    cli::export_drill(cli, &board, &output_dir, &options).await?;
+
+    // KiCAD names the files itself, so report what is actually there rather
+    // than a path this tool guessed.
+    let mut files = Vec::new();
+    if let Ok(mut rd) = tokio::fs::read_dir(&output_dir).await {
+        while let Ok(Some(entry)) = rd.next_entry().await {
+            files.push(entry.file_name().to_string_lossy().to_string());
+        }
+    }
+    files.sort();
+
+    Ok(CallToolResult::text(
+        serde_json::to_string(&json!({
+            "success": true,
+            "format": options.format,
+            "output_dir": output_dir.to_str().unwrap_or(""),
+            "files": files
         }))
         .unwrap(),
     ))
@@ -725,6 +805,81 @@ mod new_export_format_tests {
         let ctx = test_ctx();
         let args = json!({ "board": "board.kicad_pcb" });
         assert!(handle_export_odb(&args, &ctx).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn export_drill_missing_output_dir_returns_error() {
+        let ctx = test_ctx();
+        let args = json!({ "board": "board.kicad_pcb" });
+        assert!(handle_export_drill(&args, &ctx).await.is_err());
+    }
+
+    /// An option KiCAD does not accept is rejected here, naming the valid
+    /// values — rather than reaching `kicad-cli` and coming back as a non-zero
+    /// exit. Checked through the handler so the wiring is covered too.
+    #[tokio::test]
+    async fn export_drill_rejects_an_option_kicad_does_not_accept() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ctx = test_ctx();
+        let args = json!({
+            "board": dir.path().join("board.kicad_pcb").to_str().unwrap(),
+            "output_dir": dir.path().join("drills").to_str().unwrap(),
+            "format": "excellon",
+            "units": "furlongs"
+        });
+        let error = handle_export_drill(&args, &ctx)
+            .await
+            .expect_err("an invalid unit is refused");
+        let message = error.to_string();
+        assert!(
+            message.contains("furlongs") && message.contains("mm, in"),
+            "the error should name the value and the valid ones: {message}"
+        );
+    }
+
+    /// The valid options are passed through, and the failure is `kicad-cli`
+    /// being absent rather than validation. Guards against the accepted set
+    /// drifting from `kicad-cli pcb export drill --help`.
+    #[tokio::test]
+    async fn export_drill_accepts_every_option_kicad_documents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ctx = test_ctx();
+        for (format, units, origin, map_format) in [
+            ("excellon", "mm", "absolute", "pdf"),
+            ("gerber", "in", "plot", "gerberx2"),
+            ("EXCELLON", "MM", "Absolute", "svg"),
+        ] {
+            let args = json!({
+                "board": dir.path().join("board.kicad_pcb").to_str().unwrap(),
+                "output_dir": dir.path().join("drills").to_str().unwrap(),
+                "format": format,
+                "units": units,
+                "drill_origin": origin,
+                "separate_plated": true,
+                "generate_map": true,
+                "map_format": map_format
+            });
+            let message = handle_export_drill(&args, &ctx)
+                .await
+                .expect_err("kicad_cli is empty in test_ctx, so the spawn fails")
+                .to_string();
+            assert!(
+                !message.contains("Valid options"),
+                "'{format}/{units}/{origin}/{map_format}' was rejected as invalid: {message}"
+            );
+        }
+    }
+
+    /// IPC-D-356 is `pcb export ipcd356`, not a `sch export netlist --format`
+    /// value. The tool advertises it, so the spelling it accepts is pinned.
+    #[test]
+    fn ipc_d356_is_recognised_by_every_spelling_the_tool_advertises() {
+        for spelling in ["ipc", "IPC", "ipcd356", "ipc-d-356", "IPC_D_356"] {
+            assert!(is_ipc_d356(spelling), "'{spelling}' should route to ipcd356");
+        }
+        for other in ["kicad", "kicadxml", "spice", "orcadpcb2", "pads"] {
+            assert!(!is_ipc_d356(other), "'{other}' is a sch netlist format");
+        }
     }
 
     #[tokio::test]

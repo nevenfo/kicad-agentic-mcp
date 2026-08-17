@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 166 | 46 | 7 | 104 | 4 | 5 | 28.6 % |
+| KiCAD domains | 165 | 47 | 6 | 104 | 3 | 5 | 29.4 % |
 | server's own | 40 | 15 | 3 | 22 | 0 | 0 | 37.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -66,7 +66,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`libraries`](#libraries) | 9 | 5 | 0 | 4 | 0 | 0 | 55.6 % |
 | [`footprints`](#footprints) | 7 | 1 | 0 | 6 | 0 | 0 | 14.3 % |
-| [`pcb`](#pcb) | 9 | 1 | 0 | 7 | 1 | 0 | 11.1 % |
+| [`pcb`](#pcb) | 8 | 1 | 0 | 7 | 0 | 0 | 12.5 % |
 | [`placement`](#placement) | 11 | 1 | 0 | 9 | 1 | 0 | 9.1 % |
 | [`routing`](#routing) | 10 | 1 | 0 | 7 | 0 | 2 | 12.5 % |
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
@@ -80,7 +80,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`simulation`](#simulation) | 1 | 0 | 0 | 0 | 0 | 1 | — |
 | [`manufacturing`](#manufacturing) | 3 | 0 | 0 | 3 | 0 | 0 | 0.0 % |
 | [`gerber`](#gerber) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
-| [`drill`](#drill) | 1 | 0 | 1 | 0 | 0 | 0 | 0.0 % |
+| [`drill`](#drill) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`pick_place`](#pick_place) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`datasheet`](#datasheet) | 2 | 0 | 0 | 2 | 0 | 0 | 0.0 % |
 | [`sourcing`](#sourcing) | 5 | 2 | 0 | 3 | 0 | 0 | 40.0 % |
@@ -100,7 +100,7 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 | adapter | tools | needs a running KiCAD |
 |---|---|---|
 | `sexpr` | 120 | no |
-| `cli` | 21 | no |
+| `cli` | 22 | no |
 | `ipc` | 21 | yes |
 | `ipc→sexpr` | 5 | no |
 | `internal` | 18 | no |
@@ -280,12 +280,6 @@ Not covered by any tool:
 | `import_svg_logo` | `pcb_board` | `ipc→sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
 | `get_board_2d_view` | `pcb_components` | `cli` | NOT_TESTED | — | — |  |
 
-Not covered by any tool:
-
-| capability | status | why |
-|---|---|---|
-| IPC-D-356 netlist export | GAP | `cli::export_ipcd356` is written and has no caller — one tool away, and currently dead code |
-
 ### placement
 
 | tool | toolset | adapter | status | proof | evidence | note |
@@ -427,11 +421,9 @@ Not covered by any tool:
 
 ### drill
 
-Not covered by any tool:
-
-| capability | status | why |
-|---|---|---|
-| standalone drill-file export with its own options | PARTIAL | `cli::export_drill` exists but no tool exposes it: drills come out only as part of export_manufacturing_package, or best-effort alongside export_gerber. Units, format, map file and origin are not reachable |
+| tool | toolset | adapter | status | proof | evidence | note |
+|---|---|---|---|---|---|---|
+| `export_drill` | `pcb_export` | `cli` | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
 
 ### pick_place
 
@@ -538,7 +530,7 @@ Not covered by any tool:
 
 ## Not tested
 
-126 of 196 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+126 of 197 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
