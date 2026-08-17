@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 82 | 17 | 63 | 2 | 5 | 50.0 % |
+| KiCAD domains | 169 | 91 | 17 | 54 | 2 | 5 | 55.5 % |
 | server's own | 40 | 22 | 9 | 9 | 0 | 0 | 55.0 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 92 | 49.5 % |
+| this fork | 186 | 101 | 54.3 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -64,8 +64,8 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`labels`](#labels) | 6 | 2 | 0 | 4 | 0 | 0 | 33.3 % |
 | [`buses`](#buses) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`libraries`](#libraries) | 9 | 5 | 0 | 4 | 0 | 0 | 55.6 % |
-| [`footprints`](#footprints) | 7 | 1 | 0 | 6 | 0 | 0 | 14.3 % |
+| [`libraries`](#libraries) | 9 | 9 | 0 | 0 | 0 | 0 | 100.0 % |
+| [`footprints`](#footprints) | 7 | 6 | 0 | 1 | 0 | 0 | 85.7 % |
 | [`pcb`](#pcb) | 8 | 1 | 0 | 7 | 0 | 0 | 12.5 % |
 | [`placement`](#placement) | 11 | 1 | 0 | 9 | 1 | 0 | 9.1 % |
 | [`routing`](#routing) | 10 | 1 | 0 | 7 | 0 | 2 | 12.5 % |
@@ -247,13 +247,13 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `register_footprint_library` | `library` | `sexpr` | NOT_TESTED | — | — |  |
+| `register_footprint_library` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `list_footprint_libraries` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 | `create_symbol` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
-| `delete_symbol` | `library` | `sexpr` | NOT_TESTED | — | — |  |
+| `delete_symbol` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `list_symbols_in_library` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
-| `register_symbol_library` | `library` | `sexpr` | NOT_TESTED | — | — |  |
-| `list_symbol_libraries` | `library` | `sexpr` | NOT_TESTED | — | — |  |
+| `register_symbol_library` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `list_symbol_libraries` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `search_symbols` | `library` | `sexpr` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
 | `get_symbol_info` | `library` | `sexpr` | SUPPORTED | bench | `bench/probes/discover.yaml` |  |
 
@@ -261,13 +261,13 @@ Not covered by any tool:
 
 | tool | toolset | adapter | status | proof | evidence | note |
 |---|---|---|---|---|---|---|
-| `get_component_pads` | `pcb_components` | `sexpr` | NOT_TESTED | — | — |  |
-| `get_pad_position` | `pcb_components` | `sexpr` | NOT_TESTED | — | — |  |
+| `get_component_pads` | `pcb_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_pad_position` | `pcb_components` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `create_footprint` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
-| `edit_footprint_pad` | `library` | `sexpr` | NOT_TESTED | — | — |  |
-| `list_library_footprints` | `library` | `sexpr` | NOT_TESTED | — | — |  |
-| `get_footprint_info` | `library` | `sexpr` | NOT_TESTED | — | — |  |
-| `search_footprints` | `library` | `sexpr` | NOT_TESTED | — | — |  |
+| `edit_footprint_pad` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `list_library_footprints` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_footprint_info` | `library` | `sexpr` | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `search_footprints` | `library` | `sexpr` | NOT_TESTED | gated | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 
 ### pcb
 
@@ -532,7 +532,7 @@ Not covered by any tool:
 
 ## Not tested
 
-72 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+63 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -562,8 +562,6 @@ Not covered by any tool:
 | `delete_component` | `placement` | `ipc` | none |
 | `edit_component` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `find_component` | `placement` | `ipc` | none |
-| `get_component_pads` | `footprints` | `sexpr` | none |
-| `get_pad_position` | `footprints` | `sexpr` | none |
 | `get_component_list` | `placement` | `ipc` | none |
 | `place_component_array` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `align_components` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
@@ -585,14 +583,7 @@ Not covered by any tool:
 | `export_position_file` | `pick_place` | `cli` | none |
 | `refill_zones` | `zones` | `ipc` | none |
 | `get_drc_violations` | `drc` | `cli` | none |
-| `edit_footprint_pad` | `footprints` | `sexpr` | none |
-| `register_footprint_library` | `libraries` | `sexpr` | none |
-| `delete_symbol` | `libraries` | `sexpr` | none |
-| `register_symbol_library` | `libraries` | `sexpr` | none |
-| `list_symbol_libraries` | `libraries` | `sexpr` | none |
-| `list_library_footprints` | `footprints` | `sexpr` | none |
-| `get_footprint_info` | `footprints` | `sexpr` | none |
-| `search_footprints` | `footprints` | `sexpr` | none |
+| `search_footprints` | `footprints` | `sexpr` | gated — `crates/konnect-core/tests/libraries_and_footprints.rs` |
 | `download_jlcpcb_database` | `sourcing` | `external` | none |
 | `suggest_jlcpcb_alternatives` | `sourcing` | `external` | none |
 | `get_jlcpcb_database_stats` | `sourcing` | `external` | none |

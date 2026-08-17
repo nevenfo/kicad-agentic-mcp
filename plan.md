@@ -954,7 +954,11 @@ F.4 (the matrix is the instrument).
         asserted. The coverage percentage does not move and should not: all six
         are `HEURISTIC`, so they read `PARTIAL` rather than `SUPPORTED` however
         well tested they are — 78 untested tools became 72
-  - [ ] J.2.3.5 `footprints` (6 `sexpr`) and `libraries` (4)
+  - [x] J.2.3.5 `footprints` and `libraries` — `tests/libraries_and_footprints.rs`
+        builds its own `.pretty` and `.kicad_sym` with `create_footprint` /
+        `create_symbol` and then registers, lists, reads and edits *that*, so no
+        installed KiCAD is needed. `search_footprints` searches the installed
+        libraries by design and stays `#[ignore]`d/`gated` rather than faked
   - [ ] J.2.3.6 `labels` (4 `sexpr`), `stackup` (3 `sexpr`), `zones` (1),
         `pcb` (2 `sexpr`), `templates` (1 `internal`)
   - [ ] J.2.3.7 `export` (4 `cli`) and `drc` (2 `cli`) — argument handling
