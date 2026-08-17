@@ -2,12 +2,14 @@
 
 ## Phase actuelle
 
-J — scope expansion. J.1, J.2, J.3 and J.4 are closed, J.2.4 residue included.
+J — scope expansion. J.1, J.2 and J.4 are closed, the J.2.4 residue included.
+J.3's question is answered; J.3.3's CI half is open again now that the job
+actually runs on a runner and fails there.
 
 ## Tâche actuelle
 
-None assigned. Phase J is closed; the next phase is a decision, not a task —
-see NEXT ACTION.
+J.3.3 — make the `live-ipc` job pass on a GitHub runner, or establish that it
+cannot. It runs there now; it fails there (blocage 1).
 
 ## Dernière tâche validée
 
@@ -72,19 +74,25 @@ Validation :
 
 1. Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
    `kicad-cli api-server` it needs.
-2. The `live-ipc` CI job (J.3.3) still cannot be made to run on a GitHub runner,
-   so the one unknown stands: whether `windows-latest` gives pcbnew a usable
-   window station. The fresh-profile half was rehearsed locally with `APPDATA`
-   pointed at an empty directory — 3/3, exit 0.
-   Cause, established 2026-08-17: GitHub registers `workflow_dispatch` only from
-   a repository's *default* branch, and `origin`'s default branch (`main`) has no
-   `.github/workflows/` at all — `gh workflow list -R nevenfo/kicad-agentic-mcp`
-   shows Dependabot only, and a dispatch on `--ref agentic/main` 404s. (The
-   `gh run list` successes for "E2E (real KiCAD)" are `upstream`
-   mixelpixx/Konnect, not this fork; `gh` resolves the bare flag to `upstream`.)
-   Next attempt is a user decision, not a command: either land the workflows on
-   `origin/main` (a PR carrying `.github/workflows/` alone, or the whole
-   `agentic/main` merge) or change the fork's default branch.
+2. **The `live-ipc` job fails on `windows-latest`** (J.3.3). Run 32020437428,
+   2026-08-17: pcbnew started, stayed alive — the harness distinguishes an exit —
+   and `\\.\pipe\...\kicad\api.sock` never appeared within 90 s. The `e2e` job in
+   the same run passed, so the runner and the KiCad install are fine; it is the
+   GUI-process API server that does not come up. Locally the same script is 3/3.
+   Excluded: a missing workflow (see below), a pcbnew crash, a bad socket path
+   (the harness logs the one it waits on and it is the deterministic one).
+   Next attempt is running: the harness now prints pcbnew's window handle, title,
+   responsiveness and CPU time when it gives up, and the CI step waits 180 s, so
+   the outcome separates "slow on a cold runner" from "stuck before the API
+   server". Run 32021813623.
+
+   Settled on the way (do not re-derive): `origin` has **no** `main` branch — its
+   default branch *is* `agentic/main`. The earlier dispatch 404 was that Actions
+   had never registered the workflows, because no push had ever touched
+   `.github/workflows/`; one push fixed it. `gh` resolves a bare `-R`-less
+   invocation to `upstream` (mixelpixx/Konnect), where a dispatch is a 403 and
+   whose green "E2E (real KiCAD)" runs are not this fork's. Always
+   `-R nevenfo/kicad-agentic-mcp --ref agentic/main`.
 
 ## Fichiers / zones utiles
 
@@ -117,7 +125,12 @@ Validation :
 
 ## NEXT ACTION
 
-Phase J has no open task, and the one residue left (blocage 2) needs a user
-decision about where the workflows live on `origin`, not more work. Ask for that
-decision and for what phase K is; the candidate on the table is the PCB benchmark
-coverage J.3 unblocked.
+Read run 32021813623's `live-ipc` diagnostics (`gh run view <id>
+-R nevenfo/kicad-agentic-mcp --log-failed`) and decide from the process state
+whether the API pipe is slow or unreachable on `windows-latest`. If it passes at
+180 s, J.3.3 closes; if pcbnew is alive with no window handle, record that a
+GitHub runner gives it no usable window station and mark the job `gated` rather
+than chasing it further.
+
+Phase K is still unnamed: the user asked for a priority other than the PCB
+benchmark coverage but has not said which.
