@@ -1152,18 +1152,29 @@ Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 ## L.1 — Known debt
 
 ### Tâches
-- [ ] L.1.1 E10 — `MutexGuard` held across `await` in `sch_components.rs`. A real
+- [x] L.1.1 E10 — `MutexGuard` held across `await` in `sch_components.rs`. A real
       correctness smell, not a lint preference; upstream CI never linted test code
-      so it never fired
+      so it never fired. Fixed by moving the three env-var test locks
+      (`SYMBOL_DIR_ENV`, `FOOTPRINT_DIR_ENV`, `CONFIG_HOME`) to `tokio::sync::Mutex`,
+      whose guard is `Send`, so the test futures survive a move to
+      `multi_thread` and no longer poison. `FOOTPRINT_DIR_ENV` had the same
+      defect hidden inside a wrapper struct clippy could not see through
 - [ ] L.1.2 The operation-library anti-drift test checks examples rather than
       parsing signatures. Strengthen it so a signature change cannot pass
 - [ ] L.1.3 The persistent symbol index is keyed on directory mtime and entry
       count: a symbol added inside an existing library directory without touching
       its mtime is not seen. Blast radius is a did-you-mean list, never a wrong
       resolution — revisit only if that changes
+- [ ] L.1.4 The gate is a gate nowhere: `ci.yml` triggers on `main` only, and
+      this fork's default *and* working branch is `agentic/main`, so no push has
+      ever run it. Its `clippy` step also omits `--all-targets` (which is why
+      L.1.1 never fired in CI) and its `fmt` step would fail today on ~38
+      pre-existing rustfmt hunks in 15 files. Trigger it on the branch that
+      exists, lint all targets, and clear the drift so `fmt` means something
 
 ### Validation
-`cargo clippy --workspace --locked --all-targets -- -D warnings` clean.
+`cargo clippy --workspace --locked --all-targets -- -D warnings` clean, and
+`.\gate.ps1` green end to end — including the `fmt` step, which L.1.4 unblocks.
 
 ## L.2 — Failure injection and concurrency
 

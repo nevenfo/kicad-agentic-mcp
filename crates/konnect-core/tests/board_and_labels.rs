@@ -314,11 +314,11 @@ async fn a_template_comes_back_with_values_and_an_unknown_id_does_not() {
     let h = Harness::new();
 
     let listed = h.json("list_template_categories", json!({})).await;
-    let id = listed
-        .to_string()
-        .contains("ldo_3v3")
-        .then_some("ldo_3v3")
-        .unwrap_or("usb_c_5v_sink");
+    let id = if listed.to_string().contains("ldo_3v3") {
+        "ldo_3v3"
+    } else {
+        "usb_c_5v_sink"
+    };
 
     let template = h
         .json("get_template", json!({ "template_id": id }))

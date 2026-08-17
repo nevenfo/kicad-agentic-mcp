@@ -982,10 +982,14 @@ mod lib_symbol_not_found_error_tests {
     /// process-global `KICAD10_SYMBOL_DIR` other test modules in this crate
     /// fixture, so this doesn't race them (progress.md: two independent
     /// locks around the same env var don't serialize anything).
-    fn write_device_r_fixture() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+    ///
+    /// `async` only because that lock is a `tokio` mutex (E10): every other
+    /// holder spans an `.await`, and the whole point is that they all queue on
+    /// the same one, so the two tests below take it the same way.
+    async fn write_device_r_fixture() -> (tempfile::TempDir, tokio::sync::MutexGuard<'static, ()>) {
         let guard = crate::tools::sch_components::tests::SYMBOL_DIR_ENV
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .await;
         let libdir = tempfile::tempdir().unwrap();
         let symdir = libdir.path().join("Device.kicad_symdir");
         std::fs::create_dir_all(&symdir).unwrap();
@@ -998,9 +1002,9 @@ mod lib_symbol_not_found_error_tests {
         (libdir, guard)
     }
 
-    #[test]
-    fn invented_library_error_carries_the_plausible_real_lib_id() {
-        let _fixture = write_device_r_fixture();
+    #[tokio::test]
+    async fn invented_library_error_carries_the_plausible_real_lib_id() {
+        let _fixture = write_device_r_fixture().await;
         let result = lib_symbol_not_found_error("Resistor:R");
         assert!(result.is_error);
 
@@ -1018,14 +1022,14 @@ mod lib_symbol_not_found_error_tests {
         assert!(candidates.len() <= 8, "candidate list must stay small");
     }
 
-    #[test]
-    fn error_kind_is_unchanged_by_adding_candidates() {
+    #[tokio::test]
+    async fn error_kind_is_unchanged_by_adding_candidates() {
         // Before this change the plain-text error fell back to
         // "handler_error" via `extract_error_kind`'s legacy branch. Carrying
         // structured candidates must not migrate it to a different kind —
         // anything already matching on "handler_error" for this failure must
         // keep working.
-        let _fixture = write_device_r_fixture();
+        let _fixture = write_device_r_fixture().await;
         let result = lib_symbol_not_found_error("Resistor:R");
         assert_eq!(
             extract_error_kind(&result).as_deref(),

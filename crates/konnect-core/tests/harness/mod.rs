@@ -105,7 +105,7 @@ pub fn body(result: &CallToolResult) -> Value {
         Some(ToolContent::Text { text }) => text.clone(),
         _ => panic!("the result carries no text"),
     };
-    serde_json::from_str(&text).unwrap_or_else(|_| Value::String(text))
+    serde_json::from_str(&text).unwrap_or(Value::String(text))
 }
 
 pub fn as_str(path: &Path) -> &str {

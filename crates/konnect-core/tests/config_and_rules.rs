@@ -15,20 +15,20 @@
 
 mod harness;
 
-use std::sync::{Mutex, MutexGuard};
-
 use harness::Harness;
 use serde_json::json;
 
 /// The environment is process-wide, so anything that redirects it takes this
-/// first. Poisoning is irrelevant here — a panicking test still leaves a usable
-/// lock for the next one.
-static CONFIG_HOME: Mutex<()> = Mutex::new(());
+/// first. A `tokio` mutex rather than `std`'s (E10): every holder below keeps
+/// the guard across the harness's `.await`s, and a `std::sync::MutexGuard`
+/// there is not `Send`. It also cannot be poisoned, so a panicking test still
+/// leaves a usable lock for the next one.
+static CONFIG_HOME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Point the user-config directory at a temporary directory and keep it there
 /// until the returned guard drops.
-fn redirected_user_config() -> (tempfile::TempDir, MutexGuard<'static, ()>) {
-    let guard = CONFIG_HOME.lock().unwrap_or_else(|e| e.into_inner());
+async fn redirected_user_config() -> (tempfile::TempDir, tokio::sync::MutexGuard<'static, ()>) {
+    let guard = CONFIG_HOME.lock().await;
     let dir = tempfile::tempdir().expect("tempdir");
     // `user_config_dir()` reads APPDATA on Windows and HOME elsewhere; setting
     // both keeps this test honest on either.
@@ -44,7 +44,7 @@ fn redirected_user_config() -> (tempfile::TempDir, MutexGuard<'static, ()>) {
 /// silently drop everything else under the same parent.
 #[tokio::test]
 async fn a_user_config_key_is_saved_and_read_back_without_losing_its_siblings() {
-    let (_home, _guard) = redirected_user_config();
+    let (_home, _guard) = redirected_user_config().await;
     let h = Harness::new();
 
     h.json(
@@ -76,7 +76,7 @@ async fn a_user_config_key_is_saved_and_read_back_without_losing_its_siblings() 
 /// what makes it shareable with the rest of a team.
 #[tokio::test]
 async fn project_config_is_written_beside_the_project() {
-    let (_home, _guard) = redirected_user_config();
+    let (_home, _guard) = redirected_user_config().await;
     let h = Harness::new();
     let project = harness::as_str(h.dir.path()).to_string();
 
@@ -111,7 +111,7 @@ async fn project_config_is_written_beside_the_project() {
 /// only reason both scopes exist.
 #[tokio::test]
 async fn the_project_scope_wins_in_the_effective_config() {
-    let (_home, _guard) = redirected_user_config();
+    let (_home, _guard) = redirected_user_config().await;
     let h = Harness::new();
     let project = harness::as_str(h.dir.path()).to_string();
 
@@ -149,7 +149,7 @@ async fn the_project_scope_wins_in_the_effective_config() {
 /// a caller reading only one of them would design against half the constraints.
 #[tokio::test]
 async fn design_rules_are_scoped_and_listed_together() {
-    let (_home, _guard) = redirected_user_config();
+    let (_home, _guard) = redirected_user_config().await;
     let h = Harness::new();
     let project = harness::as_str(h.dir.path()).to_string();
 

@@ -377,8 +377,10 @@ mod tests {
     fn local_agent_provider_is_opt_in_and_loopback_only() {
         assert!(Config::default().local_provider().unwrap().is_none());
 
-        let mut local = Config::default();
-        local.local_llm_base_url = Some("http://127.0.0.1:1234/v1".to_string());
+        let mut local = Config {
+            local_llm_base_url: Some("http://127.0.0.1:1234/v1".to_string()),
+            ..Config::default()
+        };
         assert!(local.local_provider().unwrap().is_some());
 
         local.local_llm_base_url = Some("https://models.example.com/v1".to_string());

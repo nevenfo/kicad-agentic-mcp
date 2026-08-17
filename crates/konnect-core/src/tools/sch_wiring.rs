@@ -2423,7 +2423,7 @@ mod power_symbol_tests {
         // process-global and cargo runs these on multiple threads.
         let _env = crate::tools::sch_components::tests::SYMBOL_DIR_ENV
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .await;
         let libdir = tempfile::tempdir().unwrap();
         let symdir = libdir.path().join("power.kicad_symdir");
         std::fs::create_dir_all(&symdir).unwrap();

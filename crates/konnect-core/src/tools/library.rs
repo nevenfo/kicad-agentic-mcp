@@ -2843,7 +2843,7 @@ mod tests {
 
     /// Serializes tests that set KICAD10_FOOTPRINT_DIR (process-wide env), the
     /// way `sch_components`' `SYMBOL_DIR_ENV` does for the symbol equivalent.
-    static FOOTPRINT_DIR_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static FOOTPRINT_DIR_ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     /// Point `KICAD10_FOOTPRINT_DIR` at `dir` for as long as the returned guard
     /// lives.
@@ -2852,8 +2852,14 @@ mod tests {
     /// their own tempdir would race. Holding the lock serializes them, and
     /// restoring the previous value keeps a developer's real KiCad environment
     /// intact for whatever runs next.
-    fn footprint_dir_env(dir: &Path) -> FootprintDirEnv {
-        let guard = FOOTPRINT_DIR_ENV.lock().unwrap_or_else(|e| e.into_inner());
+    ///
+    /// The guard travels inside `FootprintDirEnv`, which is why clippy never
+    /// reported this one as held across an `.await` — it is, in the async test
+    /// below, and a `std::sync` guard there would cost the future its `Send`
+    /// (E10). Hence a `tokio` mutex, and an `async` fixture even for the
+    /// callers that have nothing else to await.
+    async fn footprint_dir_env(dir: &Path) -> FootprintDirEnv {
+        let guard = FOOTPRINT_DIR_ENV.lock().await;
         // var_os, not var: a value this process cannot decode as UTF-8 is still
         // one the developer set, and `var` would report it as absent, leaving
         // the restore to silently delete it.
@@ -2866,7 +2872,7 @@ mod tests {
     }
 
     struct FootprintDirEnv {
-        _guard: std::sync::MutexGuard<'static, ()>,
+        _guard: tokio::sync::MutexGuard<'static, ()>,
         previous: Option<std::ffi::OsString>,
     }
 
@@ -2926,7 +2932,7 @@ mod tests {
         let shipped = tmp.path().join("share");
         let pretty = shipped.join("Resistor_SMD.pretty");
         std::fs::create_dir_all(&pretty).unwrap();
-        let _env = footprint_dir_env(&shipped);
+        let _env = footprint_dir_env(&shipped).await;
 
         let nested = tmp.path().join("template-fp-lib-table");
         std::fs::write(
@@ -3185,15 +3191,15 @@ mod tests {
         assert!(resolve_footprint_path("MyProjLib:Foo", None).is_err());
     }
 
-    #[test]
-    fn an_unregistered_nickname_falls_back_to_the_conventional_pretty_dir() {
+    #[tokio::test]
+    async fn an_unregistered_nickname_falls_back_to_the_conventional_pretty_dir() {
         // A stock install whose global table is missing or unreadable can
         // still serve Resistor_SMD:R_0402 from <libdir>/Resistor_SMD.pretty.
         let tmp = tempfile::tempdir().unwrap();
         let pretty = tmp.path().join("Fallback_Lib.pretty");
         std::fs::create_dir_all(&pretty).unwrap();
         std::fs::write(pretty.join("R_1.kicad_mod"), "(footprint \"R_1\")").unwrap();
-        let _env = footprint_dir_env(tmp.path());
+        let _env = footprint_dir_env(tmp.path()).await;
 
         assert_eq!(
             resolve_footprint_path("Fallback_Lib:R_1", None).unwrap(),
@@ -3201,10 +3207,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_missing_library_error_names_the_nickname_and_attempted_locations() {
+    #[tokio::test]
+    async fn a_missing_library_error_names_the_nickname_and_attempted_locations() {
         let tmp = tempfile::tempdir().unwrap();
-        let _env = footprint_dir_env(tmp.path());
+        let _env = footprint_dir_env(tmp.path()).await;
         let err = resolve_footprint_path("NoSuchLib:R_1", Some(tmp.path()))
             .expect_err("an unknown nickname must not resolve");
         assert!(err.contains("NoSuchLib"), "must name the library: {err}");
@@ -3218,12 +3224,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn expand_lib_uri_expands_a_kicad_env_var() {
+    #[tokio::test]
+    async fn expand_lib_uri_expands_a_kicad_env_var() {
         let tmp = tempfile::tempdir().unwrap();
         let pretty = tmp.path().join("Resistor_SMD.pretty");
         std::fs::create_dir_all(&pretty).unwrap();
-        let _env = footprint_dir_env(tmp.path());
+        let _env = footprint_dir_env(tmp.path()).await;
 
         assert_eq!(
             expand_lib_uri("${KICAD10_FOOTPRINT_DIR}/Resistor_SMD.pretty", None),

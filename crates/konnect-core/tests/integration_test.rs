@@ -80,12 +80,21 @@ fn pcb_pad_board_position() {
     let pads = r1.find_all("pad");
     let pad1_at = pads[0].find("at").unwrap();
     let local_x = pad1_at.get_f64(1).unwrap();
+    let local_y = pad1_at.get_f64(2).unwrap();
 
     let board_x = fp_x + local_x;
+    let board_y = fp_y + local_y;
     assert!(
         (board_x - 99.5).abs() < 0.01,
         "R1 pad 1 board X should be 99.5, got {}",
         board_x
+    );
+    // Both axes, or "board position" is half-checked: a transform that dropped
+    // the footprint's own y would still pass on x alone.
+    assert!(
+        (board_y - 50.0).abs() < 0.01,
+        "R1 pad 1 board Y should be 50.0, got {}",
+        board_y
     );
 }
 

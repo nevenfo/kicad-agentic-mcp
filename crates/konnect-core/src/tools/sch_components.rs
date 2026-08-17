@@ -1452,13 +1452,19 @@ pub(crate) mod tests {
     /// `pub(crate)` so other test modules in this crate that also fixture a
     /// symbol dir (e.g. `tools::lib_symbol_not_found_error_tests`) serialize
     /// against the same lock instead of racing on a second, independent one.
-    pub(crate) static SYMBOL_DIR_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    ///
+    /// A `tokio` mutex rather than `std`'s (E10): every holder below spans an
+    /// `.await`, and a `std::sync::MutexGuard` held across one is not `Send`,
+    /// so the test future stops being `Send` and could not survive a move to
+    /// `#[tokio::test(flavor = "multi_thread")]`. It also cannot be poisoned,
+    /// so one panicking test no longer takes the rest of the file with it.
+    pub(crate) static SYMBOL_DIR_ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     /// A stub symbol library so component adds resolve without an installed
     /// KiCAD (CI has none): Device:R and Device:C_Polarized in the KiCAD 10
     /// symdir layout. Returns (tempdir guard, env lock).
-    fn stub_symbol_dir() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
-        let guard = SYMBOL_DIR_ENV.lock().unwrap_or_else(|e| e.into_inner());
+    async fn stub_symbol_dir() -> (tempfile::TempDir, tokio::sync::MutexGuard<'static, ()>) {
+        let guard = SYMBOL_DIR_ENV.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let symdir = dir.path().join("Device.kicad_symdir");
         std::fs::create_dir_all(&symdir).unwrap();
@@ -1519,7 +1525,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn add_component_writes_eeschema_style_instance_path() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("amp.kicad_sch");
         let ctx = test_ctx();
@@ -1557,7 +1563,7 @@ pub(crate) mod tests {
     /// the caller buys a whole extra model call for no new information.
     #[tokio::test]
     async fn add_component_canonicalizes_an_invented_library_and_says_so() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("canon.kicad_sch");
         let ctx = test_ctx();
@@ -1597,7 +1603,7 @@ pub(crate) mod tests {
     /// list rather than landing on whatever ranked first.
     #[tokio::test]
     async fn add_component_refuses_to_guess_an_ambiguous_lib_id() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("noguess.kicad_sch");
         let ctx = test_ctx();
@@ -1626,7 +1632,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn add_component_writes_requested_unit() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("multi.kicad_sch");
         let ctx = test_ctx();
@@ -1667,7 +1673,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn add_component_rejects_out_of_range_unit() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("units.kicad_sch");
         let ctx = test_ctx();
@@ -1725,7 +1731,7 @@ pub(crate) mod tests {
     async fn pin_locations_are_unit_aware() {
         // The #35 repro: an LM2904-style dual op-amp placed as unit 1 and as
         // unit 2 must report DISJOINT pin sets, not all units superimposed.
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("dual.kicad_sch");
         let ctx = test_ctx();
@@ -1857,7 +1863,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn replace_component_sets_validated_unit() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("swap.kicad_sch");
         let ctx = test_ctx();
@@ -1923,7 +1929,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn add_component_repairs_legacy_file_without_root_uuid() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("legacy.kicad_sch");
         // File shape produced by Konnect before root UUIDs were written.
@@ -1955,7 +1961,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn add_component_with_nonexistent_lib_id_errors_with_suggestion() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("ghost.kicad_sch");
         let ctx = test_ctx();
@@ -1991,7 +1997,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn add_component_with_unknown_library_says_so() {
-        let (_symdir, _env) = stub_symbol_dir();
+        let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nolib.kicad_sch");
         let ctx = test_ctx();
