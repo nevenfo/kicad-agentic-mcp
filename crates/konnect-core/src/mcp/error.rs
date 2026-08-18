@@ -89,6 +89,14 @@ pub enum ToolErrorKind {
     UnknownTool { tool: String },
     /// A required argument is missing or malformed.
     InvalidArgument { field: String, reason: String },
+    /// KiCAD exposes no API for this capability, so the step has to be taken
+    /// by hand in the GUI (plan.md D.6.3). `step` is never prose written at
+    /// the call site: it comes from the capability's own
+    /// [`crate::capability::Limitation::GuiOnlyNoApi`] reason, the same string
+    /// `docs/capability-matrix.md` renders, so the error and the matrix cannot
+    /// drift. Not transient in any sense a retry helps with — the API does not
+    /// exist, and the only way forward is a human in the editor.
+    ManualStepRequired { tool: String, step: String },
     /// The process is running under an [`kam_state::OperatingMode`] that
     /// refuses this tool's [`crate::capability::Effect`] (plan.md D.8). A
     /// retry of the identical call can never help — the mode is fixed for
@@ -204,6 +212,7 @@ impl ToolErrorKind {
             Self::ToolsetNotLoaded { .. } => "toolset_not_loaded",
             Self::UnknownTool { .. } => "unknown_tool",
             Self::InvalidArgument { .. } => "invalid_argument",
+            Self::ManualStepRequired { .. } => "manual_step_required",
             Self::WriteRefusedByMode { .. } => "write_refused_by_mode",
             Self::FileNotFound { .. } => "file_not_found",
             Self::NotFound { .. } => "not_found",
@@ -230,6 +239,7 @@ impl ToolErrorKind {
             | Self::InvalidArgument { .. }
             | Self::FileNotFound { .. }
             | Self::NotFound { .. }
+            | Self::ManualStepRequired { .. }
             | Self::WriteRefusedByMode { .. } => TransientClass::None,
             Self::Io { code, .. } => match *code {
                 "would_block" | "interrupted" | "resource_busy" => TransientClass::Lock,
@@ -422,6 +432,14 @@ mod tests {
             ToolErrorKind::InvalidArgument {
                 field: "f".into(),
                 reason: "r".into(),
+            },
+            ToolErrorKind::ManualStepRequired {
+                // Deliberately not a real MANIFEST tool name: the coverage
+                // scanner reads test sources for tool names, and a fixture
+                // here would credit that tool with a proof it does not have
+                // (D45 — a tool is never proved by its own error).
+                tool: "a_gui_only_tool".into(),
+                step: "do it in the editor".into(),
             },
             ToolErrorKind::WriteRefusedByMode {
                 tool: "add_component".into(),

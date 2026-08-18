@@ -605,6 +605,28 @@ pub fn is_advisory_tool(tool: &str) -> bool {
         .any(|c| c.tool == tool && c.limitation == ADVISORY)
 }
 
+/// The exact GUI step for `tool`, if [`MANIFEST`] carries it as
+/// [`Limitation::GuiOnlyNoApi`] — the single source of truth for what KiCAD
+/// exposes only through its own interface (D.6.3).
+///
+/// Callers building a `MANUAL_STEP_REQUIRED` message must go through this
+/// rather than writing their own prose: a hand-written GUI-step description
+/// drifts from the manifest the moment either one changes and no test would
+/// notice. `None` means `tool` has no `GuiOnlyNoApi` entry — say so, do not
+/// invent a step.
+#[must_use]
+pub fn manual_step_for(tool: &str) -> Option<&'static str> {
+    MANIFEST.iter().find_map(|capability| {
+        if capability.tool != tool {
+            return None;
+        }
+        match capability.limitation {
+            Limitation::GuiOnlyNoApi(reason) => Some(reason),
+            _ => None,
+        }
+    })
+}
+
 /// Caveat appended to an `ADVISORY` tool's MCP `description`, read on every
 /// `tools/list` an agent sees — unlike [`ADVISORY`]'s longer reason string,
 /// which is archival prose read once when someone opens the matrix. Kept to
@@ -1060,6 +1082,26 @@ mod tests {
             "tools reaching the Write fail-safe instead of a rule: {unclassified:?} — \
              add a verb to VERB_EFFECTS or a named entry to TOOL_EFFECTS"
         );
+    }
+
+    /// D.6.3: `manual_step_for("autoroute")` must return the exact reason
+    /// text carried by `autoroute`'s `Limitation::GuiOnlyNoApi` entry —
+    /// `handle_autoroute`'s `MANUAL_STEP_REQUIRED` message is built from
+    /// nothing else, so drift here is drift a caller would see.
+    #[test]
+    fn manual_step_for_reads_the_gui_only_reason() {
+        let step = manual_step_for("autoroute").expect("autoroute is GuiOnlyNoApi in MANIFEST");
+        assert!(
+            step.contains("Specctra"),
+            "expected the Freerouting DSN/SES reason, got: {step}"
+        );
+    }
+
+    /// A tool with no `GuiOnlyNoApi` entry has no manual step to report —
+    /// `None`, never a made-up sentence.
+    #[test]
+    fn manual_step_for_is_none_for_a_supported_tool() {
+        assert_eq!(manual_step_for("run_drc"), None);
     }
 
     /// An exception that names no tool is a claim about a handler nobody can

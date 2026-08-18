@@ -461,21 +461,54 @@ first, `unknown_handle` for an id never issued. A failed capture emits nothing.
 Gate green including the benchmark; the +18 tokens/task it costs are recorded in
 `docs/benchmark.md` and in the V1 criterion above.
 
-## D.6 — Error-catalog completeness, retries, recovery policy — TODO
+## D.6 — Error-catalog completeness, retries, recovery policy — PARTIAL (D.6.1 open)
 
 ### Dépendances
 D.3.
 
 ### Tâches
-- [ ] D.6.1 Cover the remaining error paths with catalogued codes
-- [ ] D.6.2 Retry policy driven by `TransientClass` (`state` means reconcile
-      first — a blind retry is useless)
-- [ ] D.6.3 `FailureMode` on verdicts (`design` / `environment` / `configuration`
-      / `manual_review`) + `MANUAL_STEP_REQUIRED` naming the exact GUI step — a
-      broken environment and a broken design must drive opposite agent loops
+- [ ] D.6.1 Cover the remaining error paths with catalogued codes. **152 sites**
+      still return plain text, now counted and ranked by D.6.4 rather than
+      estimated: `sch_hierarchy.rs` 28, `pcb_components.rs` 25, `meta_tools.rs`
+      18, `library.rs` 16, `sch_wiring.rs` 15. Convert by zone, lowering the
+      ceiling each time; a big-bang conversion of 152 hand-written messages
+      would be unreviewable
+- [x] D.6.2 Retry policy driven by `TransientClass` (`state` means reconcile
+      first — a blind retry is useless). `mcp::retry::decide` is the single
+      rule; `State` and `None` return no retry *and no wait*, so a call site
+      cannot ask the policy for a delay it should not honour. The server
+      deliberately does not retry on the caller's behalf — what was missing was
+      one named rule, not a loop. Audited every retry site in the crate: the
+      only real one is `integration.rs::get_with_backoff` (HTTP), which now
+      consults the policy before looping; nothing retried a forbidden class
+- [x] D.6.3 `FailureMode` on verdicts (`design` / `environment` /
+      `configuration` / `manual_review`) + `MANUAL_STEP_REQUIRED` naming the
+      exact GUI step — a broken environment and a broken design must drive
+      opposite agent loops. **`COULD_NOT_RUN` can never be `design`**, and not
+      by convention: the private constructor for that path has no `Design`
+      variant to hand, which is INV1's rule expressed in the type system. An
+      agent reading `design` on a broken environment would go repair a
+      schematic that has nothing wrong with it. `MANUAL_STEP_REQUIRED` is a
+      catalogued `ToolErrorKind::ManualStepRequired { tool, step }` — a code an
+      agent loop can match on, not a prefix in prose — and `step` is read from
+      the capability's own `Limitation::GuiOnlyNoApi` reason, the same string
+      the matrix renders, so the two cannot drift. `manual_review` is declared
+      and reserved: nothing in `verify()` has grounds to produce it today, and
+      the code says so rather than leaving a reader to guess
+- [x] D.6.4 Make the debt visible and non-regressive instead of estimated.
+      `tests/error_catalog_debt.rs` scans for plain-text error sites, ranks
+      them by file, and fails in **both** directions: a new uncatalogued site
+      is refused, and a drop demands the ceiling come down — which is how the
+      ceiling went 153 → 152 in this very lot
 
 ### Validation
-Failure-injection cases resolve to the right class and the right agent loop.
+Failure-injection cases resolve to the right class and the right agent loop:
+missing validator → `environment`, unsupported document type →
+`configuration`, real findings → `design`, `PASS` → no mode at all, plus an
+exhaustive test that no `could_not_run` path can convert to `design`. Retry
+policy is table-driven over all five `TransientClass` values. Gate green
+including the benchmark; gateway tokens 2 204 → 2 207, inside the run-to-run
+noise (the `toolsets` mode moved −9 with nothing of its own changed).
 
 ## D.7 — Event journal / deltas — TODO
 

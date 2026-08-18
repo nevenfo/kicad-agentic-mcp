@@ -2,38 +2,54 @@
 
 ## Phase actuelle
 
-D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5 and D.8 are
-DONE; D.4, D.6, D.7 and D.9 remain, and D.9 is gated by the same GUI-session
-question as J.3. K.1.1 is the last dependency of phase M (H.6 and H.7 are DONE)
-and stays blocked until 2026-08-20. Phase F is DONE except F.5.7, which needs a
-decision before it is worth measuring.
+D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.8 are
+DONE and D.6 is PARTIAL (only D.6.1 left). D.4 and D.7 remain untouched; D.9 is
+gated by the same GUI-session question as J.3. K.1.1 is the last dependency of
+phase M (H.6 and H.7 are DONE) and stays blocked until 2026-08-20. Phase F is
+DONE except F.5.7, which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.6 — error-catalog completeness, retries, recovery policy. Not started.
+D.6.1 — convert the remaining plain-text error sites to catalogued codes, by
+zone. 152 sites, ranked by `tests/error_catalog_debt.rs`: `sch_hierarchy.rs` 28,
+`pcb_components.rs` 25, `meta_tools.rs` 18, `library.rs` 16, `sch_wiring.rs` 15.
+Not started.
 
 ## Dernière tâche validée
 
-D.5 — snapshots as first-class handles. A batch that captures now emits
-`kicad://snapshot/N`, resolvable over `resources/read`, carrying a manifest
-(roots, file count, per-file path relative to its root + revision + size), never
-the before-images. Rollback stays internal (D12): this is an audit artefact
-(INV3), not a capability.
+D.6.2 / D.6.3 / D.6.4 — retry policy, failure modes, and the debt instrument.
+`mcp::retry::decide` is the single retry rule and `State`/`None` yield neither a
+retry nor a wait. `FailureMode` is on verdicts, with `COULD_NOT_RUN` unable to
+be `design` because the constructor for that path has no such variant to hand
+(INV1 in the type system). `MANUAL_STEP_REQUIRED` is a catalogued
+`ToolErrorKind::ManualStepRequired { tool, step }` whose `step` comes from the
+capability's own `Limitation::GuiOnlyNoApi` reason.
 
 Validation :
-- `gate.ps1 -Bench` PASS end to end, twice today (D.8 then D.5)
-- round-trip proven through the stdio protocol, not against the store directly
-- eviction proven on the `snapshot` kind itself, not only on the store's `diff`
-  fixture: `evidence_expired` for an evicted handle, `unknown_handle` for an id
-  never issued
-- cost measured and recorded, not absorbed: **+18 external tokens/task**
-  (gateway 2 186 -> 2 204), so the ≤ 2 000 V1 criterion is now missed by ~204.
-  D.8 cost nothing measurable, which is what a `Write` default has to mean
-- CI green on `agentic/main` for D.8 (run 32124390645); D.5 pending at the time
-  of writing
+- `gate.ps1 -Bench` PASS end to end
+- gateway tokens 2 204 -> 2 207, inside run-to-run noise (`toolsets` moved -9
+  with nothing of its own changed)
+- failure injection: missing validator -> `environment`, unsupported document ->
+  `configuration`, real findings -> `design`, `PASS` -> no mode
+- the debt instrument proved itself by failing downward: cataloguing
+  `MANUAL_STEP_REQUIRED` took the ceiling 153 -> 152
+- CI green on `agentic/main` for D.8 and D.5; D.6 pending at the time of writing
 
 ## Décisions actives
 
+- D73 — a failure mode an agent reads decides which loop it runs, so
+  `COULD_NOT_RUN` is barred from `design` structurally, not by convention: the
+  private constructor for that path has no `Design` variant available. INV1
+  already said a validator that could not run is a failure rather than zero
+  findings; this is that rule where the compiler can enforce it. The paired
+  rule: `MANUAL_STEP_REQUIRED` is a catalogued kind, never a prefix in prose,
+  and its `step` text is read from the capability's `Limitation::GuiOnlyNoApi`
+  reason so the error and `docs/capability-matrix.md` cannot drift.
+- D74 — a test fixture must never name a real MANIFEST tool. The coverage
+  scanner reads tool names out of test sources, so `tool: "autoroute"` in an
+  error fixture credited `autoroute` with a proof pointing at `mcp/error.rs` —
+  a tool proved by its own error, which is exactly what D45 forbids. Fixtures
+  name something fictional.
 - D72 — a snapshot handle carries a *manifest*, never the before-images: roots,
   file count, and per file its path relative to its root, its revision and its
   size. Two reasons, and the second is the load-bearing one: the bytes would
@@ -219,15 +235,15 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Implement D.6 — error-catalog completeness, retries, recovery policy: cover the
-remaining error paths with catalogued codes; drive retry policy from
-`TransientClass` (`state` means reconcile first — a blind retry is useless); add
-`FailureMode` to verdicts (`design` / `environment` / `configuration` /
-`manual_review`) plus `MANUAL_STEP_REQUIRED` naming the exact GUI step, because
-a broken environment and a broken design must drive opposite agent loops.
-Anchors: `crates/konnect-core/src/mcp/error.rs` (`ToolErrorKind`,
-`TransientClass`, `retry_after_ms()`). Validate with failure-injection cases
-resolving to the right class and the right loop, then `.\gate.ps1`.
+D.6.1, one zone at a time, starting with `crates/konnect-core/src/tools/
+sch_hierarchy.rs` (28 sites, the worst file). For each: replace
+`CallToolResult::error(text)` with `error_kind(ToolErrorKind::…, text)`, reusing
+an existing kind wherever one fits and adding one only when no existing kind
+carries the meaning; then lower `KAM_ERROR_CATALOG_DEBT_CEILING` in
+`crates/konnect-core/tests/error_catalog_debt.rs` by exactly what the zone
+removed, and run `.\gate.ps1`. Do not convert all 152 in one pass — 152
+hand-written messages re-classified at once is unreviewable, which is why D.6.1
+is scoped by zone.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

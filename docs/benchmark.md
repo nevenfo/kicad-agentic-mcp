@@ -1077,6 +1077,12 @@ capture now leaves an addressable manifest, which is what INV3 asks of every
 mutation, and the memory bound stays where it was because the manifest holds
 revisions and sizes rather than the before-images themselves.
 
+D.6's three lots (retry policy, failure modes, the debt instrument) move the
+gateway figure to **2 207**, which is inside the run-to-run noise rather than a
+cost: the `toolsets` mode moved −9 in the same pair of runs with nothing of its
+own changed. `failure_mode` serialises only on a verdict that is not `PASS`, and
+the golden suite passes, so nothing on the measured path carries it.
+
 The second-order cost is not tokens but retention: a capturing batch now stores
 two artefacts instead of one, so the evidence store's 64 entries span half as
 many batches. The byte budget is not the binding constraint — a 400-file

@@ -334,7 +334,7 @@ Not covered by any tool:
 | `query_traces` | `pcb_routing` | `ipc` | `read` | NOT_TESTED | — | — |  |
 | `modify_trace` | `pcb_routing` | `ipc` | `write` | NOT_TESTED | — | — |  |
 | `route_differential_pair` | `pcb_routing` | `ipc` | `write` | NOT_TESTED | — | — | one straight segment per net, offset perpendicular by (gap + width) / 2: no length matching, no skew budget, no impedance target and no vias |
-| `autoroute` | `integration` | `external` | `write` | GUI_ONLY_NO_API | — | — | kicad-cli 10 dropped Specctra DSN export and SES import, so the Freerouting round trip exists only in the PCB editor; the handler always fails and names the GUI steps |
+| `autoroute` | `integration` | `external` | `write` | GUI_ONLY_NO_API | test | `crates/konnect-core/src/tools/integration.rs` | kicad-cli 10 dropped Specctra DSN export and SES import, so the Freerouting round trip exists only in the PCB editor; the handler always fails and names the GUI steps |
 | `check_freerouting` | `integration` | `external` | `read` | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
 | `copy_routing_pattern` | `verification` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
 

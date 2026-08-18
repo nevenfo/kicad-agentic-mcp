@@ -14,7 +14,9 @@
 //! lookups within a session. Responses carry a `"cached"` field so callers
 //! can see whether a given result came from cache.
 
+use crate::mcp::error::TransientClass;
 use crate::mcp::protocol::CallToolResult;
+use crate::mcp::retry;
 use crate::tool;
 use crate::tools::{get_path, require_str, ToolContext, ToolDef};
 use crate::try_arg;
@@ -252,11 +254,23 @@ fn resolve_db_path(args: &serde_json::Value, ctx: &ToolContext) -> PathBuf {
 const RETRY_MAX_ATTEMPTS: u32 = 3;
 const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
-/// Whether an HTTP status is worth retrying. 429 (rate limited) and 5xx
-/// (server-side) are transient; other 4xx (404, 401, ...) are not — retrying
-/// a "not found" or "unauthorized" wastes time and won't change the outcome.
+/// Classifies an HTTP status the way [`crate::mcp::retry`] wants it: 429
+/// (rate limited) and 5xx (server-side) are `Network` — the same call may
+/// work once the far side recovers. Other 4xx (404, 401, ...) are `None` —
+/// the request itself is wrong, and retrying a "not found" or "unauthorized"
+/// wastes time without changing the outcome.
+fn classify_status(status: reqwest::StatusCode) -> TransientClass {
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+        TransientClass::Network
+    } else {
+        TransientClass::None
+    }
+}
+
+/// Whether an HTTP status is worth retrying, per the shared [`retry::decide`]
+/// policy rather than a rule reimplemented here.
 fn is_transient_status(status: reqwest::StatusCode) -> bool {
-    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+    retry::decide(classify_status(status)).should_retry
 }
 
 /// Delay before the next attempt, given the attempt number just made (1-based).
@@ -288,7 +302,12 @@ async fn get_with_backoff(
                 );
             }
             Err(e) => {
-                if attempt >= RETRY_MAX_ATTEMPTS {
+                let class = if e.is_timeout() {
+                    TransientClass::Timeout
+                } else {
+                    TransientClass::Network
+                };
+                if !retry::decide(class).should_retry || attempt >= RETRY_MAX_ATTEMPTS {
                     return Err(e.into());
                 }
                 tracing::warn!(
@@ -1086,10 +1105,25 @@ async fn handle_autoroute(
     // ponytail: Freerouting workflow requires Specctra DSN export + SES import,
     // both of which were removed from kicad-cli in KiCAD 10. The tool stays in the
     // registry so callers get a clear error; remove entirely once IPC round-trip lands.
-    Ok(CallToolResult::error(
-        "Autoroute via Freerouting is not available: kicad-cli in KiCAD 10 no longer \
-         supports Specctra DSN export or SES import. Use KiCAD's PCB editor \
-         (File > Export > Specctra DSN, then File > Import > Specctra Session) manually.",
+    //
+    // The GUI step is not written out here — `crate::capability::manual_step_for`
+    // is the only source of truth for it (D.6.3), so the message is built from
+    // the same `Limitation::GuiOnlyNoApi` reason `docs/capability-matrix.md`
+    // renders, and the two cannot drift apart.
+    let step = crate::capability::manual_step_for("autoroute").unwrap_or(
+        "kicad-cli no longer supports the Specctra DSN/SES round trip this tool needs; \
+         no GUI step is on record for it",
+    );
+    // Catalogued rather than a `MANUAL_STEP_REQUIRED:` prefix in free text: an
+    // agent loop matches on `kind`, and E9 wants a stable code beside a message
+    // that may be reworded. `transient` is `none`, so a caller reading the
+    // structured half already knows a retry is pointless.
+    Ok(CallToolResult::error_kind(
+        crate::mcp::error::ToolErrorKind::ManualStepRequired {
+            tool: "autoroute".to_string(),
+            step: step.to_string(),
+        },
+        format!("MANUAL_STEP_REQUIRED: {step}"),
     ))
 }
 
@@ -1258,6 +1292,49 @@ mod retry_backoff_tests {
         // attempt is 1-based in normal use, but the saturating_sub guards
         // against an accidental 0 causing an underflow panic.
         assert_eq!(backoff_delay(0), std::time::Duration::from_millis(300));
+    }
+}
+
+#[cfg(test)]
+mod autoroute_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    /// D.6.3: the `MANUAL_STEP_REQUIRED` text must be the exact reason
+    /// carried by `Limitation::GuiOnlyNoApi` for `autoroute` — sourced from
+    /// `crate::capability::manual_step_for`, never hand-written prose that
+    /// can drift from `docs/capability-matrix.md`.
+    #[tokio::test]
+    async fn autoroute_names_the_manual_step_from_the_manifest() {
+        let ctx = ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        );
+        let result = handle_autoroute(&json!({}), &ctx).await.unwrap();
+        let text = match &result.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            other => panic!("expected text content, got {other:?}"),
+        };
+        assert!(result.is_error);
+        let step = crate::capability::manual_step_for("autoroute").unwrap();
+        // Structured half: the code an agent loop matches on, and the fact
+        // that no retry can help. Free text alone would make both a guess.
+        let body: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(body["error"]["kind"], json!("manual_step_required"));
+        assert_eq!(body["error"]["tool"], json!("autoroute"));
+        assert_eq!(body["error"]["step"], json!(step));
+        assert_eq!(body["error"]["transient"], json!("none"));
+        assert!(body["message"].as_str().unwrap().contains(step));
     }
 }
 
