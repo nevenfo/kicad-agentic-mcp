@@ -16,22 +16,34 @@ deserves its own diff.
 
 ## Dernière tâche validée
 
-D.6.1 zone 3 — `library.rs` + `sch_wiring.rs`. 22 of 31 sites catalogued,
-ceiling 104 -> 82, no new kind. The 9 left in plain text all give the same
-reason, which is the finding: a helper stringified the error before the call
-site could classify it. That is now D.6.5's scope, widened past `with_ipc` to
-`read_lib_table_checked`, `resolve_footprint_path`, `resolve_symbol_lib_path`
-and the batch paths whose `errors` string mixes "not found" with "not
-parseable".
+D.6.5 — the boundaries stop answering in `String`, in two commits, ceiling
+82 -> 77 -> 71. The IPC half is `tools/ipc_boundary.rs` (one typed `with_ipc`,
+one `ipc_error_result`, replacing four byte-identical copies); the library half
+is `LibTableUnreadable`, `FootprintPathError` and `SymbolLibPathError`. One
+behavioural change, deliberately: `resolve_symbol_lib_path` returned `None`
+both for a nickname nobody registered and for one whose URI does not expand,
+so its message had to name both and the caller could act on neither. Its search
+order is unchanged; only the failure now says which happened.
+
+D.6.1's remaining 71 sites are ordinary zones again — the signature work that
+capped them is done.
 
 Validation :
-- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 200 tokens,
+- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 204 tokens,
   0 safety violations
-- the debt test enforces 82 in both directions
-- CI green on `agentic/main` through D.6.1 zone 2
+- the debt test enforces 71 in both directions
 
 ## Décisions actives
 
+- D76 — a typed boundary error carries the *reason*, and one place turns it
+  into a `CallToolResult`. Two shapes proved this out: `IpcFailure` (the caller
+  can only ask "may I edit the file behind KiCAD") and `FootprintPathError`
+  (three of its four variants are `NotFound`, told apart by `item_kind`, which
+  is what the caller acts on). Corollary, from the one site that kept its
+  prose: `kind()` may return `Option<ToolErrorKind>`, and a `None` is a
+  statement — a malformed `.kicad_mod` is not IO, not a missing item and not a
+  malformed argument, and a kind invented for a single site would be worse than
+  the prose.
 - D75 — a catch-all error kind is debt, not a catalogue entry, and the debt
   scanner counts it as such. Converting plain text into
   `ToolErrorKind::HandlerError` lowers the count while telling the caller
@@ -40,9 +52,7 @@ Validation :
   `transient` is worse than none, so a site whose cause cannot be told apart
   stays plain text with the reason written at the site. `from_anyhow` is not
   debt: it classifies from the error chain at runtime and reaches the catch-all
-  only when the chain carries nothing better. The real unblock for the IPC
-  sites is typing `with_ipc` (D.6.5), a signature problem rather than a
-  taxonomy one.
+  only when the chain carries nothing better.
 - D73 — a failure mode an agent reads decides which loop it runs, so
   `COULD_NOT_RUN` is barred from `design` structurally, not by convention: the
   private constructor for that path has no `Design` variant available. INV1
@@ -224,6 +234,9 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
   single source for both the dispatch `match` and `META_TOOL_NAMES`
 - `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits` and
   the block finders whose byte offsets feed it
+- `crates/konnect-core/src/tools/ipc_boundary.rs` — the only crossing point
+  between a handler and KiCAD's IPC API: `with_ipc` (typed) and
+  `ipc_error_result` (catalogued). No handler re-derives either
 - `crates/konnect-core/src/mcp/error.rs` — `TransientClass`, `retry_after_ms()`,
   `ToolErrorKind::transient_class()`
 - `crates/konnect-core/tests/concurrent_gui_edit.rs`, `tests/lock_recovery.rs` —
@@ -241,25 +254,16 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.6.5** — stop throwing the error type away at the boundary: `with_ipc`
-(transport / board mismatch / business rejection), `read_lib_table_checked` (an
-`io::Error` folded into a `String`), `resolve_footprint_path` and
-`resolve_symbol_lib_path` (missing file / unresolved URI / absent item), and the
-batch paths that join heterogeneous failures into one `errors` message. Give
-each an error type that survives the return, then catalogue the call sites
-downstream and lower `KAM_ERROR_CATALOG_DEBT_CEILING` accordingly.
+**D.6.1 zone 4** — `crates/konnect-core/src/router/meta_tools.rs`, 18 sites.
+Classify each with an existing `ToolErrorKind` (the three zones done so far
+needed no new kind), never `HandlerError` (D75); a site whose cause cannot be
+told apart keeps its prose and gains a comment saying why. Then lower
+`KAM_ERROR_CATALOG_DEBT_CEILING` (71) to the total the debt test prints.
+Give this file its own diff: it carries the gateway and was touched by D.5 and
+D.8. Validate with `.\gate.ps1`.
 
-Do this before more D.6.1 zones: the remaining 82 sites are not 82 independent
-judgements, they are these few signatures plus everything downstream of them.
-Warning before starting: existing tests assert on those functions' exact
-messages, so a signature change is not mechanical — read them first. Validate
-with `.\gate.ps1`.
-
-After D.6.5, the remaining D.6.1 zones in order: `router/meta_tools.rs` (18 —
-carries the gateway, touched by D.5 and D.8, so give it its own diff),
-`sch_components.rs` (13), `integration.rs` (12), then the smaller files. Never
-reach for `HandlerError` (D75); a site whose cause cannot be told apart keeps
-its prose and gains a comment saying why.
+After it, the remaining zones in order: `sch_components.rs` (13),
+`integration.rs` (12), then the smaller files.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

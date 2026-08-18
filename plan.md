@@ -470,7 +470,7 @@ D.3.
 - [ ] D.6.1 Cover the remaining error paths with catalogued codes, by zone,
       lowering D.6.4's ceiling each time. A big-bang conversion of 150-odd
       hand-written messages would be unreviewable. Ranked by D.6.4 rather than
-      estimated; **82 sites left**.
+      estimated; **71 sites left**.
       - [x] `sch_hierarchy.rs` — 28/28, ceiling 152 → 124. No new kind was
             needed: `InvalidArgument` ×14, `NotFound` ×12, `FileNotFound` ×5.
             That is the useful finding for the rest of D.6.1 — the work is
@@ -506,16 +506,34 @@ D.3.
       - [ ] `meta_tools.rs` — 18
       - [ ] `sch_components.rs` — 13, `integration.rs` — 12, then the smaller
             files
-      - [ ] D.6.5 Stop throwing the type away at the boundary. `with_ipc`
-            (transport / board mismatch / business rejection),
-            `read_lib_table_checked` (an `io::Error` folded into a `String`),
-            `resolve_footprint_path` and `resolve_symbol_lib_path` (missing
-            file / unresolved URI / absent item), and the batch paths that
-            join heterogeneous failures into one message. **This is what caps
-            D.6.1**: what remains is not N independent sites to classify, it is
-            a handful of signatures and everything downstream of them. A
-            signature problem, not a taxonomy one — no choice of `kind` fixes
-            it, which is why those sites keep their prose and say so
+      - [x] D.6.5 Stop throwing the type away at the boundary — done in two
+            commits, ceiling 82 → 77 → 71.
+            - The IPC half: four toolsets carried a byte-identical `with_ipc`
+              returning `Result<T, String>`. It is now typed and catalogued
+              once in `tools/ipc_boundary.rs`, and upstream the markers carry
+              what the message used to — `TransportUnreachable` splits into
+              `NotConfigured` / `DialFailed`, and `BoardNotOpen` is a marker in
+              the anyhow chain rather than a bail. Three kinds, each with the
+              transient class that is true of it: `IpcUnavailable` is `Network`
+              when a dial failed (starting KiCAD makes the same call work) and
+              `None` when nothing is configured (D75's false transient),
+              `IpcRejected` is `None`, `BoardNotOpen` is `State`. `from_io`
+              falls out of it, and `from_anyhow` delegates to it so the two
+              cannot disagree on a code
+            - The library half: `read_lib_table_checked` →
+              `LibTableUnreadable` (keeps the `io::Error`, not its message),
+              `resolve_footprint_path` → `FootprintPathError` (four variants;
+              the three `NotFound` ones are told apart by `item_kind` —
+              "library uri" is fixed in the environment, "library" by
+              `register_footprint_library`, "footprint" by naming another),
+              `resolve_symbol_lib_path` → `SymbolLibPathError` instead of
+              `Option`, which is the one behavioural change: "not registered"
+              and "URI does not expand" were both `None`, so the message had to
+              name both and the caller could act on neither
+            - One site keeps its prose on purpose:
+              `board_footprint_sexp`'s malformed `.kicad_mod` — not IO, not a
+              missing item, not a malformed argument. `kind()` returns
+              `Option<ToolErrorKind>` and that `None` is the statement
 - [x] D.6.2 Retry policy driven by `TransientClass` (`state` means reconcile
       first — a blind retry is useless). `mcp::retry::decide` is the single
       rule; `State` and `None` return no retry *and no wait*, so a call site
