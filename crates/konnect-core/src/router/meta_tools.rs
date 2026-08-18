@@ -363,6 +363,7 @@ fn task_error_kind(error: &kam_state::TaskError) -> Option<ToolErrorKind> {
             document: "tasks".to_string(),
             item_kind: "task".to_string(),
             key: id.clone(),
+            candidates: Vec::new(),
         }),
         kam_state::TaskError::ListFull { .. } => None,
     }

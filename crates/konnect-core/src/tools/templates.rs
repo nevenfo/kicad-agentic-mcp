@@ -4,6 +4,7 @@
 //! shipped as embedded defaults. Claude retrieves a template and adapts it to the
 //! user's project — this prevents hallucinating component values.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, require_str, ToolContext, ToolDef};
@@ -360,10 +361,18 @@ async fn handle_get_template(
         Some(t) => Ok(CallToolResult::text(serde_json::to_string(t).unwrap())),
         None => {
             warn!(template_id = %template_id, "Template not found");
-            Ok(CallToolResult::error(format!(
-                "Template '{}' not found. Use search_templates to find available templates.",
-                template_id
-            )))
+            Ok(CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: "templates".to_string(),
+                    item_kind: "template".to_string(),
+                    key: template_id.to_string(),
+                    candidates: Vec::new(),
+                },
+                format!(
+                    "Template '{}' not found. Use search_templates to find available templates.",
+                    template_id
+                ),
+            ))
         }
     }
 }
@@ -404,10 +413,15 @@ async fn handle_apply_template(
         Some(t) => t.clone(),
         None => {
             warn!(template_id = %template_id, "Template not found for apply");
-            return Ok(CallToolResult::error(format!(
-                "Template '{}' not found",
-                template_id
-            )));
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: "templates".to_string(),
+                    item_kind: "template".to_string(),
+                    key: template_id.to_string(),
+                    candidates: Vec::new(),
+                },
+                format!("Template '{}' not found", template_id),
+            ));
         }
     };
 

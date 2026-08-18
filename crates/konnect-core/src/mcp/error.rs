@@ -110,10 +110,20 @@ pub enum ToolErrorKind {
     /// tool's `document`/`kind`/`key` named nothing in the index. Distinct
     /// from `FileNotFound`: the project resolved and built, the address
     /// inside it did not.
+    ///
+    /// `candidates` is what exists and is close, for a repair pass or a model
+    /// to act on directly — never auto-substituted, and empty at the sites
+    /// that have nothing to suggest, where it does not serialize at all. It
+    /// exists because `lib_symbol_not_found_error` was reaching for
+    /// `HandlerError` to carry exactly this list, paying the catch-all's
+    /// `transient: none` and its "we have not looked at this" contract for one
+    /// structured field.
     NotFound {
         document: String,
         item_kind: String,
         key: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        candidates: Vec<String>,
     },
     /// A document is not at the revision the caller's plan was built against.
     /// Re-read it, recompute, retry — never overwrite.
@@ -556,6 +566,7 @@ mod tests {
                 document: "a.kicad_sch".into(),
                 item_kind: "symbol".into(),
                 key: "ghost".into(),
+                candidates: Vec::new(),
             },
             ToolErrorKind::StaleRevision {
                 path: "p".into(),

@@ -3,6 +3,7 @@
 //! All operations are read-only S-expression analysis.
 //! Net graph uses union-find (O(W+L+P)), matching net_analysis.py.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, opt_f64, require_f64, require_str, ToolContext, ToolDef};
@@ -449,10 +450,15 @@ async fn handle_get_pin_connections(
     let (px, py) = match pin_ep {
         Some(ep) => ep,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Pin '{}' not found on '{}'",
-                pin_number, reference
-            )))
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "pin".to_string(),
+                    key: format!("{reference}:{pin_number}"),
+                    candidates: Vec::new(),
+                },
+                format!("Pin '{}' not found on '{}'", pin_number, reference),
+            ))
         }
     };
     let mut g = build_net_graph(&wires, &labels, &extract_junctions(&tree));
@@ -847,10 +853,15 @@ async fn handle_get_connected_items(
     let inst = match instances.iter().find(|i| i.reference == reference) {
         Some(i) => i,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Component '{}' not found",
-                reference
-            )))
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "component".to_string(),
+                    key: reference.to_string(),
+                    candidates: Vec::new(),
+                },
+                format!("Component '{}' not found", reference),
+            ))
         }
     };
 

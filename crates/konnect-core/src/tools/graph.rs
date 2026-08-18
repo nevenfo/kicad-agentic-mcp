@@ -327,6 +327,7 @@ async fn handle_graph_neighbors(args: &Value, ctx: &ToolContext) -> anyhow::Resu
                 document: document.to_string(),
                 item_kind: kind.to_string(),
                 key: key.to_string(),
+                candidates: Vec::new(),
             },
             format!("No item at {document}/{kind}/{key}."),
         )),

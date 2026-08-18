@@ -9,6 +9,7 @@
 //!   - get_project_info → file system read
 //!   - snapshot_project → kicad-cli export PDF
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, opt_str, require_str, ToolContext, ToolDef};
@@ -293,10 +294,12 @@ async fn handle_open_viewer(
     let sch_path = get_path(args, "schematic")?;
 
     if !sch_path.exists() {
-        return Ok(CallToolResult::error(format!(
-            "File not found: {}",
-            sch_path.display()
-        )));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::FileNotFound {
+                path: sch_path.display().to_string(),
+            },
+            format!("File not found: {}", sch_path.display()),
+        ));
     }
 
     // Find the viewer binary — it should be next to the konnect binary
@@ -328,10 +331,19 @@ async fn handle_open_viewer(
                     }))
                     .unwrap(),
                 )),
-                Err(e) => Ok(CallToolResult::error(format!("Failed to launch viewer: {}", e))),
+                // Classified from the io::Error itself: "not found" (the
+                // binary moved) and "permission denied" (it is there and will
+                // not run) are different problems with the same sentence.
+                Err(e) => Ok(CallToolResult::error_kind(
+                    ToolErrorKind::from_io(&e),
+                    format!("Failed to launch viewer: {}", e),
+                )),
             }
         }
-        None => Ok(CallToolResult::error(
+        None => Ok(CallToolResult::error_kind(
+            ToolErrorKind::FileNotFound {
+                path: "schematic-viewer.exe".to_string(),
+            },
             "Schematic viewer binary (schematic-viewer.exe) not found. \
              It should be in the same directory as konnect.exe.",
         )),

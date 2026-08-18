@@ -4,6 +4,7 @@
 //! KiCAD instance. `get_board_extents` tries the IPC API first, falling back to
 //! parsing the file for coordinate bounds.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
@@ -523,7 +524,11 @@ async fn handle_get_layer_list(
     let layers_node = match tree.find("layers") {
         Some(n) => n,
         None => {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: board_path.display().to_string(),
+                    detail: "no (layers) section".to_string(),
+                },
                 "No (layers) section found in board file",
             ))
         }
@@ -555,7 +560,15 @@ async fn handle_add_layer(
     // Find the (layers ...) block and insert before its closing paren
     let layers_pos = match content.find("(layers") {
         Some(p) => p,
-        None => return Ok(CallToolResult::error("No (layers) section found")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: board_path.display().to_string(),
+                    detail: "no (layers) section".to_string(),
+                },
+                "No (layers) section found",
+            ))
+        }
     };
 
     // Determine the next available inner copper ID (first unused ID in 1-30 range)
@@ -781,7 +794,15 @@ async fn handle_add_zone(
     let min_width = args["min_width"].as_f64().unwrap_or(0.2);
     let pts_arr = match args["points"].as_array() {
         Some(a) => a.clone(),
-        None => return Ok(CallToolResult::error("Missing 'points' array")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "points".to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                "Missing 'points' array",
+            ))
+        }
     };
 
     let points: Vec<(f64, f64)> = pts_arr
@@ -790,7 +811,13 @@ async fn handle_add_zone(
         .collect();
 
     if points.len() < 3 {
-        return Ok(CallToolResult::error("Zone requires at least 3 points"));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "points".to_string(),
+                reason: "a zone outline needs at least 3 points".to_string(),
+            },
+            "Zone requires at least 3 points",
+        ));
     }
 
     let content = std::fs::read_to_string(&board_path)?;
@@ -825,7 +852,13 @@ async fn handle_import_svg_logo(
     let svg_content = std::fs::read_to_string(&svg_path)?;
     let logo = crate::tools::svg_import::extract_polygons(&svg_content)?;
     if logo.polygons.is_empty() {
-        return Ok(CallToolResult::error(
+        // The file parsed as SVG and holds nothing this importer can place:
+        // the document is what has to change, not the call.
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::MalformedDocument {
+                path: svg_path.display().to_string(),
+                detail: "no fillable <path> elements".to_string(),
+            },
             "No fillable paths found in the SVG (only <path> elements are supported).",
         ));
     }

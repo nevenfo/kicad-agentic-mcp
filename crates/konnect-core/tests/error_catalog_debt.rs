@@ -29,10 +29,18 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The number of `CallToolResult::error(` call sites in
-/// `crates/konnect-core/src` on 2026-08-18, measured by this file's own
-/// scanner (`rg -c` on the same pattern gives the same order of magnitude,
-/// but is not what this ceiling is defined against — the scanner is).
-const KAM_ERROR_CATALOG_DEBT_CEILING: usize = 29;
+/// `crates/konnect-core/src`, measured by this file's own scanner (`rg -c` on
+/// the same pattern gives the same order of magnitude, but is not what this
+/// ceiling is defined against — the scanner is).
+///
+/// D.6.1 took it from 152 to 2, and the 2 are not a to-do list. They are one
+/// condition reached from two call sites: `kam_state::TaskError::ListFull`,
+/// where the caller's input is well-formed and the task's own state is what
+/// refuses it — neither a missing item nor a malformed argument, and no
+/// catalogued kind is true of it (D76). A future kind may subsume them; until
+/// one is earned by more than this condition, 2 is the floor and lowering it
+/// would mean a false classification, not progress.
+const KAM_ERROR_CATALOG_DEBT_CEILING: usize = 2;
 
 fn src_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")

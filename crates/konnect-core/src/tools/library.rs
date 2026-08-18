@@ -1282,6 +1282,7 @@ impl FootprintPathError {
                 document: (*table).to_string(),
                 item_kind: "library uri".to_string(),
                 key: nickname.clone(),
+                candidates: Vec::new(),
             },
             Self::FootprintNotInLibrary {
                 nickname,
@@ -1291,6 +1292,7 @@ impl FootprintPathError {
                 document: nickname.clone(),
                 item_kind: "footprint".to_string(),
                 key: footprint.clone(),
+                candidates: Vec::new(),
             },
             Self::LibraryNotRegistered {
                 table, nickname, ..
@@ -1298,6 +1300,7 @@ impl FootprintPathError {
                 document: (*table).to_string(),
                 item_kind: "library".to_string(),
                 key: nickname.clone(),
+                candidates: Vec::new(),
             },
         }
     }
@@ -2670,6 +2673,7 @@ impl SymbolLibPathError {
             document: "sym-lib-table".to_string(),
             item_kind: item_kind.to_string(),
             key: nickname.clone(),
+            candidates: Vec::new(),
         }
     }
 }
@@ -3040,6 +3044,7 @@ async fn handle_get_symbol_info(
                     document: lib_path.display().to_string(),
                     item_kind: "symbol".to_string(),
                     key: sym_name.to_string(),
+                    candidates: Vec::new(),
                 },
                 format!("Symbol '{}' not found in library '{}'", sym_name, lib_nick),
             ));

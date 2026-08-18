@@ -827,6 +827,7 @@ async fn handle_get_jlcpcb_part(
                 document: db_path.display().to_string(),
                 item_kind: "part".to_string(),
                 key: lcsc_id.clone(),
+                candidates: Vec::new(),
             },
             format!("Part not found in database: {lcsc_id}"),
         )),

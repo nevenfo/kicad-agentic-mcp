@@ -5,6 +5,7 @@
 //! then calls `write_atomic` exactly once. This fixes the Python bug where
 //! `batch_connect_to_net` did N separate read/write cycles.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
@@ -337,7 +338,15 @@ async fn handle_batch_connect_to_net(
     };
     let pins = match args["pins"].as_array() {
         Some(a) => a.clone(),
-        None => return Ok(CallToolResult::error("Missing 'pins' array")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "pins".to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                "Missing 'pins' array",
+            ))
+        }
     };
 
     let (content, tree) = read_schematic(&sch_path)?;
@@ -432,7 +441,15 @@ async fn handle_batch_place_components(
     let sch_path = get_path(args, "schematic")?;
     let components = match args["components"].as_array() {
         Some(a) => a.clone(),
-        None => return Ok(CallToolResult::error("Missing 'components' array")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "components".to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                "Missing 'components' array",
+            ))
+        }
     };
 
     let mut sch = cse::Schematic::load(&sch_path)?;
@@ -493,7 +510,15 @@ async fn handle_batch_connect_pins(
     let sch_path = get_path(args, "schematic")?;
     let connections = match args["connections"].as_array() {
         Some(a) => a.clone(),
-        None => return Ok(CallToolResult::error("Missing 'connections' array")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "connections".to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                "Missing 'connections' array",
+            ))
+        }
     };
 
     let (content, tree) = read_schematic(&sch_path)?;
@@ -754,7 +779,15 @@ async fn handle_batch_edit(
     let sch_path = get_path(args, "schematic")?;
     let edits_arr = match args["edits"].as_array() {
         Some(a) => a.clone(),
-        None => return Ok(CallToolResult::error("Missing 'edits' array")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "edits".to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                "Missing 'edits' array",
+            ))
+        }
     };
 
     let content = read_consistent(&sch_path)?;
@@ -830,7 +863,15 @@ async fn handle_batch_delete_components(
     let sch_path = get_path(args, "schematic")?;
     let refs = match args["references"].as_array() {
         Some(a) => a.clone(),
-        None => return Ok(CallToolResult::error("Missing 'references' array")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "references".to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                "Missing 'references' array",
+            ))
+        }
     };
 
     let content = read_consistent(&sch_path)?;

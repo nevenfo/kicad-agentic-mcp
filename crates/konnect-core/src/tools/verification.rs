@@ -3,6 +3,7 @@
 //! DRC delegates to `kicad-cli`. Design rules are read/written as S-expressions.
 //! KiCAD UI management uses process inspection + subprocess spawning.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, require_str, ToolContext, ToolDef};
@@ -519,10 +520,12 @@ async fn handle_launch_kicad_ui(
                 .unwrap(),
             ))
         }
-        Err(e) => Ok(CallToolResult::error(format!(
-            "Failed to launch KiCAD ({}): {}",
-            binary, e
-        ))),
+        // Same reason as the viewer launch in project.rs: a binary that is
+        // absent and one that refuses to run need different fixes.
+        Err(e) => Ok(CallToolResult::error_kind(
+            ToolErrorKind::from_io(&e),
+            format!("Failed to launch KiCAD ({}): {}", binary, e),
+        )),
     }
 }
 

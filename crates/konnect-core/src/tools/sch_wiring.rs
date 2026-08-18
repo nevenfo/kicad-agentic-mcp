@@ -3,6 +3,7 @@
 //! Key rule: Every wire add operation must auto-detect T-junctions and insert
 //! junction dots. This uses `konnect_sexp::schematic::find_t_junctions`.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
@@ -626,6 +627,7 @@ async fn handle_delete_wire(
                     document: sch_path.display().to_string(),
                     item_kind: "wire".to_string(),
                     key: uuid.to_string(),
+                    candidates: Vec::new(),
                 },
                 format!("Wire UUID '{uuid}' not found"),
             ));
@@ -690,6 +692,7 @@ async fn handle_delete_wire(
                     document: sch_path.display().to_string(),
                     item_kind: "wire".to_string(),
                     key: identity,
+                    candidates: Vec::new(),
                 },
                 "Cannot locate a wire block matching the requested identity",
             ));
@@ -717,6 +720,10 @@ async fn handle_batch_delete_wire(
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
     let mut errors = Vec::new();
+    // Counted, not inferred from `errors`: the kind of a batch that deleted
+    // nothing depends on *which* failures it collected, and matching that back
+    // out of joined prose is the thing this whole zone is undoing.
+    let mut unparseable = 0usize;
 
     // Collect all delete ranges first, then apply in reverse order
     let mut ranges: Vec<(usize, usize)> = Vec::new();
@@ -725,9 +732,12 @@ async fn handle_batch_delete_wire(
         match content.find(&search) {
             Some(offset) => match wire_block_with_leading_whitespace(&content, offset) {
                 Some(range) => ranges.push(range),
-                None => errors.push(format!(
-                    "UUID '{uuid}' exists but is not inside a parseable wire block"
-                )),
+                None => {
+                    unparseable += 1;
+                    errors.push(format!(
+                        "UUID '{uuid}' exists but is not inside a parseable wire block"
+                    ));
+                }
             },
             None => errors.push(format!("Wire UUID '{uuid}' not found")),
         }
@@ -737,14 +747,30 @@ async fn handle_batch_delete_wire(
     let deleted = ranges.len();
 
     if deleted == 0 && !uuids.is_empty() {
-        // Uncatalogued on purpose (D.6.1): `errors` joins one message per uuid,
-        // and those causes range from "not found" to "not parseable" — a batch
-        // of heterogeneous failures collapsed into one String, with no single
-        // kind that fits all of them without lying about at least one.
-        return Ok(CallToolResult::error(format!(
-            "No wires deleted: {}",
-            errors.join("; ")
-        )));
+        // The batch's failures are heterogeneous, so the kind is decided by
+        // the worst of them rather than by the first: a uuid that resolves to
+        // a block this parser cannot read says something about the document,
+        // and that outranks uuids that simply are not there.
+        let message = format!("No wires deleted: {}", errors.join("; "));
+        return Ok(if unparseable > 0 {
+            CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: format!("{unparseable} uuid(s) resolve to an unparseable wire block"),
+                },
+                message,
+            )
+        } else {
+            CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "wire".to_string(),
+                    key: uuids.join(", "),
+                    candidates: Vec::new(),
+                },
+                message,
+            )
+        });
     }
 
     let edits: Vec<SexpEdit> = ranges
@@ -833,6 +859,7 @@ async fn handle_split_wire_at_point(
                     document: sch_path.display().to_string(),
                     item_kind: "wire".to_string(),
                     key: format!("({px}, {py})"),
+                    candidates: Vec::new(),
                 },
                 "No wire found passing through that point",
             ))
@@ -962,6 +989,7 @@ async fn handle_delete_net_label(
                 document: sch_path.display().to_string(),
                 item_kind: "label".to_string(),
                 key: net.clone(),
+                candidates: Vec::new(),
             },
             format!("No label named '{}' in this schematic", net),
         ));
@@ -987,6 +1015,7 @@ async fn handle_delete_net_label(
                     document: sch_path.display().to_string(),
                     item_kind: "label".to_string(),
                     key: format!("{net}@({target_x}, {target_y})"),
+                    candidates: Vec::new(),
                 },
                 format!(
                     "No label '{}' at ({}, {}). Found {} label(s) named '{}': {}",
@@ -1000,19 +1029,30 @@ async fn handle_delete_net_label(
             ));
         }
         _ => {
-            // Uncatalogued on purpose (D.6.1): valid input, but the world has
-            // duplicate labels at the same position, which is neither an
-            // invalid argument nor a missing item — no existing kind names
-            // "ambiguous, needs a uuid to disambiguate", and one site does not
-            // justify a new one.
-            return Ok(CallToolResult::error(format!(
-                "{} labels named '{}' share position ({}, {}) — delete by uuid is not \
-                 supported yet; remove the duplicates in eeschema",
-                matched.len(),
-                net,
-                target_x,
-                target_y
-            )));
+            // D77 is the kind this site was waiting for: the call is valid and
+            // the schematic holds two labels the format cannot tell apart, so
+            // the document is what has to change — which is exactly what the
+            // message already told the caller to do.
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: format!(
+                        "{} labels named '{}' share position ({}, {})",
+                        matched.len(),
+                        net,
+                        target_x,
+                        target_y
+                    ),
+                },
+                format!(
+                    "{} labels named '{}' share position ({}, {}) — delete by uuid is not \
+                     supported yet; remove the duplicates in eeschema",
+                    matched.len(),
+                    net,
+                    target_x,
+                    target_y
+                ),
+            ));
         }
     };
 
@@ -1128,6 +1168,7 @@ async fn handle_rotate_label(
                 document: sch_path.display().to_string(),
                 item_kind: "label".to_string(),
                 key: format!("{net}@({x}, {y})"),
+                candidates: Vec::new(),
             },
             if positions.is_empty() {
                 format!("No label named '{}' in this schematic", net)
@@ -1248,6 +1289,7 @@ async fn handle_move_labels_by_offset(
                 document: sch_path.display().to_string(),
                 item_kind: "label".to_string(),
                 key: net.clone(),
+                candidates: Vec::new(),
             },
             format!("No label named '{}' in this schematic", net),
         ));
@@ -1479,6 +1521,7 @@ async fn handle_delete_no_connect(
                 document: sch_path.display().to_string(),
                 item_kind: "no_connect".to_string(),
                 key: format!("({x}, {y})"),
+                candidates: Vec::new(),
             },
             "No-connect not found at that position",
         ));
@@ -1535,8 +1578,10 @@ async fn handle_batch_delete_no_connect(
     let expected = content.clone();
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
+    let mut malformed = 0usize;
     for pos in &positions {
         let (Some(x), Some(y)) = (pos["x"].as_f64(), pos["y"].as_f64()) else {
+            malformed += 1;
             errors.push(format!("Position {pos} needs numeric x and y"));
             continue;
         };
@@ -1550,14 +1595,30 @@ async fn handle_batch_delete_no_connect(
     let deleted = ranges.len();
 
     if deleted == 0 && !positions.is_empty() {
-        // Uncatalogued on purpose (D.6.1): same bundling as
-        // handle_batch_delete_wire — `errors` mixes malformed positions with
-        // plain misses into one String, and no single kind fits both without
-        // being wrong about one of them.
-        return Ok(CallToolResult::error(format!(
-            "No no-connects deleted: {}",
-            errors.join("; ")
-        )));
+        // Same rule as handle_batch_delete_wire: the worst failure decides.
+        // Here it is the caller's own input that outranks a plain miss — a
+        // position without numeric x and y is wrong however the schematic
+        // looks.
+        let message = format!("No no-connects deleted: {}", errors.join("; "));
+        return Ok(if malformed > 0 {
+            CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "positions".to_string(),
+                    reason: format!("{malformed} entr(y/ies) lack numeric x and y"),
+                },
+                message,
+            )
+        } else {
+            CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "no_connect".to_string(),
+                    key: format!("{} position(s)", positions.len()),
+                    candidates: Vec::new(),
+                },
+                message,
+            )
+        });
     }
 
     let edits: Vec<SexpEdit> = ranges

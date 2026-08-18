@@ -3,6 +3,7 @@
 //! Routing operations use the KiCAD IPC API; `add_net`, `create_netclass`, and
 //! `add_copper_pour` use S-expression file manipulation.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
@@ -476,7 +477,15 @@ async fn handle_add_copper_pour(
     let min_w = args["min_width"].as_f64().unwrap_or(0.25);
     let pts_arr = match args["points"].as_array() {
         Some(a) => a.clone(),
-        None => return Ok(CallToolResult::error("Missing 'points' array")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "points".to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                "Missing 'points' array",
+            ))
+        }
     };
 
     let pts: Vec<(f64, f64)> = pts_arr
@@ -484,7 +493,13 @@ async fn handle_add_copper_pour(
         .filter_map(|p| Some((p["x"].as_f64()?, p["y"].as_f64()?)))
         .collect();
     if pts.len() < 3 {
-        return Ok(CallToolResult::error("Zone requires at least 3 points"));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "points".to_string(),
+                reason: "a zone outline needs at least 3 points".to_string(),
+            },
+            "Zone requires at least 3 points",
+        ));
     }
 
     let content = std::fs::read_to_string(&board_path)?;
@@ -665,10 +680,15 @@ async fn handle_assign_net_to_class(
     let nc_pos = match content.find(&nc_pat) {
         Some(p) => p,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Netclass '{}' not found in board file",
-                netclass
-            )))
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: board_path.display().to_string(),
+                    item_kind: "netclass".to_string(),
+                    key: netclass.to_string(),
+                    candidates: Vec::new(),
+                },
+                format!("Netclass '{}' not found in board file", netclass),
+            ))
         }
     };
 

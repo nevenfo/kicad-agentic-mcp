@@ -311,6 +311,7 @@ fn component_not_found(
             document: sch_path.display().to_string(),
             item_kind: "component".to_string(),
             key: reference.to_string(),
+            candidates: Vec::new(),
         },
         message,
     )
@@ -1075,6 +1076,7 @@ async fn handle_get_schematic_pin_locations(
                 document: sch_path.display().to_string(),
                 item_kind: "lib_symbols definition".to_string(),
                 key: inst.lib_id.clone(),
+                candidates: Vec::new(),
             },
             format!(
                 "Component '{}' has no embedded definition for '{}' in this \

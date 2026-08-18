@@ -4,6 +4,7 @@
 //! config to `<project_dir>/.konnect/project.json`. Claude should call
 //! `load_user_config` at the start of every session.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{require_str, ToolContext, ToolDef};
@@ -316,7 +317,13 @@ async fn handle_save_user_config(
     };
     let value = args["value"].clone();
     if value.is_null() {
-        return Ok(CallToolResult::error("Missing required argument: 'value'"));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "value".to_string(),
+                reason: "is required".to_string(),
+            },
+            "Missing required argument: 'value'",
+        ));
     }
 
     let path = user_config_path();
@@ -365,7 +372,13 @@ async fn handle_save_project_config(
     };
     let value = args["value"].clone();
     if value.is_null() {
-        return Ok(CallToolResult::error("Missing required argument: 'value'"));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "value".to_string(),
+                reason: "is required".to_string(),
+            },
+            "Missing required argument: 'value'",
+        ));
     }
 
     let path = project_config_path(&project_dir);

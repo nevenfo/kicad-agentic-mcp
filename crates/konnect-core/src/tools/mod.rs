@@ -879,7 +879,11 @@ fn extract_symbol_block(content: &str, symbol_name: &str) -> Option<String> {
 /// component with an empty pin list (#34).
 pub fn lib_symbol_not_found_error(lib_id: &str) -> CallToolResult {
     let library = lib_id.split(':').next().unwrap_or(lib_id);
-    let mut msg = if !konnect_schematic_editor::library::library_exists(library) {
+    // Which of the two is missing decides `item_kind`, and the message already
+    // branched on it: a library nobody installed and a symbol that library does
+    // not contain are different repairs.
+    let library_missing = !konnect_schematic_editor::library::library_exists(library);
+    let mut msg = if library_missing {
         format!(
             "Library '{}' not found in the installed KiCAD symbol libraries \
              (lib_id '{}'). Check the library name, the KiCAD install, or \
@@ -906,8 +910,10 @@ pub fn lib_symbol_not_found_error(lib_id: &str) -> CallToolResult {
     // placement never calls this.
     let candidates = konnect_schematic_editor::library::suggest_lib_ids(lib_id, 8);
     CallToolResult::error_kind(
-        crate::mcp::error::ToolErrorKind::HandlerError {
-            reason: msg.clone(),
+        crate::mcp::error::ToolErrorKind::NotFound {
+            document: "installed KiCAD symbol libraries".to_string(),
+            item_kind: if library_missing { "library" } else { "symbol" }.to_string(),
+            key: lib_id.to_string(),
             candidates,
         },
         msg,
@@ -1059,23 +1065,19 @@ mod lib_symbol_not_found_error_tests {
     }
 
     #[tokio::test]
-    async fn error_kind_is_unchanged_by_adding_candidates() {
-        // Before this change the plain-text error fell back to
-        // "handler_error" via `extract_error_kind`'s legacy branch. Carrying
-        // structured candidates must not migrate it to a different kind —
-        // anything already matching on "handler_error" for this failure must
-        // keep working.
+    async fn candidates_travel_with_a_not_found_rather_than_the_catch_all() {
+        // This site answered "handler_error", and an earlier change pinned that
+        // so adding structured candidates could not move it. D.6.1 is what
+        // moves it, deliberately: a lib_id nobody installed is a NotFound, and
+        // the catch-all was only ever reached because `NotFound` had nowhere to
+        // put `candidates`. It does now, so the site no longer pays
+        // `handler_error`'s "we have not looked at this" contract for one
+        // structured field. Both messages are unchanged.
         let _fixture = write_device_r_fixture().await;
         let result = lib_symbol_not_found_error("Resistor:R");
-        assert_eq!(
-            extract_error_kind(&result).as_deref(),
-            Some("handler_error")
-        );
+        assert_eq!(extract_error_kind(&result).as_deref(), Some("not_found"));
 
         let unrelated = lib_symbol_not_found_error("Definitely_Bogus_xyzzy:Nope");
-        assert_eq!(
-            extract_error_kind(&unrelated).as_deref(),
-            Some("handler_error")
-        );
+        assert_eq!(extract_error_kind(&unrelated).as_deref(), Some("not_found"));
     }
 }

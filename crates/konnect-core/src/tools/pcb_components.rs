@@ -1369,6 +1369,7 @@ async fn handle_get_component_pads(
                     document: board_path.display().to_string(),
                     item_kind: "footprint".to_string(),
                     key: reference.clone(),
+                    candidates: Vec::new(),
                 },
                 format!("Footprint '{}' not found", reference),
             ))
@@ -1435,6 +1436,7 @@ async fn handle_get_pad_position(
             document: board_path.display().to_string(),
             item_kind: "pad".to_string(),
             key: pad_number.clone(),
+            candidates: Vec::new(),
         },
         format!("Pad '{}' not found", pad_number),
     ))

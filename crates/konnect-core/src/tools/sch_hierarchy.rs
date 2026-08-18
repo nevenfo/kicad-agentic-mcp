@@ -568,6 +568,7 @@ async fn handle_edit_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
                     document: sch_path.display().to_string(),
                     item_kind: "sheet".to_string(),
                     key: sheet_name.clone(),
+                    candidates: Vec::new(),
                 },
                 format!("Sheet '{}' not found", sheet_name),
             ))
@@ -643,6 +644,7 @@ async fn handle_move_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
                 document: sch_path.display().to_string(),
                 item_kind: "sheet".to_string(),
                 key: sheet_name.clone(),
+                candidates: Vec::new(),
             },
             format!("Sheet '{}' not found", sheet_name),
         )),
@@ -679,6 +681,7 @@ async fn handle_delete_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result
                 document: sch_path.display().to_string(),
                 item_kind: "sheet".to_string(),
                 key: sheet_name.clone(),
+                candidates: Vec::new(),
             },
             format!("Sheet '{}' not found", sheet_name),
         )),
@@ -730,6 +733,7 @@ async fn handle_duplicate_sheet(
                     document: sch_path.display().to_string(),
                     item_kind: "sheet".to_string(),
                     key: source_name.clone(),
+                    candidates: Vec::new(),
                 },
                 format!("Sheet '{}' not found", source_name),
             ))
@@ -1100,6 +1104,7 @@ async fn handle_import_sheet_pins(
                         document: sch_path.display().to_string(),
                         item_kind: "sheet".to_string(),
                         key: sheet_name.clone(),
+                        candidates: Vec::new(),
                     },
                     format!("Sheet '{}' not found", sheet_name),
                 ))
@@ -1220,6 +1225,7 @@ async fn handle_add_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resul
                     document: sch_path.display().to_string(),
                     item_kind: "sheet".to_string(),
                     key: sheet_name.clone(),
+                    candidates: Vec::new(),
                 },
                 format!("Sheet '{}' not found", sheet_name),
             ))
@@ -1288,6 +1294,7 @@ async fn handle_edit_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resu
                     document: sch_path.display().to_string(),
                     item_kind: "sheet".to_string(),
                     key: sheet_name.clone(),
+                    candidates: Vec::new(),
                 },
                 format!("Sheet '{}' not found", sheet_name),
             ))
@@ -1302,6 +1309,7 @@ async fn handle_edit_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resu
                     document: sch_path.display().to_string(),
                     item_kind: "sheet_pin".to_string(),
                     key: pin_name.clone(),
+                    candidates: Vec::new(),
                 },
                 format!("Pin '{}' not found on sheet '{}'", pin_name, sheet_name),
             ))
@@ -1370,6 +1378,7 @@ async fn handle_delete_sheet_pin(
                     document: sch_path.display().to_string(),
                     item_kind: "sheet".to_string(),
                     key: sheet_name.clone(),
+                    candidates: Vec::new(),
                 },
                 format!("Sheet '{}' not found", sheet_name),
             ))
@@ -1383,6 +1392,7 @@ async fn handle_delete_sheet_pin(
                 document: sch_path.display().to_string(),
                 item_kind: "sheet_pin".to_string(),
                 key: pin_name.clone(),
+                candidates: Vec::new(),
             },
             format!("Pin '{}' not found on sheet '{}'", pin_name, sheet_name),
         ));
