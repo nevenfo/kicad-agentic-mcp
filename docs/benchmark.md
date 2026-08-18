@@ -524,7 +524,7 @@ Two things this does **not** measure, and neither should be read into it:
   read is between a half and a third of the size, and that a nine-call sequence
   can be emitted as one operation — the mechanism by which the call count would
   fall, not the fall itself. That number needs Phase H.
-* **Retrieval precision (22.4 %) is untouched.** A plan names its own
+* **Retrieval precision was untouched by the Plan IR.** A plan names its own
   capabilities instead of searching for them per step, which is why it was
   expected to help; but a caller still has to find `apply_plan` once. The
   measurement of that belongs with the capability matrix.
@@ -699,7 +699,7 @@ of external tokens per task were protocol overhead.
    ~12 tools a task calls instead of the ~90 in the five toolsets that contain
    them: 8 667 → 2 785 catalogue tokens/task, **−68 %**.
 
-### Retrieval quality — the part that is not good enough yet
+### Retrieval quality
 
 `find_capabilities` is deterministic lexical scoring over tool names and
 descriptions plus a small EDA synonym table. Sweeping the per-query result limit
@@ -713,18 +713,69 @@ on the golden intents:
 | 5 | 4/6 | 94.0 % | 31.8 % | 8 576 |
 | **8** | **6/6** | **100 %** | 22.4 % | 10 394 |
 
-Recall reaches 100 % only where precision has fallen to 22 %, so search-driven
-loading lands at 10 394 external tokens — barely better than the baseline and
-nearly 3× the oracle floor of 3 698. **Lexical retrieval is not competitive with
-knowing the answer.** Closing that gap is the job of the Plan IR (a compiled
-plan names its own capabilities) and the local agent router, not of a better
-regex.
+That was the reading for as long as the sweep stood alone: recall reaches 100 %
+only where precision has fallen to 22 %, so search-driven loading landed at
+10 394 external tokens, barely better than the baseline and nearly 3× the
+oracle floor of 3 698. The conclusion drawn from it — *lexical retrieval is not
+competitive with knowing the answer* — turned out to be a conclusion about
+**how many** results came back, not about lexical scoring.
 
-Recorded so it is not retried blindly: **plural stemming was implemented,
-measured, and removed.** It looked obviously correct — "symbols" should match
-`add_power_symbol` — but it moved recall at 8 results/query from 100 % to
-98.2 % (losing `batch_place_components`) and helped nowhere. The comment in
-`capability_search.rs` says so at the site.
+#### F.5 — what closed the gap
+
+| | before | after |
+|---|---|---|
+| retrieval precision @8 | 20.8 % | **62.0 %** |
+| retrieval recall @8 | 97.1 % | **100.0 %** |
+| task success, `--load-mode search` | 6/7 | **7/7** |
+| catalogue tokens/task | 7 777 | **3 523** |
+| external tokens/task | 10 446 | **5 205** |
+
+Measured on the seven golden tasks at `b3a1572`, both columns by
+`bench/runner.py --load-mode search` on the same build. The 22.4 %/100 % line
+in the sweep above is the six-task perimeter that predates
+`07_sch_inspection`; 20.8 %/97.1 % is that same configuration scored on all
+seven, which is what the runner reports today.
+
+Four changes, each measured before it was kept:
+
+1. **IDF weighting.** "schematic" appears in 130-odd descriptions and was worth
+   as much as "netlist". Weighting each term by its rarity is what let a cutoff
+   be tight enough to matter.
+2. **Clause splitting.** 8 of the 34 golden intents ask for two or three tools
+   at once. A cutoff computed over the whole query keeps whichever tool matches
+   one part best and drops the rest, so each clause is now scored and cut on
+   its own. This is what recovered `apply_template` from `search_templates`'
+   shadow and `generate_netlist` from `export_netlist`'s.
+3. **A relative cutoff per clause**, at 0.65 of that clause's best score. The
+   real ceiling was never the ordering: every query padded its answer to the
+   limit, so one task's union reached 34 tools for the ~7 it needed. A decided
+   query now returns fewer results than were asked for, on purpose.
+4. **One tool per family.** `place_component`, `place_component_array` and
+   `batch_place_components` are three spellings of one idea and spent three of
+   the caller's eight slots. The cap removed 14 tools across the suite, and all
+   14 were tools no task needed.
+
+Two tool descriptions were rewritten in the same pass.
+`get_schematic_component` said neither "component" nor "reference" anywhere but
+in its own name, and lost to `validate_component_connections` on "look up one
+component by its reference". A description that names its concept in only one
+of the domain's two words misleads a model exactly as much as it misled the
+scorer.
+
+Three more levers were measured and dropped, and are recorded so they are not
+retried: dropping one-character query terms (the "s" of "component's") moved no
+metric at all; a per-clause drop-detection cutoff was worse than a fixed ratio
+at every gamma tried; and a per-clause budget below 4 buys precision only by
+losing a tool a task needs.
+
+The oldest of these is worth its own paragraph, because it is the one that
+looked most obviously correct. **Plural stemming was implemented, measured, and
+removed**: "symbols" should match `add_power_symbol`, and yet stripping the
+trailing "s" from both sides moved recall at 8 results/query from 100 % to
+98.2 %, losing `batch_place_components`, and helped nowhere. What eventually
+worked was the one-sided form — a query term that is the longer, plural side of
+a corpus term earns a fallback and never costs anyone a rank. Symmetry was the
+bug. The comment in `capability_search.rs` says so at the site.
 
 ---
 

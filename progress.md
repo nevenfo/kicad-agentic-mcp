@@ -2,37 +2,41 @@
 
 ## Phase actuelle
 
-F.5 — retrieval precision, the last open criterion that is not externally
-blocked. K.1.1 (the multi-harness campaign) is the only thing left in K and is
-blocked until 2026-08-20 by an account limit, not by code.
+K — multi-harness. F.5 is closed, so K.1.1 is again the only thing left that is
+not externally blocked by a machine or an account, and it is the last dependency
+of phase M (final benchmark; H.6 and H.7 are DONE).
 
 ## Tâche actuelle
 
-F.5.6 — close the last ~5 precision points, then port the winning
-configuration into `capability_search`. Recall is solved: all seven tasks reach
-100 % under Idf + clause splitting + G2/G3/G4 at tau=0.65, per-clause budget 4.
-Precision there is 54.9 % against a target of 60 %. What caps it is dilution on
-the two widest tasks, where a one-word clause ("nets", "svg") spends three
-slots on near-ties — being measured now as axis H (per-clause cut: decrochage
-with a floor below 3, a global budget split across clauses, a harder threshold
-for single-term clauses).
+K.1.1 — run the golden suite through Claude Code, Codex and AGY. The runner
+(K.1.3) is written and proven; what is missing is the measurement, blocked
+externally until 2026-08-20, not by any code.
 
 ## Dernière tâche validée
 
-F.5.5 — the vocabulary measurement (23d8d5e). Three of its four levers were
-guesses and only two survived contact with the probe (D64).
+F.5.6 — retrieval precision, the V1 criterion that had been open since F.3.
+Ported at b3a1572: IDF weighting, clause splitting, a relative cutoff per
+clause, one tool per family, and two rewritten tool descriptions. Also landed:
+L.2.7 (560d377), an ACL test that failed on a clean tree in an elevated shell.
 
 Validation :
-- probe `_retrieval-probe-f5-vocab.log`: all7 recall 94.3 % → 100 %, precision
-  20.8 % → 54.9 % (Idf, clauses, G2+G3+G4, tau=0.65, pcl=4)
-- D6 negative control holds in all 16 lever/variant combinations
-- the clause-unique invariant (F on == F off on a single-clause query) is
-  asserted at runtime, 184 comparisons per lever set
-- `cargo fmt --all -- --check`, `cargo clippy -p konnect-core --all-targets
-  -- -D warnings` clean
+- `bench/runner.py --load-mode search` at b3a1572: RETRIEVAL_PRECISION **62.0 %**
+  (was 20.8 %), RETRIEVAL_RECALL **100.0 %** (was 97.1 %), SUCCESS_RATE 7/7
+  (was 6/7), external tokens/task 10 446 → 5 205. All thresholds PASS
+- gateway mode unchanged: 21/21, 2 186 external tokens/task, P50 61 ms
+- `gate.ps1` green end to end (fmt, clippy, test, doctest, release build)
+- 17 tests in `router::capability_search`, 5 of them new, including the family
+  key regression the golden suite cannot see
 
 ## Décisions actives
 
+- D66 — the retrieval ceiling was *how many* results came back, not their
+  order. Every query padded its answer to `limit`, so one task's union reached
+  34 tools for the ~7 it needed. `search` now cuts each clause at 0.65 of that
+  clause's own best score and caps each tool family at one, so a decided query
+  deliberately returns fewer hits than asked for. `family_of` keeps a name's
+  terms **in order**: `get_component_nets` and `get_net_components` are
+  different tools and an order-insensitive key would let the cap delete one.
 - D65 — a search configuration is only allowed into production once
   `bench/runner.py --load-mode search` reproduces it server-side. The offline
   probe asserts on startup that it matches production `search()`, and its all7
@@ -119,8 +123,6 @@ Validation :
 
 ## Blocage actif
 
-None for F.5.4.
-
 K.1.1 stays blocked until **2026-08-20** for two external reasons recorded
 under K.1.4: the Codex account is at its usage limit until that date, and
 `agy`'s MCP wiring depends on `AgyMcpConfigGuard`, never yet exercised against
@@ -168,10 +170,15 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Finish F.5.4: read the clause-splitting grid in
-`bench/results/_retrieval-probe-f5-clauses.log`, and if a combination clears
-precision @8 ≥ 60 % with recall @8 ≥ 98 % on hist6 *and* all7, port exactly
-that configuration into `capability_search::search`, then confirm it with
-`py -3.11 bench/runner.py --server target/release/konnect.exe --load-mode
-search --repeat 1`. If no combination clears it, record in F.5.4 which
-constraint binds and leave F.5.1 open — do not lower the target (INV6).
+On or after 2026-08-20, run K.1.1: `py -3.11 bench/harness_runner.py --server
+target/release/konnect.exe --harness <claude|codex|agy> --repeat 2 --enforce
+--log-dir <dir> --out <json>` for each harness, and check the agy run first for
+`off_server_calls == 0` — if it is not zero, `AgyMcpConfigGuard` did not wire
+the server and the numbers are not a Konnect measurement. Budget is the user's
+call each time: a Claude Code run costs ~$0.06 on the lightest task with haiku,
+and the six other golden tasks all author something.
+
+Actionable before that date if the user wants it: F.5.2 — whether a compiled
+plan moves retrieval precision at all. It was unanswerable while the golden
+suite never searched; `--load-mode search` now runs 7/7, so the comparison has
+become possible. It needs a scope decision first, so do not start it silently.
