@@ -289,10 +289,30 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
 - [ ] F.5.1 Find a retrieval change that raises precision without costing recall
 - [ ] F.5.2 Answer whether a compiled plan moves precision at all — the golden
       suite is a scripted oracle and can never show it (it never searches)
+- [x] F.5.3 Reverse prefix: the one-sided form of what D6 rejected. A query
+      term that is the longer, plural side of a corpus term of at least three
+      characters scores a fallback +4/+1, and only when nothing stronger
+      already matched — purely additive, so D6's failure mode cannot recur,
+      and its negative control is now a pinned test. Measured: recall on the
+      seventh task 94.3 % → 97.1 %, hist6 recall unchanged at 100 %, precision
+      22.5 % → 22.2 %. It buys recall, not precision; F.5.1 stays open.
+- [ ] F.5.4 The precision ceiling is *how many* results come back, not their
+      order: every intent returns a full `limit`, so the union is ~33.8 tools
+      per task against ~7.5 needed. A relative score threshold cuts the union
+      to 12 and lifts precision to 65 %, but drops recall to 94 %, and every
+      tool it drops is one whose intent is **composite** — a single intent
+      asking for two or three tools, lexically dominated by one of them
+      (`apply_template` behind `search_templates`, `generate_netlist` behind
+      `export_netlist`). 8 of the 34 golden intents are composite. Measure
+      clause splitting (search each clause of an intent separately, threshold
+      per clause, merge by ratio-to-clause-best) against the threshold alone.
 
 ### Validation
 Precision @8 ≥ 60 % with recall @8 ≥ 98 %, measured by the existing retrieval
-probe, before/after on the same build.
+probe, before/after on the same build. `bench/runner.py --load-mode search` is
+the probe of record — `examples/retrieval_probe.rs` explores offline and
+asserts it matches production `search()`, but a config only lands once the
+server-side run confirms it.
 
 ---
 

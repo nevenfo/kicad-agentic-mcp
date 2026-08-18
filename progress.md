@@ -2,35 +2,39 @@
 
 ## Phase actuelle
 
-K — multi-harness. K.1.1 is the only thing left in K, and it is the last
-dependency of phase M (final benchmark, which also needs H.6 and H.7 — both
-DONE).
+F.5 — retrieval precision, the last open criterion that is not externally
+blocked. K.1.1 (the multi-harness campaign) is the only thing left in K and is
+blocked until 2026-08-20 by an account limit, not by code.
 
 ## Tâche actuelle
 
-K.1.1 — run the golden suite through Claude Code, Codex and AGY. The runner
-(K.1.3) is written and proven; what is missing is the measurement, blocked
-externally until 2026-08-20, not by any code.
+F.5.4 — measure clause splitting against the relative-threshold-alone baseline
+with `examples/retrieval_probe.rs`. Nothing lands in production until a
+combination clears precision @8 ≥ 60 % with recall @8 ≥ 98 % on both perimeters
+and `bench/runner.py --load-mode search` confirms it server-side.
 
 ## Dernière tâche validée
 
-K.1.5 — the twelve gateway meta-tools now carry a declared effect, so the
-`read_only` bench tier no longer rejects `find_capabilities` and `load_tools`.
-Also landed this session: K.1.3 (`bench/harness_runner.py`, the agentic runner)
-and L.2.6 (the GUI stand-in in `concurrent_gui_edit.rs` could tear the file it
-raced — found by CI, fixed with an atomic rename).
+F.5.3 — the reverse-prefix rule in `capability_search::score_tool`, the
+one-sided form of what D6 rejected (D63). Committed at 5d4bfa1 with the probe
+that measured it.
 
 Validation :
-- `gate.ps1` green; matrix drift test passes without `KAM_UPDATE_MATRIX`; the
-  meta-tool exhaustiveness test exercised red by removing `server_stats`
-- CI green on `agentic/main` (run 32060085312) — ubuntu, macos, windows
-- one real scored Claude Code run through `bench/harness_runner.py`: 9 calls,
-  0 off-server, $0.0615 with haiku on `sch_inspection`
-- `bench/capabilities.py` reads `read` for the discovery tools; an invented
-  name still classifies `write`
+- `cargo test -p konnect-core --lib router::capability_search`: 12 passed,
+  including the pinned D6 negative control
+- `cargo fmt --all -- --check` and `cargo clippy -p konnect-core --all-targets
+  -- -D warnings` clean, examples included
+- probe: hist6 recall 100 % at every floor in {3,4,5}; all7 recall 94.3 % →
+  97.1 % at floor 3; hist6 precision 22.5 % → 22.2 %
 
 ## Décisions actives
 
+- D63 — the fix for a plural query against a singular corpus term is
+  *asymmetric*. Stemming (D6) cut the "s" off both sides, which can turn a
+  match into a non-match and did. Reverse prefix only ever adds a fallback
+  +4/+1, and only when nothing stronger scored, so it cannot cost anyone a
+  rank. The three-character floor is measured, not chosen: three-letter EDA
+  terms (pin, net, pad) are the common case and are almost always typed plural.
 - D62 — a harness prompt is passed on **stdin**, never in argv. `claude` and
   `codex` are `.CMD` shims on Windows, so `cmd.exe` re-parses the command line
   and cuts the argument at the first newline — measured: the agent got one line
@@ -100,12 +104,13 @@ Validation :
 
 ## Blocage actif
 
-K.1.1 cannot be measured before **2026-08-20**, for two external reasons, both
-recorded under K.1.4: the Codex account is at its usage limit until that date,
-and `agy`'s MCP wiring depends on `AgyMcpConfigGuard`, which has never been
-exercised against a real agy run (D61). The Claude Code path is unblocked and
-could be measured alone at any time — the user chose to wait and run the three
-harnesses as one campaign instead.
+None for F.5.4.
+
+K.1.1 stays blocked until **2026-08-20** for two external reasons recorded
+under K.1.4: the Codex account is at its usage limit until that date, and
+`agy`'s MCP wiring depends on `AgyMcpConfigGuard`, never yet exercised against
+a real agy run (D61). The Claude Code path alone is unblocked; the user chose
+to run the three harnesses as one campaign instead.
 
 Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 `kicad-cli api-server` it needs.
@@ -125,6 +130,11 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 - `crates/konnect-core/src/capability/mod.rs` — `MANIFEST`, `Effect`,
   `VERB_EFFECTS` / `TOOL_EFFECTS` / `META_TOOL_EFFECTS`. Regenerate the matrix
   with `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
+- `crates/konnect-core/src/router/capability_search.rs` — `score_tool`'s
+  cascade, `SYNONYMS`, `REVERSE_PREFIX_MIN_LEN`. Its offline instrument is
+  `crates/konnect-core/examples/retrieval_probe.rs`, which asserts on startup
+  that its reimplementation matches production `search()` before reporting a
+  number; feed it `bench/retrieval_intents.py`'s JSON dump
 - `crates/konnect-core/src/router/meta_tools.rs` — `define_meta_tools!` is the
   single source for both the dispatch `match` and `META_TOOL_NAMES`
 - `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits` and
@@ -143,10 +153,10 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-On or after 2026-08-20, run K.1.1: `py -3.11 bench/harness_runner.py --server
-target/release/konnect.exe --harness <claude|codex|agy> --repeat 2 --enforce
---log-dir <dir> --out <json>` for each harness, and check the agy run first for
-`off_server_calls == 0` — if it is not zero, `AgyMcpConfigGuard` did not wire
-the server and the numbers are not a Konnect measurement. Budget is the user's
-call each time: a Claude Code run costs ~$0.06 on the lightest task with haiku,
-and the six other golden tasks all author something.
+Finish F.5.4: read the clause-splitting grid in
+`bench/results/_retrieval-probe-f5-clauses.log`, and if a combination clears
+precision @8 ≥ 60 % with recall @8 ≥ 98 % on hist6 *and* all7, port exactly
+that configuration into `capability_search::search`, then confirm it with
+`py -3.11 bench/runner.py --server target/release/konnect.exe --load-mode
+search --repeat 1`. If no combination clears it, record in F.5.4 which
+constraint binds and leave F.5.1 open — do not lower the target (INV6).
