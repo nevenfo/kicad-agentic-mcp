@@ -10,25 +10,38 @@ DONE except F.5.7, which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.6.1 zone 2 — `crates/konnect-core/src/tools/pcb_components.rs`, 25 sites. Not
-started.
+D.6.1 zone 3 — `crates/konnect-core/src/tools/library.rs` (16) and
+`sch_wiring.rs` (15). Not started.
 
 ## Dernière tâche validée
 
-D.6.1 zone 1 — `sch_hierarchy.rs`, 28/28 sites catalogued, debt ceiling
-152 -> 124. No new `ToolErrorKind` was needed (`InvalidArgument` ×14,
-`NotFound` ×12, `FileNotFound` ×5), which is the useful finding for the rest of
-D.6.1: it is classification work, not catalogue design. Message text unchanged
-throughout — only structured fields were added.
+D.6.1 zone 2 — `pcb_components.rs`. 20 of 25 sites catalogued, ceiling
+124 -> 104. The five left alone matter more than the twenty taken: they had
+been converted to `HandlerError`, which made the number fall while making the
+contract worse, because that variant asserts `TransientClass::None` on failures
+where starting KiCAD and retrying is the fix. They are back to plain text with
+the obstacle written at each site, and the scanner now counts a literal
+`HandlerError` as debt so the metric cannot be gamed that way again.
 
 Validation :
-- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 206 tokens,
+- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 205 tokens,
   0 safety violations
-- the debt test enforces the new ceiling in both directions
-- CI green on `agentic/main` for D.8, D.5 and D.6
+- the debt test enforces 104 in both directions
+- CI green on `agentic/main` through D.6.1 zone 1
 
 ## Décisions actives
 
+- D75 — a catch-all error kind is debt, not a catalogue entry, and the debt
+  scanner counts it as such. Converting plain text into
+  `ToolErrorKind::HandlerError` lowers the count while telling the caller
+  nothing new and asserting `TransientClass::None` — "do not retry" — on
+  failures where starting KiCAD and retrying is exactly the fix. A false
+  `transient` is worse than none, so a site whose cause cannot be told apart
+  stays plain text with the reason written at the site. `from_anyhow` is not
+  debt: it classifies from the error chain at runtime and reaches the catch-all
+  only when the chain carries nothing better. The real unblock for the IPC
+  sites is typing `with_ipc` (D.6.5), a signature problem rather than a
+  taxonomy one.
 - D73 — a failure mode an agent reads decides which loop it runs, so
   `COULD_NOT_RUN` is barred from `design` structurally, not by convention: the
   private constructor for that path has no `Design` variant available. INV1
@@ -227,16 +240,14 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-D.6.1 zone 2: `crates/konnect-core/src/tools/pcb_components.rs` (25 sites).
-Same method as zone 1 — replace `CallToolResult::error(text)` with
-`error_kind(ToolErrorKind::…, text)`, reuse an existing kind wherever it carries
-the meaning, never reword the message, leave a site alone and say so rather than
-guess a `kind` a client would believe. Then lower
-`KAM_ERROR_CATALOG_DEBT_CEILING` by exactly what the zone removed and run
-`.\gate.ps1`. Watch for tests asserting on `content[0].text`: `error_kind`
-turns that into a JSON body, and the assertion must move to
-`body["error"]["kind"]` rather than be dropped. Never name a real MANIFEST tool
-in a test fixture (D74).
+D.6.1 zone 3: `crates/konnect-core/src/tools/library.rs` (16 sites) and
+`sch_wiring.rs` (15). Same method as zones 1 and 2 — reuse an existing kind
+where it carries the meaning, never reword the message, and **leave a site in
+plain text rather than reach for `HandlerError`** (D75): a site whose cause
+cannot be told apart keeps its prose and gains a comment saying why. Then lower
+`KAM_ERROR_CATALOG_DEBT_CEILING` by exactly what was removed and run
+`.\gate.ps1`. Watch for tests asserting on `content[0].text`; never name a real
+MANIFEST tool in a fixture (D74).
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

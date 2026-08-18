@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 /// `crates/konnect-core/src` on 2026-08-18, measured by this file's own
 /// scanner (`rg -c` on the same pattern gives the same order of magnitude,
 /// but is not what this ceiling is defined against — the scanner is).
-const KAM_ERROR_CATALOG_DEBT_CEILING: usize = 124;
+const KAM_ERROR_CATALOG_DEBT_CEILING: usize = 104;
 
 fn src_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
@@ -53,7 +53,24 @@ fn count_uncatalogued_call_sites(source: &str) -> usize {
         .lines()
         .filter(|line| {
             let trimmed = line.trim_start();
-            !trimmed.starts_with("//") && line.contains("CallToolResult::error(")
+            if trimmed.starts_with("//") {
+                return false;
+            }
+            // Two shapes of the same debt. The plain-text call is the obvious
+            // one. `ToolErrorKind::HandlerError` written out at a call site is
+            // the other, and counting it is what keeps this number honest:
+            // `HandlerError` is documented as the catch-all "hasn't been
+            // migrated yet", so converting plain text into it moves a site out
+            // of this count while telling the caller nothing new — and worse,
+            // asserts `TransientClass::None`, i.e. "do not retry", on failures
+            // where starting KiCAD and retrying is exactly the fix. A metric
+            // that rewards that is a metric that will get gamed.
+            //
+            // `ToolErrorKind::from_anyhow` is deliberately NOT counted: it
+            // classifies at runtime from the error chain, so it lands on `Io`
+            // or `Conflict` when it can and only falls back to the catch-all
+            // when the chain really carries nothing more.
+            line.contains("CallToolResult::error(") || line.contains("ToolErrorKind::HandlerError")
         })
         .count()
 }
@@ -61,6 +78,10 @@ fn count_uncatalogued_call_sites(source: &str) -> usize {
 /// Per-file counts across every `.rs` file under `crates/konnect-core/src`,
 /// recursively — this is what the scanner "counts" means in practice.
 fn scan(root: &Path) -> BTreeMap<PathBuf, usize> {
+    // `mcp/error.rs` defines the catalogue and fixtures every variant in its
+    // own tests, including the catch-all. Counting those would make the
+    // catalogue's own existence look like debt.
+    let catalogue = root.join("mcp").join("error.rs");
     let mut counts = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -74,6 +95,9 @@ fn scan(root: &Path) -> BTreeMap<PathBuf, usize> {
                 continue;
             }
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            if path == catalogue {
                 continue;
             }
             let source = std::fs::read_to_string(&path)

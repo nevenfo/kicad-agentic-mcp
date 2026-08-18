@@ -65,10 +65,17 @@ macro_rules! ipc {
         {
             Ok(v) => v,
             Err(msg) => {
+                // Deliberately left uncatalogued (D.6.1): `with_ipc` folds a
+                // transport that could not be reached, a board mismatch and a
+                // business rejection into one String, and the only kind that
+                // would take all three is `HandlerError` — whose
+                // `TransientClass::None` would tell a caller not to retry
+                // something that starting KiCAD makes work. A false `transient`
+                // is worse than none. Unblocked by typing `with_ipc`, not here.
                 return Ok(CallToolResult::error(format!(
                     "KiCAD must be running with the board loaded (IPC error: {})",
                     msg
-                )))
+                )));
             }
         }
     }};
@@ -1086,21 +1093,41 @@ async fn handle_place_component(
     }
     let source = match resolve_footprint_source(&footprint, &board) {
         Ok(source) => source,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let prepared = match prepare_footprint_source(
         &source, &footprint, &reference, None, x, y, rotation, &layer,
     ) {
         Ok(prepared) => prepared,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let pads = match extract_pad_definitions(&prepared) {
         Ok(pads) => pads,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let graphics = match extract_graphic_definitions(&prepared) {
         Ok(graphics) => graphics,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let fields = extract_field_placement(&prepared);
 
@@ -1145,10 +1172,12 @@ async fn handle_place_component(
             "rotation": fp.rotation, "layer": fp.layer,
             "source": "ipc"
         }))),
+        // Uncatalogued on purpose (D.6.1): a rejection from a reachable KiCAD
+        // is not the deterministic failure `HandlerError` would claim.
         Err(konnect_ipc::IpcFailure::Rejected(message)) => Ok(CallToolResult::error(format!(
             "KiCAD rejected the placement over IPC: {message}. \
-             The board file was not modified — KiCAD is reachable and may hold this \
-             board open, so editing the file directly could be silently overwritten."
+                 The board file was not modified — KiCAD is reachable and may hold this \
+                 board open, so editing the file directly could be silently overwritten."
         ))),
         Err(konnect_ipc::IpcFailure::Unreachable(_)) => {
             // No live KiCad on the other end of this transport: fall back to
@@ -1163,6 +1192,9 @@ async fn handle_place_component(
                 board.parent(),
             ) {
                 Ok(sexp) => sexp,
+                // Uncatalogued on purpose (D.6.1): this String bundles a
+                // missing path, a read failure and a malformed footprint, and
+                // the type that told them apart is already gone.
                 Err(message) => return Ok(CallToolResult::error(message)),
             };
             insert_into_board(&board, std::slice::from_ref(&sexp))?;
@@ -1308,10 +1340,14 @@ async fn handle_get_component_pads(
     let fp_node = match fp_node {
         Some(n) => n,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Footprint '{}' not found",
-                reference
-            )))
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: board_path.display().to_string(),
+                    item_kind: "footprint".to_string(),
+                    key: reference.clone(),
+                },
+                format!("Footprint '{}' not found", reference),
+            ))
         }
     };
 
@@ -1355,6 +1391,7 @@ async fn handle_get_pad_position(
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
     };
+    let board_path = get_path(args, "board")?;
     let pads_result = handle_get_component_pads(args, ctx).await?;
     // Parse the result and filter for the specific pad number
     if let Some(crate::mcp::protocol::ToolContent::Text { text }) = pads_result.content.first() {
@@ -1369,10 +1406,14 @@ async fn handle_get_pad_position(
             }
         }
     }
-    Ok(CallToolResult::error(format!(
-        "Pad '{}' not found",
-        pad_number
-    )))
+    Ok(CallToolResult::error_kind(
+        crate::mcp::error::ToolErrorKind::NotFound {
+            document: board_path.display().to_string(),
+            item_kind: "pad".to_string(),
+            key: pad_number.clone(),
+        },
+        format!("Pad '{}' not found", pad_number),
+    ))
 }
 
 async fn handle_get_component_list(
@@ -1417,10 +1458,20 @@ async fn handle_place_array(
     let count_x = args["count_x"].as_u64().unwrap_or(1);
     let count_y = args["count_y"].as_u64().unwrap_or(1);
     let Some(total_count) = count_x.checked_mul(count_y) else {
-        return Ok(CallToolResult::error("Array dimensions overflow."));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "count_x/count_y".to_string(),
+                reason: "overflow".to_string(),
+            },
+            "Array dimensions overflow.",
+        ));
     };
     if count_x == 0 || count_y == 0 || total_count > 10_000 {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "count_x/count_y".to_string(),
+                reason: "must be non-zero and contain at most 10,000 components".to_string(),
+            },
             "Array dimensions must be non-zero and contain at most 10,000 components.",
         ));
     }
@@ -1434,17 +1485,33 @@ async fn handle_place_array(
     let prefix = args["ref_prefix"].as_str().unwrap_or("U").to_string();
     let ref_start = args["ref_start"].as_u64().unwrap_or(1);
     if ref_start.checked_add(total_count - 1).is_none() {
-        return Ok(CallToolResult::error("Reference number overflow."));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "ref_start".to_string(),
+                reason: "overflow".to_string(),
+            },
+            "Reference number overflow.",
+        ));
     }
     let source = match resolve_footprint_source(&footprint, &board) {
         Ok(source) => source,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     // Graphics are footprint-local and identical for every array instance, so
     // one extraction serves the whole batch.
     let graphics = match extract_graphic_definitions(&source) {
         Ok(graphics) => graphics,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let fields = extract_field_placement(&source);
 
@@ -1463,11 +1530,21 @@ async fn handle_place_array(
                 &source, &footprint, &reference, None, x, y, 0.0, "F.Cu",
             ) {
                 Ok(prepared) => prepared,
-                Err(error) => return Ok(CallToolResult::error(error.to_string())),
+                Err(error) => {
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                        error.to_string(),
+                    ))
+                }
             };
             let pads = match extract_pad_definitions(&prepared) {
                 Ok(pads) => pads,
-                Err(error) => return Ok(CallToolResult::error(error.to_string())),
+                Err(error) => {
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                        error.to_string(),
+                    ))
+                }
             };
             planned.push((reference, pads, x, y));
         }
@@ -1536,6 +1613,7 @@ async fn handle_place_array(
     .await?
     {
         Ok(placed) => placed,
+        // Uncatalogued on purpose (D.6.1): same bundling as the `ipc!` macro.
         Err(error) => return Ok(CallToolResult::error(format!("IPC array error: {error:#}"))),
     };
     Ok(CallToolResult::json(
@@ -1551,7 +1629,11 @@ async fn handle_align_components(
     let refs = match args["references"].as_array() {
         Some(references) if !references.is_empty() => references,
         _ => {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "references".to_string(),
+                    reason: "must be a non-empty array".to_string(),
+                },
                 "'references' must be a non-empty array.",
             ))
         }
@@ -1562,11 +1644,25 @@ async fn handle_align_components(
         .collect::<Option<Vec<_>>>()
     {
         Some(references) => references,
-        None => return Ok(CallToolResult::error("Every reference must be a string.")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "references".to_string(),
+                    reason: "every element must be a string".to_string(),
+                },
+                "Every reference must be a string.",
+            ))
+        }
     };
     let axis = args["axis"].as_str().unwrap_or("x").to_string();
     if axis != "x" && axis != "y" {
-        return Ok(CallToolResult::error("'axis' must be either 'x' or 'y'."));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "axis".to_string(),
+                reason: "must be either 'x' or 'y'".to_string(),
+            },
+            "'axis' must be either 'x' or 'y'.",
+        ));
     }
     let value = match require_f64(args, "value") {
         Ok(v) => v,
@@ -1597,6 +1693,7 @@ async fn handle_align_components(
     .await?
     {
         Ok(aligned) => aligned,
+        // Uncatalogued on purpose (D.6.1): same bundling as the `ipc!` macro.
         Err(error) => return Ok(CallToolResult::error(format!("IPC align error: {error:#}"))),
     };
     Ok(CallToolResult::json(
@@ -1637,7 +1734,12 @@ async fn handle_duplicate_component(
     }
     let source = match resolve_footprint_source(&src.footprint, &board) {
         Ok(source) => source,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let prepared = match prepare_footprint_source(
         &source,
@@ -1650,7 +1752,12 @@ async fn handle_duplicate_component(
         &src.layer,
     ) {
         Ok(prepared) => prepared,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let ipc_reference = new_reference.clone();
     let fp_id = src.footprint.clone();
@@ -1659,11 +1766,21 @@ async fn handle_duplicate_component(
     let fp_rotation = src.rotation;
     let pads = match extract_pad_definitions(&prepared) {
         Ok(pads) => pads,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let graphics = match extract_graphic_definitions(&prepared) {
         Ok(graphics) => graphics,
-        Err(error) => return Ok(CallToolResult::error(error.to_string())),
+        Err(error) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::from_anyhow(&error),
+                error.to_string(),
+            ))
+        }
     };
     let fields = extract_field_placement(&prepared);
     let dup_board = board.clone();
