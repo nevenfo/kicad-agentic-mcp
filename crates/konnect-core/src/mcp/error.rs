@@ -175,6 +175,31 @@ pub enum ToolErrorKind {
     /// wrong. The document has to be repaired or replaced, which is why
     /// `detail` says what was missing rather than only that something was.
     MalformedDocument { path: String, detail: String },
+    /// A third-party service this tool depends on did not produce a usable
+    /// answer — the JLCPCB archive host, a datasheet provider.
+    ///
+    /// D78 — the seven download and lookup sites of `tools/integration.rs` had
+    /// no kind that was true of them: nothing here is the caller's fault, the
+    /// filesystem's, or KiCAD's. `code` carries the distinction a recovery
+    /// loop needs, because "the host is down" and "the host answered with
+    /// something that is not a chunk count" are the same sentence to a reader
+    /// and opposite instructions to a client:
+    ///
+    /// * `"unreachable"` — the request never completed (DNS, TLS, timeout).
+    /// * `"server_error"` — HTTP 5xx or 429; the service is having a bad time.
+    /// * `"client_error"` — HTTP 4xx; the URL or the request is wrong, and
+    ///   replaying it changes nothing.
+    /// * `"unexpected_response"` — the service answered, and the body is not
+    ///   what the protocol says it should be. Retrying is pointless; either
+    ///   the service changed or the wrong URL was configured.
+    ///
+    /// `service` is the host or product, never a full URL with credentials in
+    /// it; the URL belongs in `detail`, which a human reads.
+    UpstreamFailed {
+        service: String,
+        code: &'static str,
+        detail: String,
+    },
     /// A filesystem failure, with a stable code independent of the OS locale.
     ///
     /// `detail` keeps the operating system's own message — useful to a human,
@@ -258,6 +283,7 @@ impl ToolErrorKind {
             Self::OperationInFlight { .. } => "operation_in_flight",
             Self::Conflict { .. } => "conflict",
             Self::MalformedDocument { .. } => "malformed_document",
+            Self::UpstreamFailed { .. } => "upstream_failed",
             Self::Io { .. } => "io",
             Self::IpcUnavailable { .. } => "ipc_unavailable",
             Self::IpcRejected { .. } => "ipc_rejected",
@@ -308,6 +334,14 @@ impl ToolErrorKind {
             // Deterministic: KiCAD received the request and refused it. The
             // identical call gets the identical refusal.
             Self::IpcRejected { .. } => TransientClass::None,
+            // Only the two codes where waiting is the recovery get a class
+            // that promises it. A 4xx and a body that is not what the protocol
+            // says are both deterministic, and a retry loop on either is a
+            // client burning its budget on an answer that will not change.
+            Self::UpstreamFailed { code, .. } => match *code {
+                "unreachable" | "server_error" => TransientClass::Network,
+                _ => TransientClass::None,
+            },
             // The document on disk is what has to change, and no wait makes
             // that happen. Not `State` either: `State` promises that
             // reconciling and retrying is the recovery, and re-reading a file
@@ -541,6 +575,11 @@ mod tests {
             ToolErrorKind::MalformedDocument {
                 path: "a.kicad_sch".into(),
                 detail: "no (lib_id …) in the symbol block".into(),
+            },
+            ToolErrorKind::UpstreamFailed {
+                service: "example.invalid".into(),
+                code: "server_error",
+                detail: "HTTP 503".into(),
             },
             ToolErrorKind::IpcUnavailable {
                 code: "unreachable",

@@ -14,7 +14,7 @@
 //! lookups within a session. Responses carry a `"cached"` field so callers
 //! can see whether a given result came from cache.
 
-use crate::mcp::error::TransientClass;
+use crate::mcp::error::{ToolErrorKind, TransientClass};
 use crate::mcp::protocol::CallToolResult;
 use crate::mcp::retry;
 use crate::tool;
@@ -347,15 +347,21 @@ async fn handle_download_jlcpcb(
 
     let library = args["library"].as_str().unwrap_or(DEFAULT_JLCPCB_LIBRARY);
     let Some(variant) = jlcpcb_library(library) else {
-        return Ok(CallToolResult::error(format!(
-            "Unknown library '{}'. Available: {}",
-            library,
-            JLCPCB_LIBRARIES
-                .iter()
-                .map(|v| v.name)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "library".to_string(),
+                reason: format!("unknown library '{library}'"),
+            },
+            format!(
+                "Unknown library '{}'. Available: {}",
+                library,
+                JLCPCB_LIBRARIES
+                    .iter()
+                    .map(|v| v.name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
     };
     let base_url = args["base_url"]
         .as_str()
@@ -387,24 +393,36 @@ async fn handle_download_jlcpcb(
     let manifest_url = format!("{}/{}", base_url, variant.chunk_manifest);
     let manifest = get_with_backoff(&client, &manifest_url).await?;
     if !manifest.status().is_success() {
-        return Ok(CallToolResult::error(format!(
-            "Could not read the chunk manifest at {}: HTTP {}",
-            manifest_url,
-            manifest.status()
-        )));
+        return Ok(upstream_failed(
+            &manifest_url,
+            http_status_code(manifest.status()),
+            format!(
+                "Could not read the chunk manifest at {}: HTTP {}",
+                manifest_url,
+                manifest.status()
+            ),
+        ));
     }
     let manifest_body = manifest.text().await?;
     let Ok(chunk_count) = manifest_body.trim().parse::<u32>() else {
-        return Ok(CallToolResult::error(format!(
-            "The chunk manifest at {} is not a chunk count: {:?}",
-            manifest_url,
-            manifest_body.chars().take(80).collect::<String>()
-        )));
+        return Ok(upstream_failed(
+            &manifest_url,
+            "unexpected_response",
+            format!(
+                "The chunk manifest at {} is not a chunk count: {:?}",
+                manifest_url,
+                manifest_body.chars().take(80).collect::<String>()
+            ),
+        ));
     };
     if chunk_count == 0 {
-        return Ok(CallToolResult::error(format!(
-            "The chunk manifest at {manifest_url} reports 0 chunks, so there is nothing to fetch"
-        )));
+        return Ok(upstream_failed(
+            &manifest_url,
+            "unexpected_response",
+            format!(
+                "The chunk manifest at {manifest_url} reports 0 chunks, so there is nothing to fetch"
+            ),
+        ));
     }
 
     let mut downloaded_bytes: u64 = 0;
@@ -417,18 +435,24 @@ async fn handle_download_jlcpcb(
                 Err(e) => {
                     drop(archive);
                     discard().await;
-                    return Ok(CallToolResult::error(format!(
-                        "Chunk {index}/{chunk_count} could not be fetched from {chunk_url}: {e}"
-                    )));
+                    return Ok(upstream_failed(
+                        &chunk_url,
+                        "unreachable",
+                        format!(
+                            "Chunk {index}/{chunk_count} could not be fetched from {chunk_url}: {e}"
+                        ),
+                    ));
                 }
             };
             if !resp.status().is_success() {
                 let status = resp.status();
                 drop(archive);
                 discard().await;
-                return Ok(CallToolResult::error(format!(
-                    "Chunk {index}/{chunk_count} failed: HTTP {status} for {chunk_url}"
-                )));
+                return Ok(upstream_failed(
+                    &chunk_url,
+                    http_status_code(status),
+                    format!("Chunk {index}/{chunk_count} failed: HTTP {status} for {chunk_url}"),
+                ));
             }
             while let Some(bytes) = resp.chunk().await? {
                 downloaded_bytes += bytes.len() as u64;
@@ -451,9 +475,14 @@ async fn handle_download_jlcpcb(
         Ok(count) => count,
         Err(e) => {
             discard().await;
-            return Ok(CallToolResult::error(format!(
-                "The downloaded archive is not a usable JLCPCB database: {e}"
-            )));
+            // The transfer succeeded, so this is the service's answer being
+            // wrong rather than the network: replaying the download fetches
+            // the same bytes.
+            return Ok(upstream_failed(
+                &base_url,
+                "unexpected_response",
+                format!("The downloaded archive is not a usable JLCPCB database: {e}"),
+            ));
         }
     };
 
@@ -549,13 +578,51 @@ fn cache_key(tool: &str, db_path: &std::path::Path, parts: &[&str]) -> String {
     format!("{}|{}|{}", tool, db_path.display(), parts.join("|"))
 }
 
+/// One `UpstreamFailed` result for the download and lookup paths.
+///
+/// `service` is the host, not the URL: a kind a client matches on should not
+/// carry a path that changes per chunk. The URL stays in the message, which is
+/// the prose the site already wrote.
+fn upstream_failed(url: &str, code: &'static str, message: String) -> CallToolResult {
+    let service = url
+        .split_once("://")
+        .map_or(url, |(_, rest)| rest)
+        .split('/')
+        .next()
+        .unwrap_or(url)
+        .to_string();
+    CallToolResult::error_kind(
+        ToolErrorKind::UpstreamFailed {
+            service,
+            code,
+            detail: message.clone(),
+        },
+        message,
+    )
+}
+
+/// Whether an HTTP failure status is worth waiting on.
+///
+/// 429 sits with the 5xx deliberately: it is the one 4xx that says "later",
+/// and grouping it with 404 would tell a client to give up on a rate limit.
+fn http_status_code(status: reqwest::StatusCode) -> &'static str {
+    if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        "server_error"
+    } else {
+        "client_error"
+    }
+}
+
 async fn handle_search_jlcpcb_parts(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::FileNotFound {
+                path: db_path.display().to_string(),
+            },
             "JLCPCB database not found. Run download_jlcpcb_database first.",
         ));
     }
@@ -715,7 +782,10 @@ async fn handle_get_jlcpcb_part(
 ) -> anyhow::Result<CallToolResult> {
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::FileNotFound {
+                path: db_path.display().to_string(),
+            },
             "JLCPCB database not found. Run download_jlcpcb_database first.",
         ));
     }
@@ -729,14 +799,18 @@ async fn handle_get_jlcpcb_part(
         ));
     }
 
+    // Cloned for the blocking closure: the originals are what names the
+    // document and the key if the lookup finds nothing.
+    let query_db_path = db_path.clone();
+    let query_lcsc_id = lcsc_id.clone();
     let result =
         tokio::task::spawn_blocking(move || -> anyhow::Result<Option<serde_json::Value>> {
-            let conn = rusqlite::Connection::open(&db_path)?;
+            let conn = rusqlite::Connection::open(&query_db_path)?;
             let mut stmt = conn.prepare(&format!(
                 "SELECT {JLCPCB_PART_COLUMNS} FROM {JLCPCB_PARTS_TABLE} \
                  WHERE \"LCSC Part\" = ?1 LIMIT 1"
             ))?;
-            let mut rows = stmt.query_map(rusqlite::params![lcsc_id], row_to_part_json)?;
+            let mut rows = stmt.query_map(rusqlite::params![query_lcsc_id], row_to_part_json)?;
             Ok(rows.next().and_then(|r| r.ok()))
         })
         .await??;
@@ -748,10 +822,14 @@ async fn handle_get_jlcpcb_part(
             part["cached"] = json!(false);
             Ok(CallToolResult::text(serde_json::to_string(&part).unwrap()))
         }
-        None => Ok(CallToolResult::error(format!(
-            "Part not found in database: {}",
-            args["lcsc_id"].as_str().unwrap_or("")
-        ))),
+        None => Ok(CallToolResult::error_kind(
+            ToolErrorKind::NotFound {
+                document: db_path.display().to_string(),
+                item_kind: "part".to_string(),
+                key: lcsc_id.clone(),
+            },
+            format!("Part not found in database: {lcsc_id}"),
+        )),
     }
 }
 
@@ -761,7 +839,10 @@ async fn handle_suggest_alternatives(
 ) -> anyhow::Result<CallToolResult> {
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::FileNotFound {
+                path: db_path.display().to_string(),
+            },
             "JLCPCB database not found. Run download_jlcpcb_database first.",
         ));
     }
@@ -1033,7 +1114,13 @@ async fn handle_get_datasheet_url(
     let lcsc_id = args["lcsc_id"].as_str();
 
     if mpn.is_none() && lcsc_id.is_none() {
-        return Ok(CallToolResult::error("Provide either 'mpn' or 'lcsc_id'"));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "mpn".to_string(),
+                reason: "one of 'mpn' or 'lcsc_id' is required".to_string(),
+            },
+            "Provide either 'mpn' or 'lcsc_id'",
+        ));
     }
 
     let client = reqwest::Client::builder()
