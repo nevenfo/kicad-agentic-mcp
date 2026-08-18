@@ -2,16 +2,21 @@
 
 ## Phase actuelle
 
-K — multi-harness. K.1.1 is the last dependency of phase M (final benchmark;
-H.6 and H.7 are DONE) and stays blocked externally until 2026-08-20. F.5.2 was
-answered in the meantime, so phase F is now DONE except the follow-up it opened
-(F.5.7), which needs a decision before it is worth measuring.
+D — domain stabilisation, resumed while phase K waits. D.1-D.3 are DONE;
+D.4-D.9 were never started. K.1.1 is the last dependency of phase M (H.6 and
+H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except the
+follow-up it opened (F.5.7), which needs a decision before it is worth
+measuring.
 
 ## Tâche actuelle
 
-K.1.1 — run the golden suite through Claude Code, Codex and AGY. The runner
-(K.1.3) is written and proven; what is missing is the measurement, blocked
-externally until 2026-08-20, not by any code.
+D.8 — operating mode, orthogonal to discovery. `Effect::{Read,Write}` already
+classifies every tool (D58/D60) and nothing consults it at execution time, so a
+context that is meant to be read-only can call any write tool. In progress:
+the gate lives in `kam-state` (INV2: no `konnect-*` type), is applied before the
+handler at both execution points — `mcp/handler.rs::dispatch_tool` and
+`meta_tools.rs`'s per-entry call inside `handle_kicad_invoke` — and derives from
+the capability class, never from a listed set.
 
 ## Dernière tâche validée
 
@@ -32,6 +37,11 @@ Validation :
 
 ## Décisions actives
 
+- D70 — **AGY is out of scope** (user, 2026-08-18). K.1.1 measures Claude Code
+  and Codex only. The adapter, `AgyMcpConfigGuard` and `parse_agy_stream` stay
+  in `bench/harness_runner.py` unused: they cost nothing there and deleting
+  proven code buys nothing. What was learned about agy's MCP wiring is recorded
+  in plan.md K.1.4 as a finding, not as work owed, and D61 is retired with it.
 - D68 — a tool is retrievable only through the vocabulary of the *change*, not
   of the machinery. `apply_plan` is invisible to every query stating a design
   goal, so the plan path is entered by prior knowledge (starter kit,
@@ -76,12 +86,6 @@ Validation :
   and cuts the argument at the first newline — measured: the agent got one line
   of the prompt and every flag after it was lost, including `--mcp-config`.
   `agy.exe` is a native binary and is safe in argv, which is why it differs.
-- D61 — `agy` 1.1.13 ignores workspace MCP config (`.mcp.json` *and* the
-  documented `.agents/mcp_config.json`; antigravity-cli#60). Its only working
-  wiring is the user's global `~/.gemini/config/mcp_config.json`, so
-  `AgyMcpConfigGuard` writes the entry for the run and restores the original
-  bytes on every exit path, refusing to start if `konnect` is already declared
-  or a backup from a previous run is present. The user authorised this.
 - D60 — a meta-tool's `effect` answers D56's question only: can this call mutate
   the *project on disk*. Session state (which tools `tools/list` exposes) is not
   a disk mutation, so `load_tools` / `load_toolset` / `unload_toolset` are
@@ -89,7 +93,7 @@ Validation :
   dispatch `match` and `META_TOOL_NAMES` together.
 - D59 — each harness declares an isolation level. `tools-off` (Claude Code,
   `--tools ""`) makes any off-server call contamination; `read-only-sandbox`
-  (codex, agy) cannot remove built-ins. Hence two rates: `SUCCESS_RATE` (strict,
+  (codex) cannot remove built-ins. Hence two rates: `SUCCESS_RATE` (strict,
   comparable only at equal isolation) and `DESIGN_PASS_RATE` (ignores
   contamination, comparable across harnesses), always printed with the level.
 - D56 — `safety: read_only` is checked twice and the second check does not trust
@@ -140,11 +144,9 @@ Validation :
 
 ## Blocage actif
 
-K.1.1 stays blocked until **2026-08-20** for two external reasons recorded
-under K.1.4: the Codex account is at its usage limit until that date, and
-`agy`'s MCP wiring depends on `AgyMcpConfigGuard`, never yet exercised against
-a real agy run (D61). The Claude Code path alone is unblocked; the user chose
-to run the three harnesses as one campaign instead.
+K.1.1 stays blocked until **2026-08-20**: the Codex account is at its usage
+limit until that date (K.1.4). The Claude Code path alone is unblocked and is a
+budget decision, not a technical one.
 
 Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 `kicad-cli api-server` it needs.
@@ -152,10 +154,8 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 ## Fichiers / zones utiles
 
 - `bench/harness_runner.py` — the agentic runner. `HARNESSES` (argv builder +
-  isolation + parser per harness), `AgyMcpConfigGuard`, `parse_agy_stream`
-  (agy's schema is `event`/`step_update`, nothing like Claude's, and each tool
-  call appears twice — ACTIVE then DONE — so it dedupes on `step_index`).
-  `--dry-run` spends nothing and touches no config. Run it with `py -3.11`
+  isolation + parser per harness). The agy entries stay but are out of scope
+  (D70). `--dry-run` spends nothing and touches no config. Run it with `py -3.11`
 - `bench/agent_prompts.yaml` — one plain-language prompt per golden task; no
   tool names, or the run would measure instruction-following
 - `bench/runner.py` — `audit()`, `fingerprint()`, `THRESHOLDS`; the harness
@@ -195,17 +195,26 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-On or after 2026-08-20, run K.1.1: `py -3.11 bench/harness_runner.py --server
-target/release/konnect.exe --harness <claude|codex|agy> --repeat 2 --enforce
---log-dir <dir> --out <json>` for each harness, and check the agy run first for
-`off_server_calls == 0` — if it is not zero, `AgyMcpConfigGuard` did not wire
-the server and the numbers are not a Konnect measurement. Budget is the user's
+Finish D.8: review the worker's implementation of the mode gate, then validate
+with `cargo fmt --all -- --check`, `cargo clippy --workspace --locked
+--all-targets -- -D warnings` and `cargo test --workspace --locked --lib
+--tests`. Tick D.8.1/D.8.2 only if a write tool called under `READONLY` is
+proven refused before the first mutation (INV4), by a test that fingerprints the
+work directory. Then D.5 (snapshot handles) — `kam_evidence::EvidenceStore`
+already has `put`/`get` with a scheme and an expired-vs-unknown `LookupError`,
+and `kam_state::Snapshot::capture` is what needs a handle.
+
+On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
+target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
+--log-dir <dir> --out <json>` for each of the two harnesses in scope (D70).
+The user chose (2026-08-18) to wait for that date and run both harnesses as one
+campaign rather than measure Claude Code alone first. Budget stays the user's
 call each time: a Claude Code run costs ~$0.06 on the lightest task with haiku,
 and the six other golden tasks all author something.
 
 Actionable before that date if the user wants it: F.5.7 — whether `apply_plan`
-should name the design actions its operation library covers. F.5.2 opened it
-and deliberately did not take it: the lever that would make the plan path
+should name the design actions its operation library covers. F.5.2 opened it and
+deliberately did not take it: the lever that would make the plan path
 retrievable is the same one that would put it in competition with
 `batch_place_components` on every direct task, and the suite's 62.0 % is what
 would pay. It needs both sides measured on all seven tasks, so do not start it

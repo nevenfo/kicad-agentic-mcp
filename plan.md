@@ -85,7 +85,7 @@ Verified against KiCad sources, 2026-08-10. These are constraints, not opinions.
 ## Architecture cible
 
 ```
-harness (Claude Code / Codex / AGY)
+harness (Claude Code / Codex)
         │  EXECUTION PATH: delegate            AUDIT PATH: query / verify / evidence
         ▼
 ┌──────────────────────────┐
@@ -1197,7 +1197,7 @@ Generated, committed, and equality-tested like the capability matrix.
 
 # Phase K — Multi-harness — TODO
 
-## K.1 — Claude Code, Codex, AGY
+## K.1 — Claude Code and Codex (AGY dropped, D70)
 
 ### Objectif
 The handoff must be harness-agnostic: another agent, notably Codex, resumes from
@@ -1207,9 +1207,10 @@ The handoff must be harness-agnostic: another agent, notably Codex, resumes from
 F.3 (the gateway is the whole external surface).
 
 ### Tâches
-- [ ] K.1.1 Run the golden suite through each harness. The runner exists and
-      works (K.1.3); what is missing is the measurement itself, and it is
-      gated on K.1.4's two external blockers, not on code
+- [ ] K.1.1 Run the golden suite through each harness in scope — Claude Code
+      and Codex (D70). The runner exists and works (K.1.3); what is missing is
+      the measurement itself, and it is gated on K.1.4's single remaining
+      external blocker, not on code
 - [x] K.1.2 Adopt the eval design: `expected_tools`, `allowed_tools`,
       `forbidden_tools`, a `safety` tier checked against the capability registry
       (a `read_only` case rejects *any* write tool), `max_calls`, and an
@@ -1240,20 +1241,24 @@ F.3 (the gateway is the whole external surface).
       across harnesses — and prints the isolation level next to them, so the
       two are never silently compared. Proven end-to-end by a real scored
       Claude Code run
-- [ ] K.1.4 The codex and agy harnesses. Both adapters are written and their
-      transcript parsers proven against real output, but neither can produce a
-      measurement yet, for reasons outside the code: the Codex account is at
-      its usage limit until 2026-08-20, and `agy` 1.1.13 ignores workspace MCP
-      configuration — both `.mcp.json` and the officially documented
-      `.agents/mcp_config.json` were tested and left it reporting no MCP server
-      at all (antigravity-cli#60), so it solved the task with its own file
-      tools and measured nothing of Konnect. Its only working wiring is the
-      global `~/.gemini/config/mcp_config.json`, which is the user's own file:
-      `AgyMcpConfigGuard` writes the entry for the duration of an agy run and
-      restores the original bytes on every exit path, refusing to start at all
-      if `konnect` is already declared or a previous run left a backup behind.
-      Exercised offline against three starting states and both refusals; never
-      against a real agy run
+- [ ] K.1.4 The codex harness. Its adapter is written and its transcript
+      parser proven against real output, but it cannot produce a measurement
+      yet for a reason outside the code: the Codex account is at its usage
+      limit until 2026-08-20.
+
+      **AGY is out of scope (D70, decided by the user 2026-08-18.)** The
+      adapter, `AgyMcpConfigGuard` and `parse_agy_stream` stay in
+      `bench/harness_runner.py` — they cost nothing while unused and deleting
+      proven code buys nothing — but agy is no longer a harness K.1.1 has to
+      measure, and its blocker no longer gates this phase. What was recorded
+      about it stands as a finding rather than as work owed: `agy` 1.1.13
+      ignores workspace MCP configuration — both `.mcp.json` and the officially
+      documented `.agents/mcp_config.json` were tested and left it reporting no
+      MCP server at all (antigravity-cli#60), so it solved the task with its own
+      file tools and measured nothing of Konnect. Its only working wiring was
+      the user's own global `~/.gemini/config/mcp_config.json`, which is why the
+      guard existed at all. It was exercised offline against three starting
+      states and both refusals, and never against a real agy run.
 - [x] K.1.5 The meta-tools had no declared effect, and the first real agentic
       run found it: a `read_only` task was failed for calling
       `find_capabilities` and `load_tools` — the discovery tools an agent
