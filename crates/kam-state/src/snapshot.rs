@@ -187,6 +187,24 @@ impl Snapshot {
         self.files.len()
     }
 
+    /// Every root this snapshot covers.
+    #[must_use]
+    pub fn roots(&self) -> &[PathBuf] {
+        &self.roots
+    }
+
+    /// Path, content revision and byte size of every file captured — enough
+    /// to describe what was captured without exposing bytes a rollback would
+    /// need. For the bytes themselves, at a path already known to the
+    /// caller, see [`Snapshot::before`].
+    #[must_use]
+    pub fn manifest(&self) -> Vec<(&Path, DocState, usize)> {
+        self.files
+            .iter()
+            .map(|(path, bytes)| (path.as_path(), DocState::of_bytes(bytes), bytes.len()))
+            .collect()
+    }
+
     /// The bytes captured for a path, if it existed when the snapshot was
     /// taken.
     ///

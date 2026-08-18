@@ -1049,6 +1049,39 @@ Artefacts: `bench/results/model-fit-gpt-oss-20b-medium-e28.json` and
 instance `openai/gpt-oss-20b:2`; the recorded model window is 32 768 and the
 weights, effort and sampling settings are unchanged.
 
+### D.5 and D.8 — what a snapshot handle costs, and what a mode gate does not
+
+Measured on one build, `.\gate.ps1 -Bench`, gateway mode, against the run
+immediately before each change.
+
+| Metric | before D.8 | + D.8 mode gate | + D.5 snapshot handle |
+|---|---|---|---|
+| SUCCESS_RATE (gateway) | 21/21 | 21/21 | **21/21** |
+| EXTERNAL_TOKENS/task | 2 186 | 2 186 | **2 204** |
+| MCP_CALLS median/task | 4 | 4 | **4** |
+| RETRIEVAL_PRECISION @8 | 62.0 % | 62.0 % | **62.0 %** |
+| SAFETY_VIOLATIONS | 0 | 0 | **0** |
+
+**D.8 costs nothing measurable**, which is the whole claim: the default mode is
+`write`, so a server nobody configured behaves exactly as before. The gate is
+one comparison against a `&'static` table on a path that already looks the tool
+up. What it buys is that `KONNECT_MODE=read-only` refuses every write tool by
+capability class, before the handler runs.
+
+**D.5 costs +18 tokens/task**, the same shape as the `kicad://diff/N` handle's
++14: the URI itself, on batches that capture. Nothing at startup. The target of
+≤ 2 000 external tokens per task was already missed by ~185 and is now missed by
+**~204**; it stays recorded as missed (INV6, and no win is netted off against
+it). What the 18 buys is that a batch's before-image stops being invisible — the
+capture now leaves an addressable manifest, which is what INV3 asks of every
+mutation, and the memory bound stays where it was because the manifest holds
+revisions and sizes rather than the before-images themselves.
+
+The second-order cost is not tokens but retention: a capturing batch now stores
+two artefacts instead of one, so the evidence store's 64 entries span half as
+many batches. The byte budget is not the binding constraint — a 400-file
+snapshot is roughly 44 KiB of manifest against 4 MiB.
+
 ## Reproducing
 
 ```powershell

@@ -2,37 +2,47 @@
 
 ## Phase actuelle
 
-D — domain stabilisation, resumed while phase K waits. D.1-D.3 and now D.8 are
-DONE; D.4-D.7 and D.9 remain, and D.9 is gated by the same GUI-session question
-as J.3. K.1.1 is the last dependency of phase M (H.6 and H.7 are DONE) and
-stays blocked until 2026-08-20. Phase F is DONE except the follow-up it opened
-(F.5.7), which needs a decision before it is worth measuring.
+D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5 and D.8 are
+DONE; D.4, D.6, D.7 and D.9 remain, and D.9 is gated by the same GUI-session
+question as J.3. K.1.1 is the last dependency of phase M (H.6 and H.7 are DONE)
+and stays blocked until 2026-08-20. Phase F is DONE except F.5.7, which needs a
+decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.5 — snapshots as first-class handles. Not started.
+D.6 — error-catalog completeness, retries, recovery policy. Not started.
 
 ## Dernière tâche validée
 
-D.8 — operating mode. `Effect::{Read,Write}` classified every tool since D58/D60
-and nothing consulted it at execution time, so a context meant to be read-only
-could call any write tool. `kam_state::OperatingMode` + `ModeGuard` now hold the
-mode (clean-room per INV2; the `Effect` mapping lives in
-`capability::mode_allows`), set once from `KONNECT_MODE`, and the gate runs
-before the handler at both execution points — `mcp::handler::dispatch_tool` and
-one check per entry inside `handle_kicad_invoke`.
+D.5 — snapshots as first-class handles. A batch that captures now emits
+`kicad://snapshot/N`, resolvable over `resources/read`, carrying a manifest
+(roots, file count, per-file path relative to its root + revision + size), never
+the before-images. Rollback stays internal (D12): this is an audit artefact
+(INV3), not a capability.
 
 Validation :
-- `gate.ps1 -Bench` PASS end to end: fmt, clippy, full test suite, doctests,
-  release build, and every benchmark mode
-- no regression, which is the point of a `Write` default: gateway 21/21,
-  `MCP_CALLS` median 4, 2 186 external tokens, retrieval 62.0 % / 100 %
-- INV4 proven through `handle_message`, with the work directory byte-identical
-  after a refused write and a positive control in `Write` mode showing the same
-  call does mutate it
+- `gate.ps1 -Bench` PASS end to end, twice today (D.8 then D.5)
+- round-trip proven through the stdio protocol, not against the store directly
+- eviction proven on the `snapshot` kind itself, not only on the store's `diff`
+  fixture: `evidence_expired` for an evicted handle, `unknown_handle` for an id
+  never issued
+- cost measured and recorded, not absorbed: **+18 external tokens/task**
+  (gateway 2 186 -> 2 204), so the ≤ 2 000 V1 criterion is now missed by ~204.
+  D.8 cost nothing measurable, which is what a `Write` default has to mean
+- CI green on `agentic/main` for D.8 (run 32124390645); D.5 pending at the time
+  of writing
 
 ## Décisions actives
 
+- D72 — a snapshot handle carries a *manifest*, never the before-images: roots,
+  file count, and per file its path relative to its root, its revision and its
+  size. Two reasons, and the second is the load-bearing one: the bytes would
+  blow the store's 4 MiB budget, and a handle that could restore would make an
+  audit artefact into a capability, which D12 deliberately keeps internal.
+  Paths are relative because a model reads this body and an absolute path would
+  leak the caller's filesystem layout for no audit value. Second-order cost,
+  measured rather than discovered later: a capturing batch stores two artefacts
+  instead of one, so the store's 64 entries span half as many batches (D.5.3).
 - D71 — the operating mode is fixed at startup and never elevable in-session:
   `ModeGuard`'s only public mutator restricts, and passing a less restrictive
   mode is a no-op rather than an elevation, so no meta-tool a model can reach
@@ -209,13 +219,15 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Implement D.5 — snapshots as first-class handles: issue `kicad://snapshot/N`
-beside `kicad://diff/N`, resolvable over MCP `resources/read`, and keep an
-expired handle discriminable from an unknown one (D16). `kam_evidence::
-EvidenceStore` already has `put`/`get` over a scheme with that exact
-`LookupError` split, and `kam_state::Snapshot::capture` is what needs a handle.
-Validate with a round-trip test over `resources/read` plus an eviction case,
-then `.\gate.ps1`.
+Implement D.6 — error-catalog completeness, retries, recovery policy: cover the
+remaining error paths with catalogued codes; drive retry policy from
+`TransientClass` (`state` means reconcile first — a blind retry is useless); add
+`FailureMode` to verdicts (`design` / `environment` / `configuration` /
+`manual_review`) plus `MANUAL_STEP_REQUIRED` naming the exact GUI step, because
+a broken environment and a broken design must drive opposite agent loops.
+Anchors: `crates/konnect-core/src/mcp/error.rs` (`ToolErrorKind`,
+`TransientClass`, `retry_after_ms()`). Validate with failure-injection cases
+resolving to the right class and the right loop, then `.\gate.ps1`.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

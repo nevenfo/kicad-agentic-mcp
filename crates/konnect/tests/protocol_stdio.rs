@@ -875,6 +875,102 @@ fn the_change_detail_lives_behind_a_handle_rather_than_in_the_reply() {
     );
 }
 
+/// A snapshot is its own handle, next to `kicad://diff/N` and
+/// `kicad://evidence/N`: `kicad://snapshot/N` resolves to a manifest of what
+/// the batch captured, and an id the store never issued fails the same way
+/// any other kind's does.
+#[test]
+fn a_captured_snapshot_is_a_resolvable_handle() {
+    let scratch = Scratch::new("snaphandle");
+    let mut p = McpProcess::spawn();
+
+    // The project has to exist before a batch's before-image can hold
+    // anything: the first batch's snapshot captures an empty directory.
+    McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "create_project", "args": {"path": scratch.path(), "name": "snap"}}
+        ]}),
+    ));
+    let sch = scratch.sch("snap");
+
+    let edited = McpProcess::tool_body(&p.call_tool(
+        "kicad_invoke",
+        json!({"calls": [
+            {"tool": "batch_place_components", "args": {"schematic": sch, "components": [
+                {"lib_id": "Device:R", "reference": "R1", "value": "10k", "x": 100.33, "y": 80.01}
+            ]}}
+        ]}),
+    ));
+    let handle = edited["snapshot_evidence"]
+        .as_str()
+        .unwrap_or_else(|| {
+            panic!("a batch that captures a snapshot must carry its handle: {edited:#?}")
+        })
+        .to_string();
+    assert!(
+        handle.starts_with("kicad://snapshot/"),
+        "handle must be resolvable: {handle}"
+    );
+
+    let listed = p.request("resources/list", json!({}));
+    assert!(
+        listed["result"]["resources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["uri"].as_str() == Some(handle.as_str())),
+        "the handle must be listed: {listed:#?}"
+    );
+
+    let read = p.request("resources/read", json!({ "uri": handle }));
+    let text = read["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("resources/read must return the manifest: {read:#?}"));
+    let manifest: Value = serde_json::from_str(text).unwrap();
+    let files = manifest["files"].as_array().unwrap();
+    assert_eq!(
+        manifest["file_count"].as_u64(),
+        Some(files.len() as u64),
+        "the count must match what is actually listed: {manifest:#?}"
+    );
+    assert!(
+        files
+            .iter()
+            .any(|f| f["path"].as_str() == Some("snap.kicad_sch")),
+        "the schematic the batch was about to edit must be in its before-image: {manifest:#?}"
+    );
+    let abs_dir = scratch.path();
+    assert!(
+        files
+            .iter()
+            .all(|f| !f["path"].as_str().unwrap_or_default().contains(abs_dir)),
+        "the manifest must carry paths relative to the root, never absolute: {manifest:#?}"
+    );
+
+    // A handle this store never issued fails the same way any other kind's
+    // does, with the three causes distinguished (D16).
+    let unknown = p.request("resources/read", json!({"uri": "kicad://snapshot/999999"}));
+    assert!(
+        unknown["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("unknown_handle"),
+        "{unknown:#?}"
+    );
+    let malformed = p.request(
+        "resources/read",
+        json!({"uri": "kicad://snapshot/not-a-number"}),
+    );
+    assert!(
+        malformed["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("malformed_handle"),
+        "{malformed:#?}"
+    );
+}
+
 /// The objective outlives the conversation, and a batch files itself under it
 /// without being asked to. The point is that the revisions, the evidence handle
 /// and the failure end up in the record because the batch produced them — not

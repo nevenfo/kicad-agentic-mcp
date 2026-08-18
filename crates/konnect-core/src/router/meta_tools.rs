@@ -612,7 +612,13 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
     };
 
     let diff_level = DiffLevel::from_args(args);
-    let guard = BatchGuard::capture(calls, args.get("documents"), atomic, diff_level);
+    let guard = BatchGuard::capture(
+        calls,
+        args.get("documents"),
+        atomic,
+        diff_level,
+        &ctx.evidence,
+    );
 
     let mut results = Vec::with_capacity(calls.len());
     let mut ok_count = 0usize;
@@ -967,6 +973,153 @@ mod agent_gateway_tests {
 /// that is the sort of payload the gateway exists to avoid.
 const MAX_REPORTED_REVISIONS: usize = 20;
 
+/// The evidence body for a captured snapshot: what was captured, not the
+/// bytes to restore it. Rollback stays internal to the batch (D12); this is
+/// an audit artefact (INV3), so paths are relative to their root — an
+/// absolute path here would leak the caller's filesystem layout to a model
+/// reading `kicad://snapshot/N` for no benefit to the audit.
+///
+/// Cost, since it is easier to measure now than to rediscover later: a batch
+/// that captures now stores two artefacts rather than one, so the store's
+/// 64-entry capacity spans half as many batches. The byte budget is not the
+/// binding constraint — `SnapshotLimits::default()` caps a snapshot at 400
+/// files, which is roughly 44 KiB of manifest against a 4 MiB budget — the
+/// entry count is.
+fn snapshot_manifest(snapshot: &kam_state::Snapshot) -> Value {
+    let roots = snapshot.roots();
+    let files: Vec<Value> = snapshot
+        .manifest()
+        .into_iter()
+        .map(|(path, state, bytes)| {
+            let rel = roots
+                .iter()
+                .find(|root| path.starts_with(root))
+                .and_then(|root| path.strip_prefix(root).ok())
+                .unwrap_or(path);
+            json!({
+                "path": rel.to_string_lossy(),
+                "revision": state.token(),
+                "bytes": bytes,
+            })
+        })
+        .collect();
+    json!({
+        "roots": roots.len(),
+        "file_count": snapshot.file_count(),
+        "files": files,
+    })
+}
+
+#[cfg(test)]
+mod snapshot_handle_tests {
+    use super::*;
+
+    fn write(dir: &std::path::Path, name: &str, body: &str) {
+        std::fs::write(dir.join(name), body).unwrap();
+    }
+
+    #[test]
+    fn a_successful_capture_emits_a_manifest_handle() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "a.kicad_sch", "before");
+        let store = kam_evidence::EvidenceStore::new("kicad");
+
+        let guard = BatchGuard::capture(
+            &[],
+            Some(&json!([dir.path().to_string_lossy()])),
+            false,
+            DiffLevel::Summary,
+            &store,
+        );
+        let uri = guard
+            .snapshot_evidence
+            .clone()
+            .expect("a successful capture must emit a handle");
+        assert!(uri.starts_with("kicad://snapshot/"), "{uri}");
+
+        let entry = store.get(&uri).unwrap();
+        assert_eq!(entry.kind, "snapshot");
+        assert_eq!(entry.body["file_count"], json!(1));
+        let files = entry.body["files"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["path"], json!("a.kicad_sch"));
+        assert!(
+            !files[0]["path"]
+                .as_str()
+                .unwrap()
+                .contains(&dir.path().to_string_lossy().into_owned()),
+            "the manifest must not leak the absolute path: {files:?}"
+        );
+
+        let mut body = json!({});
+        guard.finish(false, &store, &mut body);
+        assert_eq!(body["snapshot_evidence"], json!(uri));
+    }
+
+    #[test]
+    fn a_failed_capture_emits_no_handle() {
+        // `BatchGuard::capture` uses `SnapshotLimits::default()` (400 files),
+        // so the directory has to actually exceed it to exercise the same
+        // failure `Snapshot::capture` reports on its own.
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..401 {
+            write(dir.path(), &format!("s{i}.kicad_sch"), "x");
+        }
+        let store = kam_evidence::EvidenceStore::new("kicad");
+
+        let guard = BatchGuard::capture(
+            &[],
+            Some(&json!([dir.path().to_string_lossy()])),
+            true,
+            DiffLevel::Summary,
+            &store,
+        );
+        assert!(guard.snapshot.is_none(), "capture should have failed");
+        assert!(
+            guard.snapshot_evidence.is_none(),
+            "a failed capture must not leave a dangling handle"
+        );
+        assert!(store.is_empty(), "nothing should be stored on failure");
+    }
+
+    /// D.5.2, on the kind D.5 introduced rather than on the store's own
+    /// `diff` fixture: an evicted snapshot handle must say it *was* issued,
+    /// because a caller who reads `unknown_handle` concludes it asked for
+    /// something that never existed and stops looking (D16). The
+    /// discrimination is `high_water`'s and so is kind-agnostic by
+    /// construction; this proves the kind that ships it inherits it.
+    #[test]
+    fn an_evicted_snapshot_handle_is_expired_not_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "a.kicad_sch", "before");
+        // Capacity 2, so the third capture evicts the first.
+        let store = kam_evidence::EvidenceStore::with_limits("kicad", 2, 4 * 1024 * 1024);
+
+        let mut uris = Vec::new();
+        for _ in 0..3 {
+            let guard = BatchGuard::capture(
+                &[],
+                Some(&json!([dir.path().to_string_lossy()])),
+                false,
+                DiffLevel::Summary,
+                &store,
+            );
+            uris.push(guard.snapshot_evidence.clone().expect("handle expected"));
+        }
+
+        assert_eq!(
+            store.get(&uris[0]).unwrap_err().code(),
+            "evidence_expired",
+            "the evicted handle must not deny it existed"
+        );
+        assert!(store.get(&uris[2]).is_ok(), "the newest must still resolve");
+        assert_eq!(
+            store.get("kicad://snapshot/9999").unwrap_err().code(),
+            "unknown_handle"
+        );
+    }
+}
+
 /// Longest directory prefix shared by every path, if there is one.
 fn common_dir<'a>(paths: impl Iterator<Item = &'a std::path::Path>) -> Option<std::path::PathBuf> {
     let mut shared: Option<std::path::PathBuf> = None;
@@ -1143,10 +1296,20 @@ struct BatchGuard {
     /// exists only to describe the change.
     rollback: bool,
     diff: DiffLevel,
+    /// `kicad://snapshot/N`, set the moment capture succeeds — never for a
+    /// capture that failed, since a handle resolving to nothing captured
+    /// would be worse than no handle (D.5, INV3).
+    snapshot_evidence: Option<String>,
 }
 
 impl BatchGuard {
-    fn capture(calls: &[Value], documents: Option<&Value>, atomic: bool, diff: DiffLevel) -> Self {
+    fn capture(
+        calls: &[Value],
+        documents: Option<&Value>,
+        atomic: bool,
+        diff: DiffLevel,
+        store: &kam_evidence::EvidenceStore,
+    ) -> Self {
         // The before-image serves two purposes now — undo and description — so
         // it is captured when either wants it, and `rollback` records which.
         if !atomic && !diff.wants_before_image() {
@@ -1155,6 +1318,7 @@ impl BatchGuard {
                 unprotected: None,
                 rollback: false,
                 diff,
+                snapshot_evidence: None,
             };
         }
         let roots = crate::router::batch::discover_roots(calls, documents);
@@ -1167,20 +1331,28 @@ impl BatchGuard {
                 unprotected: atomic.then(|| "no_project_path_found".to_string()),
                 rollback: atomic,
                 diff,
+                snapshot_evidence: None,
             };
         }
         match kam_state::Snapshot::capture(&roots, kam_state::SnapshotLimits::default()) {
-            Ok(snapshot) => Self {
-                snapshot: Some(snapshot),
-                unprotected: None,
-                rollback: atomic,
-                diff,
-            },
+            Ok(snapshot) => {
+                let summary = format!("{} files captured", snapshot.file_count());
+                let manifest = snapshot_manifest(&snapshot);
+                let handle = store.put("snapshot", summary, manifest);
+                Self {
+                    snapshot: Some(snapshot),
+                    unprotected: None,
+                    rollback: atomic,
+                    diff,
+                    snapshot_evidence: Some(handle.uri),
+                }
+            }
             Err(e) => Self {
                 snapshot: None,
                 unprotected: atomic.then(|| e.code().to_string()),
                 rollback: atomic,
                 diff,
+                snapshot_evidence: None,
             },
         }
     }
@@ -1197,6 +1369,12 @@ impl BatchGuard {
         store: &kam_evidence::EvidenceStore,
         body: &mut Value,
     ) -> Vec<ChangedDoc> {
+        // Set regardless of what happens next — success, rollback, or a
+        // no-op batch — because the manifest describes the capture itself,
+        // not its outcome (INV3: every batch that captures leaves a trace).
+        if let Some(uri) = &self.snapshot_evidence {
+            body["snapshot_evidence"] = json!(uri);
+        }
         if let Some(reason) = self.unprotected {
             body["unprotected"] = json!(reason);
         }

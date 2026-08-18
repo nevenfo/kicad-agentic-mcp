@@ -132,8 +132,9 @@ Current values: `docs/benchmark.md`. Targets are never moved (INV6).
 - [x] `WALL_CLOCK_P50` ≤ baseline — 65 ms against 70 ms
 - [x] silent corruption / silent stale-state write = **0** — refused by `base_revisions`
 - [x] mutations without an audit record = **0**
-- [ ] external tokens/task ≤ 2 000 — **~2 185**, missed by ~185 in deliberate
-      trades (diff on by default, task filing, verification); recorded as missed
+- [ ] external tokens/task ≤ 2 000 — **~2 204**, missed by ~204 in deliberate
+      trades (diff on by default, task filing, verification, and D.5's snapshot
+      handle at +18); recorded as missed, never netted off against a win
 - [ ] `tools/list` at startup ≤ ~1 000 — **2 034**, missed; only reachable by
       retiring the toolset-loading path, which would break every shipped skill
 - [x] retrieval precision @8 ≥ 60 % — **62.0 %** (recall @8 **100 %**) — F.5
@@ -419,7 +420,7 @@ side exists (`konnect-core::graph`).
 A tool call that names a UUID still resolves after the item moved; targeted tests
 plus one probe on a real project.
 
-## D.5 — Snapshots as first-class handles — TODO
+## D.5 — Snapshots as first-class handles — DONE
 
 ### Objectif
 `kicad://snapshot/N` beside `kicad://diff/N` and `kicad://evidence/N`.
@@ -428,12 +429,37 @@ plus one probe on a real project.
 D.2 (snapshots exist internally), E.2 (the handle store and its resource route).
 
 ### Tâches
-- [ ] D.5.1 Issue a handle per snapshot, resolvable over MCP `resources/read`
-- [ ] D.5.2 An expired handle is not an unknown one (D16), same discrimination as
-      the evidence store
+- [x] D.5.1 Issue a handle per snapshot, resolvable over MCP `resources/read`.
+      Emitted only when `Snapshot::capture` succeeds — a handle answering for no
+      snapshot would be worse than none — and the batch reply gains
+      `snapshot_evidence` without renaming a field, since the gateway tests and
+      the bench read that shape. The body is a **manifest**, never the
+      before-images: roots, file count, and per file its path relative to its
+      root, its revision and its size. Rollback stays internal (D12); this is an
+      audit artefact (INV3), not a capability, and a relative path keeps the
+      caller's filesystem layout out of something a model reads
+- [x] D.5.2 An expired handle is not an unknown one (D16), same discrimination as
+      the evidence store — literally the same store: `Entry::uri` already builds
+      `{scheme}://{kind}/{id}`, so `put("snapshot", …)` produces
+      `kicad://snapshot/N` and `high_water` separates evicted from never-issued
+      with no change to `kam-evidence` and none to the `resources/*` routes
+- [ ] D.5.3 Reconsider the evidence store's 64-entry capacity if a session ever
+      needs deeper history. A capturing batch now stores two artefacts instead
+      of one, so those entries span half as many batches. Not a defect and not
+      worth changing on speculation: the byte budget is nowhere near binding (a
+      400-file snapshot is ~44 KiB of manifest against 4 MiB), and no measured
+      workload has wanted more than 32 batches of history
 
 ### Validation
-Round-trip test over `resources/read`; eviction returns the expired shape.
+Round-trip over `resources/read` and presence in `resources/list`, proven
+through the stdio protocol (`crates/konnect/tests/protocol_stdio.rs::
+a_captured_snapshot_is_a_resolvable_handle`), not by calling the store directly.
+Eviction returns the expired shape **on this kind**, not only on the store's own
+`diff` fixture: `an_evicted_snapshot_handle_is_expired_not_unknown` fills a
+capacity-2 store with three captures and asserts `evidence_expired` for the
+first, `unknown_handle` for an id never issued. A failed capture emits nothing.
+Gate green including the benchmark; the +18 tokens/task it costs are recorded in
+`docs/benchmark.md` and in the V1 criterion above.
 
 ## D.6 — Error-catalog completeness, retries, recovery policy — TODO
 
