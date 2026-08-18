@@ -12,12 +12,39 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use konnect_core::mcp::protocol::{CallToolResult, ToolContent};
 use konnect_core::router::ToolRouter;
 use konnect_core::tools::{ServerConfig, ToolContext};
 use serde_json::Value;
+
+/// Keep `konnect_sexp::writer::document_lock_path` off `HOME`/`APPDATA` for
+/// the lifetime of this test binary.
+///
+/// `redirected_user_config` (in `config_and_rules.rs`) repoints
+/// `HOME`/`APPDATA` to a short-lived `TempDir`, under a mutex that only the
+/// config tests take. A design-rules test never takes that guard, but its
+/// write still resolves its lock file through `dirs::data_local_dir()` — on
+/// macOS, `$HOME/Library/Application Support` — which lands it inside
+/// whichever config test's `TempDir` `HOME` points at right now. That
+/// `TempDir` is deleted the moment its owning test returns, out from under a
+/// lock file it never knew about: `'set_design_rules' failed: IO error:
+/// Invalid argument (os error 22)`. Windows never sees this, because its
+/// equivalent lookup uses `LOCALAPPDATA`, which nothing here redirects.
+///
+/// Pointing `KONNECT_STATE_DIR` at a directory under `CARGO_TARGET_TMPDIR` —
+/// stable for the binary's run, outside the user's profile, and never
+/// repointed by any test — takes `HOME` out of that lookup entirely, so the
+/// two no longer share a directory to race over.
+fn ensure_state_dir() {
+    static INIT: OnceLock<()> = OnceLock::new();
+    INIT.get_or_init(|| {
+        let state_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("konnect-state");
+        std::fs::create_dir_all(&state_dir).expect("state dir is creatable");
+        std::env::set_var("KONNECT_STATE_DIR", &state_dir);
+    });
+}
 
 /// A router with every toolset reachable, and a context with no KiCAD behind
 /// it.
@@ -34,6 +61,7 @@ impl Harness {
 
     /// Same, with a `kicad-cli` path — for a probe that has one.
     pub fn with_kicad_cli(kicad_cli: String) -> Self {
+        ensure_state_dir();
         let router = Arc::new(ToolRouter::new());
         let ctx = Arc::new(ToolContext::new(
             ServerConfig {

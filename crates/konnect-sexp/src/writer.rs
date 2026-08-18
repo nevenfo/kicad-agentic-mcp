@@ -116,20 +116,40 @@ pub(crate) fn write_atomic_unlocked(path: &Path, content: &str) -> Result<(), Se
     let mut cleanup = ScratchGuard(Some(tmp_path.clone()));
 
     if let Ok(metadata) = std::fs::metadata(path) {
-        file.set_permissions(metadata.permissions())?;
+        file.set_permissions(metadata.permissions())
+            .map_err(|error| io_context(error, "setting permissions on", &tmp_path))?;
     }
 
-    file.write_all(content.as_bytes())?;
-    file.flush()?;
-    file.sync_all()?; // fsync — mandatory
+    file.write_all(content.as_bytes())
+        .map_err(|error| io_context(error, "writing", &tmp_path))?;
+    file.flush()
+        .map_err(|error| io_context(error, "flushing", &tmp_path))?;
+    file.sync_all() // fsync — mandatory
+        .map_err(|error| io_context(error, "fsyncing", &tmp_path))?;
     drop(file);
 
     if let Err(error) = std::fs::rename(&tmp_path, path) {
+        let error = io_context(error, "renaming", &tmp_path);
         return Err(SexpError::Io(refine_rename_failure(path, error)));
     }
     cleanup.disarm();
     sync_parent_directory(path.parent().unwrap_or_else(|| Path::new(".")))?;
     Ok(())
+}
+
+/// Say which operation and path an IO error came from, without disturbing
+/// what a caller matches on.
+///
+/// `write_atomic` alone touches half a dozen paths — the document, the
+/// scratch file, the lock file, the lock directory — through as many
+/// syscalls, so a bare `Invalid argument (os error 22)` reaching a caller
+/// names neither. `ErrorKind` is carried through unchanged, so
+/// `refine_rename_failure` and every existing `.kind()` match downstream keep
+/// working; only the message gains the operation and path, with the original
+/// error's own text — which for an OS error already carries its code —
+/// folded in rather than discarded.
+fn io_context(error: std::io::Error, op: &str, path: &Path) -> std::io::Error {
+    std::io::Error::new(error.kind(), format!("{op} {}: {error}", path.display()))
 }
 
 /// Tell "someone holds this file open" apart from "the ACL forbids replacing
@@ -267,9 +287,14 @@ fn open_lock_file(lock_path: &Path) -> Result<std::fs::File, SexpError> {
         .read(true)
         .write(true)
         .truncate(false)
-        .open(lock_path)?;
+        .open(lock_path)
+        .map_err(|error| io_context(error, "opening lock file", lock_path))?;
     reject_non_file_lock_path(lock_path)?;
-    if !lock.metadata()?.is_file() {
+    if !lock
+        .metadata()
+        .map_err(|error| io_context(error, "reading metadata of lock file", lock_path))?
+        .is_file()
+    {
         return Err(SexpError::InvalidValue(format!(
             "document lock is not a regular file: {}",
             lock_path.display()
@@ -315,14 +340,19 @@ fn document_lock_path(path: &Path) -> Result<PathBuf, SexpError> {
 
 fn document_lock_path_in(state_root: &Path, path: &Path) -> Result<PathBuf, SexpError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let canonical_parent = parent.canonicalize()?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|error| io_context(error, "canonicalizing", parent))?;
     let file_name = path.file_name().ok_or_else(|| {
         SexpError::InvalidValue(format!("document path has no filename: {}", path.display()))
     })?;
 
     let lock_directory = state_root.join("locks");
-    std::fs::create_dir_all(&lock_directory)?;
-    let lock_directory_metadata = std::fs::symlink_metadata(&lock_directory)?;
+    std::fs::create_dir_all(&lock_directory)
+        .map_err(|error| io_context(error, "creating lock directory", &lock_directory))?;
+    let lock_directory_metadata = std::fs::symlink_metadata(&lock_directory).map_err(|error| {
+        io_context(error, "reading metadata of lock directory", &lock_directory)
+    })?;
     if !lock_directory_metadata.file_type().is_dir() {
         return Err(SexpError::InvalidValue(format!(
             "Konnect lock state must be a real directory, not a symlink or file: {}",
@@ -332,14 +362,29 @@ fn document_lock_path_in(state_root: &Path, path: &Path) -> Result<PathBuf, Sexp
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let directory = std::fs::File::open(&lock_directory)?;
-        if !directory.metadata()?.is_dir() {
+        let directory = std::fs::File::open(&lock_directory)
+            .map_err(|error| io_context(error, "opening lock directory", &lock_directory))?;
+        if !directory
+            .metadata()
+            .map_err(|error| {
+                io_context(error, "reading metadata of lock directory", &lock_directory)
+            })?
+            .is_dir()
+        {
             return Err(SexpError::InvalidValue(format!(
                 "Konnect lock state is not a directory: {}",
                 lock_directory.display()
             )));
         }
-        directory.set_permissions(std::fs::Permissions::from_mode(0o700))?;
+        directory
+            .set_permissions(std::fs::Permissions::from_mode(0o700))
+            .map_err(|error| {
+                io_context(
+                    error,
+                    "setting permissions on lock directory",
+                    &lock_directory,
+                )
+            })?;
     }
 
     Ok(lock_directory.join(document_lock_name(canonical_parent.as_os_str(), file_name)))
@@ -395,7 +440,13 @@ pub(crate) fn write_new_atomic_unlocked(path: &Path, content: &str) -> Result<()
 
 pub(crate) fn sync_parent_directory(_parent: &Path) -> Result<(), SexpError> {
     #[cfg(unix)]
-    std::fs::File::open(_parent)?.sync_all()?;
+    {
+        let directory = std::fs::File::open(_parent)
+            .map_err(|error| io_context(error, "opening parent directory", _parent))?;
+        directory
+            .sync_all()
+            .map_err(|error| io_context(error, "fsyncing parent directory", _parent))?;
+    }
     Ok(())
 }
 
@@ -425,20 +476,32 @@ const SCRATCH_ATTEMPTS: u32 = 16;
 /// into a write somewhere else entirely. `create_new` refuses instead, and a
 /// name that is somehow taken is simply exchanged for another.
 fn create_scratch_file(path: &Path) -> Result<(PathBuf, std::fs::File), SexpError> {
-    let mut last = None;
+    let mut last: Option<(PathBuf, std::io::Error)> = None;
     for _ in 0..SCRATCH_ATTEMPTS {
         let candidate = scratch_path_for(path);
         match open_exclusive(&candidate) {
             Ok(file) => return Ok((candidate, file)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
-            Err(e) => return Err(e.into()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some((candidate, e)),
+            Err(e) => {
+                return Err(SexpError::Io(io_context(
+                    e,
+                    "creating scratch file",
+                    &candidate,
+                )))
+            }
         }
     }
-    Err(last
-        .unwrap_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::AlreadyExists, "no scratch name free")
-        })
-        .into())
+    let (candidate, error) = last.unwrap_or_else(|| {
+        (
+            path.to_path_buf(),
+            std::io::Error::new(std::io::ErrorKind::AlreadyExists, "no scratch name free"),
+        )
+    });
+    Err(SexpError::Io(io_context(
+        error,
+        "creating scratch file",
+        &candidate,
+    )))
 }
 
 /// A scratch path in `path`'s directory, unique to this file and this write.

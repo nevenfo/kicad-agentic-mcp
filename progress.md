@@ -2,15 +2,15 @@
 
 ## Phase actuelle
 
-K — multi-harness. F.5 is closed, so K.1.1 is again the only thing left that is
-not externally blocked by a machine or an account, and it is the last dependency
-of phase M (final benchmark; H.6 and H.7 are DONE).
+L then K. L.2.8 is implemented and waiting on CI to be checked off; K.1.1 stays
+externally blocked until 2026-08-20 and is the last dependency of phase M (final
+benchmark; H.6 and H.7 are DONE).
 
 ## Tâche actuelle
 
-K.1.1 — run the golden suite through Claude Code, Codex and AGY. The runner
-(K.1.3) is written and proven; what is missing is the measurement, blocked
-externally until 2026-08-20, not by any code.
+L.2.8 / L.2.8.1 — the flaky `board_design_rules_round_trip_through_the_file`.
+Diagnosed and fixed; the checkbox waits on a green CI across the three OSes,
+since the defect only ever showed on macOS and this machine is Windows.
 
 ## Dernière tâche validée
 
@@ -30,6 +30,14 @@ Validation :
 
 ## Décisions actives
 
+- D67 — one test binary shares one environment, so a variable a test repoints
+  is global state every other test reads without knowing it. The document lock
+  path no longer reads `HOME` in tests: the harness sets `KONNECT_STATE_DIR`
+  once per binary to `<CARGO_TARGET_TMPDIR>/konnect-state`. The second half of
+  the lesson is that an IO error naming neither its operation nor its path
+  makes a flake unattributable after the fact — `write_atomic` touches the
+  document, the scratch file, the lock file and the lock directory, and one
+  bare `Invalid argument` covered all four.
 - D66 — the retrieval ceiling was *how many* results came back, not their
   order. Every query padded its answer to `limit`, so one task's union reached
   34 tools for the ~7 it needed. `search` now cuts each clause at 0.65 of that
@@ -175,7 +183,12 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-On or after 2026-08-20, run K.1.1: `py -3.11 bench/harness_runner.py --server
+Watch the CI run for the L.2.8 push (`gh run list -R nevenfo/kicad-agentic-mcp
+--workflow ci.yml --branch agentic/main --limit 1`). Green on ubuntu, macos and
+windows → tick L.2.8 and L.2.8.1 in `plan.md`. A macOS red that is not the
+design-rules test is a separate finding, not this one coming back.
+
+Then, on or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex|agy> --repeat 2 --enforce
 --log-dir <dir> --out <json>` for each harness, and check the agy run first for
 `off_server_calls == 0` — if it is not zero, `AgyMcpConfigGuard` did not wire
