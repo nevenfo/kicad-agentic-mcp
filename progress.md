@@ -147,11 +147,16 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 - `crates/konnect-core/src/capability/mod.rs` — `MANIFEST`, `Effect`,
   `VERB_EFFECTS` / `TOOL_EFFECTS` / `META_TOOL_EFFECTS`. Regenerate the matrix
   with `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
-- `crates/konnect-core/src/router/capability_search.rs` — `score_tool`'s
-  cascade, `SYNONYMS`, `REVERSE_PREFIX_MIN_LEN`. Its offline instrument is
-  `crates/konnect-core/examples/retrieval_probe.rs`, which asserts on startup
-  that its reimplementation matches production `search()` before reporting a
-  number; feed it `bench/retrieval_intents.py`'s JSON dump
+- `crates/konnect-core/src/router/capability_search.rs` — the whole retrieval
+  pipeline in one file: `Idf`, `split_clauses`, `CLAUSE_SCORE_RATIO`,
+  `per_clause_limit`, `family_of` / `MAX_PER_FAMILY`, `SYNONYMS`. Every
+  constant carries the measurement that chose it. Its offline instrument is
+  `crates/konnect-core/examples/retrieval_probe.rs` (axes D through I, feed it
+  `bench/retrieval_intents.py`'s JSON dump); since the pipelines diverged its
+  startup check asserts production *behaviour* — D6 rank 1, a composite intent
+  returning a tool per clause, a decided query under the limit — instead of
+  score-for-score equality. The run of record stays
+  `bench/runner.py --load-mode search` (D65)
 - `crates/konnect-core/src/router/meta_tools.rs` — `define_meta_tools!` is the
   single source for both the dispatch `match` and `META_TOOL_NAMES`
 - `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits` and
