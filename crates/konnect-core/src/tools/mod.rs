@@ -110,12 +110,21 @@ pub struct ToolContext {
     /// Built graphs of a project's documents, cached by content revision so a
     /// `graph_*` call reuses the last build when nothing on disk moved.
     pub graph: Arc<crate::graph::GraphStore>,
+    /// The process's operating mode (plan.md D.8): orthogonal to which
+    /// toolset is loaded, this is what decides whether a `Write`-effect call
+    /// is allowed to run at all. Fixed at startup from `ServerConfig::mode`;
+    /// the only public mutator is `kam_state::ModeGuard::restrict_to`, which
+    /// can only lower it (D69) — see `mcp::handler::McpHandler::dispatch_tool`
+    /// and `router::meta_tools::handle_kicad_invoke` for the two places it is
+    /// enforced.
+    pub mode: Arc<kam_state::ModeGuard>,
 }
 
 impl ToolContext {
     /// Construct a context with an in-memory-only observer (no JSONL). Used by
     /// tests and by callers that don't need persistent call logs.
     pub fn new(config: ServerConfig, router: Arc<ToolRouter>) -> Self {
+        let mode = Arc::new(kam_state::ModeGuard::new(config.mode));
         let tasks = Arc::new(kam_state::TaskStore::default());
         let evidence = Arc::new(kam_evidence::EvidenceStore::default());
         let validation = Arc::new(crate::evidence::validators::Cache::default());
@@ -137,6 +146,7 @@ impl ToolContext {
             verification_agent,
             tasks,
             graph: Arc::default(),
+            mode,
         }
     }
 
@@ -158,6 +168,7 @@ impl ToolContext {
         observer: crate::observability::CallObserver,
         provider: Option<Arc<dyn kam_llm::Provider>>,
     ) -> Self {
+        let mode = Arc::new(kam_state::ModeGuard::new(config.mode));
         let tasks = Arc::new(kam_state::TaskStore::default());
         let evidence = Arc::new(kam_evidence::EvidenceStore::default());
         let validation = Arc::new(crate::evidence::validators::Cache::default());
@@ -179,6 +190,7 @@ impl ToolContext {
             verification_agent,
             tasks,
             graph: Arc::default(),
+            mode,
         }
     }
 }
@@ -243,6 +255,29 @@ pub struct ServerConfig {
     /// Auto-load a tool's toolset on call instead of returning
     /// `toolset_not_loaded`. Off by default (see `konnect::Config::auto_load_toolsets`).
     pub auto_load_toolsets: bool,
+    /// Process-wide execution-risk mode (plan.md D.8), orthogonal to
+    /// toolset loading. `Write` (the default) is today's unrestricted
+    /// behaviour; `ReadOnly` refuses every `Effect::Write` tool before its
+    /// handler runs. Set once from `KONNECT_MODE` at startup
+    /// (`konnect::config`) and never elevated afterward (D69).
+    pub mode: kam_state::OperatingMode,
+}
+
+impl Default for ServerConfig {
+    /// `Write`: matches every field's implicit prior default, so a caller
+    /// that does not set `mode` gets today's unrestricted behaviour, not a
+    /// silently locked-down server.
+    fn default() -> Self {
+        ServerConfig {
+            kicad_cli: String::new(),
+            kicad_binary: String::new(),
+            ipc_address: String::new(),
+            project_dir: None,
+            jlcpcb_db_path: None,
+            auto_load_toolsets: false,
+            mode: kam_state::OperatingMode::Write,
+        }
+    }
 }
 
 #[cfg(test)]

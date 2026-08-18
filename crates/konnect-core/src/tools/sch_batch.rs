@@ -1263,6 +1263,7 @@ mod batch_delete_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
@@ -1348,6 +1349,7 @@ mod batch_place_and_connect_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
@@ -1532,6 +1534,7 @@ mod midwire_pin_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )

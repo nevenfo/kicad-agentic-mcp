@@ -1767,6 +1767,7 @@ mod unit_aware_wiring_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
@@ -1908,6 +1909,7 @@ mod label_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
@@ -2199,6 +2201,7 @@ mod wire_delete_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
@@ -2343,6 +2346,7 @@ mod power_symbol_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
@@ -2567,6 +2571,7 @@ mod no_connect_delete_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )

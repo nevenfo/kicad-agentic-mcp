@@ -2,41 +2,47 @@
 
 ## Phase actuelle
 
-D — domain stabilisation, resumed while phase K waits. D.1-D.3 are DONE;
-D.4-D.9 were never started. K.1.1 is the last dependency of phase M (H.6 and
-H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except the
-follow-up it opened (F.5.7), which needs a decision before it is worth
-measuring.
+D — domain stabilisation, resumed while phase K waits. D.1-D.3 and now D.8 are
+DONE; D.4-D.7 and D.9 remain, and D.9 is gated by the same GUI-session question
+as J.3. K.1.1 is the last dependency of phase M (H.6 and H.7 are DONE) and
+stays blocked until 2026-08-20. Phase F is DONE except the follow-up it opened
+(F.5.7), which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.8 — operating mode, orthogonal to discovery. `Effect::{Read,Write}` already
-classifies every tool (D58/D60) and nothing consults it at execution time, so a
-context that is meant to be read-only can call any write tool. In progress:
-the gate lives in `kam-state` (INV2: no `konnect-*` type), is applied before the
-handler at both execution points — `mcp/handler.rs::dispatch_tool` and
-`meta_tools.rs`'s per-entry call inside `handle_kicad_invoke` — and derives from
-the capability class, never from a listed set.
+D.5 — snapshots as first-class handles. Not started.
 
 ## Dernière tâche validée
 
-F.5.2 — whether a compiled plan moves retrieval precision. **It does not**, and
-it fails in both directions: no goal-stated query returns `apply_plan` (0 of 4,
-absent from the top 30 as well), because the description names the mechanism of
-calling and shares no vocabulary with a query saying what to build; and a
-caller who does name the mechanism finds it at rank 1-2 while precision drops
-to 11.1 %, because the plan collapses |needed| from 5 to 1 and leaves the union
-untouched. New instrument `bench/plan_retrieval.py`, artefact
-`bench/results/plan-retrieval-f52.json`.
+D.8 — operating mode. `Effect::{Read,Write}` classified every tool since D58/D60
+and nothing consulted it at execution time, so a context meant to be read-only
+could call any write tool. `kam_state::OperatingMode` + `ModeGuard` now hold the
+mode (clean-room per INV2; the `Effect` mapping lives in
+`capability::mode_allows`), set once from `KONNECT_MODE`, and the gate runs
+before the handler at both execution points — `mcp::handler::dispatch_tool` and
+one check per entry inside `handle_kicad_invoke`.
 
 Validation :
-- server-side run of record (D65), reproduced identically twice on one build
-- the offline probe agrees, including the top-30 absence
-- direct control read from `bench/tasks/01_sch_divider.yaml` itself: 57.1 %
-  precision at 100 % recall, consistent with F.5's 62.0 % suite average
+- `gate.ps1 -Bench` PASS end to end: fmt, clippy, full test suite, doctests,
+  release build, and every benchmark mode
+- no regression, which is the point of a `Write` default: gateway 21/21,
+  `MCP_CALLS` median 4, 2 186 external tokens, retrieval 62.0 % / 100 %
+- INV4 proven through `handle_message`, with the work directory byte-identical
+  after a refused write and a positive control in `Write` mode showing the same
+  call does mutate it
 
 ## Décisions actives
 
+- D71 — the operating mode is fixed at startup and never elevable in-session:
+  `ModeGuard`'s only public mutator restricts, and passing a less restrictive
+  mode is a no-op rather than an elevation, so no meta-tool a model can reach
+  widens what the process may do. It is `#[serde(skip)]` on `Config` for the
+  mirror-image reason: a stale `read-only` in a saved settings file must not
+  lock a server the operator meant to run writable. `MANUFACTURING` and
+  `EXPERIMENTAL` parse and travel end to end but enforce nothing yet — a mode
+  claiming a restriction it does not apply is exactly what INV4 forbids, so the
+  rule and the MANIFEST classification that makes it observable land together
+  in D.8.3 or not at all.
 - D70 — **AGY is out of scope** (user, 2026-08-18). K.1.1 measures Claude Code
   and Codex only. The adapter, `AgyMcpConfigGuard` and `parse_agy_stream` stay
   in `bench/harness_runner.py` unused: they cost nothing there and deleting
@@ -177,6 +183,11 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
   returning a tool per clause, a decided query under the limit — instead of
   score-for-score equality. The run of record stays
   `bench/runner.py --load-mode search` (D65)
+- `crates/konnect-core/src/mode_gate.rs` — the whole D.8 gate: `check()` /
+  `refuse()`, consulted by `mcp/handler.rs::dispatch_tool` and by
+  `handle_kicad_invoke`'s per-entry loop, never anywhere else. The mode itself
+  is `crates/kam-state/src/mode.rs`; the policy is
+  `capability::mode_allows`
 - `crates/konnect-core/src/router/meta_tools.rs` — `define_meta_tools!` is the
   single source for both the dispatch `match` and `META_TOOL_NAMES`
 - `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits` and
@@ -190,27 +201,29 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
   nevenfo/kicad-agentic-mcp --ref agentic/main` (a bare `gh` resolves to
   `upstream` and 403s)
 - `gate.ps1` — the local mirror of CI, but not a substitute for it: L.2.6 was
-  green here and red on all three CI runners
+  green here and red on all three CI runners. `-Bench` resolves its own Python
+  (`py -3.11`, else `python`) by checking that it can import `tiktoken`: bare
+  `python` on this machine is a 3.14 that cannot, which silently made the whole
+  bench half of the gate unrunnable
 - `scripts/live-pcb-e2e.ps1` — the live PCB harness. Run it with no arguments
 
 ## NEXT ACTION
 
-Finish D.8: review the worker's implementation of the mode gate, then validate
-with `cargo fmt --all -- --check`, `cargo clippy --workspace --locked
---all-targets -- -D warnings` and `cargo test --workspace --locked --lib
---tests`. Tick D.8.1/D.8.2 only if a write tool called under `READONLY` is
-proven refused before the first mutation (INV4), by a test that fingerprints the
-work directory. Then D.5 (snapshot handles) — `kam_evidence::EvidenceStore`
-already has `put`/`get` with a scheme and an expired-vs-unknown `LookupError`,
-and `kam_state::Snapshot::capture` is what needs a handle.
+Implement D.5 — snapshots as first-class handles: issue `kicad://snapshot/N`
+beside `kicad://diff/N`, resolvable over MCP `resources/read`, and keep an
+expired handle discriminable from an unknown one (D16). `kam_evidence::
+EvidenceStore` already has `put`/`get` over a scheme with that exact
+`LookupError` split, and `kam_state::Snapshot::capture` is what needs a handle.
+Validate with a round-trip test over `resources/read` plus an eviction case,
+then `.\gate.ps1`.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
---log-dir <dir> --out <json>` for each of the two harnesses in scope (D70).
-The user chose (2026-08-18) to wait for that date and run both harnesses as one
-campaign rather than measure Claude Code alone first. Budget stays the user's
-call each time: a Claude Code run costs ~$0.06 on the lightest task with haiku,
-and the six other golden tasks all author something.
+--log-dir <dir> --out <json>` for each of the two harnesses in scope (D70). The
+user chose (2026-08-18) to wait for that date and run both as one campaign
+rather than measure Claude Code alone first. Budget stays the user's call each
+time: a Claude Code run costs ~$0.06 on the lightest task with haiku, and the
+six other golden tasks all author something.
 
 Actionable before that date if the user wants it: F.5.7 — whether `apply_plan`
 should name the design actions its operation library covers. F.5.2 opened it and

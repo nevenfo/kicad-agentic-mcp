@@ -430,6 +430,26 @@ pub fn meta_tool_effect(tool: &str) -> Option<Effect> {
         .map(|(_, effect)| *effect)
 }
 
+// ─── Mode gate ──────────────────────────────────────────────────────────────
+
+/// Whether a call with `effect` may run under `mode` (plan.md D.8).
+///
+/// The only rule this enforces today: [`kam_state::OperatingMode::ReadOnly`]
+/// refuses [`Effect::Write`]. `Manufacturing` and `Experimental` are not
+/// given a distinct rule — they are accepted, parsed, carried end to end,
+/// and behave exactly like `Write` here — because no MANIFEST entry yet
+/// distinguishes them from an ordinary write; inventing an unmeasured
+/// sub-rule would be a policy this crate cannot test. Widening this match
+/// belongs next to the MANIFEST classification that makes the new rule
+/// observable, not here in anticipation of one.
+#[must_use]
+pub fn mode_allows(mode: kam_state::OperatingMode, effect: Effect) -> bool {
+    !matches!(
+        (mode, effect),
+        (kam_state::OperatingMode::ReadOnly, Effect::Write)
+    )
+}
+
 // ─── Limitations ─────────────────────────────────────────────────────────────
 
 /// A fact about a capability that no amount of testing changes.
@@ -1076,5 +1096,71 @@ mod tests {
     fn unknown_tool_is_write() {
         assert_eq!(classify("frobnicate_board"), None);
         assert_eq!(tool_effect("frobnicate_board"), Effect::Write);
+    }
+
+    // ─── mode_allows (D.8) ────────────────────────────────────────────────
+
+    /// Table-driven over the whole MANIFEST: under `ReadOnly`, every tool
+    /// classified `Write` is refused and every tool classified `Read` passes.
+    #[test]
+    fn read_only_refuses_exactly_the_manifest_writers() {
+        for capability in MANIFEST {
+            let effect = tool_effect(capability.tool);
+            let allowed = mode_allows(kam_state::OperatingMode::ReadOnly, effect);
+            assert_eq!(
+                allowed,
+                effect == Effect::Read,
+                "tool `{}` ({:?}) allowed={} under ReadOnly",
+                capability.tool,
+                effect,
+                allowed
+            );
+        }
+    }
+
+    /// Same rule, over the meta-tool table.
+    #[test]
+    fn read_only_refuses_exactly_the_write_meta_tools() {
+        for (tool, effect) in META_TOOL_EFFECTS {
+            let allowed = mode_allows(kam_state::OperatingMode::ReadOnly, *effect);
+            assert_eq!(
+                allowed,
+                *effect == Effect::Read,
+                "meta-tool `{tool}` ({effect:?}) allowed={allowed} under ReadOnly"
+            );
+        }
+    }
+
+    /// `Write` (the default) changes nothing relative to today's behaviour:
+    /// every tool, read or write, passes the gate.
+    #[test]
+    fn write_mode_allows_everything() {
+        for capability in MANIFEST {
+            assert!(mode_allows(
+                kam_state::OperatingMode::Write,
+                tool_effect(capability.tool)
+            ));
+        }
+        for (_, effect) in META_TOOL_EFFECTS {
+            assert!(mode_allows(kam_state::OperatingMode::Write, *effect));
+        }
+    }
+
+    /// `Manufacturing` and `Experimental` are documented to behave exactly
+    /// like `Write` today (no MANIFEST class distinguishes them yet) — this
+    /// pins that fact so a silent change of behaviour fails a named test.
+    #[test]
+    fn manufacturing_and_experimental_behave_like_write() {
+        for mode in [
+            kam_state::OperatingMode::Manufacturing,
+            kam_state::OperatingMode::Experimental,
+        ] {
+            for effect in [Effect::Read, Effect::Write] {
+                assert_eq!(
+                    mode_allows(mode, effect),
+                    mode_allows(kam_state::OperatingMode::Write, effect)
+                );
+            }
+        }
     }
 }

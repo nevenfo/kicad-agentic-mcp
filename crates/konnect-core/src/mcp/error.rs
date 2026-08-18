@@ -89,6 +89,13 @@ pub enum ToolErrorKind {
     UnknownTool { tool: String },
     /// A required argument is missing or malformed.
     InvalidArgument { field: String, reason: String },
+    /// The process is running under an [`kam_state::OperatingMode`] that
+    /// refuses this tool's [`crate::capability::Effect`] (plan.md D.8). A
+    /// retry of the identical call can never help — the mode is fixed for
+    /// the life of the process (D69) — so the only recovery is a different,
+    /// read-only call, or restarting the server under a less restrictive
+    /// `KONNECT_MODE`.
+    WriteRefusedByMode { tool: String, mode: String },
     /// A referenced file doesn't exist or can't be read.
     FileNotFound { path: String },
     /// An address (document, kind, key) resolves to no item — a `graph_*`
@@ -197,6 +204,7 @@ impl ToolErrorKind {
             Self::ToolsetNotLoaded { .. } => "toolset_not_loaded",
             Self::UnknownTool { .. } => "unknown_tool",
             Self::InvalidArgument { .. } => "invalid_argument",
+            Self::WriteRefusedByMode { .. } => "write_refused_by_mode",
             Self::FileNotFound { .. } => "file_not_found",
             Self::NotFound { .. } => "not_found",
             Self::StaleRevision { .. } => "stale_revision",
@@ -221,7 +229,8 @@ impl ToolErrorKind {
             Self::UnknownTool { .. }
             | Self::InvalidArgument { .. }
             | Self::FileNotFound { .. }
-            | Self::NotFound { .. } => TransientClass::None,
+            | Self::NotFound { .. }
+            | Self::WriteRefusedByMode { .. } => TransientClass::None,
             Self::Io { code, .. } => match *code {
                 "would_block" | "interrupted" | "resource_busy" => TransientClass::Lock,
                 "timed_out" => TransientClass::Timeout,
@@ -413,6 +422,10 @@ mod tests {
             ToolErrorKind::InvalidArgument {
                 field: "f".into(),
                 reason: "r".into(),
+            },
+            ToolErrorKind::WriteRefusedByMode {
+                tool: "add_component".into(),
+                mode: "read-only".into(),
             },
             ToolErrorKind::FileNotFound { path: "p".into() },
             ToolErrorKind::NotFound {

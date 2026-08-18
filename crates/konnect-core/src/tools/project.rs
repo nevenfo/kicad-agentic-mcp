@@ -409,6 +409,7 @@ mod tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )

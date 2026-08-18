@@ -38,10 +38,23 @@ pub unsafe extern "C" fn kicad_plugin_init(config_path: *const c_char) -> c_int 
         use crate::config::{Config, TransportMode};
         use konnect_core::mcp::handler::McpHandler;
 
-        let config = match config_path_str.as_deref() {
+        let mut config = match config_path_str.as_deref() {
             Some(p) => Config::load_from(std::path::Path::new(p)).unwrap_or_default(),
             None => Config::load().unwrap_or_default(),
         };
+        // `load_from` does not apply the env fallbacks `load` does, and this
+        // is the path KiCAD's own plugin loader takes (D.8). Without this,
+        // `KONNECT_MODE=read-only` is silently ignored here and the plugin
+        // starts writable — a guarantee that holds only on the binary's path
+        // is the bug it is meant to prevent. Idempotent on the `load` branch:
+        // every fallback either fills a blank or re-parses to the same value.
+        // An unrecognised mode stops the server from starting at all, the
+        // same shape as an invalid provider below: refusing to run is the
+        // only safe reading of "I asked for read-only".
+        if let Err(error) = config.apply_env_fallbacks() {
+            tracing::error!("invalid server configuration: {error}");
+            return;
+        }
         let server_config = konnect_core::tools::ServerConfig {
             kicad_cli: config.kicad_cli.clone(),
             kicad_binary: config.kicad_binary.clone(),
@@ -49,6 +62,7 @@ pub unsafe extern "C" fn kicad_plugin_init(config_path: *const c_char) -> c_int 
             project_dir: config.project_dir.clone(),
             jlcpcb_db_path: config.jlcpcb_db_path.clone(),
             auto_load_toolsets: config.auto_load_toolsets,
+            mode: config.mode,
         };
         let provider = match config.local_provider() {
             Ok(provider) => provider,

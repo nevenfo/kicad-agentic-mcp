@@ -53,6 +53,14 @@ pub struct Config {
     /// Backend model id; defaults to the D38 selection.
     #[serde(default = "default_local_llm_model")]
     pub local_llm_model: String,
+
+    /// Process-wide execution-risk mode (plan.md D.8), orthogonal to which
+    /// toolset a client has loaded. `#[serde(skip)]`: this is a process
+    /// startup decision from `KONNECT_MODE`, not a config-file setting — a
+    /// stale `mode: "read-only"` left in a saved `settings.json` must not
+    /// silently lock a server that the operator meant to run writable.
+    #[serde(skip, default)]
+    pub mode: kam_state::OperatingMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -116,14 +124,18 @@ impl Config {
         }
 
         let mut config = config.unwrap_or_default();
-        config.apply_env_fallbacks();
+        config.apply_env_fallbacks()?;
         Ok(config)
     }
 
     /// Env var wins over an unset/blank ipc_address either way. Must run on
     /// every load path — including `--config <file>`, which is how KiCAD
     /// itself launches the server (with KICAD_API_SOCKET in the environment).
-    pub fn apply_env_fallbacks(&mut self) {
+    ///
+    /// Returns `Err` only for `KONNECT_MODE` (plan.md D.8): an unrecognised
+    /// mode is an explicit startup failure, never a silent fallback to the
+    /// unrestricted `write` default — see `kam_state::OperatingMode::from_str`.
+    pub fn apply_env_fallbacks(&mut self) -> Result<()> {
         if self.ipc_address.is_empty() {
             if let Ok(sock) = std::env::var("KICAD_API_SOCKET") {
                 if !sock.is_empty() {
@@ -143,6 +155,16 @@ impl Config {
                 }
             }
         }
+        match std::env::var("KONNECT_MODE") {
+            Err(_) => {}
+            Ok(raw) if raw.is_empty() => {}
+            Ok(raw) => {
+                self.mode = raw
+                    .parse::<kam_state::OperatingMode>()
+                    .map_err(|e| anyhow::anyhow!("KONNECT_MODE: {e}"))?;
+            }
+        }
+        Ok(())
     }
 
     /// Build the optional loopback-only local provider for Agent mode.
@@ -189,6 +211,7 @@ impl Default for Config {
             auto_load_toolsets: false,
             local_llm_base_url: None,
             local_llm_model: default_local_llm_model(),
+            mode: kam_state::OperatingMode::Write,
         }
     }
 }
@@ -346,13 +369,13 @@ mod tests {
         let mut c = Config::load_from(f.path()).unwrap();
         assert_eq!(c.ipc_address, "", "sanity: file's blank value loaded as-is");
 
-        c.apply_env_fallbacks();
+        c.apply_env_fallbacks().unwrap();
         assert_eq!(c.ipc_address, "ipc://env-wins.sock");
 
         // But an explicit file value must out-rank the env var.
         let f = write_temp("json", r#"{"ipc_socket_path": "ipc://file-wins.sock"}"#);
         let mut c = Config::load_from(f.path()).unwrap();
-        c.apply_env_fallbacks();
+        c.apply_env_fallbacks().unwrap();
         assert_eq!(c.ipc_address, "ipc://file-wins.sock");
 
         std::env::remove_var("KICAD_API_SOCKET");
@@ -385,5 +408,36 @@ mod tests {
 
         local.local_llm_base_url = Some("https://models.example.com/v1".to_string());
         assert!(local.local_provider().is_err());
+    }
+
+    #[test]
+    fn konnect_mode_env_var_sets_mode() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        std::env::set_var("KONNECT_MODE", "read-only");
+        let mut c = Config::default();
+        c.apply_env_fallbacks().unwrap();
+        assert_eq!(c.mode, kam_state::OperatingMode::ReadOnly);
+        std::env::remove_var("KONNECT_MODE");
+    }
+
+    #[test]
+    fn unset_konnect_mode_defaults_to_write() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        std::env::remove_var("KONNECT_MODE");
+        let mut c = Config::default();
+        c.apply_env_fallbacks().unwrap();
+        assert_eq!(c.mode, kam_state::OperatingMode::Write);
+    }
+
+    #[test]
+    fn unknown_konnect_mode_is_a_startup_error() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        std::env::set_var("KONNECT_MODE", "yolo");
+        let mut c = Config::default();
+        let result = c.apply_env_fallbacks();
+        std::env::remove_var("KONNECT_MODE");
+        assert!(result.is_err(), "an unrecognised mode must fail startup");
+        // Never silently left at (or defaulted to) the unrestricted mode.
+        assert_eq!(c.mode, kam_state::OperatingMode::Write);
     }
 }

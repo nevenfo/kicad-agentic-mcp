@@ -18,6 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 kam-llm.workspace = true
+kam-state.workspace = true
 konnect-core.workspace = true
 konnect-sexp.workspace = true
 konnect-ipc.workspace = true

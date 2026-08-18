@@ -266,6 +266,25 @@ impl McpHandler {
         name: &str,
         args: &Value,
     ) -> (CallToolResult, CallStatus, Option<String>) {
+        // Mode gate first (INV4: refused before any handler runs), and
+        // before the meta-tool dispatch it would otherwise short-circuit.
+        // `kicad_invoke` is exempt here on purpose: its own effect label
+        // covers the coverage audit, not what its batch entries may do, so
+        // it is gated per entry inside `handle_kicad_invoke` instead — an
+        // outer refusal here would block an all-reads batch that a
+        // `ReadOnly` caller is allowed to run.
+        if name != "kicad_invoke" {
+            if let Some(effect) = crate::capability::meta_tool_effect(name) {
+                if let Some(refusal) = crate::mode_gate::refuse(&self.ctx, name, effect) {
+                    return (
+                        refusal,
+                        CallStatus::Error,
+                        Some("write_refused_by_mode".to_string()),
+                    );
+                }
+            }
+        }
+
         // Meta-tools always win.
         if let Some(result) = meta_tools::handle_meta_tool(name, args, &self.ctx).await {
             // Any meta-tool that changes what tools/list would return must say
@@ -296,6 +315,14 @@ impl McpHandler {
         }
 
         if let Some(tool_def) = tool_def {
+            let effect = crate::capability::tool_effect(name);
+            if let Some(refusal) = crate::mode_gate::refuse(&self.ctx, name, effect) {
+                return (
+                    refusal,
+                    CallStatus::Error,
+                    Some("write_refused_by_mode".to_string()),
+                );
+            }
             return match (tool_def.handler)(args, self.ctx.clone()).await {
                 Ok(result) => {
                     let status = if result.is_error {

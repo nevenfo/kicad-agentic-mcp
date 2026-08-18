@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
         // KiCAD launches the server this way (with KICAD_API_SOCKET set), so
         // the env fallback for a blank ipc_address must apply here too (#39).
         let mut c = Config::load_from(path)?;
-        c.apply_env_fallbacks();
+        c.apply_env_fallbacks()?;
         c
     } else {
         Config::load()?
@@ -84,6 +84,7 @@ async fn main() -> Result<()> {
         project_dir: config.project_dir.clone(),
         jlcpcb_db_path: config.jlcpcb_db_path.clone(),
         auto_load_toolsets: config.auto_load_toolsets,
+        mode: config.mode,
     };
     let handler =
         McpHandler::new_with_agent_provider(server_config, config.local_provider()?).await?;

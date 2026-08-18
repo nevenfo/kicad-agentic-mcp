@@ -468,7 +468,7 @@ D.1 (revisions), E.1 (semantic diff).
 ### Validation
 A journal replay reconstructs the same semantic diff the batch reported.
 
-## D.8 — Operating mode, orthogonal to discovery — TODO
+## D.8 — Operating mode, orthogonal to discovery — DONE
 
 ### Objectif
 Profile controls *discovery*; mode (`READONLY` / `WRITE` / `MANUFACTURING` /
@@ -479,12 +479,51 @@ permission to mutate.
 F.3 (gateway), `kam-state`.
 
 ### Tâches
-- [ ] D.8.1 Mode held in `kam-state`, enforced at the gateway
-- [ ] D.8.2 A `read_only` context refuses *any* write tool, by capability class
-      rather than by a listed set
+- [x] D.8.1 Mode held in `kam-state`, enforced at the gateway.
+      `kam_state::OperatingMode` (`ReadOnly | Write | Manufacturing |
+      Experimental`) + `ModeGuard`, clean-room per INV2: the crate has no idea
+      what a tool or an effect is, and the mapping onto "may this call run"
+      lives in `konnect-core::capability::mode_allows`, which needs `Effect`.
+      Set once at startup from `KONNECT_MODE`; an unrecognised value is a
+      startup failure, never a silent fall back to the unrestricted default.
+      **D69** — never elevable in-session: the guard's only public mutator is
+      `restrict_to`, whose more-restrictive-wins rule makes a less restrictive
+      argument a no-op, so no meta-tool exposed to a model can widen what the
+      process may do, because no such call exists. Deliberately
+      `#[serde(skip)]` on `Config`: a stale `mode: "read-only"` left in a saved
+      settings file must not lock a server the operator meant to run writable
+- [x] D.8.2 A `read_only` context refuses *any* write tool, by capability class
+      rather than by a listed set — the gate reads `capability::tool_effect` /
+      `meta_tool_effect`, so a tool added tomorrow is covered by the same
+      classification the matrix already renders. Enforced at both execution
+      points and nowhere else: `mcp::handler::dispatch_tool` (direct calls and
+      meta-tools) and `handle_kicad_invoke` (once per batch entry).
+      `kicad_invoke` itself is exempt at the outer dispatch on purpose — its
+      `Write` label in `META_TOOL_EFFECTS` is a coverage-audit artefact, not a
+      bound on its entries, and enforcing it there would refuse an all-reads
+      batch a `ReadOnly` caller is allowed to run. `kicad_agent` is `Write`, so
+      the agent loop is never reached under `ReadOnly` and `apply_plan`'s
+      internal path needs no second gate. New `ToolErrorKind::
+      WriteRefusedByMode`, `TransientClass::None`: retrying the identical call
+      can never help
+- [ ] D.8.3 Give `MANUFACTURING` / `EXPERIMENTAL` a rule of their own. They
+      parse and are carried end to end today but behave exactly like `WRITE`,
+      because no MANIFEST entry distinguishes a manufacturing output from an
+      ordinary write. The rule and the classification that makes it observable
+      have to land together — a mode that claims a restriction it does not
+      enforce is the failure mode INV4 exists to prevent
 
 ### Validation
-A write tool called under `READONLY` is refused before the first mutation (INV4).
+A write tool called under `READONLY` is refused before the first mutation (INV4)
+— proven end to end through `McpHandler::handle_message`, not by calling a
+handler directly, with the work directory's bytes identical before and after the
+refusal, and a positive control in `Write` mode asserting the same call *does*
+mutate the file (otherwise the refusal would prove nothing).
+`crates/konnect-core/tests/mode_gate.rs`, plus table-driven coverage of every
+`MANIFEST` and `META_TOOL_EFFECTS` entry in `capability::tests`. Gate green
+including the benchmark: gateway 21/21, `MCP_CALLS` median 4, 2 186 external
+tokens, retrieval 62.0 % / 100 % — unchanged, which is what a `Write` default
+has to mean.
 
 ## D.9 — Serialised IPC command queue — TODO
 

@@ -649,6 +649,34 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
             continue;
         };
 
+        // D.8/INV4: refused here, before `def.handler` runs, never inside
+        // it. This is the batch's own effect check, not `kicad_invoke`'s —
+        // the envelope's `Write` label in `META_TOOL_EFFECTS` is a coverage-
+        // audit artefact and is deliberately not enforced at the outer
+        // dispatch (see `mcp::handler::McpHandler::dispatch_tool`); this is
+        // where a write inside a batch actually gets stopped.
+        let effect = crate::capability::tool_effect(name);
+        if let Some(kind) = crate::mode_gate::check(ctx, name, effect) {
+            let short = kind.short_code();
+            results.push(json!({
+                "index": index,
+                "tool": name,
+                "ok": false,
+                "error_kind": short,
+                "transient": kind.transient_class(),
+                "error": format!(
+                    "Tool '{name}' can write, and the server is running in operating mode \
+                     '{}', which refuses writes. Nothing ran.",
+                    ctx.mode.current()
+                ),
+            }));
+            failed_at = Some(index);
+            if stop_on_error {
+                break;
+            }
+            continue;
+        }
+
         let call_id = new_call_id();
         let ts = unix_ms();
         let started = std::time::Instant::now();
@@ -866,6 +894,7 @@ mod agent_gateway_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             router,
         );

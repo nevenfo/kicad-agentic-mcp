@@ -1277,6 +1277,7 @@ mod jlcpcb_cache_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
@@ -1454,6 +1455,7 @@ mod jlcpcb_published_database_tests {
                 project_dir: None,
                 jlcpcb_db_path: None,
                 auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
             },
             Arc::new(ToolRouter::new()),
         )
