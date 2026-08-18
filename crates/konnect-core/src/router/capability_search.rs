@@ -66,6 +66,35 @@ const SYNONYMS: &[(&str, &[&str])] = &[
 // on the schematic in one call") and changed nothing at lower limits. The
 // prefix rule below already absorbs most plural mismatches. Do not re-add it
 // without a benchmark run that shows a gain.
+//
+// The reverse-prefix branch in `score_tool` is a different rule, aimed at the
+// same problem, that does not have this failure mode. Stemming cut the "s"
+// off terms on both sides, which is symmetric and destructive: it can turn a
+// non-match into a match, but it can just as well turn a match into a
+// non-match, which is what happened to `batch_place_components`. Reverse
+// prefix is asymmetric and purely additive — it never removes a point from
+// anyone, it only adds a fallback +4/+1 when a query term is the longer,
+// plural side of a singular corpus term at least three characters long
+// ("templates" reaching `apply_template`, "pins" reaching
+// `get_schematic_component`) and nothing stronger already matched.
+//
+// The floor was first set to four characters by policy, not measurement, and
+// re-checked afterward: three-letter EDA terms ("pin", "net", "pad") are
+// exactly the common case a floor of four excludes, and are almost always
+// typed plural. Lowering the floor to three was measured, not assumed: swept
+// against 3/4/5 on the full golden suite, only 3 additionally fires on
+// "netlist"/"nets" -> `net` and "pins" -> `pin`, both defensible EDA
+// vocabulary, no unrelated acronym collisions. Recall on the six historical
+// tasks is unchanged at 100 % at every floor, and `batch_place_components` is
+// still the rank-1 hit for "place multiple symbols on the schematic in one
+// call" at every floor — the exact case stemming broke.
+//
+// The floor is not a complete fix. `get_schematic_pin_locations` still does
+// not reach the top 8 for "where are a component's pins": the branch fires
+// (`pin` is three letters, at the floor), but a lone +4 does not outscore the
+// dozen other tools this vague, mostly-stop-word query also weakly matches.
+// That is a scoring-ceiling problem, not a floor problem, and it is still
+// open.
 
 fn terms(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_ascii_alphanumeric())
@@ -96,6 +125,12 @@ fn expansions(term: &str) -> &'static [&'static str] {
         .unwrap_or(&[])
 }
 
+// Minimum length of a corpus term for the reverse-prefix rule below, so it
+// does not fire on noise like "a" or "add" starting a long query word. Swept
+// against {3, 4, 5} on the golden suite (see the module comment above); 3 is
+// the smallest floor that stays clean, and it is the one in use.
+const REVERSE_PREFIX_MIN_LEN: usize = 3;
+
 fn score_tool(query_terms: &[String], def: &ToolDef) -> u32 {
     let name_terms = terms(def.name);
     let desc_terms = terms(def.description);
@@ -111,10 +146,26 @@ fn score_tool(query_terms: &[String], def: &ToolDef) -> u32 {
             score += 5;
         } else if def.name.contains(qt.as_str()) {
             score += 3;
+        } else if name_terms
+            .iter()
+            .any(|t| t.len() >= REVERSE_PREFIX_MIN_LEN && qt.starts_with(t.as_str()))
+        {
+            // Reverse prefix, last resort: the branches above only match a
+            // corpus term that is a prefix of (or equal to) the query term,
+            // which can never fire when the query uses a plural of a corpus
+            // singular — "pins" is longer than `pin`, so `t.starts_with(qt)`
+            // never holds. This is the mirror check, and it only applies once
+            // nothing stronger already scored.
+            score += 4;
         }
 
         if desc_terms.iter().any(|t| t == qt) {
             score += 2;
+        } else if desc_terms
+            .iter()
+            .any(|t| t.len() >= REVERSE_PREFIX_MIN_LEN && qt.starts_with(t.as_str()))
+        {
+            score += 1;
         }
 
         for syn in expansions(qt) {
@@ -260,6 +311,45 @@ mod tests {
                 hit.toolset
             );
         }
+    }
+
+    #[test]
+    // D6's negative control, pinned: reverse prefix must never cost
+    // `batch_place_components` its rank-1 spot on the intent that plural
+    // stemming broke. This is the guard that would have caught D6.
+    fn d6_negative_control_holds() {
+        assert_eq!(
+            names("place multiple symbols on the schematic in one call", 1),
+            vec!["batch_place_components"]
+        );
+    }
+
+    #[test]
+    // Reverse prefix at work, well above the floor: "templates" (query) only
+    // reaches `apply_template` (corpus term "template", 8 letters) through
+    // the new branch — nothing else in the existing cascade lets a longer
+    // query term match a shorter corpus term.
+    fn reverse_prefix_surfaces_plural_query_over_singular_name() {
+        let hits = names("search reference circuit templates and instantiate one", 30);
+        assert!(
+            hits.contains(&"apply_template"),
+            "expected apply_template via the reverse-prefix rule, got {hits:?}"
+        );
+    }
+
+    #[test]
+    // Reverse prefix at the floor: "pins" only reaches `get_schematic_component`
+    // (via the query's "component" and "pins" -> "pin", three letters, exactly
+    // the floor) inside the top 8 with the floor at 3. This is what moving the
+    // floor from 4 to 3 measurably bought back; `get_schematic_pin_locations`
+    // is a separate, still-open gap (see the module comment) and is not
+    // asserted here.
+    fn reverse_prefix_at_the_floor_surfaces_get_schematic_component() {
+        let hits = names("where are a component's pins", 8);
+        assert!(
+            hits.contains(&"get_schematic_component"),
+            "expected get_schematic_component in the top 8 via the floor=3 reverse-prefix rule, got {hits:?}"
+        );
     }
 
     #[test]

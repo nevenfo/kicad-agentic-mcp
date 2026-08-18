@@ -1,0 +1,132 @@
+[
+  {
+    "task": "01_sch_divider",
+    "intents": [
+      "create a new kicad project",
+      "place resistor symbols on the schematic",
+      "add power symbols for the supply rails",
+      "connect two component pins with a wire",
+      "add a net label",
+      "run erc and list the components and nets"
+    ],
+    "needed": [
+      "create_project",
+      "batch_place_components",
+      "add_power_symbol",
+      "connect_pins",
+      "add_schematic_net_label",
+      "run_erc",
+      "list_schematic_components",
+      "list_schematic_nets"
+    ]
+  },
+  {
+    "task": "02_sch_ldo",
+    "intents": [
+      "create a new kicad project",
+      "place multiple symbols on the schematic in one call",
+      "add several wire segments and junction dots",
+      "add power symbols for the supply rails",
+      "run erc and list the components"
+    ],
+    "needed": [
+      "create_project",
+      "batch_place_components",
+      "batch_add_wire",
+      "batch_add_junction",
+      "add_power_symbol",
+      "run_erc",
+      "list_schematic_components"
+    ]
+  },
+  {
+    "task": "03_sch_template_stm32",
+    "intents": [
+      "create a new kicad project",
+      "search reference circuit templates and instantiate one",
+      "run erc"
+    ],
+    "needed": [
+      "create_project",
+      "search_templates",
+      "apply_template",
+      "run_erc"
+    ]
+  },
+  {
+    "task": "04_sch_hierarchy",
+    "intents": [
+      "create a new kicad project",
+      "add a hierarchical sheet and its sheet pins",
+      "duplicate a hierarchical sheet",
+      "inspect the sheet hierarchy, validate sheet pins, renumber pages"
+    ],
+    "needed": [
+      "create_project",
+      "add_hierarchical_sheet",
+      "add_sheet_pin",
+      "duplicate_sheet",
+      "get_sheet_hierarchy",
+      "validate_sheet_pins",
+      "renumber_sheet_pages"
+    ]
+  },
+  {
+    "task": "05_manufacturing_exports",
+    "intents": [
+      "create a new kicad project",
+      "place resistor symbols and power symbols",
+      "connect two component pins with a wire and add a net label",
+      "export bom and netlist and schematic svg",
+      "run erc and list the components"
+    ],
+    "needed": [
+      "create_project",
+      "batch_place_components",
+      "add_power_symbol",
+      "connect_pins",
+      "add_schematic_net_label",
+      "export_bom",
+      "generate_netlist",
+      "export_schematic_svg",
+      "run_erc"
+    ]
+  },
+  {
+    "task": "06_recovery",
+    "intents": [
+      "create a new kicad project",
+      "add a symbol to the schematic",
+      "place multiple symbols on the schematic in one call",
+      "add power symbols for the supply rails",
+      "connect two component pins with a wire",
+      "run erc and list the components"
+    ],
+    "needed": [
+      "create_project",
+      "add_schematic_component",
+      "list_schematic_components",
+      "connect_pins",
+      "batch_place_components",
+      "add_power_symbol",
+      "run_erc"
+    ]
+  },
+  {
+    "task": "07_sch_inspection",
+    "intents": [
+      "list the components in a schematic",
+      "list the nets in a schematic",
+      "look up one component by its reference",
+      "find nets with a single pin on them",
+      "where are a component's pins"
+    ],
+    "needed": [
+      "list_schematic_components",
+      "list_schematic_nets",
+      "get_schematic_component",
+      "get_schematic_pin_locations",
+      "find_single_pin_nets"
+    ]
+  }
+]

@@ -1,0 +1,1281 @@
+    Finished `release` profile [optimized] target(s) in 0.21s
+     Running `target\release\examples\retrieval_probe.exe bench/results/_retrieval_intents.json`
+sanity check: local `current D=on` reimplementation matches production search() exactly
+
+==== task 01_sch_divider ====
+-- intent: "create a new kicad project"
+   1  26 create_project [NEEDED]
+   2  14 create_footprint
+   3  14 create_schematic
+   4  12 create_symbol
+   5  12 get_project_info
+   6  12 load_project_config
+   7  12 open_project
+   8  12 save_project_config
+   9  10 create_netclass
+  10  10 save_project
+  11  10 snapshot_project
+  12   2 add_design_rule
+  13   2 add_layer
+  14   2 add_net
+  15   2 apply_template
+  16   2 duplicate_component
+  17   2 duplicate_sheet
+  18   2 edit_sheet
+  19   2 edit_sheet_pin
+  20   2 get_effective_config
+  21   2 graph_query
+  22   2 graph_stats
+  23   2 import_sheet_pins
+  24   2 launch_kicad_ui
+  25   2 list_design_rules
+  26   2 list_footprint_libraries
+  27   2 list_symbol_libraries
+  28   2 modify_trace
+  29   2 move_component
+  30   2 move_schematic_component
+-- intent: "place resistor symbols on the schematic"
+   1  23 add_schematic_component
+   2  23 batch_place_components [NEEDED]
+   3  21 place_component
+   4  20 place_component_array
+   5  18 delete_schematic_component
+   6  17 add_schematic_connection
+   7  17 add_schematic_text
+   8  17 get_schematic_component
+   9  17 move_schematic_component
+  10  16 add_schematic_net_label [NEEDED]
+  11  16 edit_schematic_component
+  12  16 rotate_schematic_component
+  13  15 add_power_symbol [NEEDED]
+  14  14 create_symbol
+  15  14 get_schematic_pin_locations
+  16  14 list_schematic_components [NEEDED]
+  17  13 get_schematic_layout
+  18  12 add_component_annotation
+  19  12 check_schematic_overlaps
+  20  12 create_schematic
+  21  12 export_schematic_pdf
+  22  12 export_schematic_svg
+  23  12 get_schematic_view
+  24  12 list_schematic_nets [NEEDED]
+  25  12 list_schematic_wires
+  26  12 list_symbols_in_library
+  27  12 open_schematic_viewer
+  28  12 search_symbols
+  29  11 delete_schematic_net_label
+  30  11 get_symbol_info
+-- intent: "add power symbols for the supply rails"
+   1  33 add_power_symbol [NEEDED]
+   2  28 audit_power_rails
+   3  15 add_design_rule
+   4  13 add_component_annotation
+   5  13 add_schematic_component
+   6  12 add_board_outline
+   7  12 add_board_text
+   8  12 add_bus
+   9  12 add_bus_entry
+  10  12 add_copper_pour
+  11  12 add_hierarchical_sheet
+  12  12 add_junction
+  13  12 add_layer
+  14  12 add_mounting_hole
+  15  12 add_net
+  16  12 add_no_connect
+  17  12 add_schematic_net_label [NEEDED]
+  18  12 add_schematic_text
+  19  12 add_sheet_pin
+  20  12 add_via
+  21  12 add_wire
+  22  12 add_zone
+  23  12 batch_add_junction
+  24  12 batch_add_wire
+  25  12 search_symbols
+  26  11 list_symbols_in_library
+  27  10 add_bus_alias
+  28  10 add_schematic_connection
+  29  10 create_symbol
+  30   5 delete_symbol
+-- intent: "connect two component pins with a wire"
+   1  40 connect_pins [NEEDED]
+   2  33 batch_connect_pins
+   3  27 split_wire_at_point
+   4  26 validate_wire_connections
+   5  25 connect_to_net
+   6  24 batch_connect_to_net
+   7  23 validate_component_connections
+   8  22 add_wire
+   9  22 connect_passthrough
+  10  21 add_no_connect
+  11  20 batch_add_wire
+  12  20 batch_delete_no_connect
+  13  20 batch_delete_schematic_wire
+  14  20 delete_no_connect
+  15  20 delete_schematic_wire
+  16  19 add_schematic_connection
+  17  14 find_single_pin_nets
+  18  13 get_component_nets
+  19  12 get_pin_connections
+  20  12 import_sheet_pins
+  21  12 replace_component
+  22  12 validate_sheet_pins
+  23  11 get_schematic_component
+  24  11 move_connected
+  25  10 add_component_annotation
+  26  10 add_schematic_component
+  27  10 delete_component
+  28  10 delete_schematic_component
+  29  10 duplicate_component
+  30  10 edit_component
+-- intent: "add a net label"
+   1  44 add_schematic_net_label [NEEDED]
+   2  32 delete_schematic_net_label
+   3  28 add_net
+   4  19 connect_to_net
+   5  19 rotate_schematic_label
+   6  18 add_bus
+   7  18 add_schematic_text
+   8  16 assign_net_to_class
+   9  16 batch_connect_to_net
+  10  16 get_net_components
+  11  16 get_net_connections
+  12  16 get_net_connectivity
+  13  16 get_pin_net_name
+  14  15 add_copper_pour
+  15  15 add_sheet_pin
+  16  15 add_via
+  17  15 add_zone
+  18  12 add_board_outline
+  19  12 add_board_text
+  20  12 add_bus_entry
+  21  12 add_component_annotation
+  22  12 add_design_rule
+  23  12 add_junction
+  24  12 add_layer
+  25  12 add_mounting_hole
+  26  12 add_no_connect
+  27  12 add_power_symbol [NEEDED]
+  28  12 add_schematic_component
+  29  12 add_wire
+  30  12 batch_add_junction
+-- intent: "run erc and list the components and nets"
+   1  32 run_erc [NEEDED]
+   2  28 list_schematic_nets [NEEDED]
+   3  22 get_component_nets
+   4  22 get_net_components
+   5  22 get_nets_list
+   6  22 list_schematic_components [NEEDED]
+   7  17 find_shorted_nets
+   8  16 get_component_list
+   9  15 find_single_pin_nets
+  10  13 list_schematic_labels
+  11  13 run_drc
+  12  12 batch_delete_schematic_components
+  13  12 batch_edit_schematic_components
+  14  12 bulk_move_schematic_components
+  15  12 export_netlist_summary
+  16  12 group_components
+  17  12 list_buses
+  18  12 list_design_rules
+  19  12 list_footprint_libraries
+  20  12 list_library_footprints
+  21  12 list_schematic_wires
+  22  12 list_symbol_libraries
+  23  12 list_symbols_in_library
+  24  12 list_tasks
+  25  12 list_template_categories
+  26  12 run_design_review
+  27  11 batch_place_components [NEEDED]
+  28  11 get_pin_net_name
+  29  11 validate_component_connections
+  30  10 align_components
+-- needed summary for 01_sch_divider --
+  create_project: best rank 1, score 26, via "create a new kicad project"
+  batch_place_components: best rank 2, score 23, via "place resistor symbols on the schematic"
+  add_power_symbol: best rank 1, score 33, via "add power symbols for the supply rails"
+  connect_pins: best rank 1, score 40, via "connect two component pins with a wire"
+  add_schematic_net_label: best rank 1, score 44, via "add a net label"
+  run_erc: best rank 1, score 32, via "run erc and list the components and nets"
+  list_schematic_components: best rank 6, score 22, via "run erc and list the components and nets"
+  list_schematic_nets: best rank 2, score 28, via "run erc and list the components and nets"
+
+==== task 02_sch_ldo ====
+-- intent: "create a new kicad project"
+   1  26 create_project [NEEDED]
+   2  14 create_footprint
+   3  14 create_schematic
+   4  12 create_symbol
+   5  12 get_project_info
+   6  12 load_project_config
+   7  12 open_project
+   8  12 save_project_config
+   9  10 create_netclass
+  10  10 save_project
+  11  10 snapshot_project
+  12   2 add_design_rule
+  13   2 add_layer
+  14   2 add_net
+  15   2 apply_template
+  16   2 duplicate_component
+  17   2 duplicate_sheet
+  18   2 edit_sheet
+  19   2 edit_sheet_pin
+  20   2 get_effective_config
+  21   2 graph_query
+  22   2 graph_stats
+  23   2 import_sheet_pins
+  24   2 launch_kicad_ui
+  25   2 list_design_rules
+  26   2 list_footprint_libraries
+  27   2 list_symbol_libraries
+  28   2 modify_trace
+  29   2 move_component
+  30   2 move_schematic_component
+-- intent: "place multiple symbols on the schematic in one call"
+   1  26 batch_place_components [NEEDED]
+   2  21 add_schematic_component
+   3  21 place_component_array
+   4  20 place_component
+   5  17 add_schematic_text
+   6  16 add_schematic_connection
+   7  16 add_schematic_net_label
+   8  16 delete_schematic_component
+   9  16 list_schematic_components [NEEDED]
+  10  15 batch_delete_schematic_components
+  11  15 batch_edit_schematic_components
+  12  15 bulk_move_schematic_components
+  13  15 get_schematic_component
+  14  15 move_schematic_component
+  15  14 edit_schematic_component
+  16  14 rotate_schematic_component
+  17  13 get_schematic_pin_locations
+  18  12 batch_delete_schematic_wire
+  19  12 batch_get_schematic_pin_locations
+  20  12 check_schematic_overlaps
+  21  12 create_schematic
+  22  12 export_schematic_pdf
+  23  12 export_schematic_svg
+  24  12 get_schematic_layout
+  25  12 get_schematic_view
+  26  12 list_schematic_nets
+  27  12 list_schematic_wires
+  28  12 open_schematic_viewer
+  29  12 search_symbols
+  30  11 add_power_symbol [NEEDED]
+-- intent: "add several wire segments and junction dots"
+   1  33 add_wire
+   2  30 batch_add_wire [NEEDED]
+   3  28 add_junction
+   4  26 batch_add_junction [NEEDED]
+   5  24 split_wire_at_point
+   6  18 batch_delete_schematic_wire
+   7  17 delete_schematic_wire
+   8  16 add_bus
+   9  16 add_no_connect
+  10  16 add_schematic_connection
+  11  16 validate_wire_connections
+  12  15 add_bus_entry
+  13  12 add_board_outline
+  14  12 add_board_text
+  15  12 add_component_annotation
+  16  12 add_copper_pour
+  17  12 add_design_rule
+  18  12 add_layer
+  19  12 add_mounting_hole
+  20  12 add_net
+  21  12 add_power_symbol [NEEDED]
+  22  12 add_schematic_component
+  23  12 add_schematic_net_label
+  24  12 add_schematic_text
+  25  12 add_sheet_pin
+  26  12 add_via
+  27  12 add_zone
+  28  10 add_bus_alias
+  29  10 add_hierarchical_sheet
+  30  10 list_schematic_wires
+-- intent: "add power symbols for the supply rails"
+   1  33 add_power_symbol [NEEDED]
+   2  28 audit_power_rails
+   3  15 add_design_rule
+   4  13 add_component_annotation
+   5  13 add_schematic_component
+   6  12 add_board_outline
+   7  12 add_board_text
+   8  12 add_bus
+   9  12 add_bus_entry
+  10  12 add_copper_pour
+  11  12 add_hierarchical_sheet
+  12  12 add_junction
+  13  12 add_layer
+  14  12 add_mounting_hole
+  15  12 add_net
+  16  12 add_no_connect
+  17  12 add_schematic_net_label
+  18  12 add_schematic_text
+  19  12 add_sheet_pin
+  20  12 add_via
+  21  12 add_wire
+  22  12 add_zone
+  23  12 batch_add_junction [NEEDED]
+  24  12 batch_add_wire [NEEDED]
+  25  12 search_symbols
+  26  11 list_symbols_in_library
+  27  10 add_bus_alias
+  28  10 add_schematic_connection
+  29  10 create_symbol
+  30   5 delete_symbol
+-- intent: "run erc and list the components"
+   1  32 run_erc [NEEDED]
+   2  22 list_schematic_components [NEEDED]
+   3  17 get_net_components
+   4  17 list_schematic_nets
+   5  16 get_component_list
+   6  13 run_drc
+   7  12 batch_delete_schematic_components
+   8  12 batch_edit_schematic_components
+   9  12 bulk_move_schematic_components
+  10  12 group_components
+  11  12 list_buses
+  12  12 list_design_rules
+  13  12 list_footprint_libraries
+  14  12 list_library_footprints
+  15  12 list_schematic_labels
+  16  12 list_schematic_wires
+  17  12 list_symbol_libraries
+  18  12 list_symbols_in_library
+  19  12 list_tasks
+  20  12 list_template_categories
+  21  12 run_design_review
+  22  11 batch_place_components [NEEDED]
+  23  11 validate_component_connections
+  24  10 align_components
+  25  10 export_netlist_summary
+  26  10 get_component_nets
+  27  10 get_layer_list
+  28  10 get_nets_list
+  29   7 get_connected_items
+  30   6 check_clearance
+-- needed summary for 02_sch_ldo --
+  create_project: best rank 1, score 26, via "create a new kicad project"
+  batch_place_components: best rank 1, score 26, via "place multiple symbols on the schematic in one call"
+  batch_add_wire: best rank 2, score 30, via "add several wire segments and junction dots"
+  batch_add_junction: best rank 4, score 26, via "add several wire segments and junction dots"
+  add_power_symbol: best rank 1, score 33, via "add power symbols for the supply rails"
+  run_erc: best rank 1, score 32, via "run erc and list the components"
+  list_schematic_components: best rank 2, score 22, via "run erc and list the components"
+
+==== task 03_sch_template_stm32 ====
+-- intent: "create a new kicad project"
+   1  26 create_project [NEEDED]
+   2  14 create_footprint
+   3  14 create_schematic
+   4  12 create_symbol
+   5  12 get_project_info
+   6  12 load_project_config
+   7  12 open_project
+   8  12 save_project_config
+   9  10 create_netclass
+  10  10 save_project
+  11  10 snapshot_project
+  12   2 add_design_rule
+  13   2 add_layer
+  14   2 add_net
+  15   2 apply_template [NEEDED]
+  16   2 duplicate_component
+  17   2 duplicate_sheet
+  18   2 edit_sheet
+  19   2 edit_sheet_pin
+  20   2 get_effective_config
+  21   2 graph_query
+  22   2 graph_stats
+  23   2 import_sheet_pins
+  24   2 launch_kicad_ui
+  25   2 list_design_rules
+  26   2 list_footprint_libraries
+  27   2 list_symbol_libraries
+  28   2 modify_trace
+  29   2 move_component
+  30   2 move_schematic_component
+-- intent: "search reference circuit templates and instantiate one"
+   1  28 search_templates [NEEDED]
+   2  12 get_template
+   3  12 search_footprints
+   4  12 search_jlcpcb_parts
+   5  12 search_symbols
+   6  11 apply_template [NEEDED]
+   7   7 validate_component_connections
+   8   6 list_template_categories
+   9   5 batch_delete_schematic_components
+  10   5 batch_place_components
+  11   5 delete_schematic_component
+  12   5 edit_schematic_component
+  13   5 find_component
+  14   4 edit_sheet
+  15   3 add_component_annotation
+  16   3 add_schematic_component
+  17   3 add_zone
+  18   3 align_components
+  19   3 batch_edit_schematic_components
+  20   3 bulk_move_schematic_components
+  21   3 delete_component
+  22   3 duplicate_component
+  23   3 edit_component
+  24   3 get_component_list
+  25   3 get_component_nets
+  26   3 get_component_pads
+  27   3 get_net_components
+  28   3 get_schematic_component
+  29   3 group_components
+  30   3 list_schematic_components
+-- intent: "run erc"
+   1  30 run_erc [NEEDED]
+   2  13 run_drc
+   3  12 run_design_review
+   4   6 validate_component_connections
+   5   6 validate_wire_connections
+   6   5 export_netlist_summary
+   7   5 find_orphan_items
+   8   5 find_shorted_nets
+   9   5 find_single_pin_nets
+  10   5 get_component_nets
+  11   5 get_connected_items
+  12   5 get_net_components
+  13   5 get_net_connections
+  14   5 get_net_connectivity
+  15   5 get_pin_connections
+  16   5 get_pin_net_name
+  17   5 graph_neighbors
+  18   5 graph_query
+  19   5 graph_stats
+  20   5 list_schematic_nets
+  21   5 trace_from_point
+  22   4 check_bom_health
+  23   4 check_clearance
+  24   4 check_freerouting
+  25   4 check_kicad_ui
+  26   4 check_schematic_overlaps
+  27   4 validate_sheet_pins
+  28   3 add_hierarchical_sheet
+  29   3 get_drc_violations
+  30   3 preview_plan
+-- needed summary for 03_sch_template_stm32 --
+  create_project: best rank 1, score 26, via "create a new kicad project"
+  search_templates: best rank 1, score 28, via "search reference circuit templates and instantiate one"
+  apply_template: best rank 6, score 11, via "search reference circuit templates and instantiate one"
+  run_erc: best rank 1, score 30, via "run erc"
+
+==== task 04_sch_hierarchy ====
+-- intent: "create a new kicad project"
+   1  26 create_project [NEEDED]
+   2  14 create_footprint
+   3  14 create_schematic
+   4  12 create_symbol
+   5  12 get_project_info
+   6  12 load_project_config
+   7  12 open_project
+   8  12 save_project_config
+   9  10 create_netclass
+  10  10 save_project
+  11  10 snapshot_project
+  12   2 add_design_rule
+  13   2 add_layer
+  14   2 add_net
+  15   2 apply_template
+  16   2 duplicate_component
+  17   2 duplicate_sheet [NEEDED]
+  18   2 edit_sheet
+  19   2 edit_sheet_pin
+  20   2 get_effective_config
+  21   2 graph_query
+  22   2 graph_stats
+  23   2 import_sheet_pins
+  24   2 launch_kicad_ui
+  25   2 list_design_rules
+  26   2 list_footprint_libraries
+  27   2 list_symbol_libraries
+  28   2 modify_trace
+  29   2 move_component
+  30   2 move_schematic_component
+-- intent: "add a hierarchical sheet and its sheet pins"
+   1  62 add_hierarchical_sheet [NEEDED]
+   2  54 add_sheet_pin [NEEDED]
+   3  48 import_sheet_pins
+   4  48 validate_sheet_pins [NEEDED]
+   5  44 get_sheet_hierarchy [NEEDED]
+   6  40 duplicate_sheet [NEEDED]
+   7  39 edit_sheet_pin
+   8  37 delete_sheet_pin
+   9  32 delete_sheet
+  10  32 edit_sheet
+  11  32 move_sheet
+  12  32 renumber_sheet_pages [NEEDED]
+  13  18 add_bus_alias
+  14  16 add_schematic_net_label
+  15  14 add_bus
+  16  13 add_design_rule
+  17  13 add_junction
+  18  13 add_no_connect
+  19  12 add_board_outline
+  20  12 add_board_text
+  21  12 add_bus_entry
+  22  12 add_component_annotation
+  23  12 add_copper_pour
+  24  12 add_layer
+  25  12 add_mounting_hole
+  26  12 add_net
+  27  12 add_power_symbol
+  28  12 add_schematic_component
+  29  12 add_schematic_connection
+  30  12 add_schematic_text
+-- intent: "duplicate a hierarchical sheet"
+   1  32 add_hierarchical_sheet [NEEDED]
+   2  29 duplicate_sheet [NEEDED]
+   3  20 get_sheet_hierarchy [NEEDED]
+   4  19 add_sheet_pin [NEEDED]
+   5  19 import_sheet_pins
+   6  19 validate_sheet_pins [NEEDED]
+   7  18 renumber_sheet_pages [NEEDED]
+   8  16 delete_sheet
+   9  16 delete_sheet_pin
+  10  16 edit_sheet
+  11  16 edit_sheet_pin
+  12  16 move_sheet
+  13  12 duplicate_component
+  14   6 open_schematic_viewer
+  15   3 add_bus_alias
+  16   3 add_schematic_net_label
+  17   3 enrich_datasheets
+  18   3 export_schematic_pdf
+  19   3 export_schematic_svg
+  20   3 get_datasheet_url
+  21   3 list_schematic_labels
+-- intent: "inspect the sheet hierarchy, validate sheet pins, renumber pages"
+   1  56 validate_sheet_pins [NEEDED]
+   2  53 get_sheet_hierarchy [NEEDED]
+   3  53 renumber_sheet_pages [NEEDED]
+   4  46 import_sheet_pins
+   5  40 add_hierarchical_sheet [NEEDED]
+   6  40 add_sheet_pin [NEEDED]
+   7  37 delete_sheet_pin
+   8  37 edit_sheet_pin
+   9  36 delete_sheet
+  10  34 duplicate_sheet [NEEDED]
+  11  32 edit_sheet
+  12  32 move_sheet
+  13  12 connect_pins
+  14  12 validate_component_connections
+  15  11 batch_connect_pins
+  16  11 validate_wire_connections
+  17  10 validate_for_manufacturing
+  18   8 open_schematic_viewer
+  19   6 add_bus_alias
+  20   6 enrich_datasheets
+  21   6 export_schematic_pdf
+  22   6 export_schematic_svg
+  23   6 find_single_pin_nets
+  24   6 get_datasheet_url
+  25   5 batch_get_schematic_pin_locations
+  26   5 get_pin_connections
+  27   5 get_pin_net_name
+  28   5 get_schematic_pin_locations
+  29   2 add_schematic_connection
+  30   2 add_schematic_net_label
+-- needed summary for 04_sch_hierarchy --
+  create_project: best rank 1, score 26, via "create a new kicad project"
+  add_hierarchical_sheet: best rank 1, score 62, via "add a hierarchical sheet and its sheet pins"
+  add_sheet_pin: best rank 2, score 54, via "add a hierarchical sheet and its sheet pins"
+  duplicate_sheet: best rank 6, score 40, via "add a hierarchical sheet and its sheet pins"
+  get_sheet_hierarchy: best rank 2, score 53, via "inspect the sheet hierarchy, validate sheet pins, renumber pages"
+  validate_sheet_pins: best rank 1, score 56, via "inspect the sheet hierarchy, validate sheet pins, renumber pages"
+  renumber_sheet_pages: best rank 3, score 53, via "inspect the sheet hierarchy, validate sheet pins, renumber pages"
+
+==== task 05_manufacturing_exports ====
+-- intent: "create a new kicad project"
+   1  26 create_project [NEEDED]
+   2  14 create_footprint
+   3  14 create_schematic
+   4  12 create_symbol
+   5  12 get_project_info
+   6  12 load_project_config
+   7  12 open_project
+   8  12 save_project_config
+   9  10 create_netclass
+  10  10 save_project
+  11  10 snapshot_project
+  12   2 add_design_rule
+  13   2 add_layer
+  14   2 add_net
+  15   2 apply_template
+  16   2 duplicate_component
+  17   2 duplicate_sheet
+  18   2 edit_sheet
+  19   2 edit_sheet_pin
+  20   2 get_effective_config
+  21   2 graph_query
+  22   2 graph_stats
+  23   2 import_sheet_pins
+  24   2 launch_kicad_ui
+  25   2 list_design_rules
+  26   2 list_footprint_libraries
+  27   2 list_symbol_libraries
+  28   2 modify_trace
+  29   2 move_component
+  30   2 move_schematic_component
+-- intent: "place resistor symbols and power symbols"
+   1  30 add_power_symbol [NEEDED]
+   2  24 search_symbols
+   3  23 batch_place_components [NEEDED]
+   4  23 list_symbols_in_library
+   5  21 place_component
+   6  20 place_component_array
+   7  19 create_symbol
+   8  14 delete_symbol
+   9  14 get_symbol_info
+  10  14 list_symbol_libraries
+  11  14 register_symbol_library
+  12  12 add_schematic_component
+  13  12 audit_power_rails
+  14  11 add_component_annotation
+  15  10 replace_component
+  16   8 add_hierarchical_sheet
+  17   8 export_position_file
+  18   8 get_schematic_component
+  19   8 move_schematic_component
+  20   7 add_bus_entry
+  21   7 delete_schematic_component
+  22   7 edit_schematic_component
+  23   7 graph_neighbors
+  24   7 rotate_schematic_component
+  25   6 add_design_rule
+  26   6 graph_query
+  27   6 graph_stats
+  28   6 list_schematic_nets
+  29   5 add_mounting_hole
+  30   5 add_schematic_connection
+-- intent: "connect two component pins with a wire and add a net label"
+   1  44 add_schematic_net_label [NEEDED]
+   2  44 connect_to_net
+   3  40 batch_connect_to_net
+   4  40 connect_pins [NEEDED]
+   5  34 add_wire
+   6  33 add_no_connect
+   7  33 batch_connect_pins
+   8  32 batch_add_wire
+   9  32 delete_schematic_net_label
+  10  30 connect_passthrough
+  11  29 add_schematic_connection
+  12  29 split_wire_at_point
+  13  29 validate_wire_connections
+  14  28 add_net
+  15  26 validate_component_connections
+  16  25 get_net_connectivity
+  17  23 get_net_components
+  18  23 get_net_connections
+  19  23 get_pin_net_name
+  20  22 add_bus
+  21  22 add_component_annotation
+  22  22 add_schematic_component
+  23  22 find_single_pin_nets
+  24  21 add_sheet_pin
+  25  20 batch_delete_no_connect
+  26  20 batch_delete_schematic_wire
+  27  20 delete_no_connect
+  28  20 delete_schematic_wire
+  29  19 rotate_schematic_label
+  30  18 add_schematic_text
+-- intent: "export bom and netlist and schematic svg"
+   1  40 export_schematic_svg [NEEDED]
+   2  34 export_bom [NEEDED]
+   3  32 export_netlist
+   4  32 export_netlist_summary
+   5  28 export_schematic_pdf
+   6  28 export_svg
+   7  19 export_ipc2581
+   8  18 generate_netlist [NEEDED]
+   9  17 add_schematic_net_label [NEEDED]
+  10  17 export_manufacturing_package
+  11  16 check_bom_health
+  12  16 export_3d
+  13  16 export_drill
+  14  16 export_dxf
+  15  16 export_gencad
+  16  16 export_gerber
+  17  16 export_odb
+  18  16 export_pdf
+  19  15 delete_schematic_net_label
+  20  14 export_position_file
+  21  14 open_schematic_viewer
+  22  13 add_schematic_text
+  23  12 add_schematic_component
+  24  12 add_schematic_connection
+  25  12 create_schematic
+  26  12 delete_schematic_component
+  27  12 get_schematic_layout
+  28  12 get_schematic_pin_locations
+  29  12 get_schematic_view
+  30  12 import_svg_logo
+-- intent: "run erc and list the components"
+   1  32 run_erc [NEEDED]
+   2  22 list_schematic_components
+   3  17 get_net_components
+   4  17 list_schematic_nets
+   5  16 get_component_list
+   6  13 run_drc
+   7  12 batch_delete_schematic_components
+   8  12 batch_edit_schematic_components
+   9  12 bulk_move_schematic_components
+  10  12 group_components
+  11  12 list_buses
+  12  12 list_design_rules
+  13  12 list_footprint_libraries
+  14  12 list_library_footprints
+  15  12 list_schematic_labels
+  16  12 list_schematic_wires
+  17  12 list_symbol_libraries
+  18  12 list_symbols_in_library
+  19  12 list_tasks
+  20  12 list_template_categories
+  21  12 run_design_review
+  22  11 batch_place_components [NEEDED]
+  23  11 validate_component_connections
+  24  10 align_components
+  25  10 export_netlist_summary
+  26  10 get_component_nets
+  27  10 get_layer_list
+  28  10 get_nets_list
+  29   7 get_connected_items
+  30   6 check_clearance
+-- needed summary for 05_manufacturing_exports --
+  create_project: best rank 1, score 26, via "create a new kicad project"
+  batch_place_components: best rank 3, score 23, via "place resistor symbols and power symbols"
+  add_power_symbol: best rank 1, score 30, via "place resistor symbols and power symbols"
+  connect_pins: best rank 4, score 40, via "connect two component pins with a wire and add a net label"
+  add_schematic_net_label: best rank 1, score 44, via "connect two component pins with a wire and add a net label"
+  export_bom: best rank 2, score 34, via "export bom and netlist and schematic svg"
+  generate_netlist: best rank 8, score 18, via "export bom and netlist and schematic svg"
+  export_schematic_svg: best rank 1, score 40, via "export bom and netlist and schematic svg"
+  run_erc: best rank 1, score 32, via "run erc and list the components"
+
+==== task 06_recovery ====
+-- intent: "create a new kicad project"
+   1  26 create_project [NEEDED]
+   2  14 create_footprint
+   3  14 create_schematic
+   4  12 create_symbol
+   5  12 get_project_info
+   6  12 load_project_config
+   7  12 open_project
+   8  12 save_project_config
+   9  10 create_netclass
+  10  10 save_project
+  11  10 snapshot_project
+  12   2 add_design_rule
+  13   2 add_layer
+  14   2 add_net
+  15   2 apply_template
+  16   2 duplicate_component
+  17   2 duplicate_sheet
+  18   2 edit_sheet
+  19   2 edit_sheet_pin
+  20   2 get_effective_config
+  21   2 graph_query
+  22   2 graph_stats
+  23   2 import_sheet_pins
+  24   2 launch_kicad_ui
+  25   2 list_design_rules
+  26   2 list_footprint_libraries
+  27   2 list_symbol_libraries
+  28   2 modify_trace
+  29   2 move_component
+  30   2 move_schematic_component
+-- intent: "add a symbol to the schematic"
+   1  30 add_power_symbol [NEEDED]
+   2  28 add_schematic_component [NEEDED]
+   3  24 add_schematic_net_label
+   4  24 add_schematic_text
+   5  22 add_schematic_connection
+   6  20 register_symbol_library
+   7  19 create_symbol
+   8  18 get_symbol_info
+   9  17 add_component_annotation
+  10  17 delete_symbol
+  11  16 list_symbol_libraries
+  12  15 delete_schematic_component
+  13  15 get_schematic_pin_locations
+  14  15 list_schematic_components [NEEDED]
+  15  14 add_bus
+  16  13 edit_schematic_component
+  17  13 get_schematic_component
+  18  13 move_schematic_component
+  19  13 rotate_schematic_component
+  20  12 add_board_outline
+  21  12 add_board_text
+  22  12 add_bus_entry
+  23  12 add_copper_pour
+  24  12 add_design_rule
+  25  12 add_hierarchical_sheet
+  26  12 add_junction
+  27  12 add_layer
+  28  12 add_mounting_hole
+  29  12 add_net
+  30  12 add_no_connect
+-- intent: "place multiple symbols on the schematic in one call"
+   1  26 batch_place_components [NEEDED]
+   2  21 add_schematic_component [NEEDED]
+   3  21 place_component_array
+   4  20 place_component
+   5  17 add_schematic_text
+   6  16 add_schematic_connection
+   7  16 add_schematic_net_label
+   8  16 delete_schematic_component
+   9  16 list_schematic_components [NEEDED]
+  10  15 batch_delete_schematic_components
+  11  15 batch_edit_schematic_components
+  12  15 bulk_move_schematic_components
+  13  15 get_schematic_component
+  14  15 move_schematic_component
+  15  14 edit_schematic_component
+  16  14 rotate_schematic_component
+  17  13 get_schematic_pin_locations
+  18  12 batch_delete_schematic_wire
+  19  12 batch_get_schematic_pin_locations
+  20  12 check_schematic_overlaps
+  21  12 create_schematic
+  22  12 export_schematic_pdf
+  23  12 export_schematic_svg
+  24  12 get_schematic_layout
+  25  12 get_schematic_view
+  26  12 list_schematic_nets
+  27  12 list_schematic_wires
+  28  12 open_schematic_viewer
+  29  12 search_symbols
+  30  11 add_power_symbol [NEEDED]
+-- intent: "add power symbols for the supply rails"
+   1  33 add_power_symbol [NEEDED]
+   2  28 audit_power_rails
+   3  15 add_design_rule
+   4  13 add_component_annotation
+   5  13 add_schematic_component [NEEDED]
+   6  12 add_board_outline
+   7  12 add_board_text
+   8  12 add_bus
+   9  12 add_bus_entry
+  10  12 add_copper_pour
+  11  12 add_hierarchical_sheet
+  12  12 add_junction
+  13  12 add_layer
+  14  12 add_mounting_hole
+  15  12 add_net
+  16  12 add_no_connect
+  17  12 add_schematic_net_label
+  18  12 add_schematic_text
+  19  12 add_sheet_pin
+  20  12 add_via
+  21  12 add_wire
+  22  12 add_zone
+  23  12 batch_add_junction
+  24  12 batch_add_wire
+  25  12 search_symbols
+  26  11 list_symbols_in_library
+  27  10 add_bus_alias
+  28  10 add_schematic_connection
+  29  10 create_symbol
+  30   5 delete_symbol
+-- intent: "connect two component pins with a wire"
+   1  40 connect_pins [NEEDED]
+   2  33 batch_connect_pins
+   3  27 split_wire_at_point
+   4  26 validate_wire_connections
+   5  25 connect_to_net
+   6  24 batch_connect_to_net
+   7  23 validate_component_connections
+   8  22 add_wire
+   9  22 connect_passthrough
+  10  21 add_no_connect
+  11  20 batch_add_wire
+  12  20 batch_delete_no_connect
+  13  20 batch_delete_schematic_wire
+  14  20 delete_no_connect
+  15  20 delete_schematic_wire
+  16  19 add_schematic_connection
+  17  14 find_single_pin_nets
+  18  13 get_component_nets
+  19  12 get_pin_connections
+  20  12 import_sheet_pins
+  21  12 replace_component
+  22  12 validate_sheet_pins
+  23  11 get_schematic_component
+  24  11 move_connected
+  25  10 add_component_annotation
+  26  10 add_schematic_component [NEEDED]
+  27  10 delete_component
+  28  10 delete_schematic_component
+  29  10 duplicate_component
+  30  10 edit_component
+-- intent: "run erc and list the components"
+   1  32 run_erc [NEEDED]
+   2  22 list_schematic_components [NEEDED]
+   3  17 get_net_components
+   4  17 list_schematic_nets
+   5  16 get_component_list
+   6  13 run_drc
+   7  12 batch_delete_schematic_components
+   8  12 batch_edit_schematic_components
+   9  12 bulk_move_schematic_components
+  10  12 group_components
+  11  12 list_buses
+  12  12 list_design_rules
+  13  12 list_footprint_libraries
+  14  12 list_library_footprints
+  15  12 list_schematic_labels
+  16  12 list_schematic_wires
+  17  12 list_symbol_libraries
+  18  12 list_symbols_in_library
+  19  12 list_tasks
+  20  12 list_template_categories
+  21  12 run_design_review
+  22  11 batch_place_components [NEEDED]
+  23  11 validate_component_connections
+  24  10 align_components
+  25  10 export_netlist_summary
+  26  10 get_component_nets
+  27  10 get_layer_list
+  28  10 get_nets_list
+  29   7 get_connected_items
+  30   6 check_clearance
+-- needed summary for 06_recovery --
+  create_project: best rank 1, score 26, via "create a new kicad project"
+  add_schematic_component: best rank 2, score 28, via "add a symbol to the schematic"
+  list_schematic_components: best rank 2, score 22, via "run erc and list the components"
+  connect_pins: best rank 1, score 40, via "connect two component pins with a wire"
+  batch_place_components: best rank 1, score 26, via "place multiple symbols on the schematic in one call"
+  add_power_symbol: best rank 1, score 33, via "add power symbols for the supply rails"
+  run_erc: best rank 1, score 32, via "run erc and list the components"
+
+==== task 07_sch_inspection ====
+-- intent: "list the components in a schematic"
+   1  34 list_schematic_components [NEEDED]
+   2  24 list_schematic_wires
+   3  22 batch_delete_schematic_components
+   4  22 batch_edit_schematic_components
+   5  22 bulk_move_schematic_components
+   6  22 list_schematic_labels
+   7  22 list_schematic_nets [NEEDED]
+   8  16 add_schematic_component
+   9  16 delete_schematic_component
+  10  16 get_component_list
+  11  14 edit_schematic_component
+  12  14 get_schematic_component [NEEDED]
+  13  14 group_components
+  14  14 list_buses
+  15  14 move_schematic_component
+  16  14 open_schematic_viewer
+  17  14 rotate_schematic_component
+  18  13 add_schematic_connection
+  19  13 batch_place_components
+  20  13 get_schematic_layout
+  21  12 add_schematic_net_label
+  22  12 add_schematic_text
+  23  12 batch_get_schematic_pin_locations
+  24  12 create_schematic
+  25  12 export_schematic_pdf
+  26  12 export_schematic_svg
+  27  12 get_net_components
+  28  12 get_schematic_pin_locations [NEEDED]
+  29  12 get_schematic_view
+  30  12 list_design_rules
+-- intent: "list the nets in a schematic"
+   1  33 list_schematic_nets [NEEDED]
+   2  24 list_schematic_components [NEEDED]
+   3  24 list_schematic_wires
+   4  23 list_schematic_labels
+   5  22 get_nets_list
+   6  17 add_schematic_net_label
+   7  15 delete_schematic_net_label
+   8  14 list_buses
+   9  13 add_schematic_text
+  10  12 add_schematic_component
+  11  12 add_schematic_connection
+  12  12 create_schematic
+  13  12 delete_schematic_component
+  14  12 export_schematic_pdf
+  15  12 export_schematic_svg
+  16  12 find_shorted_nets
+  17  12 get_component_list
+  18  12 get_component_nets
+  19  12 get_schematic_layout
+  20  12 get_schematic_pin_locations [NEEDED]
+  21  12 get_schematic_view
+  22  12 list_design_rules
+  23  12 list_footprint_libraries
+  24  12 list_library_footprints
+  25  12 list_symbol_libraries
+  26  12 list_symbols_in_library
+  27  12 list_tasks
+  28  12 list_template_categories
+  29  12 open_schematic_viewer
+  30  11 rotate_schematic_label
+-- intent: "look up one component by its reference"
+   1  19 validate_component_connections
+   2  17 delete_schematic_component
+   3  17 find_component
+   4  16 duplicate_component
+   5  15 edit_schematic_component
+   6  15 get_component_nets
+   7  15 replace_component
+   8  15 rotate_schematic_component
+   9  13 add_component_annotation
+  10  13 add_schematic_component
+  11  13 delete_component
+  12  13 edit_component
+  13  13 get_component_list
+  14  13 get_component_pads
+  15  13 get_schematic_component [NEEDED]
+  16  13 move_component
+  17  13 move_schematic_component
+  18  13 place_component
+  19  13 place_component_array
+  20  13 rotate_component
+  21  12 batch_place_components
+  22  11 group_components
+  23  10 batch_delete_schematic_components
+  24   8 align_components
+  25   8 batch_edit_schematic_components
+  26   8 bulk_move_schematic_components
+  27   8 get_net_components
+  28   8 list_schematic_components [NEEDED]
+  29   6 connect_pins
+  30   6 get_connected_items
+-- intent: "find nets with a single pin on them"
+   1  42 find_single_pin_nets [NEEDED]
+   2  22 find_shorted_nets
+   3  18 get_pin_net_name
+   4  15 add_sheet_pin
+   5  15 delete_sheet_pin
+   6  14 batch_get_schematic_pin_locations
+   7  14 find_orphan_items
+   8  14 get_component_nets
+   9  14 get_pin_connections
+  10  13 edit_sheet_pin
+  11  13 find_component
+  12  13 get_nets_list
+  13  13 get_schematic_pin_locations [NEEDED]
+  14  11 list_schematic_nets [NEEDED]
+  15   9 batch_connect_pins
+  16   9 batch_connect_to_net
+  17   9 connect_pins
+  18   8 get_net_connectivity
+  19   8 import_sheet_pins
+  20   8 validate_sheet_pins
+  21   7 connect_to_net
+  22   6 add_net
+  23   6 add_schematic_net_label
+  24   6 assign_net_to_class
+  25   5 delete_schematic_net_label
+  26   5 export_netlist_summary
+  27   5 get_net_components
+  28   5 get_net_connections
+  29   4 add_bus_alias
+  30   4 apply_template
+-- intent: "where are a component's pins"
+   1  21 import_sheet_pins
+   2  17 connect_pins
+   3  17 validate_component_connections
+   4  17 validate_sheet_pins
+   5  16 batch_connect_pins
+   6  16 get_component_nets
+   7  16 get_schematic_component [NEEDED]
+   8  15 add_schematic_component
+   9  15 delete_schematic_component
+  10  15 edit_schematic_component
+  11  15 move_schematic_component
+  12  15 rotate_schematic_component
+  13  14 replace_component
+  14  13 get_component_list
+  15  13 get_component_pads
+  16  11 add_sheet_pin
+  17  11 create_symbol
+  18  11 find_single_pin_nets [NEEDED]
+  19  11 list_schematic_components [NEEDED]
+  20  10 add_component_annotation
+  21  10 batch_delete_schematic_components
+  22  10 batch_edit_schematic_components
+  23  10 batch_get_schematic_pin_locations
+  24  10 batch_place_components
+  25  10 bulk_move_schematic_components
+  26  10 delete_component
+  27  10 delete_sheet_pin
+  28  10 duplicate_component
+  29  10 edit_component
+  30  10 edit_sheet_pin
+-- needed summary for 07_sch_inspection --
+  list_schematic_components: best rank 1, score 34, via "list the components in a schematic"
+  list_schematic_nets: best rank 1, score 33, via "list the nets in a schematic"
+  get_schematic_component: best rank 7, score 16, via "where are a component's pins"
+  get_schematic_pin_locations: best rank 13, score 13, via "find nets with a single pin on them"
+  find_single_pin_nets: best rank 1, score 42, via "find nets with a single pin on them"
+
+==== reference: current scoring, tau=0.0 (matches production search()) ====
+  limit= 5  6-task historical: precision=31.8% recall=94.0% avg_union=22.3  |  7-task: precision=29.2% recall=89.1% avg_union=22.3
+  limit= 8  6-task historical: precision=22.5% recall=100.0% avg_union=33.8  |  7-task: precision=20.6% recall=94.3% avg_union=33.4
+
+==== 36-combination grid (scoring x tau x limit) ====
+variant   tau  lim | hist6: prec  recall union | all7: prec  recall union | fail
+current   0.0   8  |  22.5%  100.0%  33.8      |  20.6%   94.3%  33.4     | fail:07_sch_inspection
+idf       0.0   8  |  21.9%  100.0%  34.3      |  20.5%   94.3%  33.1     | fail:07_sch_inspection
+idf       0.7   5  |  66.0%   92.1%  11.3      |  60.1%   87.5%  11.4     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf       0.7   8  |  65.5%   94.0%  12.0      |  59.0%   89.1%  12.4     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+current   0.7   5  |  62.8%   87.1%  11.3      |  57.1%   83.3%  11.6     | fail:01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports,06_recovery,07_sch_inspection
+current   0.7   8  |  60.0%   87.1%  12.5      |  53.9%   83.3%  13.1     | fail:01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports,06_recovery,07_sch_inspection
+current   0.6   5  |  60.0%   94.0%  13.5      |  53.8%   89.1%  14.1     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+current   0.6   8  |  53.6%   94.0%  16.0      |  47.9%   89.1%  16.9     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf_norm  0.7   5  |  52.2%   89.7%  12.8      |  48.0%   85.5%  12.9     | fail:03_sch_template_stm32,05_manufacturing_exports,06_recovery,07_sch_inspection
+idf_norm  0.7   8  |  51.6%   89.7%  13.2      |  46.9%   85.5%  13.6     | fail:03_sch_template_stm32,05_manufacturing_exports,06_recovery,07_sch_inspection
+idf_norm  0.6   5  |  48.7%   92.1%  14.3      |  44.0%   87.5%  15.0     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf       0.6   5  |  48.1%   92.1%  14.8      |  43.6%   87.5%  15.3     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf_norm  0.6   8  |  47.4%   95.8%  15.8      |  42.5%   90.7%  16.9     | fail:03_sch_template_stm32,07_sch_inspection
+idf       0.6   8  |  47.3%   95.8%  16.2      |  42.5%   90.7%  17.0     | fail:03_sch_template_stm32,07_sch_inspection
+current   0.5   5  |  44.4%   94.0%  17.2      |  40.3%   89.1%  17.4     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf       0.5   5  |  41.5%   92.1%  17.2      |  37.8%   87.5%  17.4     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf_norm  0.5   5  |  39.4%   92.1%  18.2      |  36.0%   87.5%  18.3     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+current   0.5   8  |  37.5%   94.0%  21.7      |  34.0%   89.1%  21.9     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf       0.5   8  |  36.3%   95.8%  21.2      |  32.9%   90.7%  21.4     | fail:03_sch_template_stm32,07_sch_inspection
+idf       0.4   5  |  34.2%   92.1%  20.0      |  31.6%   87.5%  19.9     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf_norm  0.5   8  |  34.2%   95.8%  22.5      |  31.1%   90.7%  22.7     | fail:03_sch_template_stm32,07_sch_inspection
+idf_norm  0.4   5  |  33.7%   92.1%  20.2      |  31.2%   87.5%  20.0     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf       0.3   5  |  33.2%   92.1%  20.7      |  30.5%   87.5%  20.7     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+current   0.3   5  |  32.7%   94.0%  21.8      |  29.9%   89.1%  21.9     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+current   0.4   5  |  32.7%   94.0%  21.8      |  30.2%   89.1%  21.4     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf_norm  0.3   5  |  32.6%   92.1%  20.7      |  30.1%   87.5%  20.6     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf       0.0   5  |  31.8%   92.1%  21.7      |  29.3%   87.5%  21.6     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+current   0.0   5  |  31.8%   94.0%  22.3      |  29.2%   89.1%  22.3     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf_norm  0.0   5  |  30.9%   92.1%  22.0      |  28.6%   87.5%  21.7     | fail:03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+idf       0.4   8  |  27.8%   95.8%  26.7      |  25.6%   90.7%  26.3     | fail:03_sch_template_stm32,07_sch_inspection
+idf_norm  0.4   8  |  27.3%   95.8%  26.8      |  25.1%   90.7%  26.6     | fail:03_sch_template_stm32,07_sch_inspection
+current   0.4   8  |  23.6%   95.8%  31.2      |  21.9%   90.7%  30.3     | fail:03_sch_template_stm32,07_sch_inspection
+idf       0.3   8  |  23.1%   95.8%  31.5      |  21.5%   90.7%  30.6     | fail:03_sch_template_stm32,07_sch_inspection
+current   0.3   8  |  22.9%   95.8%  32.5      |  21.1%   90.7%  32.1     | fail:03_sch_template_stm32,07_sch_inspection
+idf_norm  0.3   8  |  22.6%   95.8%  31.2      |  21.0%   90.7%  30.6     | fail:03_sch_template_stm32,07_sch_inspection
+idf_norm  0.0   8  |  20.6%   95.8%  34.7      |  19.1%   90.7%  33.7     | fail:03_sch_template_stm32,07_sch_inspection
+
+best (recall=100% on 6-task historical, highest precision): current tau=0 limit=8
+
+==== corrected minimal needed-tool ratio (best intent per tool, mise au point 2) ====
+  current   6-task historical min ratio=0.214   7-task min ratio=0.214
+  current   6-task historical min ratio=0.214   7-task min ratio=0.214
+
+==== needed tools ranked past 8, under best combination's scoring ====
+  07_sch_inspection/get_schematic_component: best rank 10 via "where are a component's pins"
+  07_sch_inspection/get_schematic_pin_locations: best rank 13 via "find nets with a single pin on them"
+
+==== 07_sch_inspection: get_schematic_pin_locations across all variants ====
+  best rank ever observed: 11 under idf_norm via "find nets with a single pin on them"
+  07_sch_inspection recall=100% ever reached at limit=8 across the grid: NO
+
+(D x E grid: 32 combinations computed)
+
+==== reference + D x E combinations keeping recall=100% on the 6-task historical perimeter, sorted by precision desc ====
+  REFERENCE  current  D=off  E=none          lim=8 | hist6: prec=22.5% recall=100.0% union=33.8 | all7: prec=20.6% recall=94.3% union=33.4
+  current  D=off E=none            lim=8 | hist6: prec=22.5% recall=100.0% union=33.8 | all7: prec=20.6% recall=94.3% union=33.4
+  idf      D=on  E=none            lim=8 | hist6: prec=22.4% recall=100.0% union=32.8 | all7: prec=21.2% recall=97.1% union=32.3
+  current  D=on  E=none            lim=8 | hist6: prec=22.2% recall=100.0% union=33.8 | all7: prec=20.8% recall=97.1% union=33.6
+  idf      D=off E=none            lim=8 | hist6: prec=21.9% recall=100.0% union=34.3 | all7: prec=20.5% recall=94.3% union=33.1
+
+no D x E combination beats the reference on 6-task historical precision (22.5%); reference stands.
+
+==== D6 negative control: batch_place_components rank, D off vs on ====
+  current D=off: batch_place_components rank = 1
+  current D=on : batch_place_components rank = 1
+  idf D=off: batch_place_components rank = 1
+  idf D=on : batch_place_components rank = 1
+
+==== D alone (E=none), limit=8: does 07_sch_inspection reach recall=100%? ====
+  current: 07_sch_inspection recall=80.0% (100%=false)  | hist6 precision=22.2%  all7 precision=20.8%
+  idf: 07_sch_inspection recall=80.0% (100%=false)  | hist6 precision=22.4%  all7 precision=21.2%
+
+==== missing-tool accounting under idf tau=0.7 limit=8 (D off) ====
+-- 03_sch_template_stm32 -- missing: ["apply_template"]
+  apply_template: best intent "search reference circuit templates and instantiate one", rank 6, score 21.82 / query-best 104.03 = ratio 0.210 (needs >= 0.700)
+    paying terms: reference(+4.79), circuit(+7.22), instantiate(+9.82)
+    non-paying terms: search(0, absent from name+description), templates(0, would score under axis D), one(0, absent from name+description)
+    rank 1 is search_templates (score 104.03), paid by: search(+43.30), reference(+4.79), circuit(+7.22), templates(+48.73)
+-- 05_manufacturing_exports -- missing: ["generate_netlist"]
+  generate_netlist: best intent "export bom and netlist and schematic svg", rank 6, score 67.36 / query-best 108.15 = ratio 0.623 (needs >= 0.700)
+    paying terms: netlist(+64.97), schematic(+2.39)
+    non-paying terms: export(0, absent from name+description), bom(0, absent from name+description), svg(0, absent from name+description)
+    rank 1 is export_netlist (score 108.15), paid by: export(+26.94), netlist(+81.21)
+-- 07_sch_inspection -- missing: ["get_schematic_component", "get_schematic_pin_locations"]
+  get_schematic_component: best intent "where are a component's pins", rank 9, score 27.00 / query-best 49.68 = ratio 0.543 (needs >= 0.700)
+    paying terms: component(+16.63), s(+10.37)
+    non-paying terms: where(0, absent from name+description), are(0, absent from name+description), pins(0, would score under axis D)
+    rank 1 is import_sheet_pins (score 49.68), paid by: are(+5.74), s(+14.52), pins(+29.41)
+  get_schematic_pin_locations: best intent "find nets with a single pin on them", rank 14, score 24.43 / query-best 114.70 = ratio 0.213 (needs >= 0.700)
+    paying terms: pin(+24.43)
+    non-paying terms: find(0, absent from name+description), nets(0, absent from name+description), single(0, absent from name+description), them(0, would score under axis D)
+    rank 1 is find_single_pin_nets (score 114.70), paid by: find(+41.30), nets(+29.62), single(+23.43), pin(+20.36)
+
+==== fine tau sweep, idf, limit=8, D on/off ====
+tau   D   | hist6: prec  recall union failing                              | all7: prec  recall union failing
+0.60  off |  47.3%   95.8%  16.2  03_sch_template_stm32                  |  42.5%   90.7%  17.0  03_sch_template_stm32,07_sch_inspection
+0.60  on  |  45.5%   95.8%  16.8  03_sch_template_stm32                  |  40.9%   90.7%  17.6  03_sch_template_stm32,07_sch_inspection
+0.62  off |  48.9%   95.8%  15.3  03_sch_template_stm32                  |  44.5%   90.7%  15.6  03_sch_template_stm32,07_sch_inspection
+0.62  on  |  46.9%   95.8%  16.0  03_sch_template_stm32                  |  42.7%   90.7%  16.1  03_sch_template_stm32,07_sch_inspection
+0.65  off |  63.6%   94.0%  12.5  03_sch_template_stm32,05_manufacturing_exports |  57.2%   89.1%  13.0  03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.65  on  |  63.9%   94.0%  12.3  03_sch_template_stm32,05_manufacturing_exports |  57.4%   89.1%  12.9  03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.68  off |  65.5%   94.0%  12.0  03_sch_template_stm32,05_manufacturing_exports |  58.8%   89.1%  12.6  03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.68  on  |  64.9%   94.0%  12.0  03_sch_template_stm32,05_manufacturing_exports |  58.3%   89.1%  12.6  03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.70  off |  65.5%   94.0%  12.0  03_sch_template_stm32,05_manufacturing_exports |  59.0%   89.1%  12.4  03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.70  on  |  64.9%   94.0%  12.0  03_sch_template_stm32,05_manufacturing_exports |  58.3%   89.1%  12.6  03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.72  off |  64.3%   89.5%  11.7  01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports |  58.0%   85.3%  12.1  01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.72  on  |  65.7%   94.0%  11.7  03_sch_template_stm32,05_manufacturing_exports |  59.0%   89.1%  12.3  03_sch_template_stm32,05_manufacturing_exports,07_sch_inspection
+0.75  off |  63.5%   78.4%   9.8  01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports,06_recovery |  57.5%   75.8%  10.4  01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports,06_recovery,07_sch_inspection
+0.75  on  |  64.0%   84.8%  10.7  01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports,06_recovery |  57.9%   81.2%  11.1  01_sch_divider,02_sch_ldo,03_sch_template_stm32,05_manufacturing_exports,06_recovery,07_sch_inspection
+
+==== reverse-prefix floor sweep: current, tau=0, limit=8, D on (production config) ====
+min_len | hist6: prec  recall union failing                              | all7: prec  recall union failing
+      3 |  22.2%  100.0%  33.8                                         |  20.8%   97.1%  33.6  07_sch_inspection
+      4 |  22.6%  100.0%  33.7                                         |  20.8%   94.3%  33.1  07_sch_inspection
+      5 |  22.6%  100.0%  33.7                                         |  20.8%   94.3%  33.1  07_sch_inspection
+
+==== floor=3: ranks of interest ====
+  get_schematic_pin_locations on "where are a component's pins": rank 34
+  get_schematic_pin_locations on "find nets with a single pin on them": rank 13
+  get_schematic_component on "where are a component's pins": rank 7
+
+==== D6 negative control, all three floors ====
+  min_len=3: batch_place_components rank = 1
+  min_len=4: batch_place_components rank = 1
+  min_len=5: batch_place_components rank = 1
+
+==== floor=3 false-positive scan across all golden intents ====
+  query=netlist      name_term=net   tool=add_net
+  query=netlist      name_term=net   tool=add_schematic_net_label
+  query=netlist      name_term=net   tool=assign_net_to_class
+  query=netlist      name_term=net   tool=batch_connect_to_net
+  query=netlist      name_term=net   tool=connect_to_net
+  query=netlist      name_term=net   tool=delete_schematic_net_label
+  query=netlist      name_term=net   tool=get_net_components
+  query=netlist      name_term=net   tool=get_net_connections
+  query=netlist      name_term=net   tool=get_net_connectivity
+  query=netlist      name_term=net   tool=get_pin_net_name
+  query=nets         name_term=net   tool=add_net
+  query=nets         name_term=net   tool=add_schematic_net_label
+  query=nets         name_term=net   tool=assign_net_to_class
+  query=nets         name_term=net   tool=batch_connect_to_net
+  query=nets         name_term=net   tool=connect_to_net
+  query=nets         name_term=net   tool=delete_schematic_net_label
+  query=nets         name_term=net   tool=get_net_components
+  query=nets         name_term=net   tool=get_net_connections
+  query=nets         name_term=net   tool=get_net_connectivity
+  query=nets         name_term=net   tool=get_pin_net_name
+  query=pins         name_term=pin   tool=add_sheet_pin
+  query=pins         name_term=pin   tool=batch_get_schematic_pin_locations
+  query=pins         name_term=pin   tool=delete_sheet_pin
+  query=pins         name_term=pin   tool=edit_sheet_pin
+  query=pins         name_term=pin   tool=find_single_pin_nets
+  query=pins         name_term=pin   tool=get_pin_connections
+  query=pins         name_term=pin   tool=get_pin_net_name
+  query=pins         name_term=pin   tool=get_schematic_pin_locations
+  (28 distinct (query term, 3-letter name term, tool) triples)
+
+floors keeping hist6 recall=100%: [3, 4, 5] — decision left to the caller of this run's output
