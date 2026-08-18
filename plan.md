@@ -1462,6 +1462,18 @@ one that cannot has its reason recorded here rather than a missing number.
       and skips with a reason, the same shape as its existing early return
       when `USERNAME` is unset. It is skipped where it cannot prove anything,
       not weakened where it can
+- [ ] L.2.8 `board_design_rules_round_trip_through_the_file` is flaky in CI and
+      has never been reproduced locally. Observed once, in run 32103900156, on
+      **macos-latest and windows-latest together while ubuntu passed**, on a
+      commit that touched only `plan.md` and `progress.md`; the next run over
+      the real code change (32106118427) was green on all three. The failure is
+      `'set_design_rules' failed: IO error: Invalid argument (os error 22)` at
+      `tests/harness/mod.rs:71`, i.e. EINVAL out of the write, not an assertion
+      about the rules. The test copies its fixture into its own `tempfile`
+      directory, so there is no obvious sharing between tests to blame.
+      Diagnose before trusting it again — L.2.6's lesson was that a CI red for
+      an infrastructure reason hides the failures underneath it, and a CI red
+      that comes and goes on its own does the same thing more quietly
 
 ### Validation
 Silent corruption stays 0 under injection; no partial batch survives a failure.
