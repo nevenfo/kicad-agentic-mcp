@@ -136,7 +136,7 @@ Current values: `docs/benchmark.md`. Targets are never moved (INV6).
       trades (diff on by default, task filing, verification); recorded as missed
 - [ ] `tools/list` at startup ≤ ~1 000 — **2 034**, missed; only reachable by
       retiring the toolset-loading path, which would break every shipped skill
-- [ ] retrieval precision @8 ≥ 60 % — **22.4 %** (recall @8 100 %) — see F.5
+- [x] retrieval precision @8 ≥ 60 % — **62.0 %** (recall @8 **100 %**) — F.5
 - [ ] `LLM_CALLS_PER_SUCCESSFUL_TASK` materially below baseline — measured
       **15 → 5.5** inside the model-fit harness, but **no baseline for this
       metric was ever measured**, so the criterion is not claimed met
@@ -275,18 +275,25 @@ A catalogue that never has to be refreshed: `CATALOG_TOKENS` → 0.
 render 27.3 %, now 28.6 %. Note: `bench/probes` counts as evidence as well as
 `bench/tasks`, so adding a probe can move the number.
 
-## F.5 — Retrieval precision — OPEN
+## F.5 — Retrieval precision — MET (F.5.2 open)
 
 ### Objectif
 22.4 % precision @8 at the recall needed to succeed. The gateway made each wrong
 guess cheap; it did not make the guess right.
+
+**Closed at 62.0 % precision / 100.0 % recall** (b3a1572), measured by
+`bench/runner.py --load-mode search`. The suite's success rate in that mode
+went 6/7 to 7/7 and external tokens per task 10 446 → 5 205.
 
 ### Dépendances
 None. Plural stemming was implemented, measured and **rejected** (D6): recall
 100 % → 98.2 % at 8 results. Do not re-attempt it.
 
 ### Tâches
-- [ ] F.5.1 Find a retrieval change that raises precision without costing recall
+- [x] F.5.1 Find a retrieval change that raises precision without costing recall
+      — four of them, in F.5.4 through F.5.6: IDF weighting, clause splitting,
+      a relative cutoff per clause, and one tool per family. Recall went up
+      rather than down (97.1 % → 100 %).
 - [ ] F.5.2 Answer whether a compiled plan moves precision at all — the golden
       suite is a scripted oracle and can never show it (it never searches)
 - [x] F.5.3 Reverse prefix: the one-sided form of what D6 rejected. A query
@@ -318,10 +325,18 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
       anywhere but in its own name — recovers `get_schematic_component`. Two
       other levers were measured and are not shipping (D64). All seven tasks
       now reach 100 % recall, at 54.9 % precision.
-- [ ] F.5.6 Close the remaining ~5 precision points and port the winning
+- [x] F.5.6 Close the remaining ~5 precision points and port the winning
       configuration into `capability_search`. The cap is no longer
       `07_sch_inspection`: it is dilution on the two widest tasks, where a
-      one-word clause spends three slots on near-ties.
+      one-word clause spends three slots on near-ties. **The budget per clause
+      was a dead end** — measured at zero, its apparent gain being a true
+      positive lost rather than noise removed. What paid was one tool per
+      family: three spellings of "place a component" spent three of the
+      caller's eight slots, and capping the family removed 14 tools on the
+      golden suite of which 14 were tools no task needed. Ported with a
+      family key that keeps the terms of a name **in order**, because
+      `get_component_nets` and `get_net_components` are different tools —
+      pinned by a test, since the golden suite never asks for both.
 
 ### Validation
 Precision @8 ≥ 60 % with recall @8 ≥ 98 %, measured by the existing retrieval
@@ -1438,6 +1453,15 @@ one that cannot has its reason recorded here rather than a missing number.
       still holds. The lesson is about the gate, not the race: a green
       `gate.ps1` on one OS is not a green CI, and a CI red for an
       infrastructure reason hides the failures underneath it
+- [x] L.2.7 L.2.5's ACL test is a false red in an elevated shell. An elevated
+      process holds `SeBackupPrivilege` and `SeRestorePrivilege`, which bypass
+      the deny ACE the test installs: the rename succeeds, `unwrap_err()`
+      panics, and a developer sees a failure on a clean tree that CI — which
+      runs unelevated — never reproduces. The test now detects high or system
+      integrity by SID (`S-1-16-12288` / `S-1-16-16384`, language-independent)
+      and skips with a reason, the same shape as its existing early return
+      when `USERNAME` is unset. It is skipped where it cannot prove anything,
+      not weakened where it can
 
 ### Validation
 Silent corruption stays 0 under injection; no partial batch survives a failure.

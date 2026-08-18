@@ -1340,6 +1340,32 @@ mod atomic_write_tests {
             }
         }
 
+        /// True when this process runs at high or system integrity.
+        ///
+        /// An elevated process holds `SeBackupPrivilege` and
+        /// `SeRestorePrivilege`, which bypass the deny ACE this test installs:
+        /// the rename then succeeds and the test fails on its own setup rather
+        /// than on the behaviour it checks. That is a false red, and a
+        /// developer working in an elevated shell sees it on a clean tree. CI
+        /// runs unelevated, which is where this test does its work.
+        ///
+        /// Matched on the integrity-level SIDs, which do not change with the
+        /// system language: 12288 is high, 16384 is system.
+        fn runs_elevated() -> bool {
+            let Ok(out) = std::process::Command::new("whoami").arg("/groups").output() else {
+                return false;
+            };
+            let groups = String::from_utf8_lossy(&out.stdout);
+            groups.contains("S-1-16-12288") || groups.contains("S-1-16-16384")
+        }
+
+        if runs_elevated() {
+            eprintln!(
+                "skipped: an elevated process's backup/restore privileges bypass                  the deny ACE this test needs"
+            );
+            return;
+        }
+
         let Ok(user) = std::env::var("USERNAME") else {
             return; // No account name to write an ACE for; nothing to prove.
         };
