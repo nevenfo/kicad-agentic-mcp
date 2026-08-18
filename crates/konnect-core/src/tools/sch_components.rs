@@ -4,6 +4,7 @@
 //! round-trip parsing.  Pin coordinate math still delegates to
 //! `konnect_sexp::geometry::transform_pin`.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
@@ -295,6 +296,26 @@ pub fn tools() -> Vec<ToolDef> {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
+/// One `NotFound` for "this schematic has no component with that reference".
+///
+/// Five sites in this file said it in prose, and the prose differs between
+/// them ("not found in schematic" vs "not found"), which is exactly why the
+/// classification lives here and the message stays theirs.
+fn component_not_found(
+    sch_path: &std::path::Path,
+    reference: &str,
+    message: String,
+) -> CallToolResult {
+    CallToolResult::error_kind(
+        ToolErrorKind::NotFound {
+            document: sch_path.display().to_string(),
+            item_kind: "component".to_string(),
+            key: reference.to_string(),
+        },
+        message,
+    )
+}
+
 async fn handle_create_schematic(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -425,10 +446,16 @@ pub(crate) fn place_one_component(
     // netlister mis-assigns its pins (#35).
     let unit_count = cse::library::symbol_unit_count(lib_id).unwrap_or(1);
     if unit < 1 || unit > unit_count {
-        return Err(CallToolResult::error(format!(
-            "Invalid unit {} for '{}': the symbol has {} unit(s) (valid: 1..={}).",
-            unit, lib_id, unit_count, unit_count
-        )));
+        return Err(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "unit".to_string(),
+                reason: format!("valid range is 1..={unit_count} for '{lib_id}'"),
+            },
+            format!(
+                "Invalid unit {} for '{}': the symbol has {} unit(s) (valid: 1..={}).",
+                unit, lib_id, unit_count, unit_count
+            ),
+        ));
     }
 
     // Build the Symbol struct
@@ -497,10 +524,11 @@ async fn handle_delete_schematic_component(
             sch.overwrite()?;
             Ok(CallToolResult::json(&json!({ "deleted": reference })))
         }
-        None => Ok(CallToolResult::error(format!(
-            "Component '{}' not found in schematic",
-            reference
-        ))),
+        None => Ok(component_not_found(
+            &sch_path,
+            &reference,
+            format!("Component '{}' not found in schematic", reference),
+        )),
     }
 }
 
@@ -572,11 +600,17 @@ async fn handle_edit_schematic_component(
     // A request that changed nothing is a failure, not a success — silently
     // reporting `"changes": []` is what let the tab-indentation bug hide.
     if changed.is_empty() && !errors.is_empty() {
-        return Ok(CallToolResult::error(format!(
-            "No fields were updated on '{}': {}",
-            reference,
-            errors.join("; ")
-        )));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "fields".to_string(),
+                reason: errors.join("; "),
+            },
+            format!(
+                "No fields were updated on '{}': {}",
+                reference,
+                errors.join("; ")
+            ),
+        ));
     }
 
     if !changed.is_empty() {
@@ -739,10 +773,11 @@ async fn handle_get_schematic_component(
                 "uuid": sym.uuid
             })))
         }
-        None => Ok(CallToolResult::error(format!(
-            "Component '{}' not found",
-            reference
-        ))),
+        None => Ok(component_not_found(
+            &sch_path,
+            &reference,
+            format!("Component '{}' not found", reference),
+        )),
     }
 }
 
@@ -1012,10 +1047,11 @@ async fn handle_get_schematic_pin_locations(
     let inst = match instances.iter().find(|i| i.reference == reference) {
         Some(i) => i,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Component '{}' not found",
-                reference
-            )))
+            return Ok(component_not_found(
+                &sch_path,
+                &reference,
+                format!("Component '{}' not found", reference),
+            ))
         }
     };
 
@@ -1032,14 +1068,23 @@ async fn handle_get_schematic_pin_locations(
     // silently returning [] hid every bad-lib_id component until wiring or
     // netlisting failed much later (#34).
     let Some(sym) = lib_sym else {
-        return Ok(CallToolResult::error(format!(
-            "Component '{}' has no embedded definition for '{}' in this \
-             schematic's lib_symbols — it was likely added with a lib_id that \
-             doesn't exist in the installed libraries, so it is invisible to \
-             KiCAD's netlister. Re-add it with a valid lib_id \
-             (delete_schematic_component + add_schematic_component).",
-            reference, inst.lib_id
-        )));
+        return Ok(CallToolResult::error_kind(
+            // NotFound, not MalformedDocument: the addressed item is what is
+            // absent, and `lib_symbols` is exactly the place it should be.
+            ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "lib_symbols definition".to_string(),
+                key: inst.lib_id.clone(),
+            },
+            format!(
+                "Component '{}' has no embedded definition for '{}' in this \
+                 schematic's lib_symbols — it was likely added with a lib_id that \
+                 doesn't exist in the installed libraries, so it is invisible to \
+                 KiCAD's netlister. Re-add it with a valid lib_id \
+                 (delete_schematic_component + add_schematic_component).",
+                reference, inst.lib_id
+            ),
+        ));
     };
     // Unit-aware: only this instance's unit (plus _0_1 commons), not every
     // unit's pins superimposed (#35).
@@ -1050,15 +1095,25 @@ async fn handle_get_schematic_pin_locations(
     // The #34 guard above only catches MISSING definitions.
     if lib_pins.is_empty() {
         if let Some(parent) = sym.find_str("extends") {
-            return Ok(CallToolResult::error(format!(
-                "Component '{}': the embedded definition for '{}' is an \
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: format!(
+                        "the embedded definition for '{}' is an (extends \"{}\") \
+                         stub with no pins of its own",
+                        inst.lib_id, parent
+                    ),
+                },
+                format!(
+                    "Component '{}': the embedded definition for '{}' is an \
                  (extends \"{}\") stub with no pins of its own. kicad-cli \
                  cannot resolve extends stubs (the netlist gets a pinless \
                  part). Re-add the component (delete_schematic_component + \
                  add_schematic_component) so the definition is embedded in \
                  full, or place the parent symbol '{}' directly.",
-                reference, inst.lib_id, parent, parent
-            )));
+                    reference, inst.lib_id, parent, parent
+                ),
+            ));
         }
     }
     let t = inst.pin_transform();
@@ -1207,10 +1262,11 @@ async fn handle_add_component_annotation(
     let (sym_start, sym_end) = match find_symbol_instance_block(&content, &reference) {
         Some(r) => r,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Component '{}' not found",
-                reference
-            )))
+            return Ok(component_not_found(
+                &sch_path,
+                &reference,
+                format!("Component '{}' not found", reference),
+            ))
         }
     };
 
@@ -1272,7 +1328,13 @@ async fn handle_group_components(
         .unwrap_or_default();
 
     if refs.is_empty() {
-        return Ok(CallToolResult::error("No references provided"));
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "references".to_string(),
+                reason: "must name at least one component".to_string(),
+            },
+            "No references provided",
+        ));
     }
 
     let mut content = read_consistent(&sch_path)?;
@@ -1340,10 +1402,11 @@ async fn handle_replace_component(
     let (sym_start, sym_end) = match find_symbol_instance_block(&content, &reference) {
         Some(r) => r,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Component '{}' not found",
-                reference
-            )))
+            return Ok(component_not_found(
+                &sch_path,
+                &reference,
+                format!("Component '{}' not found", reference),
+            ))
         }
     };
 
@@ -1354,7 +1417,11 @@ async fn handle_replace_component(
     let lib_id_rel = match sym_block.find(lib_id_pat) {
         Some(o) => o,
         None => {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: format!("the symbol block for '{reference}' has no (lib_id …)"),
+                },
                 "Could not find lib_id in symbol block",
             ))
         }
@@ -1362,7 +1429,15 @@ async fn handle_replace_component(
     let lib_id_abs = sym_start + lib_id_rel + lib_id_pat.len();
     let lib_id_end = match content[lib_id_abs..].find('"') {
         Some(o) => lib_id_abs + o,
-        None => return Ok(CallToolResult::error("Malformed lib_id")),
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: format!("the (lib_id …) of '{reference}' has no closing quote"),
+                },
+                "Malformed lib_id",
+            ))
+        }
     };
 
     let old_lib_id = content[lib_id_abs..lib_id_end].to_string();
@@ -1382,10 +1457,16 @@ async fn handle_replace_component(
     if let Some(unit) = new_unit {
         let unit_count = cse::library::symbol_unit_count(&new_lib_id).unwrap_or(1);
         if unit < 1 || unit > unit_count {
-            return Ok(CallToolResult::error(format!(
-                "Invalid unit {} for '{}': the symbol has {} unit(s) (valid: 1..={}).",
-                unit, new_lib_id, unit_count, unit_count
-            )));
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "unit".to_string(),
+                    reason: format!("valid range is 1..={unit_count} for '{new_lib_id}'"),
+                },
+                format!(
+                    "Invalid unit {} for '{}': the symbol has {} unit(s) (valid: 1..={}).",
+                    unit, new_lib_id, unit_count, unit_count
+                ),
+            ));
         }
         // Re-find the block (offsets moved with the lib_id edit), then update
         // every `(unit N)` inside it — the symbol's own and the one in its

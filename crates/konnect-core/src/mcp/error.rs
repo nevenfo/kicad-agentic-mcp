@@ -158,6 +158,23 @@ pub enum ToolErrorKind {
     /// document and recompute — the same edit reapplied blindly will race
     /// again.
     Conflict { path: String },
+    /// A document was found and read, and its structure does not support the
+    /// operation: a section the format requires is absent, or a block is there
+    /// but unusable.
+    ///
+    /// D77 — added once six sites across four files had converged on the same
+    /// shape, not for any one of them. It is the gap between four kinds that
+    /// each nearly fit and none of which is true: [`Self::Io`] (the read
+    /// succeeded), [`Self::FileNotFound`] (the file is there),
+    /// [`Self::InvalidArgument`] (the call is well-formed — the caller named a
+    /// document that exists), and [`Self::NotFound`] (the addressed item is
+    /// present; it is the document around it that cannot be used).
+    ///
+    /// What a caller does with it is what makes it worth a kind: nothing about
+    /// the *call* can change, so retrying and re-parameterising are both
+    /// wrong. The document has to be repaired or replaced, which is why
+    /// `detail` says what was missing rather than only that something was.
+    MalformedDocument { path: String, detail: String },
     /// A filesystem failure, with a stable code independent of the OS locale.
     ///
     /// `detail` keeps the operating system's own message — useful to a human,
@@ -240,6 +257,7 @@ impl ToolErrorKind {
             Self::StaleRevision { .. } => "stale_revision",
             Self::OperationInFlight { .. } => "operation_in_flight",
             Self::Conflict { .. } => "conflict",
+            Self::MalformedDocument { .. } => "malformed_document",
             Self::Io { .. } => "io",
             Self::IpcUnavailable { .. } => "ipc_unavailable",
             Self::IpcRejected { .. } => "ipc_rejected",
@@ -290,6 +308,11 @@ impl ToolErrorKind {
             // Deterministic: KiCAD received the request and refused it. The
             // identical call gets the identical refusal.
             Self::IpcRejected { .. } => TransientClass::None,
+            // The document on disk is what has to change, and no wait makes
+            // that happen. Not `State` either: `State` promises that
+            // reconciling and retrying is the recovery, and re-reading a file
+            // whose (layers) section is missing returns the same file.
+            Self::MalformedDocument { .. } => TransientClass::None,
             // The world is not where the caller believed. Open the right board
             // (or address the one that is open) — replaying blind never helps.
             Self::BoardNotOpen { .. } => TransientClass::State,
@@ -514,6 +537,19 @@ mod tests {
             ToolErrorKind::Io {
                 code: "not_found",
                 detail: "d".into(),
+            },
+            ToolErrorKind::MalformedDocument {
+                path: "a.kicad_sch".into(),
+                detail: "no (lib_id …) in the symbol block".into(),
+            },
+            ToolErrorKind::IpcUnavailable {
+                code: "unreachable",
+                detail: "d".into(),
+            },
+            ToolErrorKind::IpcRejected { detail: "d".into() },
+            ToolErrorKind::BoardNotOpen {
+                requested: "a.kicad_pcb".into(),
+                open: vec!["b.kicad_pcb".into()],
             },
             ToolErrorKind::HandlerError {
                 reason: "r".into(),

@@ -495,19 +495,21 @@ enum BoardFootprintError {
 }
 
 impl BoardFootprintError {
-    /// The catalogued kind, or `None` where no existing kind is true of the
-    /// failure.
+    /// The catalogued kind for this failure.
     ///
-    /// `Malformed` is the `None`: a `.kicad_mod` whose first block is not
-    /// `(footprint "NAME" …)` is a corrupt library file — not IO, not a
-    /// missing item, and not a malformed *argument*, since the caller named a
-    /// library entry that exists. D.6.1 declined to invent a kind for a single
-    /// site and this follows that; the caller keeps the prose and says so.
-    fn kind(&self) -> Option<ToolErrorKind> {
+    /// `Malformed` returned `None` when this type landed, because no kind was
+    /// true of a `.kicad_mod` whose first block is not `(footprint "NAME" …)`.
+    /// `MalformedDocument` (D77) is that kind — added once six sites across
+    /// four files had converged on the shape, which is the bar a new kind has
+    /// to clear.
+    fn kind(&self) -> ToolErrorKind {
         match self {
-            Self::Resolve(error) => Some(error.kind()),
-            Self::Read { source, .. } => Some(ToolErrorKind::from_io(source)),
-            Self::Malformed { .. } => None,
+            Self::Resolve(error) => error.kind(),
+            Self::Read { source, .. } => ToolErrorKind::from_io(source),
+            Self::Malformed { path } => ToolErrorKind::MalformedDocument {
+                path: path.display().to_string(),
+                detail: "does not start with a (footprint \"NAME\" …) block".to_string(),
+            },
         }
     }
 }
@@ -1216,13 +1218,7 @@ async fn handle_place_component(
             ) {
                 Ok(sexp) => sexp,
                 Err(error) => {
-                    return Ok(match error.kind() {
-                        Some(kind) => CallToolResult::error_kind(kind, error.to_string()),
-                        // Only the corrupt-library case reaches here, and it
-                        // keeps its prose deliberately: see
-                        // `BoardFootprintError::kind`.
-                        None => CallToolResult::error(error.to_string()),
-                    });
+                    return Ok(CallToolResult::error_kind(error.kind(), error.to_string()));
                 }
             };
             insert_into_board(&board, std::slice::from_ref(&sexp))?;
