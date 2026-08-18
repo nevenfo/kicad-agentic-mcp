@@ -10,24 +10,25 @@ DONE except F.5.7, which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.6.1 zone 3 — `crates/konnect-core/src/tools/library.rs` (16) and
-`sch_wiring.rs` (15). Not started.
+D.6.1 zone 4 — `crates/konnect-core/src/router/meta_tools.rs` (18 sites). Not
+started. This one carries the gateway and was touched by D.5 and D.8, so it
+deserves its own diff.
 
 ## Dernière tâche validée
 
-D.6.1 zone 2 — `pcb_components.rs`. 20 of 25 sites catalogued, ceiling
-124 -> 104. The five left alone matter more than the twenty taken: they had
-been converted to `HandlerError`, which made the number fall while making the
-contract worse, because that variant asserts `TransientClass::None` on failures
-where starting KiCAD and retrying is the fix. They are back to plain text with
-the obstacle written at each site, and the scanner now counts a literal
-`HandlerError` as debt so the metric cannot be gamed that way again.
+D.6.1 zone 3 — `library.rs` + `sch_wiring.rs`. 22 of 31 sites catalogued,
+ceiling 104 -> 82, no new kind. The 9 left in plain text all give the same
+reason, which is the finding: a helper stringified the error before the call
+site could classify it. That is now D.6.5's scope, widened past `with_ipc` to
+`read_lib_table_checked`, `resolve_footprint_path`, `resolve_symbol_lib_path`
+and the batch paths whose `errors` string mixes "not found" with "not
+parseable".
 
 Validation :
-- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 205 tokens,
+- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 200 tokens,
   0 safety violations
-- the debt test enforces 104 in both directions
-- CI green on `agentic/main` through D.6.1 zone 1
+- the debt test enforces 82 in both directions
+- CI green on `agentic/main` through D.6.1 zone 2
 
 ## Décisions actives
 
@@ -240,14 +241,19 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-D.6.1 zone 3: `crates/konnect-core/src/tools/library.rs` (16 sites) and
-`sch_wiring.rs` (15). Same method as zones 1 and 2 — reuse an existing kind
-where it carries the meaning, never reword the message, and **leave a site in
-plain text rather than reach for `HandlerError`** (D75): a site whose cause
-cannot be told apart keeps its prose and gains a comment saying why. Then lower
-`KAM_ERROR_CATALOG_DEBT_CEILING` by exactly what was removed and run
-`.\gate.ps1`. Watch for tests asserting on `content[0].text`; never name a real
-MANIFEST tool in a fixture (D74).
+Two ways forward, and D.6.5 is the better one if only one gets done:
+
+- **D.6.5** — stop throwing the error type away at the boundary
+  (`with_ipc`, `read_lib_table_checked`, `resolve_footprint_path`,
+  `resolve_symbol_lib_path`, the batch `errors` joins). This is what caps
+  D.6.1: the remaining 82 are not 82 independent judgements, they are a few
+  signatures plus everything downstream. Existing tests assert on those
+  functions' exact messages, so changing a signature means updating them —
+  check before assuming it is mechanical.
+- **D.6.1 zone 4** — `router/meta_tools.rs` (18 sites), then
+  `sch_components.rs` (13) and `integration.rs` (12). Same method as zones 1-3;
+  never reach for `HandlerError` (D75), leave a site in prose with its reason
+  instead.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

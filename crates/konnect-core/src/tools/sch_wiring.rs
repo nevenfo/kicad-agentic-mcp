@@ -621,29 +621,50 @@ async fn handle_delete_wire(
     let delete_range = if let Some(uuid) = opt_str(args, "uuid") {
         let search = format!(r#"(uuid "{uuid}")"#);
         let Some(wire_offset) = content.find(&search) else {
-            return Ok(CallToolResult::error(format!(
-                "Wire UUID '{uuid}' not found"
-            )));
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "wire".to_string(),
+                    key: uuid.to_string(),
+                },
+                format!("Wire UUID '{uuid}' not found"),
+            ));
         };
         wire_block_with_leading_whitespace(&content, wire_offset)
     } else {
         let Some(x1) = opt_f64(args, "x1") else {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "x1".to_string(),
+                    reason: "required when uuid is not given".to_string(),
+                },
                 "Provide either uuid or all x1/y1/x2/y2 coordinates",
             ));
         };
         let Some(y1) = opt_f64(args, "y1") else {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "y1".to_string(),
+                    reason: "required when uuid is not given".to_string(),
+                },
                 "Provide either uuid or all x1/y1/x2/y2 coordinates",
             ));
         };
         let Some(x2) = opt_f64(args, "x2") else {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "x2".to_string(),
+                    reason: "required when uuid is not given".to_string(),
+                },
                 "Provide either uuid or all x1/y1/x2/y2 coordinates",
             ));
         };
         let Some(y2) = opt_f64(args, "y2") else {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "y2".to_string(),
+                    reason: "required when uuid is not given".to_string(),
+                },
                 "Provide either uuid or all x1/y1/x2/y2 coordinates",
             ));
         };
@@ -653,9 +674,25 @@ async fn handle_delete_wire(
     let (del_start, del_end) = match delete_range {
         Some(r) => r,
         None => {
-            return Ok(CallToolResult::error(
+            let identity = opt_str(args, "uuid")
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    format!(
+                        "({:?},{:?})-({:?},{:?})",
+                        opt_f64(args, "x1"),
+                        opt_f64(args, "y1"),
+                        opt_f64(args, "x2"),
+                        opt_f64(args, "y2")
+                    )
+                });
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "wire".to_string(),
+                    key: identity,
+                },
                 "Cannot locate a wire block matching the requested identity",
-            ))
+            ));
         }
     };
 
@@ -700,6 +737,10 @@ async fn handle_batch_delete_wire(
     let deleted = ranges.len();
 
     if deleted == 0 && !uuids.is_empty() {
+        // Uncatalogued on purpose (D.6.1): `errors` joins one message per uuid,
+        // and those causes range from "not found" to "not parseable" — a batch
+        // of heterogeneous failures collapsed into one String, with no single
+        // kind that fits all of them without lying about at least one.
         return Ok(CallToolResult::error(format!(
             "No wires deleted: {}",
             errors.join("; ")
@@ -787,7 +828,12 @@ async fn handle_split_wire_at_point(
     let w = match target {
         Some(w) => w.clone(),
         None => {
-            return Ok(CallToolResult::error(
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "wire".to_string(),
+                    key: format!("({px}, {py})"),
+                },
                 "No wire found passing through that point",
             ))
         }
@@ -911,10 +957,14 @@ async fn handle_delete_net_label(
     let named: Vec<&LabelBlock> = labels.iter().filter(|l| l.net == net).collect();
 
     if named.is_empty() {
-        return Ok(CallToolResult::error(format!(
-            "No label named '{}' in this schematic",
-            net
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "label".to_string(),
+                key: net.clone(),
+            },
+            format!("No label named '{}' in this schematic", net),
+        ));
     }
 
     // Exact position match. Deleting the *nearest* label instead would silently
@@ -932,17 +982,29 @@ async fn handle_delete_net_label(
                 .iter()
                 .map(|l| format!("{} at ({}, {})", l.kind, l.x, l.y))
                 .collect();
-            return Ok(CallToolResult::error(format!(
-                "No label '{}' at ({}, {}). Found {} label(s) named '{}': {}",
-                net,
-                target_x,
-                target_y,
-                named.len(),
-                net,
-                positions.join("; ")
-            )));
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "label".to_string(),
+                    key: format!("{net}@({target_x}, {target_y})"),
+                },
+                format!(
+                    "No label '{}' at ({}, {}). Found {} label(s) named '{}': {}",
+                    net,
+                    target_x,
+                    target_y,
+                    named.len(),
+                    net,
+                    positions.join("; ")
+                ),
+            ));
         }
         _ => {
+            // Uncatalogued on purpose (D.6.1): valid input, but the world has
+            // duplicate labels at the same position, which is neither an
+            // invalid argument nor a missing item — no existing kind names
+            // "ambiguous, needs a uuid to disambiguate", and one site does not
+            // justify a new one.
             return Ok(CallToolResult::error(format!(
                 "{} labels named '{}' share position ({}, {}) — delete by uuid is not \
                  supported yet; remove the duplicates in eeschema",
@@ -1061,17 +1123,24 @@ async fn handle_rotate_label(
             .iter()
             .map(|l| format!("{} at ({}, {})", l.kind, l.x, l.y))
             .collect();
-        return Ok(CallToolResult::error(if positions.is_empty() {
-            format!("No label named '{}' in this schematic", net)
-        } else {
-            format!(
-                "No label '{}' at ({}, {}). Found: {}",
-                net,
-                x,
-                y,
-                positions.join("; ")
-            )
-        }));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "label".to_string(),
+                key: format!("{net}@({x}, {y})"),
+            },
+            if positions.is_empty() {
+                format!("No label named '{}' in this schematic", net)
+            } else {
+                format!(
+                    "No label '{}' at ({}, {}). Found: {}",
+                    net,
+                    x,
+                    y,
+                    positions.join("; ")
+                )
+            },
+        ));
     };
 
     let (block_start, block_end) = find_balanced_block(&content, label.start)
@@ -1174,10 +1243,14 @@ async fn handle_move_labels_by_offset(
     let labels = find_label_blocks(&content);
     let matching: Vec<&LabelBlock> = labels.iter().filter(|l| l.net == net).collect();
     if matching.is_empty() {
-        return Ok(CallToolResult::error(format!(
-            "No label named '{}' in this schematic",
-            net
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "label".to_string(),
+                key: net.clone(),
+            },
+            format!("No label named '{}' in this schematic", net),
+        ));
     }
 
     // Edit each label's (at X Y ROT) anchor in place, preserving the rotation.
@@ -1401,7 +1474,12 @@ async fn handle_delete_no_connect(
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
     let Some((del_start, del_end)) = find_no_connect_block_at(&content, x, y) else {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "no_connect".to_string(),
+                key: format!("({x}, {y})"),
+            },
             "No-connect not found at that position",
         ));
     };
@@ -1472,6 +1550,10 @@ async fn handle_batch_delete_no_connect(
     let deleted = ranges.len();
 
     if deleted == 0 && !positions.is_empty() {
+        // Uncatalogued on purpose (D.6.1): same bundling as
+        // handle_batch_delete_wire — `errors` mixes malformed positions with
+        // plain misses into one String, and no single kind fits both without
+        // being wrong about one of them.
         return Ok(CallToolResult::error(format!(
             "No no-connects deleted: {}",
             errors.join("; ")

@@ -470,7 +470,7 @@ D.3.
 - [ ] D.6.1 Cover the remaining error paths with catalogued codes, by zone,
       lowering D.6.4's ceiling each time. A big-bang conversion of 150-odd
       hand-written messages would be unreviewable. Ranked by D.6.4 rather than
-      estimated; **104 sites left**.
+      estimated; **82 sites left**.
       - [x] `sch_hierarchy.rs` — 28/28, ceiling 152 → 124. No new kind was
             needed: `InvalidArgument` ×14, `NotFound` ×12, `FileNotFound` ×5.
             That is the useful finding for the rest of D.6.1 — the work is
@@ -493,15 +493,29 @@ D.3.
             catch-all; `from_anyhow` is not counted, since it classifies from
             the error chain at runtime and reaches the catch-all only when the
             chain carries nothing better
+      - [x] `library.rs` + `sch_wiring.rs` — 22 of 31, ceiling 104 → 82, no new
+            kind. The 9 left in plain text all give the same reason, which is
+            the finding: a helper stringified the error before the call site
+            could classify it (`read_lib_table_checked`,
+            `resolve_footprint_path`, `resolve_symbol_lib_path`, and the two
+            batch paths whose `errors` string mixes "not found" with "not
+            parseable"). One genuine exception: duplicate labels at one
+            position in `sch_wiring.rs` — valid input, ambiguous world, neither
+            an invalid argument nor a missing item, and a new kind for a single
+            site was rightly not invented
       - [ ] `meta_tools.rs` — 18
-      - [ ] `library.rs` — 16
-      - [ ] `sch_wiring.rs` — 15
       - [ ] `sch_components.rs` — 13, `integration.rs` — 12, then the smaller
             files
-      - [ ] D.6.5 Type `with_ipc` so an IPC failure keeps which of transport,
-            board mismatch or business rejection it was. Until then the five
-            sites above cannot be catalogued honestly, and no choice of `kind`
-            fixes that — it is a signature problem, not a taxonomy one
+      - [ ] D.6.5 Stop throwing the type away at the boundary. `with_ipc`
+            (transport / board mismatch / business rejection),
+            `read_lib_table_checked` (an `io::Error` folded into a `String`),
+            `resolve_footprint_path` and `resolve_symbol_lib_path` (missing
+            file / unresolved URI / absent item), and the batch paths that
+            join heterogeneous failures into one message. **This is what caps
+            D.6.1**: what remains is not N independent sites to classify, it is
+            a handful of signatures and everything downstream of them. A
+            signature problem, not a taxonomy one — no choice of `kind` fixes
+            it, which is why those sites keep their prose and say so
 - [x] D.6.2 Retry policy driven by `TransientClass` (`state` means reconcile
       first — a blind retry is useless). `mcp::retry::decide` is the single
       rule; `State` and `None` return no retry *and no wait*, so a call site

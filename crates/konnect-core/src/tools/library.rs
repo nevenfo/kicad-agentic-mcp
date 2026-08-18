@@ -1200,7 +1200,11 @@ async fn handle_register_footprint_library(
             .unwrap_or(Path::new("."))
             .join("fp-lib-table")
     } else {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "project".to_string(),
+                reason: "required for project scope".to_string(),
+            },
             "For project scope, provide 'project' path to .kicad_pro file",
         ));
     };
@@ -1237,6 +1241,9 @@ async fn handle_list_footprint_libraries(
     if scope == "global" || scope == "all" {
         let mut libs = match read_lib_table_checked(&global_fp_lib_table()) {
             Ok(libs) => libs,
+            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
+            // folded the io::Error into a String, so the type a kind would
+            // classify on is gone by the time it reaches here.
             Err(msg) => return Ok(CallToolResult::error(msg)),
         };
         for lib in &mut libs {
@@ -1250,6 +1257,9 @@ async fn handle_list_footprint_libraries(
         let table = proj.parent().unwrap_or(Path::new(".")).join("fp-lib-table");
         let mut libs = match read_lib_table_checked(&table) {
             Ok(libs) => libs,
+            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
+            // folded the io::Error into a String, so the type a kind would
+            // classify on is gone by the time it reaches here.
             Err(msg) => return Ok(CallToolResult::error(msg)),
         };
         for lib in &mut libs {
@@ -1283,7 +1293,11 @@ async fn handle_register_symbol_library(
             .unwrap_or(Path::new("."))
             .join("sym-lib-table")
     } else {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "project".to_string(),
+                reason: "required for project scope".to_string(),
+            },
             "For project scope, provide 'project' path to .kicad_pro file",
         ));
     };
@@ -1319,6 +1333,9 @@ async fn handle_list_symbol_libraries(
     if scope == "global" || scope == "all" {
         let mut libs = match read_lib_table_checked(&global_sym_lib_table()) {
             Ok(libs) => libs,
+            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
+            // folded the io::Error into a String, so the type a kind would
+            // classify on is gone by the time it reaches here.
             Err(msg) => return Ok(CallToolResult::error(msg)),
         };
         for lib in &mut libs {
@@ -1335,6 +1352,9 @@ async fn handle_list_symbol_libraries(
             .join("sym-lib-table");
         let mut libs = match read_lib_table_checked(&table) {
             Ok(libs) => libs,
+            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
+            // folded the io::Error into a String, so the type a kind would
+            // classify on is gone by the time it reaches here.
             Err(msg) => return Ok(CallToolResult::error(msg)),
         };
         for lib in &mut libs {
@@ -2170,7 +2190,15 @@ async fn handle_create_symbol(
             // Unit 1: the triangle with its signal pins.
             let (inner1, body1, warn1) = match build_symbol_unit(&signal, true, sym_glyph) {
                 Ok(v) => v,
-                Err(e) => return Ok(CallToolResult::error(e.to_string())),
+                Err(e) => {
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::InvalidArgument {
+                            field: "pins[].type".to_string(),
+                            reason: e.to_string(),
+                        },
+                        e.to_string(),
+                    ))
+                }
             };
             if let Some(w) = warn1 {
                 warnings.push(w);
@@ -2180,7 +2208,15 @@ async fn handle_create_symbol(
             let power_laid = layout_power_unit(&power);
             let (inner2, _, warn2) = match build_symbol_unit(&power_laid, true, None) {
                 Ok(v) => v,
-                Err(e) => return Ok(CallToolResult::error(e.to_string())),
+                Err(e) => {
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::InvalidArgument {
+                            field: "pins[].type".to_string(),
+                            reason: e.to_string(),
+                        },
+                        e.to_string(),
+                    ))
+                }
             };
             if let Some(w) = warn2 {
                 warnings.push(w);
@@ -2192,7 +2228,15 @@ async fn handle_create_symbol(
             // Single unit: body + all pins live in NAME_0_1 (unchanged behavior).
             let (inner, body, warn) = match build_symbol_unit(&pins_val, true, sym_glyph) {
                 Ok(v) => v,
-                Err(e) => return Ok(CallToolResult::error(e.to_string())),
+                Err(e) => {
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::InvalidArgument {
+                            field: "pins[].type".to_string(),
+                            reason: e.to_string(),
+                        },
+                        e.to_string(),
+                    ))
+                }
             };
             if let Some(w) = warn {
                 warnings.push(w);
@@ -2228,7 +2272,15 @@ async fn handle_create_symbol(
             };
             let (inner, body, warn) = match build_symbol_unit(&unit_pins, true, unit_glyph) {
                 Ok(v) => v,
-                Err(e) => return Ok(CallToolResult::error(e.to_string())),
+                Err(e) => {
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::InvalidArgument {
+                            field: "pins[].type".to_string(),
+                            reason: e.to_string(),
+                        },
+                        e.to_string(),
+                    ))
+                }
             };
             if let Some(w) = warn {
                 warnings.push(format!("unit {}: {}", i + 1, w));
@@ -2248,7 +2300,15 @@ async fn handle_create_symbol(
             // The power unit is always a rectangle.
             let (inner, _, _) = match build_symbol_unit(&power_pins, true, None) {
                 Ok(v) => v,
-                Err(e) => return Ok(CallToolResult::error(e.to_string())),
+                Err(e) => {
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::InvalidArgument {
+                            field: "pins[].type".to_string(),
+                            reason: e.to_string(),
+                        },
+                        e.to_string(),
+                    ))
+                }
             };
             total += 1;
             units_sexp.push_str(&format!(
@@ -2583,10 +2643,12 @@ async fn handle_list_library_footprints(
     let lib_dir = PathBuf::from(library_path_str);
 
     if !lib_dir.is_dir() {
-        return Ok(CallToolResult::error(format!(
-            "Not a directory: {}",
-            library_path_str
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::FileNotFound {
+                path: library_path_str.to_string(),
+            },
+            format!("Not a directory: {}", library_path_str),
+        ));
     }
 
     let mut footprints = Vec::new();
@@ -2624,6 +2686,11 @@ async fn handle_get_footprint_info(
         .and_then(|p| p.parent().map(Path::to_path_buf));
     let path = match resolve_footprint_path(fp_path_str, project_dir.as_deref()) {
         Ok(p) => p,
+        // Uncatalogued on purpose (D.6.1): resolve_footprint_path's own doc
+        // says it returns "a human-readable message... verbatim" folding a
+        // missing file, an unresolvable library URI, and a footprint absent
+        // from a known library into one String — the type that would pick a
+        // kind is already gone.
         Err(msg) => return Ok(CallToolResult::error(msg)),
     };
 
@@ -2719,7 +2786,11 @@ async fn handle_get_symbol_info(
 
     let parts: Vec<&str> = lib_id.splitn(2, ':').collect();
     if parts.len() != 2 {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "lib_id".to_string(),
+                reason: "must be in 'Library:Symbol' format (e.g. 'Device:R')".to_string(),
+            },
             "lib_id must be in 'Library:Symbol' format (e.g. 'Device:R')",
         ));
     }
@@ -2733,6 +2804,10 @@ async fn handle_get_symbol_info(
 
     let lib_path = match resolve_symbol_lib_path(lib_nick, project_dir.as_deref()).await {
         Some(p) => p,
+        // Uncatalogued on purpose (D.6.1): resolve_symbol_lib_path collapses
+        // "nickname not registered" and "uri uses an unresolved env var" into
+        // one `Option::None` — the message names both because the type that
+        // would tell them apart is already gone by the time it returns.
         None => {
             return Ok(CallToolResult::error(format!(
                 "Library '{}' not found in global or project sym-lib-table, or its uri uses an unresolved env var",
@@ -2754,10 +2829,14 @@ async fn handle_get_symbol_info(
     let sym_node = match sym_node {
         Some(n) => n,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Symbol '{}' not found in library '{}'",
-                sym_name, lib_nick
-            )));
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: lib_path.display().to_string(),
+                    item_kind: "symbol".to_string(),
+                    key: sym_name.to_string(),
+                },
+                format!("Symbol '{}' not found in library '{}'", sym_name, lib_nick),
+            ));
         }
     };
 
