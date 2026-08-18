@@ -3,6 +3,7 @@
 //! Operations are file-based (S-expression manipulation + directory scanning).
 //! No IPC or kicad-cli is required for most tools.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, require_str, ToolContext, ToolDef};
@@ -989,7 +990,7 @@ fn flatten_lib_table(
 /// symptom that produces is a bare `{"count": 0}`, which is precisely what the
 /// bug this module fixes looked like, so silence here would make a real
 /// failure indistinguishable from a regression.
-fn read_lib_table_checked(path: &Path) -> Result<Vec<serde_json::Value>, String> {
+fn read_lib_table_checked(path: &Path) -> Result<Vec<serde_json::Value>, LibTableUnreadable> {
     match std::fs::read_to_string(path) {
         // ${KIPRJMOD} is the directory the project's lib-table lives in, so
         // the table's own parent IS the correct expansion base for a project
@@ -998,8 +999,53 @@ fn read_lib_table_checked(path: &Path) -> Result<Vec<serde_json::Value>, String>
         // expansion then simply fails its exists() check.
         Ok(content) => Ok(flatten_lib_table(&content, 0, path.parent())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(format!("Cannot read lib-table {}: {}", path.display(), e)),
+        Err(source) => Err(LibTableUnreadable {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
+}
+
+/// A lib-table that exists but could not be read.
+///
+/// D.6.5: this used to be a `String`, and the `io::Error` inside it — the only
+/// thing that distinguishes a permissions problem from a truncated file from a
+/// path that is really a directory — was destroyed at the point of formatting.
+/// Every handler downstream then had nothing left to classify on, which is why
+/// four call sites carried the same "uncatalogued on purpose" comment. The
+/// prose is unchanged; only the type survives further now.
+#[derive(Debug)]
+pub(crate) struct LibTableUnreadable {
+    /// The table that could not be read.
+    pub path: PathBuf,
+    /// Why. Kept as the original error, never as its message.
+    pub source: std::io::Error,
+}
+
+impl std::fmt::Display for LibTableUnreadable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Cannot read lib-table {}: {}",
+            self.path.display(),
+            self.source
+        )
+    }
+}
+
+impl std::error::Error for LibTableUnreadable {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+/// The one place a [`LibTableUnreadable`] becomes an agent-facing error.
+///
+/// The kind comes from the `io::Error` itself, so `permission_denied` and
+/// `is_a_directory` reach the caller as different codes rather than as the
+/// same sentence with different words in it.
+fn lib_table_error_result(error: &LibTableUnreadable) -> CallToolResult {
+    CallToolResult::error_kind(ToolErrorKind::from_io(&error.source), error.to_string())
 }
 
 /// As [`read_lib_table_checked`], for callers with nowhere to put an error.
@@ -1009,8 +1055,8 @@ fn read_lib_table_checked(path: &Path) -> Result<Vec<serde_json::Value>, String>
 fn read_flat_lib_table(path: &Path) -> Vec<serde_json::Value> {
     match read_lib_table_checked(path) {
         Ok(libs) => libs,
-        Err(msg) => {
-            tracing::warn!("{msg}");
+        Err(error) => {
+            tracing::warn!("{error}");
             Vec::new()
         }
     }
@@ -1087,7 +1133,7 @@ pub(crate) fn footprint_lib_nickname_for_dir(dir: &Path) -> Option<String> {
 pub(crate) fn resolve_footprint_path(
     reference: &str,
     project_dir: Option<&Path>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, FootprintPathError> {
     if !is_lib_id(reference) {
         // Check here rather than leaving it to the caller's read: an unchecked
         // path reaches the reader as a bare io::Error, which surfaces as
@@ -1095,11 +1141,7 @@ pub(crate) fn resolve_footprint_path(
         // mention of what was being looked for.
         let path = PathBuf::from(reference);
         if !path.is_file() {
-            return Err(format!(
-                "Footprint file not found: {}. Pass either a path to a .kicad_mod \
-                 file or a Library:Footprint id (e.g. 'Resistor_SMD:R_0402').",
-                path.display()
-            ));
+            return Err(FootprintPathError::FileNotFound { path });
         }
         return Ok(path);
     }
@@ -1116,20 +1158,19 @@ pub(crate) fn resolve_footprint_path(
 
     if let Some(lib) = libs.iter().find(|l| l["nickname"].as_str() == Some(nick)) {
         let Some(dir) = lib["path"].as_str() else {
-            return Err(format!(
-                "Library '{}' has an unresolvable URI '{}'",
-                nick,
-                lib["uri"].as_str().unwrap_or("")
-            ));
+            return Err(FootprintPathError::LibraryUriUnresolved {
+                table: "fp-lib-table",
+                nickname: nick.to_string(),
+                uri: lib["uri"].as_str().unwrap_or("").to_string(),
+            });
         };
         let path = PathBuf::from(dir).join(&filename);
         if !path.is_file() {
-            return Err(format!(
-                "Footprint '{}' not found in library '{}' (looked for {})",
-                fp_name,
-                nick,
-                path.display()
-            ));
+            return Err(FootprintPathError::FootprintNotInLibrary {
+                nickname: nick.to_string(),
+                footprint: fp_name.to_string(),
+                looked_for: path,
+            });
         }
         return Ok(path);
     }
@@ -1163,17 +1204,141 @@ pub(crate) fn resolve_footprint_path(
                 .join(", ")
         )
     };
-    Err(format!(
-        "Library '{}' not found in the project or global fp-lib-table ({} libraries known{}); {}",
-        nick,
-        libs.len(),
-        if known.is_empty() {
-            String::new()
-        } else {
-            format!(", e.g. {}", known.join(", "))
-        },
-        attempted_list
-    ))
+    Err(FootprintPathError::LibraryNotRegistered {
+        table: "fp-lib-table",
+        nickname: nick.to_string(),
+        // Built here, where the search's own bookkeeping still exists: how
+        // many libraries were known, which of them, and where else this
+        // lookup looked. No caller downstream can reconstruct a search it
+        // did not run, so the prose travels with the variant.
+        detail: format!(
+            "Library '{}' not found in the project or global fp-lib-table ({} libraries known{}); {}",
+            nick,
+            libs.len(),
+            if known.is_empty() {
+                String::new()
+            } else {
+                format!(", e.g. {}", known.join(", "))
+            },
+            attempted_list
+        ),
+    })
+}
+
+/// Why a footprint reference did not resolve to a file on disk.
+///
+/// D.6.5: `resolve_footprint_path` used to answer `Result<PathBuf, String>`,
+/// and its own doc admitted what that cost — "a human-readable message ...
+/// verbatim" covering a missing file, a library whose URI does not resolve, a
+/// footprint absent from a library that exists, and a nickname registered
+/// nowhere. Those are four different things to do next, and the caller had one
+/// sentence to guess from.
+///
+/// The prose is unchanged at every variant. What is new is that the *reason*
+/// survives the return, so `kind` can name it.
+#[derive(Debug)]
+pub(crate) enum FootprintPathError {
+    /// `reference` was a filesystem path, and nothing is at it.
+    FileNotFound { path: PathBuf },
+    /// The nickname is registered, but its URI expanded to no path — a
+    /// `${KICAD*_DIR}` that is not set, or a table entry pointing at a
+    /// directory that is gone.
+    LibraryUriUnresolved {
+        table: &'static str,
+        nickname: String,
+        uri: String,
+    },
+    /// The library resolved; it does not contain this footprint.
+    FootprintNotInLibrary {
+        nickname: String,
+        footprint: String,
+        looked_for: PathBuf,
+    },
+    /// No lib-table and no conventional `.pretty` directory has this nickname.
+    LibraryNotRegistered {
+        table: &'static str,
+        nickname: String,
+        detail: String,
+    },
+}
+
+impl FootprintPathError {
+    /// The catalogued kind for this failure.
+    ///
+    /// Three of the four are `NotFound`, and the distinction a caller acts on
+    /// is carried by `item_kind`: a library that is not registered is fixed by
+    /// `register_footprint_library`, a library whose URI does not expand is
+    /// fixed in the environment or the table, and a missing footprint is fixed
+    /// by naming a different one. All three are `TransientClass::None` — no
+    /// retry of the identical call resolves any of them.
+    pub(crate) fn kind(&self) -> ToolErrorKind {
+        match self {
+            Self::FileNotFound { path } => ToolErrorKind::FileNotFound {
+                path: path.display().to_string(),
+            },
+            Self::LibraryUriUnresolved {
+                table, nickname, ..
+            } => ToolErrorKind::NotFound {
+                document: (*table).to_string(),
+                item_kind: "library uri".to_string(),
+                key: nickname.clone(),
+            },
+            Self::FootprintNotInLibrary {
+                nickname,
+                footprint,
+                ..
+            } => ToolErrorKind::NotFound {
+                document: nickname.clone(),
+                item_kind: "footprint".to_string(),
+                key: footprint.clone(),
+            },
+            Self::LibraryNotRegistered {
+                table, nickname, ..
+            } => ToolErrorKind::NotFound {
+                document: (*table).to_string(),
+                item_kind: "library".to_string(),
+                key: nickname.clone(),
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for FootprintPathError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FileNotFound { path } => write!(
+                formatter,
+                "Footprint file not found: {}. Pass either a path to a .kicad_mod \
+                 file or a Library:Footprint id (e.g. 'Resistor_SMD:R_0402').",
+                path.display()
+            ),
+            Self::LibraryUriUnresolved { nickname, uri, .. } => {
+                write!(
+                    formatter,
+                    "Library '{nickname}' has an unresolvable URI '{uri}'"
+                )
+            }
+            Self::FootprintNotInLibrary {
+                nickname,
+                footprint,
+                looked_for,
+            } => write!(
+                formatter,
+                "Footprint '{}' not found in library '{}' (looked for {})",
+                footprint,
+                nickname,
+                looked_for.display()
+            ),
+            Self::LibraryNotRegistered { detail, .. } => write!(formatter, "{detail}"),
+        }
+    }
+}
+
+impl std::error::Error for FootprintPathError {}
+
+/// The one place a [`FootprintPathError`] becomes an agent-facing error.
+fn footprint_path_error_result(error: &FootprintPathError) -> CallToolResult {
+    CallToolResult::error_kind(error.kind(), error.to_string())
 }
 
 /// Extract a quoted string value from `(key "value")` within a block.
@@ -1241,10 +1406,7 @@ async fn handle_list_footprint_libraries(
     if scope == "global" || scope == "all" {
         let mut libs = match read_lib_table_checked(&global_fp_lib_table()) {
             Ok(libs) => libs,
-            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
-            // folded the io::Error into a String, so the type a kind would
-            // classify on is gone by the time it reaches here.
-            Err(msg) => return Ok(CallToolResult::error(msg)),
+            Err(error) => return Ok(lib_table_error_result(&error)),
         };
         for lib in &mut libs {
             lib["scope"] = json!("global");
@@ -1257,10 +1419,7 @@ async fn handle_list_footprint_libraries(
         let table = proj.parent().unwrap_or(Path::new(".")).join("fp-lib-table");
         let mut libs = match read_lib_table_checked(&table) {
             Ok(libs) => libs,
-            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
-            // folded the io::Error into a String, so the type a kind would
-            // classify on is gone by the time it reaches here.
-            Err(msg) => return Ok(CallToolResult::error(msg)),
+            Err(error) => return Ok(lib_table_error_result(&error)),
         };
         for lib in &mut libs {
             lib["scope"] = json!("project");
@@ -1333,10 +1492,7 @@ async fn handle_list_symbol_libraries(
     if scope == "global" || scope == "all" {
         let mut libs = match read_lib_table_checked(&global_sym_lib_table()) {
             Ok(libs) => libs,
-            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
-            // folded the io::Error into a String, so the type a kind would
-            // classify on is gone by the time it reaches here.
-            Err(msg) => return Ok(CallToolResult::error(msg)),
+            Err(error) => return Ok(lib_table_error_result(&error)),
         };
         for lib in &mut libs {
             lib["scope"] = json!("global");
@@ -1352,10 +1508,7 @@ async fn handle_list_symbol_libraries(
             .join("sym-lib-table");
         let mut libs = match read_lib_table_checked(&table) {
             Ok(libs) => libs,
-            // Uncatalogued on purpose (D.6.1): read_lib_table_checked already
-            // folded the io::Error into a String, so the type a kind would
-            // classify on is gone by the time it reaches here.
-            Err(msg) => return Ok(CallToolResult::error(msg)),
+            Err(error) => return Ok(lib_table_error_result(&error)),
         };
         for lib in &mut libs {
             lib["scope"] = json!("project");
@@ -2456,22 +2609,89 @@ fn top_level_symbol_names(content: &str) -> anyhow::Result<Vec<String>> {
 /// existence only for `${KICAD*_DIR}` expansions, and takes a plain URI as
 /// written. A stale global entry therefore still shadows a working project one
 /// with the same nickname, and the caller's read is what discovers it.
-async fn resolve_symbol_lib_path(nick: &str, project_dir: Option<&Path>) -> Option<PathBuf> {
+async fn resolve_symbol_lib_path(
+    nick: &str,
+    project_dir: Option<&Path>,
+) -> Result<PathBuf, SymbolLibPathError> {
     let mut tables = vec![global_sym_lib_table()];
     if let Some(pd) = project_dir {
         tables.push(pd.join("sym-lib-table"));
     }
+    // D.6.5: the nickname matching and the URI expanding are separate
+    // failures, and this used to return `None` for both. The search order is
+    // unchanged — a nickname whose URI does not expand is still passed over
+    // in favour of a later table that resolves — but if nothing resolves, the
+    // fact that the nickname *was* registered is now what gets reported.
+    let mut nickname_seen = false;
     for table in tables {
         for lib in read_flat_lib_table(&table) {
             if lib["nickname"].as_str() == Some(nick) {
+                nickname_seen = true;
                 if let Some(path) = lib["path"].as_str() {
-                    return Some(PathBuf::from(path));
+                    return Ok(PathBuf::from(path));
                 }
             }
         }
     }
-    None
+    Err(if nickname_seen {
+        SymbolLibPathError::LibraryUriUnresolved {
+            nickname: nick.to_string(),
+        }
+    } else {
+        SymbolLibPathError::LibraryNotRegistered {
+            nickname: nick.to_string(),
+        }
+    })
 }
+
+/// Why a symbol library nickname did not resolve to a path.
+///
+/// D.6.5: this was an `Option::None`, and the call site's message had to name
+/// both possibilities at once — "not found in global or project sym-lib-table,
+/// or its uri uses an unresolved env var" — because nothing downstream could
+/// tell which had happened. They are separated here for the reason the prose
+/// gives away: the fix for one is to register the library, and the fix for the
+/// other is to set the variable its URI names.
+#[derive(Debug)]
+pub(crate) enum SymbolLibPathError {
+    /// Neither table has an entry with this nickname.
+    LibraryNotRegistered { nickname: String },
+    /// A table has the nickname, but its URI expanded to no path.
+    LibraryUriUnresolved { nickname: String },
+}
+
+impl SymbolLibPathError {
+    fn kind(&self) -> ToolErrorKind {
+        let (item_kind, nickname) = match self {
+            Self::LibraryNotRegistered { nickname } => ("library", nickname),
+            Self::LibraryUriUnresolved { nickname } => ("library uri", nickname),
+        };
+        ToolErrorKind::NotFound {
+            document: "sym-lib-table".to_string(),
+            item_kind: item_kind.to_string(),
+            key: nickname.clone(),
+        }
+    }
+}
+
+impl std::fmt::Display for SymbolLibPathError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LibraryNotRegistered { nickname } => write!(
+                formatter,
+                "Library '{nickname}' not found in the global or project sym-lib-table"
+            ),
+            Self::LibraryUriUnresolved { nickname } => write!(
+                formatter,
+                "Library '{nickname}' is registered in a sym-lib-table, but its uri \
+                 resolved to no path — it most likely uses an environment \
+                 variable that is not set"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SymbolLibPathError {}
 
 /// Recursively collect every descendant `SexpNode::List` whose head matches
 /// `head` (depth-first, document order). Pins live inside nested unit
@@ -2686,12 +2906,7 @@ async fn handle_get_footprint_info(
         .and_then(|p| p.parent().map(Path::to_path_buf));
     let path = match resolve_footprint_path(fp_path_str, project_dir.as_deref()) {
         Ok(p) => p,
-        // Uncatalogued on purpose (D.6.1): resolve_footprint_path's own doc
-        // says it returns "a human-readable message... verbatim" folding a
-        // missing file, an unresolvable library URI, and a footprint absent
-        // from a known library into one String — the type that would pick a
-        // kind is already gone.
-        Err(msg) => return Ok(CallToolResult::error(msg)),
+        Err(error) => return Ok(footprint_path_error_result(&error)),
     };
 
     let content = tokio::fs::read_to_string(&path).await?;
@@ -2803,17 +3018,8 @@ async fn handle_get_symbol_info(
         .or_else(|| ctx.config.project_dir.clone());
 
     let lib_path = match resolve_symbol_lib_path(lib_nick, project_dir.as_deref()).await {
-        Some(p) => p,
-        // Uncatalogued on purpose (D.6.1): resolve_symbol_lib_path collapses
-        // "nickname not registered" and "uri uses an unresolved env var" into
-        // one `Option::None` — the message names both because the type that
-        // would tell them apart is already gone by the time it returns.
-        None => {
-            return Ok(CallToolResult::error(format!(
-                "Library '{}' not found in global or project sym-lib-table, or its uri uses an unresolved env var",
-                lib_nick
-            )));
-        }
+        Ok(p) => p,
+        Err(error) => return Ok(CallToolResult::error_kind(error.kind(), error.to_string())),
     };
 
     let content = tokio::fs::read_to_string(&lib_path).await?;
@@ -3171,7 +3377,7 @@ mod tests {
         // without its own is the normal case.
         let tmp = tempfile::tempdir().unwrap();
         let absent = tmp.path().join("fp-lib-table");
-        assert_eq!(read_lib_table_checked(&absent), Ok(Vec::new()));
+        assert!(read_lib_table_checked(&absent).unwrap().is_empty());
     }
 
     #[test]
@@ -3186,7 +3392,17 @@ mod tests {
 
         let err = read_lib_table_checked(&dir_as_table)
             .expect_err("a table that exists but cannot be read must be reported");
-        assert!(err.contains("fp-lib-table"), "must name the table: {err}");
+        assert!(
+            err.to_string().contains("fp-lib-table"),
+            "must name the table: {err}"
+        );
+        // D.6.5: the io::Error itself survives the return, which is what lets
+        // the handler answer with a code instead of a sentence.
+        assert_ne!(
+            err.source.kind(),
+            std::io::ErrorKind::NotFound,
+            "an unreadable table must not be classified as an absent one"
+        );
     }
 
     #[tokio::test]
@@ -3219,9 +3435,12 @@ mod tests {
         let missing = tmp.path().join("nope.kicad_mod");
         let err = resolve_footprint_path(&missing.to_string_lossy(), None)
             .expect_err("a nonexistent path must not resolve");
-        assert!(err.contains("nope.kicad_mod"), "must name the file: {err}");
         assert!(
-            err.contains("Library:Footprint"),
+            err.to_string().contains("nope.kicad_mod"),
+            "must name the file: {err}"
+        );
+        assert!(
+            err.to_string().contains("Library:Footprint"),
             "should say what the alternative is: {err}"
         );
     }
@@ -3293,14 +3512,56 @@ mod tests {
         let _env = footprint_dir_env(tmp.path()).await;
         let err = resolve_footprint_path("NoSuchLib:R_1", Some(tmp.path()))
             .expect_err("an unknown nickname must not resolve");
-        assert!(err.contains("NoSuchLib"), "must name the library: {err}");
         assert!(
-            err.contains("libraries known"),
+            err.to_string().contains("NoSuchLib"),
+            "must name the library: {err}"
+        );
+        assert!(
+            err.to_string().contains("libraries known"),
             "should count the known libraries: {err}"
         );
         assert!(
-            err.contains("NoSuchLib.pretty"),
+            err.to_string().contains("NoSuchLib.pretty"),
             "should list the attempted fallback location: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unexpandable_symbol_library_uri_is_not_an_unregistered_nickname() {
+        // D.6.5: both used to be `Option::None`, so one message had to name
+        // both possibilities and the caller could act on neither. The fix for
+        // the first is to set the variable the URI names; the fix for the
+        // second is to register the library.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("sym-lib-table"),
+            kicad_style_table(
+                "sym_lib_table",
+                &[(
+                    "KonnectTestSyms",
+                    "KiCad",
+                    // Neither set nor named like a ${KICAD*_DIR}, so it cannot
+                    // fall through to the install-root guess: this resolves to
+                    // nothing on every machine.
+                    "${KONNECT_TEST_UNSET_DIR}/KonnectTestSyms.kicad_sym",
+                )],
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            matches!(
+                resolve_symbol_lib_path("KonnectTestSyms", Some(tmp.path())).await,
+                Err(SymbolLibPathError::LibraryUriUnresolved { .. })
+            ),
+            "a registered nickname whose URI does not expand must say so"
+        );
+        assert!(
+            matches!(
+                resolve_symbol_lib_path("KonnectNoSuchLibrary", Some(tmp.path())).await,
+                Err(SymbolLibPathError::LibraryNotRegistered { .. })
+            ),
+            "an unregistered nickname must not be reported as a bad URI"
         );
     }
 

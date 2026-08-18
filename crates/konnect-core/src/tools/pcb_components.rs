@@ -4,10 +4,13 @@
 //! system and don't require a separate file-sync step. `get_board_2d_view` uses
 //! kicad-cli to render a PNG.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::ipc_boundary::{ipc_error_result, ipc_error_result_with, with_ipc};
-use crate::tools::library::{footprint_lib_nickname_for_dir, is_lib_id, resolve_footprint_path};
+use crate::tools::library::{
+    footprint_lib_nickname_for_dir, is_lib_id, resolve_footprint_path, FootprintPathError,
+};
 use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
 use anyhow::Context;
 use konnect_sexp::writer::{
@@ -471,6 +474,67 @@ fn extract_graphic_definitions(
 ///
 /// KiCAD's own parser then handles the pads and graphics, which is why the
 /// whole definition is forwarded rather than reconstructed.
+/// Why a board-ready footprint block could not be built.
+///
+/// D.6.5: [`board_footprint_sexp`] answered `Result<String, String>`, and that
+/// String bundled three unrelated failures — a reference that resolves to
+/// nothing, a file that cannot be read, and a `.kicad_mod` that is not a
+/// footprint. Two of the three have a catalogued kind that is true of them,
+/// which is the whole reason to keep them apart this far up.
+#[derive(Debug)]
+enum BoardFootprintError {
+    /// The reference did not resolve to a file.
+    Resolve(FootprintPathError),
+    /// The file resolved and could not be read.
+    Read {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+    /// The file was read and is not a footprint definition.
+    Malformed { path: std::path::PathBuf },
+}
+
+impl BoardFootprintError {
+    /// The catalogued kind, or `None` where no existing kind is true of the
+    /// failure.
+    ///
+    /// `Malformed` is the `None`: a `.kicad_mod` whose first block is not
+    /// `(footprint "NAME" …)` is a corrupt library file — not IO, not a
+    /// missing item, and not a malformed *argument*, since the caller named a
+    /// library entry that exists. D.6.1 declined to invent a kind for a single
+    /// site and this follows that; the caller keeps the prose and says so.
+    fn kind(&self) -> Option<ToolErrorKind> {
+        match self {
+            Self::Resolve(error) => Some(error.kind()),
+            Self::Read { source, .. } => Some(ToolErrorKind::from_io(source)),
+            Self::Malformed { .. } => None,
+        }
+    }
+}
+
+impl std::fmt::Display for BoardFootprintError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Resolve(error) => write!(formatter, "{error}"),
+            Self::Read { path, source } => {
+                write!(
+                    formatter,
+                    "Cannot read footprint {}: {}",
+                    path.display(),
+                    source
+                )
+            }
+            Self::Malformed { path } => write!(
+                formatter,
+                "{} does not start with a (footprint \"NAME\" …) block",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BoardFootprintError {}
+
 fn board_footprint_sexp(
     lib_id: &str,
     x: f64,
@@ -479,17 +543,15 @@ fn board_footprint_sexp(
     layer: &str,
     reference: Option<&str>,
     project_dir: Option<&Path>,
-) -> Result<String, String> {
-    let path = resolve_footprint_path(lib_id, project_dir)?;
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Cannot read footprint {}: {}", path.display(), e))?;
-
-    let name_span = footprint_name_span(&content).ok_or_else(|| {
-        format!(
-            "{} does not start with a (footprint \"NAME\" …) block",
-            path.display()
-        )
+) -> Result<String, BoardFootprintError> {
+    let path = resolve_footprint_path(lib_id, project_dir).map_err(BoardFootprintError::Resolve)?;
+    let content = std::fs::read_to_string(&path).map_err(|source| BoardFootprintError::Read {
+        path: path.clone(),
+        source,
     })?;
+
+    let name_span = footprint_name_span(&content)
+        .ok_or_else(|| BoardFootprintError::Malformed { path: path.clone() })?;
 
     // Board footprints carry the full library id, not the bare footprint name.
     // The declared name is the span without its surrounding quotes.
@@ -1153,10 +1215,15 @@ async fn handle_place_component(
                 board.parent(),
             ) {
                 Ok(sexp) => sexp,
-                // Uncatalogued on purpose (D.6.1): this String bundles a
-                // missing path, a read failure and a malformed footprint, and
-                // the type that told them apart is already gone.
-                Err(message) => return Ok(CallToolResult::error(message)),
+                Err(error) => {
+                    return Ok(match error.kind() {
+                        Some(kind) => CallToolResult::error_kind(kind, error.to_string()),
+                        // Only the corrupt-library case reaches here, and it
+                        // keeps its prose deliberately: see
+                        // `BoardFootprintError::kind`.
+                        None => CallToolResult::error(error.to_string()),
+                    });
+                }
             };
             insert_into_board(&board, std::slice::from_ref(&sexp))?;
             Ok(CallToolResult::json(&json!({
