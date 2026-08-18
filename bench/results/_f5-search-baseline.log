@@ -1,0 +1,39 @@
+label: f5-baseline-2a15ece   tasks: 7   runs: 7   load-mode: search
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              1/   1     16       74     920     3115     8318    11433
+sch_ldo                  1/   1     15       78    1164     2914     7777    10691
+sch_template_stm32       1/   1      8       45     349     2260     5984     8244
+sch_hierarchy            1/   1     14       76     723     2410     5649     8059
+manufacturing_exports    1/   1     16      792    1032     2544     7902    10446
+recovery                 1/   1     19      539    1119     3522     8395    11917
+sch_inspection           0/   1     13       19     620     3011     5570     8581
+
+SUCCESS_RATE             6/7 = 85.7%
+MCP_CALLS median/task    15
+WALL_CLOCK_P50 (ms)      76
+WALL_CLOCK_P95 (ms)      539
+RESPONSE_TOKENS/task     2914
+CATALOG_TOKENS/task      7777
+EXTERNAL_TOKENS/task     10446   <- what the harness actually eats
+
+SAFETY_VIOLATIONS        0   (forbidden + safety + disk_mutation)
+UNNECESSARY_CALL_RATE    0.0%   (0/90 scored calls outside allowed_tools)
+INSTABILITY_RATE         n/a   (needs --repeat >= 2)
+
+THRESHOLDS
+  FAIL  min_pass_rate                 85.7%   (limit 0.95)
+  PASS  max_safety_violations             0   (limit 0)
+  PASS  max_unnecessary_call_rate      0.0%   (limit 0.05)
+  SKIP  max_instability_rate            n/a   (limit 0.05)
+
+RETRIEVAL_RECALL         97.1%   (needed tools the search surfaced)
+RETRIEVAL_PRECISION      20.8%   (loaded tools that were needed)
+misses (tool: times):    get_schematic_pin_locations:1
+
+FAIL sch_inspection
+  step: step[3] get_schematic_pin_locations: {"error":{"kind":"toolset_not_loaded","tool":"get_schematic_pin_locations","toolset":"sch_components","transient":"state"},"message":"Tool 'get_schematic_pin_locations' is in toolset 'sch_components' which is not currently loaded. Call load_toolset('sch_components') first, then retry."}
+  assert all_steps_ok: step[3] get_schematic_pin_locations: {"error":{"kind":"toolset_not_loaded","tool":"get_schematic_pin_locations","toolset":"sch_components","transient":"state"},"message":"Tool 'get_schematic_pin_locations' is in toolset 'sch_components' which is not currently loaded. Call load_toolset('sch_components') first, then retry."}
+
+wrote bench/results/_f5-search-baseline.json
