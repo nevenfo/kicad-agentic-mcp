@@ -1462,7 +1462,7 @@ one that cannot has its reason recorded here rather than a missing number.
       and skips with a reason, the same shape as its existing early return
       when `USERNAME` is unset. It is skipped where it cannot prove anything,
       not weakened where it can
-- [ ] L.2.8 `board_design_rules_round_trip_through_the_file` was flaky in CI,
+- [x] L.2.8 `board_design_rules_round_trip_through_the_file` was flaky in CI,
       and what it raced over was the test binary's environment, not the write
       path. Observed once, in run 32103900156, on **macos-latest alone**:
       `windows-latest` in that run was *cancelled* by the matrix fail-fast, not
@@ -1481,7 +1481,7 @@ one that cannot has its reason recorded here rather than a missing number.
       fixture copy was never the sharing to blame. The harness now points
       `KONNECT_STATE_DIR` at `<CARGO_TARGET_TMPDIR>/konnect-state` once per
       test binary, so the lock path stops reading `HOME` at all
-- [ ] L.2.8.1 Which syscall returned EINVAL is unknowable for that run, because
+- [x] L.2.8.1 Which syscall returned EINVAL is unknowable for that run, because
       `SexpError::Io` carried neither the operation nor the path — one bare
       `Invalid argument` for half a dozen files `write_atomic` touches. Every
       IO error on the write and lock paths now names both, with `ErrorKind`
@@ -1493,6 +1493,12 @@ Silent corruption stays 0 under injection; no partial batch survives a failure.
 L.2.6 additionally: 20 consecutive release runs of the test locally, then CI
 green on ubuntu, macos and windows (run 32060085312) — the first green
 `agentic/main` of the phase.
+L.2.8: `gate.ps1` green locally, then CI green on all three OSes with no job
+cancelled (run 32108806941), macOS included. A rare flake failing to reappear
+once proves nothing on its own; what the run adds is that the fix costs no
+other test. The proof of the fix itself is structural — the lock path no longer
+reads a variable another test rewrites, observable as the locks now living
+under `target/tmp/konnect-state/locks/`.
 
 ---
 

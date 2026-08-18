@@ -2,31 +2,34 @@
 
 ## Phase actuelle
 
-L then K. L.2.8 is implemented and waiting on CI to be checked off; K.1.1 stays
-externally blocked until 2026-08-20 and is the last dependency of phase M (final
-benchmark; H.6 and H.7 are DONE).
+K — multi-harness. L.2.8 is closed, so K.1.1 is again the only thing left that
+is not externally blocked by a machine or an account, and it is the last
+dependency of phase M (final benchmark; H.6 and H.7 are DONE).
 
 ## Tâche actuelle
 
-L.2.8 / L.2.8.1 — the flaky `board_design_rules_round_trip_through_the_file`.
-Diagnosed and fixed; the checkbox waits on a green CI across the three OSes,
-since the defect only ever showed on macOS and this machine is Windows.
+K.1.1 — run the golden suite through Claude Code, Codex and AGY. The runner
+(K.1.3) is written and proven; what is missing is the measurement, blocked
+externally until 2026-08-20, not by any code.
 
 ## Dernière tâche validée
 
-F.5.6 — retrieval precision, the V1 criterion that had been open since F.3.
-Ported at b3a1572: IDF weighting, clause splitting, a relative cutoff per
-clause, one tool per family, and two rewritten tool descriptions. Also landed:
-L.2.7 (560d377), an ACL test that failed on a clean tree in an elevated shell.
+L.2.8 / L.2.8.1 (b03d7f3) — the flaky `board_design_rules_round_trip_through_
+the_file`. The race was `HOME`: `redirected_user_config` repoints it for the
+config tests, and the design-rules test resolved its document lock through
+`dirs::data_local_dir()`, which on macOS sits in the same `konnect/` subtree —
+so its lock file was born in another test's `TempDir` and deleted under it.
+The harness now sets `KONNECT_STATE_DIR` once per test binary; the write and
+lock paths now name the operation and file in every IO error.
 
 Validation :
-- `bench/runner.py --load-mode search` at b3a1572: RETRIEVAL_PRECISION **62.0 %**
-  (was 20.8 %), RETRIEVAL_RECALL **100.0 %** (was 97.1 %), SUCCESS_RATE 7/7
-  (was 6/7), external tokens/task 10 446 → 5 205. All thresholds PASS
-- gateway mode unchanged: 21/21, 2 186 external tokens/task, P50 61 ms
-- `gate.ps1` green end to end (fmt, clippy, test, doctest, release build)
-- 17 tests in `router::capability_search`, 5 of them new, including the family
-  key regression the golden suite cannot see
+- CI run 32108806941 green on ubuntu, macos and windows, no job cancelled
+- `gate.ps1` green end to end (fmt, clippy, test, doctest, release build), no
+  warning
+- locks observed under `target/tmp/konnect-state/locks/`, not in the profile
+- the earlier reading of run 32103900156 as a macOS+Windows failure was wrong:
+  Windows was cancelled by the matrix fail-fast, and that misreading is what
+  sent the first diagnosis looking for a shared cause
 
 ## Décisions actives
 
@@ -183,12 +186,7 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Watch the CI run for the L.2.8 push (`gh run list -R nevenfo/kicad-agentic-mcp
---workflow ci.yml --branch agentic/main --limit 1`). Green on ubuntu, macos and
-windows → tick L.2.8 and L.2.8.1 in `plan.md`. A macOS red that is not the
-design-rules test is a separate finding, not this one coming back.
-
-Then, on or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
+On or after 2026-08-20, run K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex|agy> --repeat 2 --enforce
 --log-dir <dir> --out <json>` for each harness, and check the agy run first for
 `off_server_calls == 0` — if it is not zero, `AgyMcpConfigGuard` did not wire
