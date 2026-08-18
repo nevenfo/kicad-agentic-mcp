@@ -1,0 +1,97 @@
+//! The single crossing point between a tool handler and KiCAD's IPC API.
+//!
+//! Four toolsets used to carry a byte-identical `with_ipc` that returned
+//! `Result<T, String>`, and that `String` erased the only distinction any
+//! caller had to make: a transport that never delivered the request, a live
+//! KiCAD that does not hold the named board, and a live KiCAD that received
+//! the request and refused it. The first is safe to recover from by editing
+//! the board file directly and is fixed by starting KiCAD; the other two are
+//! not, because an editor may hold that file open and overwrite the edit on
+//! its next save.
+//!
+//! So the boundary is typed once here ([`with_ipc`]) and catalogued once here
+//! ([`ipc_error_result`]), and no handler re-derives either.
+
+use crate::mcp::error::ToolErrorKind;
+use crate::mcp::protocol::CallToolResult;
+use konnect_ipc::client::KiCadIpcClient;
+use konnect_ipc::IpcFailure;
+
+/// Run `f` against a KiCAD IPC client on the blocking pool, classifying any
+/// failure with [`IpcFailure::from_error`] — by the typed marker in the error
+/// chain, never by matching the message text.
+///
+/// The outer `Err` is reserved for the task machinery itself (a panicked or
+/// cancelled blocking task): that is a bug in this process, not a statement
+/// about KiCAD, and it must not be mistaken for one.
+pub(crate) async fn with_ipc<T, F>(addr: String, f: F) -> anyhow::Result<Result<T, IpcFailure>>
+where
+    T: Send + 'static,
+    F: FnOnce(&KiCadIpcClient) -> anyhow::Result<T> + Send + 'static,
+{
+    match tokio::task::spawn_blocking(move || {
+        f(&KiCadIpcClient::new(&addr)).map_err(IpcFailure::from_error)
+    })
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(e) => Err(anyhow::anyhow!("Thread error: {}", e)),
+    }
+}
+
+/// The one place an `IpcFailure` becomes an agent-facing error.
+///
+/// Each variant maps to the `ToolErrorKind` whose `transient_class` is true of
+/// it — `network` only where starting KiCAD makes the identical call work,
+/// `state` where the board has to be opened first, `none` where KiCAD already
+/// answered no. The prose is the prose the call sites already emitted; only
+/// the classification is new.
+pub(crate) fn ipc_error_result(failure: &IpcFailure) -> CallToolResult {
+    ipc_error_result_with(failure, str::to_string)
+}
+
+/// As [`ipc_error_result`], but letting the call site rewrite the message —
+/// to name the operation, or to say why a file fallback it *has* was withheld.
+/// Only the prose is the call site's; the kind and its transient class stay
+/// this module's, so no handler can re-classify by accident.
+pub(crate) fn ipc_error_result_with(
+    failure: &IpcFailure,
+    decorate: impl FnOnce(&str) -> String,
+) -> CallToolResult {
+    match failure {
+        IpcFailure::Unconfigured(_) | IpcFailure::Unreachable(_) => {
+            let code = if matches!(failure, IpcFailure::Unconfigured(_)) {
+                "not_configured"
+            } else {
+                "unreachable"
+            };
+            CallToolResult::error_kind(
+                ToolErrorKind::IpcUnavailable {
+                    code,
+                    detail: failure.message().to_string(),
+                },
+                decorate(&format!(
+                    "KiCAD must be running with the board loaded (IPC error: {})",
+                    failure.message()
+                )),
+            )
+        }
+        IpcFailure::BoardMismatch {
+            requested,
+            open,
+            message,
+        } => CallToolResult::error_kind(
+            ToolErrorKind::BoardNotOpen {
+                requested: requested.clone(),
+                open: open.clone(),
+            },
+            decorate(message),
+        ),
+        IpcFailure::Rejected(message) => CallToolResult::error_kind(
+            ToolErrorKind::IpcRejected {
+                detail: message.clone(),
+            },
+            decorate(&format!("KiCAD rejected the request over IPC: {message}")),
+        ),
+    }
+}

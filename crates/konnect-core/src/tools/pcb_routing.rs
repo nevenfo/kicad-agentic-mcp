@@ -5,36 +5,19 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
+use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
 use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
-use konnect_ipc::client::KiCadIpcClient;
 use konnect_sexp::writer::{apply_edits, new_uuid, write_atomic, SexpEdit};
 use serde_json::json;
 
 // ─── IPC helper ───────────────────────────────────────────────────────────────
-
-async fn with_ipc<T, F>(addr: String, f: F) -> anyhow::Result<Result<T, String>>
-where
-    T: Send + 'static,
-    F: FnOnce(&KiCadIpcClient) -> anyhow::Result<T> + Send + 'static,
-{
-    match tokio::task::spawn_blocking(move || f(&KiCadIpcClient::new(&addr))).await {
-        Ok(Ok(r)) => Ok(Ok(r)),
-        Ok(Err(e)) => Ok(Err(e.to_string())),
-        Err(e) => Err(anyhow::anyhow!("Thread error: {}", e)),
-    }
-}
 
 macro_rules! ipc {
     ($ctx:expr, |$c:ident| $body:expr) => {{
         let addr = $ctx.config.ipc_address.clone();
         match with_ipc(addr, move |$c| $body).await? {
             Ok(v) => v,
-            Err(msg) => {
-                return Ok(CallToolResult::error(format!(
-                    "KiCAD must be running with the board loaded (IPC error: {})",
-                    msg
-                )))
-            }
+            Err(failure) => return Ok(ipc_error_result(&failure)),
         }
     }};
 }

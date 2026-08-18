@@ -650,7 +650,7 @@ fn failed_multi_step_commit_is_dropped() {
 // (Copilot flagged substring matching three times on PR #66).
 
 #[test]
-fn an_unconfigured_socket_classifies_as_unreachable() {
+fn an_unconfigured_socket_classifies_as_unconfigured() {
     if std::env::var("KICAD_API_SOCKET").is_ok() {
         eprintln!("SKIP: KICAD_API_SOCKET set in environment");
         return;
@@ -658,9 +658,10 @@ fn an_unconfigured_socket_classifies_as_unreachable() {
     let client = KiCadIpcClient::new("");
     let failure = konnect_ipc::IpcFailure::from_error(client.get_open_documents().unwrap_err());
     assert!(
-        matches!(failure, konnect_ipc::IpcFailure::Unreachable(_)),
+        matches!(failure, konnect_ipc::IpcFailure::Unconfigured(_)),
         "unexpected classification: {failure:?}"
     );
+    assert!(failure.allows_file_fallback(), "{failure:?}");
 }
 
 #[test]
@@ -671,6 +672,7 @@ fn a_dead_endpoint_classifies_as_unreachable() {
         matches!(failure, konnect_ipc::IpcFailure::Unreachable(_)),
         "unexpected classification: {failure:?}"
     );
+    assert!(failure.allows_file_fallback(), "{failure:?}");
 }
 
 #[test]
@@ -692,6 +694,7 @@ fn a_live_kicad_that_says_no_classifies_as_rejected() {
         "a completed round-trip must never classify as unreachable: {failure:?}"
     );
     assert!(failure.message().contains("no board open"), "{failure:?}");
+    assert!(!failure.allows_file_fallback(), "{failure:?}");
 }
 
 /// The regression the recv timeout exists for: a server that accepts the

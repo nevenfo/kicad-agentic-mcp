@@ -6,27 +6,11 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
+use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
 use crate::tools::{get_path, ToolContext, ToolDef};
 use serde_json::json;
-use tokio::task;
 
 use super::cli;
-
-// ─── IPC helpers (mirrors pcb_board / pcb_components) ───────────────────────
-
-async fn with_ipc<T, F>(addr: String, f: F) -> anyhow::Result<Result<T, String>>
-where
-    T: Send + 'static,
-    F: FnOnce(&konnect_ipc::client::KiCadIpcClient) -> anyhow::Result<T> + Send + 'static,
-{
-    let result = task::spawn_blocking(move || {
-        let client = konnect_ipc::client::KiCadIpcClient::new(&addr);
-        f(&client).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("spawn_blocking panicked: {e}"))?;
-    Ok(result)
-}
 
 // ─── Severity filter helpers ──────────────────────────────────────────────────
 
@@ -646,10 +630,10 @@ async fn handle_refill_zones(
         client.refill_zones()?;
         Ok(())
     })
-    .await;
+    .await?;
 
     match result {
-        Ok(Ok(())) => Ok(CallToolResult::text(
+        Ok(()) => Ok(CallToolResult::text(
             serde_json::to_string(&json!({
                 "success": true,
                 "method": "ipc",
@@ -657,19 +641,11 @@ async fn handle_refill_zones(
             }))
             .unwrap(),
         )),
-        _ => {
-            // Fallback: run kicad-cli with zone-fill option if supported
-            // kicad-cli pcb export gerber fills zones as a side effect
-            // For now report the limitation
-            Ok(CallToolResult::text(
-                serde_json::to_string(&json!({
-                    "success": false,
-                    "note": "Zone refill requires a running KiCAD instance with IPC enabled, or manual zone fill in KiCAD GUI",
-                    "board": board.to_str().unwrap_or("")
-                }))
-                .unwrap(),
-            ))
-        }
+        // Refilling zones has no file-level equivalent — the fill geometry is
+        // computed by KiCAD — so there is nothing to fall back to, and the
+        // failure is reported as itself rather than as a success carrying a
+        // note nobody branches on.
+        Err(failure) => Ok(ipc_error_result(&failure)),
     }
 }
 

@@ -5,6 +5,7 @@ pub mod config;
 pub mod design_review;
 pub mod graph;
 pub mod integration;
+mod ipc_boundary;
 pub mod library;
 pub mod manufacturing;
 pub mod pcb_board;

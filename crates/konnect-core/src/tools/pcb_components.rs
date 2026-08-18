@@ -6,10 +6,10 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
+use crate::tools::ipc_boundary::{ipc_error_result, ipc_error_result_with, with_ipc};
 use crate::tools::library::{footprint_lib_nickname_for_dir, is_lib_id, resolve_footprint_path};
 use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
 use anyhow::Context;
-use konnect_ipc::client::KiCadIpcClient;
 use konnect_sexp::writer::{
     apply_edits, find_balanced_block, find_block_starts, new_uuid, write_atomic,
 };
@@ -19,39 +19,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 // ─── IPC helper ───────────────────────────────────────────────────────────────
-
-async fn with_ipc<T, F>(addr: String, f: F) -> anyhow::Result<Result<T, String>>
-where
-    T: Send + 'static,
-    F: FnOnce(&KiCadIpcClient) -> anyhow::Result<T> + Send + 'static,
-{
-    match tokio::task::spawn_blocking(move || f(&KiCadIpcClient::new(&addr))).await {
-        Ok(Ok(r)) => Ok(Ok(r)),
-        Ok(Err(e)) => Ok(Err(format!("{e:#}"))),
-        Err(e) => Err(anyhow::anyhow!("Thread error: {}", e)),
-    }
-}
-
-/// As [`with_ipc`], but classifying a failure as transport-unreachable vs
-/// KiCad-rejected via [`konnect_ipc::IpcFailure`] — the typed gate for the
-/// file-editing fallback (never a text match on the error message).
-async fn with_ipc_classified<T, F>(
-    addr: String,
-    f: F,
-) -> anyhow::Result<Result<T, konnect_ipc::IpcFailure>>
-where
-    T: Send + 'static,
-    F: FnOnce(&KiCadIpcClient) -> anyhow::Result<T> + Send + 'static,
-{
-    match tokio::task::spawn_blocking(move || {
-        f(&KiCadIpcClient::new(&addr)).map_err(konnect_ipc::IpcFailure::from_error)
-    })
-    .await
-    {
-        Ok(result) => Ok(result),
-        Err(e) => Err(anyhow::anyhow!("Thread error: {}", e)),
-    }
-}
 
 macro_rules! ipc {
     ($ctx:expr, $args:expr, |$c:ident| $body:expr) => {{
@@ -64,19 +31,7 @@ macro_rules! ipc {
         .await?
         {
             Ok(v) => v,
-            Err(msg) => {
-                // Deliberately left uncatalogued (D.6.1): `with_ipc` folds a
-                // transport that could not be reached, a board mismatch and a
-                // business rejection into one String, and the only kind that
-                // would take all three is `HandlerError` — whose
-                // `TransientClass::None` would tell a caller not to retry
-                // something that starting KiCAD makes work. A false `transient`
-                // is worse than none. Unblocked by typing `with_ipc`, not here.
-                return Ok(CallToolResult::error(format!(
-                    "KiCAD must be running with the board loaded (IPC error: {})",
-                    msg
-                )));
-            }
+            Err(failure) => return Ok(ipc_error_result(&failure)),
         }
     }};
 }
@@ -1147,7 +1102,7 @@ async fn handle_place_component(
     let footprint_ipc = footprint.clone();
     let reference_ipc = reference.clone();
     let layer_ipc = layer.clone();
-    let attempt = with_ipc_classified(ctx.config.ipc_address.clone(), move |c| {
+    let attempt = with_ipc(ctx.config.ipc_address.clone(), move |c| {
         c.place_footprint(
             &requested_board,
             &footprint_ipc,
@@ -1172,14 +1127,20 @@ async fn handle_place_component(
             "rotation": fp.rotation, "layer": fp.layer,
             "source": "ipc"
         }))),
-        // Uncatalogued on purpose (D.6.1): a rejection from a reachable KiCAD
-        // is not the deterministic failure `HandlerError` would claim.
-        Err(konnect_ipc::IpcFailure::Rejected(message)) => Ok(CallToolResult::error(format!(
-            "KiCAD rejected the placement over IPC: {message}. \
-                 The board file was not modified — KiCAD is reachable and may hold this \
-                 board open, so editing the file directly could be silently overwritten."
-        ))),
-        Err(konnect_ipc::IpcFailure::Unreachable(_)) => {
+        // Anything that proves KiCAD answered — a refusal, or a board it does
+        // not hold — fails closed with no file edit. The catalogued message
+        // gains the reason the fallback was withheld, which is specific to
+        // this write path and not to the classification itself.
+        Err(failure) if !failure.allows_file_fallback() => {
+            Ok(ipc_error_result_with(&failure, |message| {
+                format!(
+                    "{message} The board file was not modified — KiCAD is reachable \
+                     and may hold this board open, so editing the file directly could \
+                     be silently overwritten."
+                )
+            }))
+        }
+        Err(_) => {
             // No live KiCad on the other end of this transport: fall back to
             // editing the board file directly.
             let sexp = match board_footprint_sexp(
@@ -1613,8 +1574,11 @@ async fn handle_place_array(
     .await?
     {
         Ok(placed) => placed,
-        // Uncatalogued on purpose (D.6.1): same bundling as the `ipc!` macro.
-        Err(error) => return Ok(CallToolResult::error(format!("IPC array error: {error:#}"))),
+        Err(failure) => {
+            return Ok(ipc_error_result_with(&failure, |message| {
+                format!("IPC array error: {message}")
+            }))
+        }
     };
     Ok(CallToolResult::json(
         &json!({ "placed_count": placed.len(), "components": placed }),
@@ -1693,8 +1657,11 @@ async fn handle_align_components(
     .await?
     {
         Ok(aligned) => aligned,
-        // Uncatalogued on purpose (D.6.1): same bundling as the `ipc!` macro.
-        Err(error) => return Ok(CallToolResult::error(format!("IPC align error: {error:#}"))),
+        Err(failure) => {
+            return Ok(ipc_error_result_with(&failure, |message| {
+                format!("IPC align error: {message}")
+            }))
+        }
     };
     Ok(CallToolResult::json(
         &json!({ "aligned_count": aligned.len(), "components": aligned }),
@@ -2331,9 +2298,17 @@ mod tests {
         let res = handle_place_component(&args, &ctx).await.unwrap();
         assert!(res.is_error, "a rejection must not be reported as success");
         let text = result_text(&res);
+        // The prose moved to the shared IPC boundary (D.6.5): one "rejected
+        // the request over IPC" for every toolset, plus this write path's own
+        // reason for withholding its file fallback.
         assert!(
-            text.contains("rejected the placement") && text.contains("not modified"),
+            text.contains("rejected the request over IPC") && text.contains("not modified"),
             "the error must say the file was left alone: {text}"
+        );
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("ipc_rejected"),
+            "a live KiCAD saying no must be catalogued, not prose: {text}"
         );
         assert_eq!(
             std::fs::read_to_string(&board).unwrap(),

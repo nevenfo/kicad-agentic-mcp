@@ -165,6 +165,27 @@ pub enum ToolErrorKind {
     /// file specified" or "Le fichier spécifié est introuvable" depending on
     /// the machine. `code` is what a recovery loop branches on.
     Io { code: &'static str, detail: String },
+    /// The KiCAD IPC transport never delivered the request, so nothing can
+    /// have been applied. `code` is what a recovery loop branches on:
+    /// `"unreachable"` (a socket path exists, nothing answered on it) is
+    /// fixed by starting KiCAD and replaying the identical call;
+    /// `"not_configured"` (no socket path at all) is fixed only by
+    /// configuration, never by a retry. Classified from
+    /// [`konnect_ipc::IpcFailure`], never from message text.
+    IpcUnavailable { code: &'static str, detail: String },
+    /// A live KiCAD received the request over IPC and refused it. Distinct
+    /// from `IpcUnavailable` in the way that matters: the call reached the
+    /// editor, so the request — not the environment — is what has to change,
+    /// and a file edit behind that editor could be silently overwritten.
+    IpcRejected { detail: String },
+    /// A live KiCAD answered, but the board the call names is not among its
+    /// open documents. `open` is what KiCAD actually holds, so the caller can
+    /// name the fix (open `requested`, or address one of `open`) instead of
+    /// guessing. Empty `open` means no PCB document is open at all.
+    BoardNotOpen {
+        requested: String,
+        open: Vec<String>,
+    },
     /// Catch-all for handler `anyhow::Error` that hasn't been migrated yet.
     /// Eventually each variant above subsumes a subset of these.
     HandlerError {
@@ -220,6 +241,9 @@ impl ToolErrorKind {
             Self::OperationInFlight { .. } => "operation_in_flight",
             Self::Conflict { .. } => "conflict",
             Self::Io { .. } => "io",
+            Self::IpcUnavailable { .. } => "ipc_unavailable",
+            Self::IpcRejected { .. } => "ipc_rejected",
+            Self::BoardNotOpen { .. } => "board_not_open",
             Self::HandlerError { .. } => "handler_error",
             Self::PostconditionFailed { .. } => "postcondition_failed",
         }
@@ -252,6 +276,23 @@ impl ToolErrorKind {
                 | "not_connected" => TransientClass::Network,
                 _ => TransientClass::None,
             },
+            // The heart of D.6.5: these three used to be one `String`, and the
+            // only kind that took all three claimed `None` — telling a caller
+            // not to retry something that starting KiCAD makes work.
+            Self::IpcUnavailable { code, .. } => match *code {
+                // The transport refused; the same call succeeds once KiCAD is
+                // listening. Nothing about the request has to change.
+                "unreachable" => TransientClass::Network,
+                // No socket to dial: there is nothing to wait for, and a retry
+                // loop here is exactly the false `transient` D75 forbids.
+                _ => TransientClass::None,
+            },
+            // Deterministic: KiCAD received the request and refused it. The
+            // identical call gets the identical refusal.
+            Self::IpcRejected { .. } => TransientClass::None,
+            // The world is not where the caller believed. Open the right board
+            // (or address the one that is open) — replaying blind never helps.
+            Self::BoardNotOpen { .. } => TransientClass::State,
             // Unclassified by construction. Claiming a class for an error we
             // have not looked at is worse than admitting we do not know.
             Self::HandlerError { .. } => TransientClass::None,
@@ -282,15 +323,23 @@ impl ToolErrorKind {
                 };
             }
             if let Some(io) = cause.downcast_ref::<std::io::Error>() {
-                return Self::Io {
-                    code: io_code(io.kind()),
-                    detail: io.to_string(),
-                };
+                return Self::from_io(io);
             }
         }
         Self::HandlerError {
             reason: err.to_string(),
             candidates: Vec::new(),
+        }
+    }
+
+    /// Classify a `std::io::Error` directly, for the callers that already hold
+    /// one and would otherwise have to wrap it in an `anyhow::Error` just to
+    /// get the same answer out of [`Self::from_anyhow`] — which delegates
+    /// here, so the two can never disagree on the code.
+    pub fn from_io(error: &std::io::Error) -> Self {
+        Self::Io {
+            code: io_code(error.kind()),
+            detail: error.to_string(),
         }
     }
 }

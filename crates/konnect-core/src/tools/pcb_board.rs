@@ -6,6 +6,7 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
+use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
 use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
 use konnect_ipc::builders;
 use konnect_sexp::{
@@ -31,25 +32,6 @@ fn rect_outline_items(x1: f64, y1: f64, x2: f64, y2: f64, w: f64) -> Vec<prost_t
             )
         })
         .collect()
-}
-
-// ─── IPC helper ───────────────────────────────────────────────────────────────
-
-async fn with_ipc<T, F>(addr: String, f: F) -> anyhow::Result<Result<T, String>>
-where
-    T: Send + 'static,
-    F: FnOnce(&konnect_ipc::client::KiCadIpcClient) -> anyhow::Result<T> + Send + 'static,
-{
-    match tokio::task::spawn_blocking(move || {
-        let client = konnect_ipc::client::KiCadIpcClient::new(&addr);
-        f(&client)
-    })
-    .await
-    {
-        Ok(Ok(r)) => Ok(Ok(r)),
-        Ok(Err(e)) => Ok(Err(e.to_string())),
-        Err(e) => Err(anyhow::anyhow!("Thread error: {}", e)),
-    }
 }
 
 // ─── S-expression format helpers ──────────────────────────────────────────────
@@ -343,12 +325,18 @@ async fn handle_set_board_size(
     // ponytail: 4 segments over a single BoardRectangle keeps one builder path;
     // switch to board_rectangle if a native rect proves less flaky.
     let items = rect_outline_items(ox, oy, x2, y2, w);
-    if with_ipc(ctx.config.ipc_address.clone(), move |c| {
+    if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
         c.create_items(items)
     })
     .await?
-    .is_ok()
     {
+        // Only a transport that never delivered the request may fall through
+        // to editing the file: a KiCAD that answered — even to refuse — may
+        // hold this board open and overwrite the edit on its next save.
+        if !failure.allows_file_fallback() {
+            return Ok(ipc_error_result(&failure));
+        }
+    } else {
         return Ok(CallToolResult::json(&json!({
             "width": width, "height": height,
             "x1": ox, "y1": oy, "x2": x2, "y2": y2,
@@ -439,7 +427,9 @@ async fn handle_get_board_extents(
 ) -> anyhow::Result<CallToolResult> {
     let board_path = get_path(args, "board")?;
 
-    // Try IPC first; fall through to file-based computation on error
+    // Try IPC first; fall through to file-based computation on *any* failure.
+    // Unconditional here, unlike the write paths: reading the file cannot
+    // overwrite anything a live KiCAD holds.
     if let Ok(ext) = with_ipc(ctx.config.ipc_address.clone(), |c| c.get_board_extents()).await? {
         return Ok(CallToolResult::json(&json!({
             "x_min": ext.min.x, "y_min": ext.min.y,
@@ -656,12 +646,16 @@ async fn handle_add_board_outline(
 
     // Try IPC first; fall through to file edit if KiCAD is not reachable.
     let items = rect_outline_items(x1, y1, x2, y2, w);
-    if with_ipc(ctx.config.ipc_address.clone(), move |c| {
+    if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
         c.create_items(items)
     })
     .await?
-    .is_ok()
     {
+        // Fail closed on anything that proves KiCAD answered (see above).
+        if !failure.allows_file_fallback() {
+            return Ok(ipc_error_result(&failure));
+        }
+    } else {
         return Ok(CallToolResult::json(&json!({
             "x1": x1, "y1": y1, "x2": x2, "y2": y2,
             "width": (x2-x1).abs(), "height": (y2-y1).abs(),
@@ -740,14 +734,18 @@ async fn handle_add_board_text(
     // Try IPC first; fall through to file edit if KiCAD isn't reachable.
     let text_ipc = text.clone();
     let layer_ipc = layer.clone();
-    if with_ipc(ctx.config.ipc_address.clone(), move |c| {
+    if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
         let bt = builders::board_text(&layer_ipc, &text_ipc, x, y, size, rotation, false);
         let any = builders::pack_any(&bt, "kiapi.board.types.BoardText");
         c.create_items(vec![any])
     })
     .await?
-    .is_ok()
     {
+        // Fail closed on anything that proves KiCAD answered (see above).
+        if !failure.allows_file_fallback() {
+            return Ok(ipc_error_result(&failure));
+        }
+    } else {
         return Ok(CallToolResult::json(&json!({
             "text": text, "x": x, "y": y, "layer": layer, "size": size,
             "source": "ipc"
@@ -838,14 +836,18 @@ async fn handle_import_svg_logo(
     // Try IPC first; fall through to a direct file edit if KiCAD isn't reachable.
     let layer_ipc = layer.clone();
     let placed_ipc = placed.clone();
-    if with_ipc(ctx.config.ipc_address.clone(), move |c| {
+    if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
         let shape = builders::board_polygon(&layer_ipc, 0.0, true, &placed_ipc);
         let any = builders::pack_any(&shape, "kiapi.board.types.BoardGraphicShape");
         c.create_items(vec![any])
     })
     .await?
-    .is_ok()
     {
+        // Fail closed on anything that proves KiCAD answered (see above).
+        if !failure.allows_file_fallback() {
+            return Ok(ipc_error_result(&failure));
+        }
+    } else {
         return Ok(CallToolResult::json(&json!({
             "polygon_count": placed.len(),
             "layer": layer,

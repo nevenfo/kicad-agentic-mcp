@@ -86,56 +86,143 @@ fn ensure_item_request_ok(status: i32, operation: &str) -> Result<()> {
 /// request completed a round-trip with a live KiCad: no socket path
 /// configured, or the NNG dial/send failed.
 ///
+/// The two variants are kept apart because they ask opposite things of a
+/// caller: `DialFailed` is fixed by starting KiCad and replaying the very same
+/// call, while `NotConfigured` has no socket to dial at all — retrying it in a
+/// loop is the false `transient` D75 forbids.
+///
 /// Callers must classify with [`IpcFailure::from_error`], never by matching
 /// error text.
 #[derive(Debug)]
-pub struct TransportUnreachable;
+pub enum TransportUnreachable {
+    /// No socket path is configured, so no dial was even attempted.
+    NotConfigured,
+    /// A socket path exists but the NNG dial or send failed: nothing is
+    /// listening on the other end.
+    DialFailed,
+}
 
 impl std::fmt::Display for TransportUnreachable {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "KiCad IPC transport unreachable")
+        match self {
+            TransportUnreachable::NotConfigured => {
+                write!(formatter, "KiCad IPC transport not configured")
+            }
+            TransportUnreachable::DialFailed => {
+                write!(formatter, "KiCad IPC transport unreachable")
+            }
+        }
     }
 }
 
 impl std::error::Error for TransportUnreachable {}
 
+/// Marker error carried (via anyhow's error chain) when a live KiCad answered,
+/// but the board the call names is not among its open documents.
+///
+/// Distinct from [`TransportUnreachable`] in exactly the way that matters to a
+/// caller: KiCad *is* running and may hold some board open, so editing a file
+/// behind it can still be overwritten — while the request itself is not
+/// malformed, only aimed at a document the editor does not have.
+#[derive(Debug)]
+pub struct BoardNotOpen {
+    /// The board the call named.
+    pub requested: String,
+    /// The board paths KiCad reported open; empty when no PCB document is.
+    pub open: Vec<String>,
+}
+
+impl std::fmt::Display for BoardNotOpen {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "requested board is not open in KiCAD")
+    }
+}
+
+impl std::error::Error for BoardNotOpen {}
+
 /// Why an IPC operation failed, for callers deciding whether a file-based
-/// fallback is safe.
+/// fallback is safe and how to catalogue the error for an agent.
 ///
-/// `Unreachable` means the transport never delivered the request — IPC is
-/// unconfigured (empty socket path) or the dial/send failed — so no live
-/// KiCad can be holding the board, and editing the board file directly
-/// cannot race an editor.
+/// `Unconfigured` and `Unreachable` both mean the transport never delivered
+/// the request, so no live KiCad can be holding the board and editing the
+/// board file directly cannot race an editor. They stay apart because only
+/// `Unreachable` is fixed by starting KiCad and replaying the same call.
 ///
-/// `Rejected` is everything else, including any error after a request was
-/// delivered (a receive timeout may mean KiCad is still processing it).
-/// KiCad is — or may be — alive on the other end, so a file edit could be
-/// silently overwritten on its next save. Fail closed.
+/// `BoardMismatch` and `Rejected` both prove KiCad answered — it is, or may
+/// be, alive on the other end, so a file edit could be silently overwritten on
+/// its next save. Fail closed. `BoardMismatch` names the document gap so the
+/// caller can say which board to open; `Rejected` is everything else,
+/// including any error after a request was delivered (a receive timeout may
+/// mean KiCad is still processing it).
 #[derive(Debug)]
 pub enum IpcFailure {
+    /// No IPC socket path is configured.
+    Unconfigured(String),
+    /// A socket path exists but nothing answered on it.
     Unreachable(String),
+    /// KiCad answered; the requested board is not among its open documents.
+    BoardMismatch {
+        /// The board the call named.
+        requested: String,
+        /// The boards KiCad reported open; empty when no PCB document is.
+        open: Vec<String>,
+        /// The full failure message, as for the other variants.
+        message: String,
+    },
+    /// KiCad received the request and refused it.
     Rejected(String),
 }
 
 impl IpcFailure {
     /// Classify an error from any [`KiCadIpcClient`] operation by walking its
-    /// chain for the [`TransportUnreachable`] marker — never by matching
-    /// message text.
+    /// chain for the [`BoardNotOpen`] and [`TransportUnreachable`] markers —
+    /// never by matching message text.
+    ///
+    /// `BoardNotOpen` is checked first: it is the more specific statement
+    /// about the world, and only a client that already completed a round trip
+    /// can raise it.
     pub fn from_error(error: anyhow::Error) -> Self {
         let message = format!("{error:#}");
-        if error
-            .chain()
-            .any(|cause| cause.is::<TransportUnreachable>())
-        {
-            IpcFailure::Unreachable(message)
-        } else {
-            IpcFailure::Rejected(message)
+        for cause in error.chain() {
+            if let Some(mismatch) = cause.downcast_ref::<BoardNotOpen>() {
+                return IpcFailure::BoardMismatch {
+                    requested: mismatch.requested.clone(),
+                    open: mismatch.open.clone(),
+                    message,
+                };
+            }
+        }
+        for cause in error.chain() {
+            if let Some(transport) = cause.downcast_ref::<TransportUnreachable>() {
+                return match transport {
+                    TransportUnreachable::NotConfigured => IpcFailure::Unconfigured(message),
+                    TransportUnreachable::DialFailed => IpcFailure::Unreachable(message),
+                };
+            }
+        }
+        IpcFailure::Rejected(message)
+    }
+
+    /// The full failure message, for every variant.
+    pub fn message(&self) -> &str {
+        match self {
+            IpcFailure::Unconfigured(message)
+            | IpcFailure::Unreachable(message)
+            | IpcFailure::Rejected(message)
+            | IpcFailure::BoardMismatch { message, .. } => message,
         }
     }
 
-    pub fn message(&self) -> &str {
+    /// Whether editing the document on disk can race a live editor. False for
+    /// anything that proves KiCad answered.
+    ///
+    /// This is the question callers actually have, exposed so they never
+    /// re-derive it by matching the variant list — a match that would have to
+    /// be revisited, correctly, every time a variant is added.
+    pub fn allows_file_fallback(&self) -> bool {
         match self {
-            IpcFailure::Unreachable(message) | IpcFailure::Rejected(message) => message,
+            IpcFailure::Unconfigured(_) | IpcFailure::Unreachable(_) => true,
+            IpcFailure::BoardMismatch { .. } | IpcFailure::Rejected(_) => false,
         }
     }
 }
@@ -187,7 +274,8 @@ impl KiCadIpcClient {
         type_name: &str,
     ) -> Result<Option<prost_types::Any>> {
         if self.socket_path.is_empty() {
-            return Err(anyhow::Error::new(TransportUnreachable).context(
+            return Err(
+                anyhow::Error::new(TransportUnreachable::NotConfigured).context(
                 "KiCAD IPC socket path not configured. To fix: \
                  (1) in KiCAD, enable Edit > Preferences > Plugins > 'Enable KiCad API' \
                  and copy the listed ipc:// address; \
@@ -197,7 +285,8 @@ impl KiCadIpcClient {
                  Alternatively set ipc_socket_path in konnect-settings.json or launch \
                  via KiCAD (which sets KICAD_API_SOCKET). \
                  Full guide: https://github.com/mixelpixx/Konnect/blob/main/docs/TROUBLESHOOTING.md",
-            ));
+                ),
+            );
         }
 
         let request = kiapi::common::ApiRequest {
@@ -244,7 +333,7 @@ impl KiCadIpcClient {
         };
 
         socket.dial(&dial_url).map_err(|error| {
-            anyhow::Error::new(TransportUnreachable).context(format!(
+            anyhow::Error::new(TransportUnreachable::DialFailed).context(format!(
                 "Cannot connect to KiCAD IPC at {dial_url}: {error}"
             ))
         })?;
@@ -252,7 +341,8 @@ impl KiCadIpcClient {
         // Send request
         let msg = nng::Message::from(request_bytes.as_slice());
         socket.send(msg).map_err(|(_, error)| {
-            anyhow::Error::new(TransportUnreachable).context(format!("NNG send failed: {error}"))
+            anyhow::Error::new(TransportUnreachable::DialFailed)
+                .context(format!("NNG send failed: {error}"))
         })?;
 
         // Receive response
@@ -331,7 +421,14 @@ impl KiCadIpcClient {
     ) -> Result<kiapi::common::types::DocumentSpecifier> {
         let docs = self.get_open_documents()?;
         if docs.is_empty() {
-            anyhow::bail!("No PCB document is open in KiCAD. Open a board file first.");
+            // Marker-carrying rather than a bare bail: a caller must be able
+            // to tell "KiCad answered, wrong document" from "KiCad never
+            // answered" without reading the prose, which is unchanged.
+            return Err(anyhow::Error::new(BoardNotOpen {
+                requested: requested.display().to_string(),
+                open: Vec::new(),
+            })
+            .context("No PCB document is open in KiCAD. Open a board file first."));
         }
         let mut open_names = Vec::new();
         for doc in docs {
@@ -342,11 +439,16 @@ impl KiCadIpcClient {
                 open_names.push(path.display().to_string());
             }
         }
-        anyhow::bail!(
+        let message = format!(
             "requested board '{}' is not open in KiCAD (open boards: {})",
             requested.display(),
             open_names.join(", ")
-        )
+        );
+        Err(anyhow::Error::new(BoardNotOpen {
+            requested: requested.display().to_string(),
+            open: open_names,
+        })
+        .context(message))
     }
 
     /// Fail closed unless the requested board is open in the IPC session.
