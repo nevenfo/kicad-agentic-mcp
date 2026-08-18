@@ -36,6 +36,7 @@ use konnect_core::tools::ToolDef;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Deserialize)]
 struct TaskIntents {
@@ -81,6 +82,36 @@ const SYNONYMS: &[(&str, &[&str])] = &[
     ("symbol", &["symbol", "library"]),
 ];
 
+/// Axis G3: location / designation vocabulary. Only words that actually
+/// occur in the corpus can ever pay; the run prints each one's document
+/// frequency so an inert entry is visible.
+const G3_SYNONYMS: &[(&str, &[&str])] = &[
+    (
+        "where",
+        &[
+            "location",
+            "locations",
+            "position",
+            "positions",
+            "coordinates",
+        ],
+    ),
+    ("reference", &["designator"]),
+];
+
+/// Axis G4: description rewrites, applied to the probe's corpus only. Same
+/// meaning, but the concept is named with both domain words.
+const G4_DESCRIPTIONS: &[(&str, &str)] = &[
+    (
+        "get_schematic_component",
+        "Get all properties, position, and pin locations for a single schematic component, that is one symbol instance, looked up by its reference designator.",
+    ),
+    (
+        "get_schematic_pin_locations",
+        "Get the exact schematic-space (X,Y) coordinates showing where every pin of a component symbol is located, accounting for rotation and mirroring. Uses the canonical pin transform.",
+    ),
+];
+
 const STOP_WORDS: &[&str] = &[
     "a", "an", "and", "at", "by", "for", "from", "in", "into", "is", "it", "of", "on", "or", "the",
     "to", "with", "my", "this", "that", "please", "kicad",
@@ -97,19 +128,61 @@ fn is_stop_word(term: &str) -> bool {
     STOP_WORDS.contains(&term)
 }
 
-fn expansions(term: &str) -> &'static [&'static str] {
-    SYNONYMS
+fn expansions(term: &str) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = SYNONYMS
         .iter()
         .find(|(k, _)| *k == term)
-        .map(|(_, v)| *v)
-        .unwrap_or(&[])
+        .map(|(_, v)| v.to_vec())
+        .unwrap_or_default();
+    if g_flag(&G2_COMPONENT_SYMBOL) {
+        match term {
+            "component" => out.push("symbol"),
+            "symbol" => out.push("component"),
+            _ => {}
+        }
+    }
+    if g_flag(&G3_LOCATION_VOCAB) {
+        if let Some((_, extra)) = G3_SYNONYMS.iter().find(|(k, _)| *k == term) {
+            out.extend_from_slice(extra);
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 fn query_terms(query: &str) -> Vec<String> {
     terms(query)
         .into_iter()
         .filter(|t| !is_stop_word(t))
+        .filter(|t| !(g_flag(&G1_DROP_ONE_CHAR) && t.chars().count() == 1))
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Axis G (F.5.5): vocabulary levers, simulated in the probe only. Each lever
+// is a process-global switch consulted by `query_terms` / `expansions`, so it
+// reaches the scoring code without threading a config through every call.
+// They are all OFF by default, which is what `sanity_check` runs under.
+//   G1 drops one-character query terms (the `s` of "component's").
+//   G2 links component <-> symbol both ways.
+//   G3 adds location/designation vocabulary.
+//   G4 is *not* here: it rewrites two descriptions, so it is a separate
+//      corpus built by `Corpus::with_g4_descriptions`.
+// ---------------------------------------------------------------------------
+
+static G1_DROP_ONE_CHAR: AtomicBool = AtomicBool::new(false);
+static G2_COMPONENT_SYMBOL: AtomicBool = AtomicBool::new(false);
+static G3_LOCATION_VOCAB: AtomicBool = AtomicBool::new(false);
+
+fn g_flag(flag: &AtomicBool) -> bool {
+    flag.load(Ordering::Relaxed)
+}
+
+fn set_g(g1: bool, g2: bool, g3: bool) {
+    G1_DROP_ONE_CHAR.store(g1, Ordering::Relaxed);
+    G2_COMPONENT_SYMBOL.store(g2, Ordering::Relaxed);
+    G3_LOCATION_VOCAB.store(g3, Ordering::Relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +220,24 @@ struct Corpus {
 
 impl Corpus {
     fn build() -> Self {
-        let tools = ToolRouter::new().all_tools_with_toolset();
+        Self::from_tools(ToolRouter::new().all_tools_with_toolset())
+    }
+
+    /// Axis G4: the same corpus, with the two self-describing-badly tools'
+    /// descriptions rewritten *locally* (never in `sch_components.rs`). The
+    /// IDF table is recomputed from the rewritten text, since the rewrite
+    /// changes document frequencies.
+    fn with_g4_descriptions() -> Self {
+        let mut tools = ToolRouter::new().all_tools_with_toolset();
+        for (_, def) in &mut tools {
+            if let Some((_, text)) = G4_DESCRIPTIONS.iter().find(|(n, _)| *n == def.name) {
+                def.description = text;
+            }
+        }
+        Self::from_tools(tools)
+    }
+
+    fn from_tools(tools: Vec<(&'static str, ToolDef)>) -> Self {
         let n = tools.len() as f64;
 
         let mut df: HashMap<String, usize> = HashMap::new();
@@ -1349,4 +1439,874 @@ fn main() {
         "\nfloors keeping hist6 recall=100%: {:?} — decision left to the caller of this run's output",
         floor_ok
     );
+
+    // =======================================================================
+    // Axis F (F.5.1): clause splitting, measurement only.
+    // =======================================================================
+    let f_taus: [f64; 7] = [0.0, 0.50, 0.60, 0.65, 0.70, 0.75, 0.80];
+    assert_single_clause_identity(&corpus, &tasks, &f_taus);
+
+    println!("\n==== axis F grid (D on, limit=8) ====");
+    let mut grid: Vec<(FCfg, PerimeterAgg, PerimeterAgg)> = Vec::new();
+    for &variant in &[Variant::Current, Variant::Idf] {
+        for f_on in [false, true] {
+            for &tau in &f_taus {
+                for &pcl in if f_on {
+                    &[3usize, 4, 8][..]
+                } else {
+                    &[8usize][..]
+                } {
+                    let cfg = FCfg {
+                        variant,
+                        reverse_prefix: true,
+                        min_len: REVERSE_PREFIX_MIN_LEN,
+                        f_on,
+                        tau,
+                        per_clause_limit: pcl,
+                        limit: 8,
+                    };
+                    let results: Vec<TaskResult> = tasks
+                        .iter()
+                        .map(|t| score_task_f(cfg, &corpus, t).0)
+                        .collect();
+                    let h = aggregate(&results, is_historical);
+                    let a = aggregate(&results, |_| true);
+                    println!(
+                        "{} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1} failing {:?} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} failing {:?}",
+                        cfg.label(),
+                        h.precision * 100.0,
+                        h.recall * 100.0,
+                        h.avg_union,
+                        h.failing,
+                        a.precision * 100.0,
+                        a.recall * 100.0,
+                        a.avg_union,
+                        a.failing
+                    );
+                    grid.push((cfg, h, a));
+                }
+            }
+        }
+    }
+
+    // --- A. Combinations meeting recall >= 98 % on both perimeters. ---------
+    println!("\n==== A. recall >= 98% on hist6 AND all7, sorted by hist6 precision ====");
+    let mut passing: Vec<&(FCfg, PerimeterAgg, PerimeterAgg)> = grid
+        .iter()
+        .filter(|(_, h, a)| h.recall >= 0.98 && a.recall >= 0.98)
+        .collect();
+    passing.sort_by(|x, y| y.1.precision.partial_cmp(&x.1.precision).unwrap());
+    for (cfg, h, a) in &passing {
+        println!(
+            "{} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1} | all7: prec {:5.1}% recall {:5.1}% union {:4.1}",
+            cfg.label(),
+            h.precision * 100.0,
+            h.recall * 100.0,
+            h.avg_union,
+            a.precision * 100.0,
+            a.recall * 100.0,
+            a.avg_union
+        );
+    }
+    if passing.is_empty() {
+        println!("  (none)");
+    }
+    match passing.first() {
+        Some((cfg, h, _)) if h.precision >= 0.60 => println!(
+            "  VERDICT: target MET - {} reaches prec {:.1}% at recall >= 98% on both perimeters",
+            cfg.label(),
+            h.precision * 100.0
+        ),
+        Some((_, h, _)) => println!(
+            "  VERDICT: target MISSED - best precision at recall >= 98% is {:.1}% (< 60%)",
+            h.precision * 100.0
+        ),
+        None => println!("  VERDICT: target MISSED - no combination holds recall >= 98% on both"),
+    }
+
+    // --- A-bis. The hist6-only gate, when all7 is structurally out of reach. -
+    println!("\n==== A-bis. recall >= 98% on hist6 only, sorted by hist6 precision ====");
+    let mut passing_h6: Vec<&(FCfg, PerimeterAgg, PerimeterAgg)> =
+        grid.iter().filter(|(_, h, _)| h.recall >= 0.98).collect();
+    passing_h6.sort_by(|x, y| y.1.precision.partial_cmp(&x.1.precision).unwrap());
+    for (cfg, h, a) in passing_h6.iter().take(12) {
+        println!(
+            "{} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1} | all7: prec {:5.1}% recall {:5.1}% union {:4.1}",
+            cfg.label(),
+            h.precision * 100.0,
+            h.recall * 100.0,
+            h.avg_union,
+            a.precision * 100.0,
+            a.recall * 100.0,
+            a.avg_union
+        );
+    }
+
+    // Best combination: highest hist6 precision among A; if A is empty, the
+    // same among A-bis; failing that, the best recall/precision compromise.
+    let best = passing
+        .first()
+        .copied()
+        .or_else(|| passing_h6.first().copied())
+        .unwrap_or_else(|| {
+            grid.iter()
+                .max_by(|x, y| {
+                    let sx = x.1.recall.min(x.2.recall) * 10.0 + x.1.precision;
+                    let sy = y.1.recall.min(y.2.recall) * 10.0 + y.1.precision;
+                    sx.partial_cmp(&sy).unwrap()
+                })
+                .expect("grid is never empty")
+        });
+    let best_cfg = best.0;
+    println!(
+        "\nbest combination for sections B and D: {} ({})",
+        best_cfg.label(),
+        if passing.is_empty() {
+            "top of A-bis: hist6 gate, section A empty"
+        } else {
+            "top of section A"
+        }
+    );
+
+    // --- B. Missing-tool accounting under the best combination. ------------
+    println!(
+        "\n==== B. missing-tool accounting under {} ====",
+        best_cfg.label()
+    );
+    let mut any_missing = false;
+    for task in &tasks {
+        let (_, found) = score_task_f(best_cfg, &corpus, task);
+        let missing: Vec<&str> = task
+            .needed
+            .iter()
+            .filter(|n| !found.contains(&n.as_str()))
+            .map(|s| s.as_str())
+            .collect();
+        if missing.is_empty() {
+            continue;
+        }
+        any_missing = true;
+        println!("-- {} -- missing: {missing:?}", task.task);
+        for tool in &missing {
+            let def = corpus
+                .tools
+                .iter()
+                .find(|(_, d)| d.name == *tool)
+                .map(|(_, d)| d)
+                .expect("needed tool must exist in the corpus");
+            // best (intent, clause, rank, ratio-to-clause-best) over all clauses
+            let mut best_hit: Option<(&str, String, usize, f64)> = None;
+            for intent in &task.intents {
+                let clauses = if best_cfg.f_on {
+                    split_clauses(intent)
+                } else {
+                    vec![intent.clone()]
+                };
+                for clause in clauses {
+                    let ranked = rank_all_ml(
+                        best_cfg.variant,
+                        best_cfg.reverse_prefix,
+                        best_cfg.min_len,
+                        &corpus,
+                        &clause,
+                    );
+                    let Some(&(_, cmax)) = ranked.first() else {
+                        continue;
+                    };
+                    if let Some(pos) = ranked.iter().position(|(n, _)| *n == *tool) {
+                        let ratio = ranked[pos].1 / cmax;
+                        if best_hit.as_ref().is_none_or(|(_, _, _, r)| ratio > *r) {
+                            best_hit = Some((intent, clause.clone(), pos + 1, ratio));
+                        }
+                    }
+                }
+            }
+            let Some((intent, clause, rank, ratio)) = best_hit else {
+                println!("  {tool}: not found by ANY clause (score 0 everywhere)");
+                continue;
+            };
+            println!(
+                "  {tool}: best intent {intent:?}, clause {clause:?}, rank {rank}, ratio {ratio:.3} (needs >= {:.3})",
+                best_cfg.tau
+            );
+            let mut paying = Vec::new();
+            let mut not_paying = Vec::new();
+            for qt in &query_terms(&clause) {
+                let c = term_contribution(
+                    best_cfg.variant,
+                    best_cfg.reverse_prefix,
+                    best_cfg.min_len,
+                    &corpus,
+                    def,
+                    qt,
+                );
+                if c > 0.0 {
+                    paying.push(format!("{qt}(+{c:.2})"));
+                } else {
+                    not_paying.push(format!("{qt}(0)"));
+                }
+            }
+            println!("    paying terms: {}", paying.join(", "));
+            println!("    non-paying terms: {}", not_paying.join(", "));
+            let ranked = rank_all_ml(
+                best_cfg.variant,
+                best_cfg.reverse_prefix,
+                best_cfg.min_len,
+                &corpus,
+                &clause,
+            );
+            if let Some((n, s)) = ranked.first() {
+                println!("    clause rank 1: {n} (score {s:.2})");
+            }
+        }
+    }
+    if !any_missing {
+        println!("  (no missing tool on any task)");
+    }
+
+    // --- C. D6 negative control under F on and F off. ----------------------
+    println!("\n==== C. D6 negative control (batch_place_components must stay rank 1) ====");
+    let d6_query = "place multiple symbols on the schematic in one call";
+    println!("  clauses: {:?}", split_clauses(d6_query));
+    for &variant in &[Variant::Current, Variant::Idf] {
+        for f_on in [false, true] {
+            let cfg = FCfg {
+                variant,
+                reverse_prefix: true,
+                min_len: REVERSE_PREFIX_MIN_LEN,
+                f_on,
+                tau: best_cfg.tau,
+                per_clause_limit: best_cfg.per_clause_limit,
+                limit: 8,
+            };
+            let hits = intent_hits_f(cfg, &corpus, d6_query);
+            let rank = hits
+                .iter()
+                .position(|n| *n == "batch_place_components")
+                .map(|p| p + 1);
+            println!(
+                "  {} -> batch_place_components rank {} {}",
+                cfg.label(),
+                rank.map(|r| r.to_string())
+                    .unwrap_or_else(|| "absent".to_string()),
+                if rank == Some(1) { "OK" } else { "LOST" }
+            );
+        }
+    }
+
+    // --- D. Per-task unions under the best combination. ---------------------
+    println!("\n==== D. per-task union under {} ====", best_cfg.label());
+    for task in &tasks {
+        let (res, found) = score_task_f(best_cfg, &corpus, task);
+        println!(
+            "-- {} : union {} tools, prec {:.1}%, recall {:.1}%",
+            task.task,
+            found.len(),
+            res.precision * 100.0,
+            res.recall * 100.0
+        );
+        println!("   union: {found:?}");
+    }
+
+    // =======================================================================
+    // Axis G (F.5.5): vocabulary. Measurement only, F=on throughout.
+    // `sanity_check` already ran at the top of main, with every G lever off
+    // and on the un-overridden corpus, so production is still compared to
+    // itself.
+    // =======================================================================
+    set_g(false, false, false);
+    let corpus_g4 = Corpus::with_g4_descriptions();
+
+    println!("\n==== axis G: corpus document frequency of the G3 vocabulary ====");
+    for (key, syns) in G3_SYNONYMS {
+        for w in *syns {
+            println!(
+                "  {key} -> {w:<12} df={} (df={} under G4 rewrites)",
+                corpus_df(&corpus, w),
+                corpus_df(&corpus_g4, w)
+            );
+        }
+    }
+    for w in ["component", "symbol"] {
+        println!("  (G2 term) {w:<12} df={}", corpus_df(&corpus, w));
+    }
+
+    let lever_sets = GLevers::SETS;
+    let g_taus: [f64; 4] = [0.60, 0.65, 0.70, 0.75];
+
+    // The clause-unique invariant must still hold under every lever set.
+    for lv in lever_sets {
+        lv.apply();
+        assert_single_clause_identity(lv.corpus(&corpus, &corpus_g4), &tasks, &g_taus);
+    }
+    set_g(false, false, false);
+
+    println!("\n==== axis G grid (D on, F on, limit=8) ====");
+    let mut ggrid: Vec<(GLevers, FCfg, PerimeterAgg, PerimeterAgg)> = Vec::new();
+    for lv in lever_sets {
+        lv.apply();
+        let c = lv.corpus(&corpus, &corpus_g4);
+        for &variant in &[Variant::Current, Variant::Idf] {
+            for &pcl in &[3usize, 4] {
+                for &tau in &g_taus {
+                    let cfg = FCfg {
+                        variant,
+                        reverse_prefix: true,
+                        min_len: REVERSE_PREFIX_MIN_LEN,
+                        f_on: true,
+                        tau,
+                        per_clause_limit: pcl,
+                        limit: 8,
+                    };
+                    let results: Vec<TaskResult> =
+                        tasks.iter().map(|t| score_task_f(cfg, c, t).0).collect();
+                    let h = aggregate(&results, is_historical);
+                    let a = aggregate(&results, |_| true);
+                    println!(
+                        "G={:<12} {} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1} failing {:?} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} failing {:?}",
+                        lv.label,
+                        cfg.label(),
+                        h.precision * 100.0,
+                        h.recall * 100.0,
+                        h.avg_union,
+                        h.failing,
+                        a.precision * 100.0,
+                        a.recall * 100.0,
+                        a.avg_union,
+                        a.failing
+                    );
+                    ggrid.push((lv, cfg, h, a));
+                }
+            }
+        }
+    }
+    set_g(false, false, false);
+
+    // --- A. recall >= 98 % on all7, sorted by all7 precision. --------------
+    println!("\n==== G-A. recall >= 98% on all7, sorted by all7 precision ====");
+    let mut gpass: Vec<&(GLevers, FCfg, PerimeterAgg, PerimeterAgg)> = ggrid
+        .iter()
+        .filter(|(_, _, _, a)| a.recall >= 0.98)
+        .collect();
+    gpass.sort_by(|x, y| y.3.precision.partial_cmp(&x.3.precision).unwrap());
+    for (lv, cfg, h, a) in &gpass {
+        println!(
+            "G={:<12} {} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1}",
+            lv.label,
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0,
+            a.avg_union,
+            h.precision * 100.0,
+            h.recall * 100.0,
+            h.avg_union
+        );
+    }
+    if gpass.is_empty() {
+        println!("  (none)");
+    }
+    match gpass.first() {
+        Some((lv, cfg, _, a)) if a.precision >= 0.60 => println!(
+            "  VERDICT: target MET - G={} {} gives all7 prec {:.1}% at recall {:.1}%",
+            lv.label,
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0
+        ),
+        Some((lv, cfg, _, a)) => println!(
+            "  VERDICT: target MISSED - best all7 precision at recall >= 98% is {:.1}% (G={} {})",
+            a.precision * 100.0,
+            lv.label,
+            cfg.label()
+        ),
+        None => println!("  VERDICT: target MISSED - no combination holds all7 recall >= 98%"),
+    }
+
+    let gbest = gpass.first().copied().unwrap_or_else(|| {
+        ggrid
+            .iter()
+            .max_by(|x, y| {
+                let sx = x.3.recall * 10.0 + x.3.precision;
+                let sy = y.3.recall * 10.0 + y.3.precision;
+                sx.partial_cmp(&sy).unwrap()
+            })
+            .expect("grid is never empty")
+    });
+    let (gbest_lv, gbest_cfg) = (gbest.0, gbest.1);
+    println!(
+        "\nbest axis-G combination: G={} {} ({})",
+        gbest_lv.label,
+        gbest_cfg.label(),
+        if gpass.is_empty() {
+            "no combination clears all7 recall 98%, best recall/precision compromise"
+        } else {
+            "top of G-A"
+        }
+    );
+
+    // --- B. Missing tools and per-task unions under that combination. ------
+    gbest_lv.apply();
+    let cbest = gbest_lv.corpus(&corpus, &corpus_g4);
+    println!("\n==== G-B. missing tools under G={} ====", gbest_lv.label);
+    for task in &tasks {
+        let (_, found) = score_task_f(gbest_cfg, cbest, task);
+        let missing: Vec<&str> = task
+            .needed
+            .iter()
+            .filter(|n| !found.contains(&n.as_str()))
+            .map(|s| s.as_str())
+            .collect();
+        if missing.is_empty() {
+            continue;
+        }
+        println!("-- {} -- missing: {missing:?}", task.task);
+        for tool in &missing {
+            let mut best_hit: Option<(&str, String, usize, f64)> = None;
+            for intent in &task.intents {
+                for clause in split_clauses(intent) {
+                    let ranked = rank_all_ml(
+                        gbest_cfg.variant,
+                        gbest_cfg.reverse_prefix,
+                        gbest_cfg.min_len,
+                        cbest,
+                        &clause,
+                    );
+                    let Some(&(_, cmax)) = ranked.first() else {
+                        continue;
+                    };
+                    if let Some(pos) = ranked.iter().position(|(n, _)| *n == *tool) {
+                        let ratio = ranked[pos].1 / cmax;
+                        if best_hit.as_ref().is_none_or(|(_, _, _, r)| ratio > *r) {
+                            best_hit = Some((intent, clause.clone(), pos + 1, ratio));
+                        }
+                    }
+                }
+            }
+            match best_hit {
+                Some((intent, clause, rank, ratio)) => {
+                    let ranked = rank_all_ml(
+                        gbest_cfg.variant,
+                        gbest_cfg.reverse_prefix,
+                        gbest_cfg.min_len,
+                        cbest,
+                        &clause,
+                    );
+                    let leader = ranked
+                        .first()
+                        .map(|(n, s)| format!("{n} ({s:.2})"))
+                        .unwrap_or_default();
+                    println!(
+                        "  {tool}: intent {intent:?}, clause {clause:?}, rank {rank}, ratio {ratio:.3} (needs >= {:.3}), clause rank 1: {leader}",
+                        gbest_cfg.tau
+                    );
+                }
+                None => println!("  {tool}: not found by ANY clause"),
+            }
+        }
+    }
+    println!("\n==== G-B. per-task union under G={} ====", gbest_lv.label);
+    for task in &tasks {
+        let (res, found) = score_task_f(gbest_cfg, cbest, task);
+        println!(
+            "-- {} : union {} tools, prec {:.1}%, recall {:.1}%",
+            task.task,
+            found.len(),
+            res.precision * 100.0,
+            res.recall * 100.0
+        );
+        println!("   union: {found:?}");
+    }
+    set_g(false, false, false);
+
+    // --- C. D6 negative control under every lever, isolated and cumulated. -
+    println!("\n==== G-C. D6 negative control ====");
+    for lv in lever_sets {
+        lv.apply();
+        let c = lv.corpus(&corpus, &corpus_g4);
+        for &variant in &[Variant::Current, Variant::Idf] {
+            let cfg = FCfg {
+                variant,
+                reverse_prefix: true,
+                min_len: REVERSE_PREFIX_MIN_LEN,
+                f_on: true,
+                tau: gbest_cfg.tau,
+                per_clause_limit: gbest_cfg.per_clause_limit,
+                limit: 8,
+            };
+            let hits = intent_hits_f(cfg, c, d6_query);
+            let rank = hits
+                .iter()
+                .position(|n| *n == "batch_place_components")
+                .map(|p| p + 1);
+            println!(
+                "  G={:<12} {} -> rank {} {}",
+                lv.label,
+                cfg.label(),
+                rank.map(|r| r.to_string())
+                    .unwrap_or_else(|| "absent".to_string()),
+                if rank == Some(1) { "OK" } else { "LOST" }
+            );
+        }
+    }
+    set_g(false, false, false);
+
+    // --- D. Priced cost of G2's false positives. ---------------------------
+    println!("\n==== G-D. what component<->symbol costs, in union size ====");
+    let d_cfg = FCfg {
+        variant: gbest_cfg.variant,
+        reverse_prefix: true,
+        min_len: REVERSE_PREFIX_MIN_LEN,
+        f_on: true,
+        tau: gbest_cfg.tau,
+        per_clause_limit: gbest_cfg.per_clause_limit,
+        limit: 8,
+    };
+    let mut worst: Option<(String, Vec<&'static str>, Vec<&'static str>)> = None;
+    let mut sum_before = 0.0f64;
+    let mut sum_after = 0.0f64;
+    for task in &tasks {
+        set_g(false, false, false);
+        let (_, before) = score_task_f(d_cfg, &corpus, task);
+        set_g(false, true, false);
+        let (_, after) = score_task_f(d_cfg, &corpus, task);
+        set_g(false, false, false);
+        let added: Vec<&'static str> = after
+            .iter()
+            .filter(|n| !before.contains(n))
+            .copied()
+            .collect();
+        let dropped: Vec<&'static str> = before
+            .iter()
+            .filter(|n| !after.contains(n))
+            .copied()
+            .collect();
+        sum_before += before.len() as f64;
+        sum_after += after.len() as f64;
+        println!(
+            "-- {} : union {} -> {} (+{} -{})",
+            task.task,
+            before.len(),
+            after.len(),
+            added.len(),
+            dropped.len()
+        );
+        if worst.as_ref().is_none_or(|(_, a, _)| added.len() > a.len()) {
+            worst = Some((task.task.clone(), added, dropped));
+        }
+    }
+    let n = tasks.len() as f64;
+    println!(
+        "  average union per task: {:.1} without G2 -> {:.1} with G2 ({:+.1} tools)",
+        sum_before / n,
+        sum_after / n,
+        (sum_after - sum_before) / n
+    );
+    if let Some((task, added, dropped)) = worst {
+        println!("  most affected task: {task}");
+        println!("    entering: {added:?}");
+        println!("    leaving:  {dropped:?}");
+    }
+
+    // --- E. The frontier, when the target is not reached. -------------------
+    println!("\n==== G-E. frontier: best all7 recall in the grid ====");
+    let max_recall = ggrid
+        .iter()
+        .map(|(_, _, _, a)| a.recall)
+        .fold(0.0f64, f64::max);
+    let mut at_max: Vec<&(GLevers, FCfg, PerimeterAgg, PerimeterAgg)> = ggrid
+        .iter()
+        .filter(|(_, _, _, a)| a.recall >= max_recall - 1e-9)
+        .collect();
+    at_max.sort_by(|x, y| y.3.precision.partial_cmp(&x.3.precision).unwrap());
+    println!("  best all7 recall reachable: {:.1}%", max_recall * 100.0);
+    for (lv, cfg, _, a) in at_max.iter().take(6) {
+        println!(
+            "  G={:<12} {} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} failing {:?}",
+            lv.label,
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0,
+            a.avg_union,
+            a.failing
+        );
+    }
+    set_g(false, false, false);
+}
+
+// ---------------------------------------------------------------------------
+// Axis F: clause splitting. A composite intent ("export bom and netlist and
+// schematic svg") is dominated lexically by a single tool, so a relative
+// cutoff strangles the other clauses' tools. Splitting the query on
+// connectors, cutting each clause on its *own* best score, then merging by
+// ratio-to-own-clause-best keeps every clause's leader.
+// ---------------------------------------------------------------------------
+
+const CLAUSE_SEPARATORS: [&str; 5] = [" then ", " and ", " & ", ";", ","];
+
+/// Split an intent into clauses. Clauses whose `query_terms` are empty (pure
+/// stop words) are dropped; if nothing survives, the whole query is the single
+/// clause, so the caller always gets at least one usable clause.
+fn split_clauses(query: &str) -> Vec<String> {
+    let mut work = query.to_ascii_lowercase();
+    for sep in CLAUSE_SEPARATORS {
+        work = work.replace(sep, "\u{1}");
+    }
+    let clauses: Vec<String> = work
+        .split('\u{1}')
+        .map(|c| c.trim().to_string())
+        .filter(|c| !query_terms(c).is_empty())
+        .collect();
+    if clauses.is_empty() {
+        vec![query.trim().to_string()]
+    } else {
+        clauses
+    }
+}
+
+/// One point of the axis-F grid.
+#[derive(Clone, Copy)]
+struct FCfg {
+    variant: Variant,
+    reverse_prefix: bool,
+    min_len: usize,
+    f_on: bool,
+    tau: f64,
+    per_clause_limit: usize,
+    limit: usize,
+}
+
+impl FCfg {
+    fn label(&self) -> String {
+        format!(
+            "{:<7} F={:<3} tau={:.2} pcl={:<2} limit={}",
+            self.variant.label(),
+            if self.f_on { "on" } else { "off" },
+            self.tau,
+            if self.f_on {
+                self.per_clause_limit.to_string()
+            } else {
+                "-".to_string()
+            },
+            self.limit
+        )
+    }
+}
+
+/// Hits returned for a single intent under `cfg`. With F off this is exactly
+/// `cutoff_then_limit` on the whole query; with F on, the per-clause cutoffs
+/// are merged by ratio-to-own-clause-best (descending), name ascending as the
+/// tie-break, and truncated to the global limit.
+fn intent_hits_f(cfg: FCfg, corpus: &Corpus, query: &str) -> Vec<&'static str> {
+    if !cfg.f_on {
+        let ranked = rank_all_ml(cfg.variant, cfg.reverse_prefix, cfg.min_len, corpus, query);
+        return cutoff_then_limit(&ranked, cfg.tau, cfg.limit);
+    }
+    let mut merged: Vec<(&'static str, f64)> = Vec::new();
+    for clause in split_clauses(query) {
+        let ranked = rank_all_ml(
+            cfg.variant,
+            cfg.reverse_prefix,
+            cfg.min_len,
+            corpus,
+            &clause,
+        );
+        let Some(&(_, cmax)) = ranked.first() else {
+            continue;
+        };
+        for name in cutoff_then_limit(&ranked, cfg.tau, cfg.per_clause_limit) {
+            let score = ranked
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, s)| *s)
+                .unwrap_or(0.0);
+            let ratio = score / cmax;
+            match merged.iter_mut().find(|(n, _)| *n == name) {
+                Some(entry) => {
+                    if ratio > entry.1 {
+                        entry.1 = ratio;
+                    }
+                }
+                None => merged.push((name, ratio)),
+            }
+        }
+    }
+    merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then_with(|| a.0.cmp(b.0)));
+    merged.into_iter().take(cfg.limit).map(|(n, _)| n).collect()
+}
+
+fn score_task_f(cfg: FCfg, corpus: &Corpus, task: &TaskIntents) -> (TaskResult, Vec<&'static str>) {
+    let mut found: Vec<&'static str> = Vec::new();
+    for intent in &task.intents {
+        for name in intent_hits_f(cfg, corpus, intent) {
+            if !found.contains(&name) {
+                found.push(name);
+            }
+        }
+    }
+    let hits = task
+        .needed
+        .iter()
+        .filter(|n| found.contains(&n.as_str()))
+        .count();
+    let precision = if found.is_empty() {
+        0.0
+    } else {
+        hits as f64 / found.len() as f64
+    };
+    let recall = if task.needed.is_empty() {
+        1.0
+    } else {
+        hits as f64 / task.needed.len() as f64
+    };
+    (
+        TaskResult {
+            task: task.task.clone(),
+            found: found.len(),
+            precision,
+            recall,
+        },
+        found,
+    )
+}
+
+/// Runtime invariant: on an intent that splits into a single clause, F=on with
+/// `per_clause_limit == limit` must reproduce F=off byte for byte. A violation
+/// means the merge order or the clause filter changed non-composite behaviour,
+/// which would make the whole grid uninterpretable — so it panics.
+fn assert_single_clause_identity(corpus: &Corpus, tasks: &[TaskIntents], taus: &[f64]) {
+    let mut checked = 0usize;
+    for task in tasks {
+        for intent in &task.intents {
+            if split_clauses(intent).len() != 1 {
+                continue;
+            }
+            for &variant in &[Variant::Current, Variant::Idf] {
+                for &tau in taus {
+                    let base = FCfg {
+                        variant,
+                        reverse_prefix: true,
+                        min_len: REVERSE_PREFIX_MIN_LEN,
+                        f_on: false,
+                        tau,
+                        per_clause_limit: 8,
+                        limit: 8,
+                    };
+                    let off = intent_hits_f(base, corpus, intent);
+                    let on = intent_hits_f(FCfg { f_on: true, ..base }, corpus, intent);
+                    assert_eq!(
+                        off,
+                        on,
+                        "axis F broke the single-clause identity on {intent:?} \
+                         (variant={}, tau={tau:.2})",
+                        variant.label()
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    println!(
+        "axis F invariant: F=on == F=off on every single-clause intent ({checked} comparisons)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Axis G plumbing: one lever set = the three global switches plus the choice
+// of corpus (G4 rewrites descriptions, so it is a different corpus, not a
+// switch inside the scorer).
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+struct GLevers {
+    label: &'static str,
+    g1: bool,
+    g2: bool,
+    g3: bool,
+    g4: bool,
+}
+
+impl GLevers {
+    const SETS: [GLevers; 8] = [
+        GLevers {
+            label: "none",
+            g1: false,
+            g2: false,
+            g3: false,
+            g4: false,
+        },
+        GLevers {
+            label: "G1",
+            g1: true,
+            g2: false,
+            g3: false,
+            g4: false,
+        },
+        GLevers {
+            label: "G2",
+            g1: false,
+            g2: true,
+            g3: false,
+            g4: false,
+        },
+        GLevers {
+            label: "G3",
+            g1: false,
+            g2: false,
+            g3: true,
+            g4: false,
+        },
+        GLevers {
+            label: "G4",
+            g1: false,
+            g2: false,
+            g3: false,
+            g4: true,
+        },
+        GLevers {
+            label: "G1+G2",
+            g1: true,
+            g2: true,
+            g3: false,
+            g4: false,
+        },
+        GLevers {
+            label: "G1+G2+G3",
+            g1: true,
+            g2: true,
+            g3: true,
+            g4: false,
+        },
+        GLevers {
+            label: "G1+G2+G3+G4",
+            g1: true,
+            g2: true,
+            g3: true,
+            g4: true,
+        },
+    ];
+
+    fn apply(&self) {
+        set_g(self.g1, self.g2, self.g3);
+    }
+
+    fn corpus<'a>(&self, plain: &'a Corpus, g4: &'a Corpus) -> &'a Corpus {
+        if self.g4 {
+            g4
+        } else {
+            plain
+        }
+    }
+}
+
+/// Document frequency of a term over the corpus (name + description), so an
+/// inert synonym is visible as df=0.
+fn corpus_df(corpus: &Corpus, term: &str) -> usize {
+    corpus
+        .tools
+        .iter()
+        .filter(|(_, def)| {
+            terms(def.name).iter().any(|t| t == term)
+                || terms(def.description).iter().any(|t| t == term)
+        })
+        .count()
 }
