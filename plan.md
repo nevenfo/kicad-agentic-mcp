@@ -470,7 +470,7 @@ D.3.
 - [ ] D.6.1 Cover the remaining error paths with catalogued codes, by zone,
       lowering D.6.4's ceiling each time. A big-bang conversion of 150-odd
       hand-written messages would be unreviewable. Ranked by D.6.4 rather than
-      estimated; **71 sites left**.
+      estimated; **55 sites left**.
       - [x] `sch_hierarchy.rs` — 28/28, ceiling 152 → 124. No new kind was
             needed: `InvalidArgument` ×14, `NotFound` ×12, `FileNotFound` ×5.
             That is the useful finding for the rest of D.6.1 — the work is
@@ -503,7 +503,19 @@ D.3.
             position in `sch_wiring.rs` — valid input, ambiguous world, neither
             an invalid argument nor a missing item, and a new kind for a single
             site was rightly not invented
-      - [ ] `meta_tools.rs` — 18
+      - [x] `meta_tools.rs` — 16 of 18, ceiling 71 → 55, no new kind.
+            Fifteen are `InvalidArgument` behind one local helper, so the
+            file's argument refusals cannot drift into as many shapes as it
+            has call sites. Two of them were D.6.5's signature problem in
+            miniature — `agent_u32` and `agent_retrieval` answered
+            `Result<_, String>`, and now answer `Result<_, CallToolResult>`
+            and classify where the field name is still in scope. The task
+            errors classify from `kam_state::TaskError`, not from its
+            `Display`. The 2 left are one condition reached twice:
+            `TaskError::ListFull` is neither a missing item nor a malformed
+            argument — the input is well-formed and the task's own state
+            refuses it — so `task_error_kind` returns `Option` and that `None`
+            is the statement (D76)
       - [ ] `sch_components.rs` — 13, `integration.rs` — 12, then the smaller
             files
       - [x] D.6.5 Stop throwing the type away at the boundary — done in two

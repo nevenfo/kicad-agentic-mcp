@@ -10,28 +10,28 @@ DONE except F.5.7, which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.6.1 zone 4 — `crates/konnect-core/src/router/meta_tools.rs` (18 sites). Not
-started. This one carries the gateway and was touched by D.5 and D.8, so it
-deserves its own diff.
+D.6.1 zone 5 — `crates/konnect-core/src/tools/sch_components.rs` (13 sites).
+Not started.
 
 ## Dernière tâche validée
 
-D.6.5 — the boundaries stop answering in `String`, in two commits, ceiling
-82 -> 77 -> 71. The IPC half is `tools/ipc_boundary.rs` (one typed `with_ipc`,
-one `ipc_error_result`, replacing four byte-identical copies); the library half
-is `LibTableUnreadable`, `FootprintPathError` and `SymbolLibPathError`. One
-behavioural change, deliberately: `resolve_symbol_lib_path` returned `None`
-both for a nickname nobody registered and for one whose URI does not expand,
-so its message had to name both and the caller could act on neither. Its search
-order is unchanged; only the failure now says which happened.
+D.6.1 zone 4 — `router/meta_tools.rs`. 16 of 18 sites catalogued, ceiling
+71 -> 55, no new kind. Fifteen are `InvalidArgument` behind one local helper;
+two of those were D.6.5's signature problem in miniature (`agent_u32` and
+`agent_retrieval` answered `Result<_, String>` and now answer
+`Result<_, CallToolResult>`). The 2 left are one condition reached twice —
+`TaskError::ListFull`, which no catalogued kind is true of, so
+`task_error_kind` returns `Option` and that `None` is the statement (D76).
 
-D.6.1's remaining 71 sites are ordinary zones again — the signature work that
-capped them is done.
+D.6.5 before it: the IPC and library boundaries stop answering in `String`
+(ceiling 82 -> 77 -> 71). One behavioural change there, deliberately:
+`resolve_symbol_lib_path` returned `None` both for a nickname nobody
+registered and for one whose URI does not expand.
 
 Validation :
-- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 204 tokens,
+- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 195 tokens,
   0 safety violations
-- the debt test enforces 71 in both directions
+- the debt test enforces 55 in both directions
 
 ## Décisions actives
 
@@ -254,16 +254,16 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.6.1 zone 4** — `crates/konnect-core/src/router/meta_tools.rs`, 18 sites.
-Classify each with an existing `ToolErrorKind` (the three zones done so far
-needed no new kind), never `HandlerError` (D75); a site whose cause cannot be
-told apart keeps its prose and gains a comment saying why. Then lower
-`KAM_ERROR_CATALOG_DEBT_CEILING` (71) to the total the debt test prints.
-Give this file its own diff: it carries the gateway and was touched by D.5 and
-D.8. Validate with `.\gate.ps1`.
+**D.6.1 zone 5** — `crates/konnect-core/src/tools/sch_components.rs`, 13
+sites. Classify each with an existing `ToolErrorKind` (four zones done, none
+needed a new one), never `HandlerError` (D75); a site whose cause cannot be
+told apart keeps its prose and gains a comment saying why, and a helper that
+returns a `String` gets typed rather than worked around (D.6.5). Then lower
+`KAM_ERROR_CATALOG_DEBT_CEILING` (55) to the total the debt test prints.
+Validate with `.\gate.ps1`.
 
-After it, the remaining zones in order: `sch_components.rs` (13),
-`integration.rs` (12), then the smaller files.
+After it, the remaining zones in order: `integration.rs` (12), then
+`sch_wiring.rs`, `sch_batch.rs` and `pcb_board.rs` (5 each), then the rest.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
