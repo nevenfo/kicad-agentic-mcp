@@ -1,0 +1,34 @@
+label: f5-after-verify   tasks: 7   runs: 7   load-mode: search
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              1/   1     16       59     804     1679     3573     5252
+sch_ldo                  1/   1     15       69    1056     1690     3262     4952
+sch_template_stm32       1/   1      8       20     275     1505     3069     4574
+sch_hierarchy            1/   1     14       75     703     1565     3523     5088
+manufacturing_exports    1/   1     16      779     943     1610     4303     5913
+recovery                 1/   1     19      423     976     1984     4484     6468
+sch_inspection           1/   1     13       11     521     1798     3407     5205
+
+SUCCESS_RATE             7/7 = 100.0%
+MCP_CALLS median/task    15
+WALL_CLOCK_P50 (ms)      69
+WALL_CLOCK_P95 (ms)      423
+RESPONSE_TOKENS/task     1679
+CATALOG_TOKENS/task      3523
+EXTERNAL_TOKENS/task     5205   <- what the harness actually eats
+
+SAFETY_VIOLATIONS        0   (forbidden + safety + disk_mutation)
+UNNECESSARY_CALL_RATE    0.0%   (0/90 scored calls outside allowed_tools)
+INSTABILITY_RATE         n/a   (needs --repeat >= 2)
+
+THRESHOLDS
+  PASS  min_pass_rate                100.0%   (limit 0.95)
+  PASS  max_safety_violations             0   (limit 0)
+  PASS  max_unnecessary_call_rate      0.0%   (limit 0.05)
+  SKIP  max_instability_rate            n/a   (limit 0.05)
+
+RETRIEVAL_RECALL         100.0%   (needed tools the search surfaced)
+RETRIEVAL_PRECISION      62.0%   (loaded tools that were needed)
+
+wrote bench/results/_f5-search-after.json

@@ -530,33 +530,61 @@ fn cutoff_then_limit(ranked: &[(&'static str, f64)], tau: f64, limit: usize) -> 
         .collect()
 }
 
+/// Production check at startup.
+///
+/// Until F.5 this asserted that the local `current D=on` reimplementation
+/// reproduced `search()` hit for hit and score for score. That equality is
+/// gone on purpose: production now runs the F.5 pipeline (IDF weighting,
+/// clause splitting, per-clause relative cutoff, one-per-family cap), which
+/// this probe simulates as axes F/G/I on top of a *different* baseline. What
+/// is still worth failing loudly on is the behaviour that pipeline is
+/// supposed to have, so that is what is asserted here.
 fn sanity_check(corpus: &Corpus) {
-    // Production `score_tool` now bakes in the reverse-prefix rule (axis D)
-    // unconditionally, so the local reference has to run with D on to match
-    // it — `rank_all(Variant::Current, false, ...)` would silently diverge.
-    for query in [
-        "add a resistor to the schematic",
-        "run erc and list the components and nets",
-        "export bom and netlist",
+    let all = corpus.tools.len();
+
+    // D6 negative control, the one that has to hold in every run.
+    let d6 = prod_search(
+        &corpus.tools,
+        "place multiple symbols on the schematic in one call",
+        8,
+    );
+    assert_eq!(
+        d6.first().map(|h| h.name),
+        Some("batch_place_components"),
+        "production lost the D6 rank-1 control"
+    );
+
+    // Clause splitting: both halves of a composite intent come back.
+    let composite: Vec<&str> = prod_search(
+        &corpus.tools,
         "search reference circuit templates and instantiate one",
-        "where are a component's pins",
-    ] {
-        let prod: Vec<(&str, u32)> = prod_search(&corpus.tools, query, corpus.tools.len())
-            .into_iter()
-            .map(|h| (h.name, h.score))
-            .collect();
-        let local: Vec<(&str, f64)> = rank_all(Variant::Current, true, corpus, query);
-        assert_eq!(prod.len(), local.len(), "count mismatch for {query:?}");
-        for ((pn, ps), (ln, ls)) in prod.iter().zip(local.iter()) {
-            assert_eq!(pn, ln, "order mismatch for {query:?}");
-            assert!(
-                (*ps as f64 - *ls).abs() < 1e-9,
-                "score mismatch for {query:?} on {pn}: prod={ps} local={ls}"
-            );
-        }
+        8,
+    )
+    .into_iter()
+    .map(|h| h.name)
+    .collect();
+    for expected in ["search_templates", "apply_template"] {
+        assert!(
+            composite.contains(&expected),
+            "production dropped {expected} from a composite intent: {composite:?}"
+        );
     }
+
+    // A decided query stops well short of the limit.
+    let decided = prod_search(&corpus.tools, "run erc", 8);
+    assert!(
+        decided.len() < 8,
+        "production padded a decided query to the limit: {} hits",
+        decided.len()
+    );
+
+    // The scores are still positive and sorted the way the caller sees them.
+    let ranked = prod_search(&corpus.tools, "export bom and netlist", 8);
+    assert!(ranked.iter().all(|h| h.score > 0.0));
+    assert!(!ranked.is_empty() && ranked.len() <= 8);
+
     println!(
-        "sanity check: local `current D=on` reimplementation matches production search() exactly"
+        "sanity check: production pipeline holds D6, clause splitting, and the cutoff ({all} tools in corpus)"
     );
 }
 
@@ -694,7 +722,7 @@ fn main() {
     // --- Section 1: current search, ranked hits + needed-tool summary. -----
     for task in &tasks {
         println!("\n==== task {} ====", task.task);
-        let mut best: BTreeMap<&str, (usize, u32, &str)> = BTreeMap::new();
+        let mut best: BTreeMap<&str, (usize, f64, &str)> = BTreeMap::new();
         for intent in &task.intents {
             println!("-- intent: {intent:?}");
             let hits = prod_search(&corpus.tools, intent, PROBE_LIMIT);
@@ -702,7 +730,7 @@ fn main() {
                 let rank = i + 1;
                 let needed = task.needed.iter().any(|n| n == hit.name);
                 println!(
-                    "  {rank:>2} {:>3} {}{}",
+                    "  {rank:>2} {:>6.1} {}{}",
                     hit.score,
                     hit.name,
                     if needed { " [NEEDED]" } else { "" }
@@ -2031,6 +2059,522 @@ fn main() {
         );
     }
     set_g(false, false, false);
+
+    // =======================================================================
+    // Axis H (F.5.6): clause budget. Fixed base - variant=Idf, D=on, F=on,
+    // G = G2+G3+G4 (G1 is inert and left out), limit=8.
+    // `sanity_check` ran at the top of main with every lever off.
+    // =======================================================================
+    let h_levers = GLevers {
+        label: "G2+G3+G4",
+        g1: false,
+        g2: true,
+        g3: true,
+        g4: true,
+    };
+    h_levers.apply();
+    let ch: &Corpus = h_levers.corpus(&corpus, &corpus_g4);
+    assert_single_clause_identity(ch, &tasks, &[0.60, 0.65, 0.70]);
+
+    // The axis H plumbing must reproduce axis F exactly under the base policy,
+    // on every intent, or the grid below is not comparable to the F.5.5 one.
+    for task in &tasks {
+        for intent in &task.intents {
+            for &tau in &[0.60f64, 0.65, 0.70] {
+                for &pcl in &[3usize, 4] {
+                    let f = intent_hits_f(
+                        FCfg {
+                            variant: Variant::Idf,
+                            reverse_prefix: true,
+                            min_len: REVERSE_PREFIX_MIN_LEN,
+                            f_on: true,
+                            tau,
+                            per_clause_limit: pcl,
+                            limit: 8,
+                        },
+                        ch,
+                        intent,
+                    );
+                    let h = intent_hits_h(
+                        HCfg {
+                            variant: Variant::Idf,
+                            reverse_prefix: true,
+                            min_len: REVERSE_PREFIX_MIN_LEN,
+                            limit: 8,
+                            cut: HCut::TauFixed { tau, pcl },
+                        },
+                        ch,
+                        intent,
+                    );
+                    assert_eq!(
+                        f, h,
+                        "axis H base policy diverges from axis F on {intent:?}"
+                    );
+                }
+            }
+        }
+    }
+    println!("axis H invariant: base policy reproduces axis F on every intent");
+
+    let mut cuts: Vec<HCut> = vec![
+        HCut::TauFixed { tau: 0.65, pcl: 4 },
+        HCut::TauFixed { tau: 0.65, pcl: 3 },
+    ];
+    for &gamma in &[0.5f64, 0.6, 0.7, 0.8] {
+        for &floor in &[1usize, 2, 3] {
+            cuts.push(HCut::Decrochage { gamma, floor });
+        }
+    }
+    for &tau in &[0.60f64, 0.65, 0.70] {
+        for &floor in &[1usize, 2] {
+            cuts.push(HCut::Budget { tau, floor });
+        }
+    }
+    for &tau in &[0.60f64, 0.65, 0.70] {
+        for &gamma in &[0.6f64, 0.7, 0.8] {
+            for &floor in &[1usize, 2] {
+                cuts.push(HCut::TauAndDecrochage { tau, gamma, floor });
+            }
+        }
+    }
+    for &tau in &[0.60f64, 0.65, 0.70] {
+        for &tau_short in &[0.70f64, 0.80, 0.90] {
+            for &pcl in &[3usize, 4] {
+                cuts.push(HCut::ShortTau {
+                    tau,
+                    tau_short,
+                    pcl,
+                });
+            }
+        }
+    }
+
+    println!("\n==== axis H grid (idf, D on, F on, G=G2+G3+G4, limit=8) ====");
+    let mut hgrid: Vec<(HCfg, PerimeterAgg, PerimeterAgg)> = Vec::new();
+    for cut in cuts {
+        let cfg = HCfg {
+            variant: Variant::Idf,
+            reverse_prefix: true,
+            min_len: REVERSE_PREFIX_MIN_LEN,
+            limit: 8,
+            cut,
+        };
+        let results: Vec<TaskResult> = tasks.iter().map(|t| score_task_h(cfg, ch, t).0).collect();
+        let h = aggregate(&results, is_historical);
+        let a = aggregate(&results, |_| true);
+        println!(
+            "{} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} failing {:?} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1}",
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0,
+            a.avg_union,
+            a.failing,
+            h.precision * 100.0,
+            h.recall * 100.0,
+            h.avg_union
+        );
+        hgrid.push((cfg, h, a));
+    }
+
+    // --- H-A. recall all7 >= 98 %, sorted by all7 precision. ---------------
+    println!("\n==== H-A. recall >= 98% on all7, sorted by all7 precision ====");
+    let mut hpass: Vec<&(HCfg, PerimeterAgg, PerimeterAgg)> =
+        hgrid.iter().filter(|(_, _, a)| a.recall >= 0.98).collect();
+    hpass.sort_by(|x, y| y.2.precision.partial_cmp(&x.2.precision).unwrap());
+    for (cfg, h, a) in &hpass {
+        println!(
+            "{} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1}",
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0,
+            a.avg_union,
+            h.precision * 100.0,
+            h.recall * 100.0,
+            h.avg_union
+        );
+    }
+    if hpass.is_empty() {
+        println!("  (none)");
+    }
+    match hpass.first() {
+        Some((cfg, _, a)) if a.precision >= 0.60 => println!(
+            "  VERDICT: target MET - {} gives all7 prec {:.1}% at recall {:.1}%",
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0
+        ),
+        Some((cfg, _, a)) => println!(
+            "  VERDICT: target MISSED - best all7 precision at recall >= 98% is {:.1}% ({})",
+            a.precision * 100.0,
+            cfg.label()
+        ),
+        None => println!("  VERDICT: target MISSED - no H policy holds all7 recall >= 98%"),
+    }
+
+    let hbest = hpass.first().copied().unwrap_or_else(|| {
+        hgrid
+            .iter()
+            .max_by(|x, y| {
+                let sx = x.2.recall * 10.0 + x.2.precision;
+                let sy = y.2.recall * 10.0 + y.2.precision;
+                sx.partial_cmp(&sy).unwrap()
+            })
+            .expect("grid is never empty")
+    });
+    let hbest_cfg = hbest.0;
+    println!("\nbest axis-H policy: {}", hbest_cfg.label());
+
+    // --- H-B. Per-task union and leftovers under the best policy. ----------
+    println!(
+        "\n==== H-B. per-task union under {} ====",
+        hbest_cfg.label()
+    );
+    for task in &tasks {
+        let (res, found) = score_task_h(hbest_cfg, ch, task);
+        let missing: Vec<&str> = task
+            .needed
+            .iter()
+            .filter(|n| !found.contains(&n.as_str()))
+            .map(|s| s.as_str())
+            .collect();
+        println!(
+            "-- {} : union {} tools, prec {:.1}%, recall {:.1}%, missing {missing:?}",
+            task.task,
+            found.len(),
+            res.precision * 100.0,
+            res.recall * 100.0
+        );
+        println!("   union: {found:?}");
+    }
+
+    // --- H-C. D6 control under the best policy of each family. -------------
+    println!("\n==== H-C. D6 negative control, best policy of each H family ====");
+    for family in ["base", "H1", "H2", "H3", "H4"] {
+        let best_of = hgrid
+            .iter()
+            .filter(|(cfg, _, a)| cfg.cut.family() == family && a.recall >= 0.98)
+            .max_by(|x, y| x.2.precision.partial_cmp(&y.2.precision).unwrap())
+            .or_else(|| {
+                hgrid
+                    .iter()
+                    .filter(|(cfg, _, _)| cfg.cut.family() == family)
+                    .max_by(|x, y| {
+                        let sx = x.2.recall * 10.0 + x.2.precision;
+                        let sy = y.2.recall * 10.0 + y.2.precision;
+                        sx.partial_cmp(&sy).unwrap()
+                    })
+            });
+        let Some((cfg, _, a)) = best_of else { continue };
+        let hits = intent_hits_h(*cfg, ch, d6_query);
+        let rank = hits
+            .iter()
+            .position(|n| *n == "batch_place_components")
+            .map(|p| p + 1);
+        println!(
+            "  {} (all7 prec {:5.1}% recall {:5.1}%) -> batch_place_components rank {} {}",
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0,
+            rank.map(|r| r.to_string())
+                .unwrap_or_else(|| "absent".to_string()),
+            if rank == Some(1) { "OK" } else { "LOST" }
+        );
+    }
+
+    // --- H-D. What the best policy removed, and whether it was noise. ------
+    println!(
+        "\n==== H-D. tipping point: {} vs base tau=0.65 pcl=4 ====",
+        hbest_cfg.label()
+    );
+    let base_cfg = HCfg {
+        variant: Variant::Idf,
+        reverse_prefix: true,
+        min_len: REVERSE_PREFIX_MIN_LEN,
+        limit: 8,
+        cut: HCut::TauFixed { tau: 0.65, pcl: 4 },
+    };
+    for task in &tasks {
+        let (_, base_found) = score_task_h(base_cfg, ch, task);
+        let (_, best_found) = score_task_h(hbest_cfg, ch, task);
+        let needed: Vec<&str> = task.needed.iter().map(|s| s.as_str()).collect();
+        let out_noise: Vec<&str> = base_found
+            .iter()
+            .filter(|n| !best_found.contains(n) && !needed.contains(&(**n)))
+            .copied()
+            .collect();
+        let out_needed: Vec<&str> = base_found
+            .iter()
+            .filter(|n| !best_found.contains(n) && needed.contains(&(**n)))
+            .copied()
+            .collect();
+        let entered: Vec<&str> = best_found
+            .iter()
+            .filter(|n| !base_found.contains(n))
+            .copied()
+            .collect();
+        println!(
+            "-- {} : union {} -> {} | dropped {} false positives, {} true positives, {} entered",
+            task.task,
+            base_found.len(),
+            best_found.len(),
+            out_noise.len(),
+            out_needed.len(),
+            entered.len()
+        );
+        if task.task.starts_with("01_") || task.task.starts_with("05_") {
+            println!("   false positives removed: {out_noise:?}");
+            println!("   true positives lost:     {out_needed:?}");
+            println!("   entered:                 {entered:?}");
+        }
+    }
+
+    set_g(false, false, false);
+
+    // =======================================================================
+    // Axis I (F.5.7): tool families. Base - idf, D on, F on, G=G2+G3+G4,
+    // tau=0.65, limit=8. sanity_check ran at the top of main, levers off.
+    // =======================================================================
+    h_levers.apply();
+    assert_single_clause_identity(ch, &tasks, &[0.65]);
+    // Axis I with the cap off must reproduce axis F exactly, on every intent.
+    for task in &tasks {
+        for intent in &task.intents {
+            for &pcl in &[3usize, 4] {
+                let f = intent_hits_f(
+                    FCfg {
+                        variant: Variant::Idf,
+                        reverse_prefix: true,
+                        min_len: REVERSE_PREFIX_MIN_LEN,
+                        f_on: true,
+                        tau: 0.65,
+                        per_clause_limit: pcl,
+                        limit: 8,
+                    },
+                    ch,
+                    intent,
+                );
+                let i = intent_hits_i(
+                    ICfg {
+                        variant: Variant::Idf,
+                        reverse_prefix: true,
+                        min_len: REVERSE_PREFIX_MIN_LEN,
+                        tau: 0.65,
+                        per_clause_limit: pcl,
+                        limit: 8,
+                        per_family: None,
+                    },
+                    ch,
+                    intent,
+                );
+                assert_eq!(
+                    f, i,
+                    "axis I with cap off diverges from axis F on {intent:?}"
+                );
+            }
+        }
+    }
+    println!("axis I invariant: cap off reproduces axis F on every intent");
+
+    // C. What the normalization groups, checked before it is trusted.
+    println!("\n==== I-C. family normalization ====");
+    for probe_name in [
+        "place_component",
+        "place_component_array",
+        "batch_place_components",
+        "export_netlist",
+        "export_netlist_summary",
+        "generate_netlist",
+        "add_schematic_component",
+    ] {
+        println!("  {probe_name:<26} -> family {}", family_of(probe_name));
+    }
+    let mut fams: BTreeMap<String, Vec<&'static str>> = BTreeMap::new();
+    for (_, def) in &ch.tools {
+        fams.entry(family_of(def.name)).or_default().push(def.name);
+    }
+    let big: Vec<(&String, &Vec<&'static str>)> =
+        fams.iter().filter(|(_, v)| v.len() >= 3).collect();
+    println!(
+        "  families with 3+ members ({} of {}):",
+        big.len(),
+        fams.len()
+    );
+    for (fam, members) in &big {
+        println!("    {fam:<28} {members:?}");
+    }
+    let pair = fams.iter().find(|(_, v)| {
+        v.contains(&"add_schematic_component") && v.contains(&"batch_place_components")
+    });
+    println!(
+        "  add_schematic_component and batch_place_components in the same family: {}",
+        if pair.is_some() {
+            "YES - K=1 would lose one on 06_recovery"
+        } else {
+            "no"
+        }
+    );
+
+    // A. Grid.
+    println!("\n==== axis I grid (idf, D on, F on, G=G2+G3+G4, tau=0.65) ====");
+    let mut igrid: Vec<(ICfg, PerimeterAgg, PerimeterAgg)> = Vec::new();
+    for &pcl in &[3usize, 4] {
+        for per_family in [None, Some(2usize), Some(1usize)] {
+            let cfg = ICfg {
+                variant: Variant::Idf,
+                reverse_prefix: true,
+                min_len: REVERSE_PREFIX_MIN_LEN,
+                tau: 0.65,
+                per_clause_limit: pcl,
+                limit: 8,
+                per_family,
+            };
+            let results: Vec<TaskResult> =
+                tasks.iter().map(|t| score_task_i(cfg, ch, t).0).collect();
+            let h = aggregate(&results, is_historical);
+            let a = aggregate(&results, |_| true);
+            println!(
+                "{} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} failing {:?} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1}",
+                cfg.label(),
+                a.precision * 100.0,
+                a.recall * 100.0,
+                a.avg_union,
+                a.failing,
+                h.precision * 100.0,
+                h.recall * 100.0,
+                h.avg_union
+            );
+            igrid.push((cfg, h, a));
+        }
+    }
+
+    println!("\n==== I-A. recall >= 98% on all7, sorted by all7 precision ====");
+    let mut ipass: Vec<&(ICfg, PerimeterAgg, PerimeterAgg)> =
+        igrid.iter().filter(|(_, _, a)| a.recall >= 0.98).collect();
+    ipass.sort_by(|x, y| y.2.precision.partial_cmp(&x.2.precision).unwrap());
+    for (cfg, h, a) in &ipass {
+        println!(
+            "{} | all7: prec {:5.1}% recall {:5.1}% union {:4.1} | hist6: prec {:5.1}% recall {:5.1}% union {:4.1}",
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0,
+            a.avg_union,
+            h.precision * 100.0,
+            h.recall * 100.0,
+            h.avg_union
+        );
+    }
+    if ipass.is_empty() {
+        println!("  (none)");
+    }
+    match ipass.first() {
+        Some((cfg, _, a)) if a.precision >= 0.60 => println!(
+            "  VERDICT: target MET - {} gives all7 prec {:.1}% at recall {:.1}%",
+            cfg.label(),
+            a.precision * 100.0,
+            a.recall * 100.0
+        ),
+        Some((cfg, _, a)) => println!(
+            "  VERDICT: target MISSED - best all7 precision at recall >= 98% is {:.1}% ({}), gap to 60% = {:.1} pts",
+            a.precision * 100.0,
+            cfg.label(),
+            60.0 - a.precision * 100.0
+        ),
+        None => println!("  VERDICT: target MISSED - no axis I setting holds all7 recall >= 98%"),
+    }
+
+    let ibest = ipass.first().copied().unwrap_or_else(|| {
+        igrid
+            .iter()
+            .max_by(|x, y| {
+                let sx = x.2.recall * 10.0 + x.2.precision;
+                let sy = y.2.recall * 10.0 + y.2.precision;
+                sx.partial_cmp(&sy).unwrap()
+            })
+            .expect("grid is never empty")
+    });
+    let ibest_cfg = ibest.0;
+    println!("\nbest axis-I setting: {}", ibest_cfg.label());
+
+    // B. Unions, and the detail on 05.
+    println!(
+        "\n==== I-B. per-task union under {} ====",
+        ibest_cfg.label()
+    );
+    let ref_cfg = ICfg {
+        per_family: None,
+        ..ibest_cfg
+    };
+    for task in &tasks {
+        let (res, found) = score_task_i(ibest_cfg, ch, task);
+        let missing: Vec<&str> = task
+            .needed
+            .iter()
+            .filter(|n| !found.contains(&n.as_str()))
+            .map(|s| s.as_str())
+            .collect();
+        println!(
+            "-- {} : union {} tools, prec {:.1}%, recall {:.1}%, missing {missing:?}",
+            task.task,
+            found.len(),
+            res.precision * 100.0,
+            res.recall * 100.0
+        );
+        println!("   union: {found:?}");
+    }
+    println!("\n==== I-B. what the family cap removes, per task ====");
+    for task in &tasks {
+        let (_, before) = score_task_i(ref_cfg, ch, task);
+        let (_, after) = score_task_i(ibest_cfg, ch, task);
+        let needed: Vec<&str> = task.needed.iter().map(|s| s.as_str()).collect();
+        let removed: Vec<String> = before
+            .iter()
+            .filter(|n| !after.contains(n))
+            .map(|n| {
+                format!(
+                    "{n} [{}] (family {})",
+                    if needed.contains(n) {
+                        "NEEDED"
+                    } else {
+                        "noise"
+                    },
+                    family_of(n)
+                )
+            })
+            .collect();
+        let entered: Vec<&str> = after
+            .iter()
+            .filter(|n| !before.contains(n))
+            .copied()
+            .collect();
+        println!(
+            "-- {} : union {} -> {}, entered {entered:?}",
+            task.task,
+            before.len(),
+            after.len()
+        );
+        for r in &removed {
+            println!("     removed {r}");
+        }
+    }
+
+    // D. D6 control under every axis I setting.
+    println!("\n==== I-D. D6 negative control ====");
+    for (cfg, _, _) in &igrid {
+        let hits = intent_hits_i(*cfg, ch, d6_query);
+        let rank = hits
+            .iter()
+            .position(|n| *n == "batch_place_components")
+            .map(|p| p + 1);
+        println!(
+            "  {} -> batch_place_components rank {} {}",
+            cfg.label(),
+            rank.map(|r| r.to_string())
+                .unwrap_or_else(|| "absent".to_string()),
+            if rank == Some(1) { "OK" } else { "LOST" }
+        );
+    }
+
+    set_g(false, false, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -2309,4 +2853,345 @@ fn corpus_df(corpus: &Corpus, term: &str) -> usize {
                 || terms(def.description).iter().any(|t| t == term)
         })
         .count()
+}
+
+// ---------------------------------------------------------------------------
+// Axis H (F.5.6): how many results a clause deserves. Axis F gave every
+// clause the same `per_clause_limit`, so a one-word clause with a clear
+// winner still spent 3-4 slots on near-ties. These policies decide the size
+// of a clause's contribution from the clause's own score profile.
+// ---------------------------------------------------------------------------
+
+/// `decrochage_keep_count` with a parametrable floor (the hard-coded 3 is
+/// exactly what makes a decided clause expensive).
+fn decrochage_keep_floor(ranked: &[(&'static str, f64)], gamma: f64, floor: usize) -> usize {
+    let n = ranked.len();
+    if n == 0 {
+        return 0;
+    }
+    let mut cut = n;
+    for i in 0..n.saturating_sub(1) {
+        if ranked[i + 1].1 < gamma * ranked[i].1 {
+            cut = i + 1;
+            break;
+        }
+    }
+    cut.max(floor.min(n))
+}
+
+#[derive(Clone, Copy)]
+enum HCut {
+    /// Axis F baseline: fixed relative cutoff, fixed per-clause limit.
+    TauFixed { tau: f64, pcl: usize },
+    /// H1: per-clause drop detection with a parametrable floor.
+    Decrochage { gamma: f64, floor: usize },
+    /// H2: global budget split across the clauses of the query.
+    Budget { tau: f64, floor: usize },
+    /// H3: a hit must clear the ratio *and* sit before the drop.
+    TauAndDecrochage { tau: f64, gamma: f64, floor: usize },
+    /// H4: a stricter ratio for one-term clauses, which are ambiguous by
+    /// construction.
+    ShortTau {
+        tau: f64,
+        tau_short: f64,
+        pcl: usize,
+    },
+}
+
+impl HCut {
+    fn family(self) -> &'static str {
+        match self {
+            HCut::TauFixed { .. } => "base",
+            HCut::Decrochage { .. } => "H1",
+            HCut::Budget { .. } => "H2",
+            HCut::TauAndDecrochage { .. } => "H3",
+            HCut::ShortTau { .. } => "H4",
+        }
+    }
+
+    fn label(self) -> String {
+        match self {
+            HCut::TauFixed { tau, pcl } => format!("base   tau={tau:.2} pcl={pcl}"),
+            HCut::Decrochage { gamma, floor } => format!("H1     gamma={gamma:.1} floor={floor}"),
+            HCut::Budget { tau, floor } => format!("H2     tau={tau:.2} floor={floor}"),
+            HCut::TauAndDecrochage { tau, gamma, floor } => {
+                format!("H3     tau={tau:.2} gamma={gamma:.1} floor={floor}")
+            }
+            HCut::ShortTau {
+                tau,
+                tau_short,
+                pcl,
+            } => format!("H4     tau={tau:.2} tau1={tau_short:.2} pcl={pcl}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct HCfg {
+    variant: Variant,
+    reverse_prefix: bool,
+    min_len: usize,
+    limit: usize,
+    cut: HCut,
+}
+
+impl HCfg {
+    fn label(&self) -> String {
+        format!("{:<34} limit={}", self.cut.label(), self.limit)
+    }
+}
+
+/// What one clause keeps, under `cut`. `n_clauses` is the number of clauses
+/// the whole query split into (H2 divides the budget by it), `n_terms` the
+/// number of scoring terms of this clause (H4 hardens on 1).
+fn clause_keep(
+    cut: HCut,
+    ranked: &[(&'static str, f64)],
+    n_clauses: usize,
+    n_terms: usize,
+    limit: usize,
+) -> Vec<&'static str> {
+    match cut {
+        HCut::TauFixed { tau, pcl } => cutoff_then_limit(ranked, tau, pcl),
+        HCut::Decrochage { gamma, floor } => {
+            let keep = decrochage_keep_floor(ranked, gamma, floor).min(limit);
+            ranked.iter().take(keep).map(|(n, _)| *n).collect()
+        }
+        HCut::Budget { tau, floor } => {
+            let pcl = floor.max(limit / n_clauses.max(1));
+            cutoff_then_limit(ranked, tau, pcl)
+        }
+        HCut::TauAndDecrochage { tau, gamma, floor } => {
+            let keep = decrochage_keep_floor(ranked, gamma, floor).min(ranked.len());
+            cutoff_then_limit(&ranked[..keep], tau, limit)
+        }
+        HCut::ShortTau {
+            tau,
+            tau_short,
+            pcl,
+        } => {
+            let t = if n_terms <= 1 { tau_short } else { tau };
+            cutoff_then_limit(ranked, t, pcl)
+        }
+    }
+}
+
+/// Axis-H counterpart of `intent_hits_f`: clause split, per-clause policy,
+/// then the same ratio-to-own-clause-best merge truncated to the global limit.
+fn intent_hits_h(cfg: HCfg, corpus: &Corpus, query: &str) -> Vec<&'static str> {
+    let clauses = split_clauses(query);
+    let n_clauses = clauses.len();
+    let mut merged: Vec<(&'static str, f64)> = Vec::new();
+    for clause in &clauses {
+        let ranked = rank_all_ml(cfg.variant, cfg.reverse_prefix, cfg.min_len, corpus, clause);
+        let Some(&(_, cmax)) = ranked.first() else {
+            continue;
+        };
+        let n_terms = query_terms(clause).len();
+        for name in clause_keep(cfg.cut, &ranked, n_clauses, n_terms, cfg.limit) {
+            let score = ranked
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, s)| *s)
+                .unwrap_or(0.0);
+            let ratio = score / cmax;
+            match merged.iter_mut().find(|(n, _)| *n == name) {
+                Some(entry) => {
+                    if ratio > entry.1 {
+                        entry.1 = ratio;
+                    }
+                }
+                None => merged.push((name, ratio)),
+            }
+        }
+    }
+    merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then_with(|| a.0.cmp(b.0)));
+    merged.into_iter().take(cfg.limit).map(|(n, _)| n).collect()
+}
+
+fn score_task_h(cfg: HCfg, corpus: &Corpus, task: &TaskIntents) -> (TaskResult, Vec<&'static str>) {
+    let mut found: Vec<&'static str> = Vec::new();
+    for intent in &task.intents {
+        for name in intent_hits_h(cfg, corpus, intent) {
+            if !found.contains(&name) {
+                found.push(name);
+            }
+        }
+    }
+    let hits = task
+        .needed
+        .iter()
+        .filter(|n| found.contains(&n.as_str()))
+        .count();
+    let precision = if found.is_empty() {
+        0.0
+    } else {
+        hits as f64 / found.len() as f64
+    };
+    let recall = if task.needed.is_empty() {
+        1.0
+    } else {
+        hits as f64 / task.needed.len() as f64
+    };
+    (
+        TaskResult {
+            task: task.task.clone(),
+            found: found.len(),
+            precision,
+            recall,
+        },
+        found,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Axis I (F.5.7): tool families. Serving place_component,
+// place_component_array and batch_place_components in the same answer is
+// noise for an LLM even when all three score well. A family is the tool name
+// normalized: name terms, singularized, minus the modifier words, sorted.
+// ---------------------------------------------------------------------------
+
+const FAMILY_MODIFIERS: [&str; 6] = ["batch", "array", "summary", "all", "single", "multi"];
+
+fn singularize(term: &str) -> String {
+    match term.strip_suffix('s') {
+        Some(stem) if stem.len() >= 3 && !term.ends_with("ss") => stem.to_string(),
+        _ => term.to_string(),
+    }
+}
+
+fn family_of(name: &str) -> String {
+    let mut parts: Vec<String> = terms(name)
+        .iter()
+        .map(|t| singularize(t))
+        .filter(|t| !FAMILY_MODIFIERS.contains(&t.as_str()))
+        .collect();
+    parts.sort();
+    parts.dedup();
+    if parts.is_empty() {
+        name.to_string()
+    } else {
+        parts.join("_")
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ICfg {
+    variant: Variant,
+    reverse_prefix: bool,
+    min_len: usize,
+    tau: f64,
+    per_clause_limit: usize,
+    limit: usize,
+    /// `None` = axis I off (reference line), `Some(k)` = at most k tools per
+    /// family per query.
+    per_family: Option<usize>,
+}
+
+impl ICfg {
+    fn label(&self) -> String {
+        format!(
+            "tau={:.2} pcl={} K={:<4} limit={}",
+            self.tau,
+            self.per_clause_limit,
+            self.per_family
+                .map(|k| k.to_string())
+                .unwrap_or_else(|| "off".to_string()),
+            self.limit
+        )
+    }
+}
+
+/// Clause merge identical to `intent_hits_f`, then the per-family cap, then
+/// the global truncation — in that order, as specified.
+fn intent_hits_i(cfg: ICfg, corpus: &Corpus, query: &str) -> Vec<&'static str> {
+    let mut merged: Vec<(&'static str, f64)> = Vec::new();
+    for clause in split_clauses(query) {
+        let ranked = rank_all_ml(
+            cfg.variant,
+            cfg.reverse_prefix,
+            cfg.min_len,
+            corpus,
+            &clause,
+        );
+        let Some(&(_, cmax)) = ranked.first() else {
+            continue;
+        };
+        for name in cutoff_then_limit(&ranked, cfg.tau, cfg.per_clause_limit) {
+            let score = ranked
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, s)| *s)
+                .unwrap_or(0.0);
+            let ratio = score / cmax;
+            match merged.iter_mut().find(|(n, _)| *n == name) {
+                Some(entry) => {
+                    if ratio > entry.1 {
+                        entry.1 = ratio;
+                    }
+                }
+                None => merged.push((name, ratio)),
+            }
+        }
+    }
+    merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then_with(|| a.0.cmp(b.0)));
+
+    let mut kept: Vec<&'static str> = Vec::new();
+    let mut per_family: Vec<(String, usize)> = Vec::new();
+    for (name, _) in merged {
+        if let Some(k) = cfg.per_family {
+            let fam = family_of(name);
+            let slot = match per_family.iter_mut().find(|(f, _)| *f == fam) {
+                Some(slot) => slot,
+                None => {
+                    per_family.push((fam, 0));
+                    per_family.last_mut().expect("just pushed")
+                }
+            };
+            if slot.1 >= k {
+                continue;
+            }
+            slot.1 += 1;
+        }
+        kept.push(name);
+        if kept.len() == cfg.limit {
+            break;
+        }
+    }
+    kept
+}
+
+fn score_task_i(cfg: ICfg, corpus: &Corpus, task: &TaskIntents) -> (TaskResult, Vec<&'static str>) {
+    let mut found: Vec<&'static str> = Vec::new();
+    for intent in &task.intents {
+        for name in intent_hits_i(cfg, corpus, intent) {
+            if !found.contains(&name) {
+                found.push(name);
+            }
+        }
+    }
+    let hits = task
+        .needed
+        .iter()
+        .filter(|n| found.contains(&n.as_str()))
+        .count();
+    let precision = if found.is_empty() {
+        0.0
+    } else {
+        hits as f64 / found.len() as f64
+    };
+    let recall = if task.needed.is_empty() {
+        1.0
+    } else {
+        hits as f64 / task.needed.len() as f64
+    };
+    (
+        TaskResult {
+            task: task.task.clone(),
+            found: found.len(),
+            precision,
+            recall,
+        },
+        found,
+    )
 }

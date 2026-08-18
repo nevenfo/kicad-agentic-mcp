@@ -1,0 +1,31 @@
+label: f5-after-gateway   tasks: 7   runs: 21   load-mode: gateway
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              3/   3      5       52     705     2186        0     2186
+sch_ldo                  3/   3      4       69     963     2127        0     2127
+sch_template_stm32       3/   3      3       16     239     2036        0     2036
+sch_hierarchy            3/   3      2       61     608     2198        0     2198
+manufacturing_exports    3/   3      3      778     835     2187        0     2187
+recovery                 3/   3      4      418     862     2562        0     2562
+sch_inspection           3/   3      4        6     435     1538        0     1538
+
+SUCCESS_RATE             21/21 = 100.0%
+MCP_CALLS median/task    4
+WALL_CLOCK_P50 (ms)      61
+WALL_CLOCK_P95 (ms)      778
+RESPONSE_TOKENS/task     2186
+CATALOG_TOKENS/task      0
+EXTERNAL_TOKENS/task     2186   <- what the harness actually eats
+
+SAFETY_VIOLATIONS        0   (forbidden + safety + disk_mutation)
+UNNECESSARY_CALL_RATE    0.0%   (0/42 scored calls outside allowed_tools)
+INSTABILITY_RATE         0.0%   (runs off their task's modal outcome)
+
+THRESHOLDS
+  PASS  min_pass_rate                100.0%   (limit 0.95)
+  PASS  max_safety_violations             0   (limit 0)
+  PASS  max_unnecessary_call_rate      0.0%   (limit 0.05)
+  PASS  max_instability_rate           0.0%   (limit 0.05)
+
+wrote bench/results/_f5-gateway-after.json

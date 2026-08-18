@@ -96,7 +96,9 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "get_schematic_component",
-            "Get all properties, position, and pin locations for a symbol instance.",
+            "Get all properties, position, and pin locations for a single schematic \
+             component, that is one symbol instance, looked up by its reference \
+             designator.",
             json!({
                 "type": "object",
                 "properties": {
@@ -198,8 +200,9 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "get_schematic_pin_locations",
-            "Get the exact schematic-space (X,Y) coordinates of every pin on a symbol, \
-             accounting for rotation and mirroring. Uses the canonical pin transform.",
+            "Get the exact schematic-space (X,Y) coordinates showing where every pin \
+             of a component symbol is located, accounting for rotation and mirroring. \
+             Uses the canonical pin transform.",
             json!({
                 "type": "object",
                 "properties": {
