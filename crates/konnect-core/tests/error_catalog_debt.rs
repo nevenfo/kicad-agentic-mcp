@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 /// `crates/konnect-core/src` on 2026-08-18, measured by this file's own
 /// scanner (`rg -c` on the same pattern gives the same order of magnitude,
 /// but is not what this ceiling is defined against — the scanner is).
-const KAM_ERROR_CATALOG_DEBT_CEILING: usize = 71;
+const KAM_ERROR_CATALOG_DEBT_CEILING: usize = 55;
 
 fn src_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")

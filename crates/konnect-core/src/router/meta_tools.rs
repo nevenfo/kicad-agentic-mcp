@@ -334,47 +334,104 @@ define_meta_tools! {
     "server_stats" => handle_server_stats(ctx).await,
 }
 
+/// One `InvalidArgument` result, so this file's argument refusals cannot drift
+/// into as many shapes as there are call sites.
+///
+/// `field` and `reason` are what a client branches on; `message` is the prose
+/// the site already emitted, which is never reworded to fit the kind.
+fn invalid_argument(field: &str, reason: &str, message: impl Into<String>) -> CallToolResult {
+    CallToolResult::error_kind(
+        ToolErrorKind::InvalidArgument {
+            field: field.to_string(),
+            reason: reason.to_string(),
+        },
+        message,
+    )
+}
+
+/// The catalogued kind for a [`kam_state::TaskError`], or `None` where no
+/// existing kind is true of it.
+///
+/// `Unknown` is a `NotFound`: the id is well-formed and names nothing, which is
+/// precisely that variant's shape. `ListFull` is the `None` (D76) — the
+/// caller's input is well-formed and the *task's own state* is what refuses it,
+/// so it is neither a missing item nor a malformed argument, and a kind
+/// invented for it would say less than the sentence already does.
+fn task_error_kind(error: &kam_state::TaskError) -> Option<ToolErrorKind> {
+    match error {
+        kam_state::TaskError::Unknown(id) => Some(ToolErrorKind::NotFound {
+            document: "tasks".to_string(),
+            item_kind: "task".to_string(),
+            key: id.clone(),
+        }),
+        kam_state::TaskError::ListFull { .. } => None,
+    }
+}
+
 /// Explicit deterministic verification companion to `kicad_agent`.
 async fn handle_kicad_agent_verify(
     args: &Value,
     ctx: &std::sync::Arc<ToolContext>,
 ) -> CallToolResult {
     let Some(task_id) = args.get("task_id").and_then(Value::as_str) else {
-        return CallToolResult::error("kicad_agent_verify requires task_id (string)");
+        return invalid_argument(
+            "task_id",
+            "must be a string",
+            "kicad_agent_verify requires task_id (string)",
+        );
     };
     let Some(document) = args.get("document").and_then(Value::as_str) else {
-        return CallToolResult::error("kicad_agent_verify requires document (string)");
+        return invalid_argument(
+            "document",
+            "must be a string",
+            "kicad_agent_verify requires document (string)",
+        );
     };
     match ctx.verification_agent.verify(task_id, document).await {
         Ok(outcome) => CallToolResult::json(&outcome),
-        Err(error) => CallToolResult::error(format!("kicad_agent_verify task error: {error}")),
+        Err(error) => {
+            let message = format!("kicad_agent_verify task error: {error}");
+            match task_error_kind(&error) {
+                Some(kind) => CallToolResult::error_kind(kind, message),
+                // Only TaskError::ListFull reaches here; see `task_error_kind`.
+                None => CallToolResult::error(message),
+            }
+        }
     }
 }
 
 /// Explicit Agent gateway; Direct MCP meta-tools never call this path.
 async fn handle_kicad_agent(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> CallToolResult {
     let Some(task_id) = args.get("task_id").and_then(Value::as_str) else {
-        return CallToolResult::error("kicad_agent requires task_id (string)");
+        return invalid_argument(
+            "task_id",
+            "must be a string",
+            "kicad_agent requires task_id (string)",
+        );
     };
     let decision = match args.get("decision").and_then(Value::as_str) {
         Some("NO_LLM") => kam_runtime::RoutingDecision::NoLlm,
         Some("LOCAL") => kam_runtime::RoutingDecision::Local,
         Some("ESCALATE") => kam_runtime::RoutingDecision::Escalate,
         _ => {
-            return CallToolResult::error("kicad_agent decision must be NO_LLM, LOCAL, or ESCALATE")
+            return invalid_argument(
+                "decision",
+                "must be NO_LLM, LOCAL, or ESCALATE",
+                "kicad_agent decision must be NO_LLM, LOCAL, or ESCALATE",
+            )
         }
     };
     let retrieval = match agent_retrieval(args) {
         Ok(retrieval) => retrieval,
-        Err(message) => return CallToolResult::error(message),
+        Err(refusal) => return refusal,
     };
     let task_core_tokens = match agent_u32(args, "task_core_tokens") {
         Ok(tokens) => tokens,
-        Err(message) => return CallToolResult::error(message),
+        Err(refusal) => return refusal,
     };
     let fixed_prefix_tokens = match agent_u32(args, "fixed_prefix_tokens") {
         Ok(tokens) => tokens,
-        Err(message) => return CallToolResult::error(message),
+        Err(refusal) => return refusal,
     };
     let input = kam_runtime::SupervisorInput {
         task_id: task_id.to_string(),
@@ -388,10 +445,18 @@ async fn handle_kicad_agent(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> 
         .unwrap_or(false)
     {
         if decision != kam_runtime::RoutingDecision::Local {
-            return CallToolResult::error("kicad_agent execute requires decision LOCAL");
+            return invalid_argument(
+                "decision",
+                "must be LOCAL when execute is true",
+                "kicad_agent execute requires decision LOCAL",
+            );
         }
         let Some(document) = args.get("document").and_then(Value::as_str) else {
-            return CallToolResult::error("kicad_agent execute requires document (string)");
+            return invalid_argument(
+                "document",
+                "must be a string when execute is true",
+                "kicad_agent execute requires document (string)",
+            );
         };
         return CallToolResult::json(
             &crate::agent_loop::execute(ctx.clone(), input, document).await,
@@ -399,28 +464,41 @@ async fn handle_kicad_agent(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> 
     }
     match ctx.supervisor.run(decision, input).await {
         Ok(outcome) => CallToolResult::json(&outcome),
-        Err(error) => CallToolResult::error(format!("kicad_agent task error: {error}")),
+        Err(error) => {
+            let message = format!("kicad_agent task error: {error}");
+            match task_error_kind(&error) {
+                Some(kind) => CallToolResult::error_kind(kind, message),
+                // Only TaskError::ListFull reaches here; see `task_error_kind`.
+                None => CallToolResult::error(message),
+            }
+        }
     }
 }
 
-fn agent_u32(args: &Value, field: &str) -> Result<u32, String> {
+fn agent_u32(args: &Value, field: &str) -> Result<u32, CallToolResult> {
     match args.get(field) {
         None => Ok(0),
         Some(value) => value
             .as_u64()
             .filter(|tokens| *tokens <= u64::from(u32::MAX))
             .map(|tokens| tokens as u32)
-            .ok_or_else(|| format!("{field} must be a u32")),
+            .ok_or_else(|| {
+                invalid_argument(field, "must be a u32", format!("{field} must be a u32"))
+            }),
     }
 }
 
 /// D42: electrical constraints, Plan IR and geometry never travel separately.
-fn agent_retrieval(args: &Value) -> Result<Vec<kam_context::RetrievalBundle>, String> {
+fn agent_retrieval(args: &Value) -> Result<Vec<kam_context::RetrievalBundle>, CallToolResult> {
     let Some(bundles) = args.get("retrieval_bundles") else {
         return Ok(Vec::new());
     };
     let Some(bundles) = bundles.as_array() else {
-        return Err("retrieval_bundles must be an array".to_string());
+        return Err(invalid_argument(
+            "retrieval_bundles",
+            "must be an array",
+            "retrieval_bundles must be an array",
+        ));
     };
     bundles
         .iter()
@@ -431,12 +509,15 @@ fn agent_retrieval(args: &Value) -> Result<Vec<kam_context::RetrievalBundle>, St
                 .and_then(Value::as_u64)
                 .filter(|tokens| *tokens <= u64::from(u32::MAX))
                 .ok_or_else(|| {
-                    format!("retrieval_bundles[{index}].measured_tokens must be a u32")
+                    let field = format!("retrieval_bundles[{index}].measured_tokens");
+                    invalid_argument(&field, "must be a u32", format!("{field} must be a u32"))
                 })? as u32;
             for field in ["electrical_constraints", "plan_ir", "geometry"] {
                 if bundle.get(field).is_none() {
-                    return Err(format!(
-                        "retrieval_bundles[{index}] must include {field} atomically"
+                    return Err(invalid_argument(
+                        &format!("retrieval_bundles[{index}]"),
+                        &format!("must include {field}"),
+                        format!("retrieval_bundles[{index}] must include {field} atomically"),
                     ));
                 }
             }
@@ -474,7 +555,9 @@ fn require_names(args: &Value, tool: &str) -> Result<Vec<String>, CallToolResult
         match item.as_str() {
             Some(s) => names.push(s.to_string()),
             None => {
-                return Err(CallToolResult::error(
+                return Err(invalid_argument(
+                    "names",
+                    "every element must be a string",
                     "names array must contain only strings",
                 ))
             }
@@ -954,7 +1037,16 @@ mod agent_gateway_tests {
                 "measured_tokens": 10
             }]
         });
-        assert!(agent_retrieval(&partial).unwrap_err().contains("geometry"));
+        // D.6.1 zone 4: the refusal is a catalogued result now, so the test
+        // reads its body — and checks the field a client branches on, not only
+        // the prose.
+        let refusal = agent_retrieval(&partial).expect_err("an incomplete bundle must be refused");
+        assert!(refusal.is_error);
+        let crate::mcp::protocol::ToolContent::Text { text } = &refusal.content[0] else {
+            panic!("a refusal is text");
+        };
+        assert!(text.contains("geometry"), "{text}");
+        assert!(text.contains("invalid_argument"), "{text}");
 
         let complete = json!({
             "retrieval_bundles": [{
@@ -1785,7 +1877,13 @@ async fn handle_load_tools(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> C
     for item in items {
         match item.as_str() {
             Some(s) => requested.push(s.to_string()),
-            None => return CallToolResult::error("names array must contain only strings"),
+            None => {
+                return invalid_argument(
+                    "names",
+                    "every element must be a string",
+                    "names array must contain only strings",
+                )
+            }
         }
     }
     let mut seen = std::collections::HashSet::new();
@@ -1870,17 +1968,27 @@ async fn handle_load_toolset(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
                     "tools": tool_list
                 }))
             }
-            None => CallToolResult::error(format!(
-                "Unknown toolset '{}'. Call list_toolboxes() to see valid names.",
-                name
-            )),
+            None => invalid_argument(
+                "name",
+                name,
+                format!(
+                    "Unknown toolset '{}'. Call list_toolboxes() to see valid names.",
+                    name
+                ),
+            ),
         },
         // New array form: one load, one tools/list_changed notification.
         Value::Array(arr) => {
             let mut names: Vec<String> =
                 match arr.iter().map(|v| v.as_str().map(str::to_string)).collect() {
                     Some(names) => names,
-                    None => return CallToolResult::error("name array must contain only strings"),
+                    None => {
+                        return invalid_argument(
+                            "name",
+                            "every element must be a string",
+                            "name array must contain only strings",
+                        )
+                    }
                 };
             // Duplicate names in one call would double-count tools_added.
             let mut seen = std::collections::HashSet::new();
@@ -1930,20 +2038,30 @@ async fn handle_load_toolset(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
                 "errors": errors,
             }))
         }
-        _ => CallToolResult::error("Missing required argument: name (string or array of strings)"),
+        _ => invalid_argument(
+            "name",
+            "must be a string or an array of strings",
+            "Missing required argument: name (string or array of strings)",
+        ),
     }
 }
 
 async fn handle_unload_toolset(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> CallToolResult {
     let name = match args["name"].as_str() {
         Some(n) => n,
-        None => return CallToolResult::error("Missing required argument: name"),
+        None => {
+            return invalid_argument(
+                "name",
+                "must be a string",
+                "Missing required argument: name",
+            )
+        }
     };
 
     if ctx.router.unload(name).await {
         CallToolResult::text(format!("Toolset '{}' unloaded.", name))
     } else {
-        CallToolResult::error(format!("Unknown toolset '{}'.", name))
+        invalid_argument("name", name, format!("Unknown toolset '{}'.", name))
     }
 }
 
