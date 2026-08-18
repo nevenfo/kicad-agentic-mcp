@@ -1,0 +1,189 @@
+{
+  "limit": 8,
+  "shapes": [
+    {
+      "shape": "direct",
+      "queries": 6,
+      "needed": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "run_erc",
+        "list_schematic_components",
+        "list_schematic_nets"
+      ],
+      "union": 14,
+      "hits": 8,
+      "missed": [],
+      "precision": 0.571,
+      "recall": 1.0,
+      "per_query": [
+        {
+          "query": "create a new kicad project",
+          "returned": 1,
+          "ranks": {
+            "create_project": 1,
+            "batch_place_components": null,
+            "add_power_symbol": null,
+            "connect_pins": null,
+            "add_schematic_net_label": null,
+            "run_erc": null,
+            "list_schematic_components": null,
+            "list_schematic_nets": null
+          }
+        },
+        {
+          "query": "place resistor symbols on the schematic",
+          "returned": 1,
+          "ranks": {
+            "create_project": null,
+            "batch_place_components": 1,
+            "add_power_symbol": null,
+            "connect_pins": null,
+            "add_schematic_net_label": null,
+            "run_erc": null,
+            "list_schematic_components": null,
+            "list_schematic_nets": null
+          }
+        },
+        {
+          "query": "add power symbols for the supply rails",
+          "returned": 2,
+          "ranks": {
+            "create_project": null,
+            "batch_place_components": null,
+            "add_power_symbol": 2,
+            "connect_pins": null,
+            "add_schematic_net_label": null,
+            "run_erc": null,
+            "list_schematic_components": null,
+            "list_schematic_nets": null
+          }
+        },
+        {
+          "query": "connect two component pins with a wire",
+          "returned": 1,
+          "ranks": {
+            "create_project": null,
+            "batch_place_components": null,
+            "add_power_symbol": null,
+            "connect_pins": 1,
+            "add_schematic_net_label": null,
+            "run_erc": null,
+            "list_schematic_components": null,
+            "list_schematic_nets": null
+          }
+        },
+        {
+          "query": "add a net label",
+          "returned": 2,
+          "ranks": {
+            "create_project": null,
+            "batch_place_components": null,
+            "add_power_symbol": null,
+            "connect_pins": null,
+            "add_schematic_net_label": 1,
+            "run_erc": null,
+            "list_schematic_components": null,
+            "list_schematic_nets": null
+          }
+        },
+        {
+          "query": "run erc and list the components and nets",
+          "returned": 7,
+          "ranks": {
+            "create_project": null,
+            "batch_place_components": null,
+            "add_power_symbol": null,
+            "connect_pins": null,
+            "add_schematic_net_label": null,
+            "run_erc": 5,
+            "list_schematic_components": 4,
+            "list_schematic_nets": 6
+          }
+        }
+      ]
+    },
+    {
+      "shape": "plan-by-goal",
+      "queries": 4,
+      "needed": [
+        "apply_plan"
+      ],
+      "union": 13,
+      "hits": 0,
+      "missed": [
+        "apply_plan"
+      ],
+      "precision": 0.0,
+      "recall": 0.0,
+      "per_query": [
+        {
+          "query": "build a resistive voltage divider",
+          "returned": 3,
+          "ranks": {
+            "apply_plan": null
+          }
+        },
+        {
+          "query": "build a resistive voltage divider from two resistors on a new project, with supply rails, a wire between them and a labelled output",
+          "returned": 8,
+          "ranks": {
+            "apply_plan": null
+          }
+        },
+        {
+          "query": "add four decoupling capacitors on the 3V3 rail with their ground symbols",
+          "returned": 2,
+          "ranks": {
+            "apply_plan": null
+          }
+        },
+        {
+          "query": "place four capacitors and their power symbols in one step",
+          "returned": 3,
+          "ranks": {
+            "apply_plan": null
+          }
+        }
+      ]
+    },
+    {
+      "shape": "plan-by-mechanism",
+      "queries": 3,
+      "needed": [
+        "apply_plan"
+      ],
+      "union": 9,
+      "hits": 1,
+      "missed": [],
+      "precision": 0.111,
+      "recall": 1.0,
+      "per_query": [
+        {
+          "query": "do the whole schematic change at once instead of one call at a time",
+          "returned": 4,
+          "ranks": {
+            "apply_plan": 2
+          }
+        },
+        {
+          "query": "apply a batch of schematic edits as one operation",
+          "returned": 2,
+          "ranks": {
+            "apply_plan": 2
+          }
+        },
+        {
+          "query": "compile a plan and run it",
+          "returned": 5,
+          "ranks": {
+            "apply_plan": 1
+          }
+        }
+      ]
+    }
+  ]
+}

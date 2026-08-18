@@ -2,9 +2,10 @@
 
 ## Phase actuelle
 
-K — multi-harness. L.2.8 is closed, so K.1.1 is again the only thing left that
-is not externally blocked by a machine or an account, and it is the last
-dependency of phase M (final benchmark; H.6 and H.7 are DONE).
+K — multi-harness. K.1.1 is the last dependency of phase M (final benchmark;
+H.6 and H.7 are DONE) and stays blocked externally until 2026-08-20. F.5.2 was
+answered in the meantime, so phase F is now DONE except the follow-up it opened
+(F.5.7), which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
@@ -14,25 +15,30 @@ externally until 2026-08-20, not by any code.
 
 ## Dernière tâche validée
 
-L.2.8 / L.2.8.1 (b03d7f3) — the flaky `board_design_rules_round_trip_through_
-the_file`. The race was `HOME`: `redirected_user_config` repoints it for the
-config tests, and the design-rules test resolved its document lock through
-`dirs::data_local_dir()`, which on macOS sits in the same `konnect/` subtree —
-so its lock file was born in another test's `TempDir` and deleted under it.
-The harness now sets `KONNECT_STATE_DIR` once per test binary; the write and
-lock paths now name the operation and file in every IO error.
+F.5.2 — whether a compiled plan moves retrieval precision. **It does not**, and
+it fails in both directions: no goal-stated query returns `apply_plan` (0 of 4,
+absent from the top 30 as well), because the description names the mechanism of
+calling and shares no vocabulary with a query saying what to build; and a
+caller who does name the mechanism finds it at rank 1-2 while precision drops
+to 11.1 %, because the plan collapses |needed| from 5 to 1 and leaves the union
+untouched. New instrument `bench/plan_retrieval.py`, artefact
+`bench/results/plan-retrieval-f52.json`.
 
 Validation :
-- CI run 32108806941 green on ubuntu, macos and windows, no job cancelled
-- `gate.ps1` green end to end (fmt, clippy, test, doctest, release build), no
-  warning
-- locks observed under `target/tmp/konnect-state/locks/`, not in the profile
-- the earlier reading of run 32103900156 as a macOS+Windows failure was wrong:
-  Windows was cancelled by the matrix fail-fast, and that misreading is what
-  sent the first diagnosis looking for a shared cause
+- server-side run of record (D65), reproduced identically twice on one build
+- the offline probe agrees, including the top-30 absence
+- direct control read from `bench/tasks/01_sch_divider.yaml` itself: 57.1 %
+  precision at 100 % recall, consistent with F.5's 62.0 % suite average
 
 ## Décisions actives
 
+- D68 — a tool is retrievable only through the vocabulary of the *change*, not
+  of the machinery. `apply_plan` is invisible to every query stating a design
+  goal, so the plan path is entered by prior knowledge (starter kit,
+  `list_toolboxes`, system prompt) and never by search. Precision @8 is
+  therefore the wrong instrument for it: the metric's denominator is the union
+  search returns, so a shape that needs one tool scores badly however well it
+  is served. The plan's measured win stays the schema tokens of G.3.
 - D67 — one test binary shares one environment, so a variable a test repoints
   is global state every other test reads without knowing it. The document lock
   path no longer reads `HOME` in tests: the harness sets `KONNECT_STATE_DIR`
@@ -155,6 +161,9 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 - `bench/runner.py` — `audit()`, `fingerprint()`, `THRESHOLDS`; the harness
   runner imports all of it rather than reimplementing, which is the only reason
   the two sets of numbers compare
+- `bench/plan_retrieval.py` — F.5.2's instrument: the direct shape against the
+  plan shape under `--load-mode search`'s own methodology, control read from
+  the task file so it cannot drift in the plan's favour
 - `crates/konnect-core/src/capability/mod.rs` — `MANIFEST`, `Effect`,
   `VERB_EFFECTS` / `TOOL_EFFECTS` / `META_TOOL_EFFECTS`. Regenerate the matrix
   with `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
@@ -194,7 +203,10 @@ the server and the numbers are not a Konnect measurement. Budget is the user's
 call each time: a Claude Code run costs ~$0.06 on the lightest task with haiku,
 and the six other golden tasks all author something.
 
-Actionable before that date if the user wants it: F.5.2 — whether a compiled
-plan moves retrieval precision at all. It was unanswerable while the golden
-suite never searched; `--load-mode search` now runs 7/7, so the comparison has
-become possible. It needs a scope decision first, so do not start it silently.
+Actionable before that date if the user wants it: F.5.7 — whether `apply_plan`
+should name the design actions its operation library covers. F.5.2 opened it
+and deliberately did not take it: the lever that would make the plan path
+retrievable is the same one that would put it in competition with
+`batch_place_components` on every direct task, and the suite's 62.0 % is what
+would pay. It needs both sides measured on all seven tasks, so do not start it
+silently.

@@ -225,7 +225,7 @@ A.2.
 
 ---
 
-# Phase F — Compact MCP surface — DONE except F.5
+# Phase F — Compact MCP surface — DONE except F.5.7
 
 ## F.1 — Capability index and tool-granular loading
 
@@ -275,7 +275,7 @@ A catalogue that never has to be refreshed: `CATALOG_TOKENS` → 0.
 render 27.3 %, now 28.6 %. Note: `bench/probes` counts as evidence as well as
 `bench/tasks`, so adding a probe can move the number.
 
-## F.5 — Retrieval precision — MET (F.5.2 open)
+## F.5 — Retrieval precision — MET (F.5.7 open)
 
 ### Objectif
 22.4 % precision @8 at the recall needed to succeed. The gateway made each wrong
@@ -294,8 +294,19 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
       — four of them, in F.5.4 through F.5.6: IDF weighting, clause splitting,
       a relative cutoff per clause, and one tool per family. Recall went up
       rather than down (97.1 % → 100 %).
-- [ ] F.5.2 Answer whether a compiled plan moves precision at all — the golden
-      suite is a scripted oracle and can never show it (it never searches)
+- [x] F.5.2 Answer whether a compiled plan moves precision at all. **It does
+      not**, and it fails in both directions at once, measured by
+      `bench/plan_retrieval.py` at limit 8 on one build against the direct
+      shape of `01_sch_divider` read from the task file: not one of four
+      goal-stated queries returns `apply_plan`, at rank 8 or at rank 30 —
+      "build a resistive voltage divider" returns `audit_power_rails` — because
+      the description is about the mechanism of calling and shares no
+      vocabulary with a query saying what to build; and for a caller who does
+      name the mechanism, retrieval finds it at rank 1-2 while precision falls
+      to 11.1 %, since the plan collapses |needed| from 5 to 1 without
+      collapsing what search returns. The plan path is entered by prior
+      knowledge, never by search, and precision @8 is the wrong instrument for
+      it — its measured win is schema tokens (G.3: -48.4 % / -61.1 %)
 - [x] F.5.3 Reverse prefix: the one-sided form of what D6 rejected. A query
       term that is the longer, plural side of a corpus term of at least three
       characters scores a fallback +4/+1, and only when nothing stronger
@@ -337,6 +348,16 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
       family key that keeps the terms of a name **in order**, because
       `get_component_nets` and `get_net_components` are different tools —
       pinned by a test, since the golden suite never asks for both.
+- [ ] F.5.7 Decide whether `apply_plan` / `preview_plan` should name the design
+      actions their operation library covers — place, power, label, wire,
+      connect, decouple — which is exactly the lever that recovered
+      `get_schematic_component` in F.5.5. Opened by F.5.2's finding, and
+      deliberately not taken with it: a description that ranks for "place
+      resistor symbols" puts `apply_plan` in competition with
+      `batch_place_components` on every direct task, and the suite's 62.0 % is
+      what would pay for it. Measure both sides on all seven tasks — plan
+      reachability from a goal query, and precision on the direct suite —
+      before shipping either answer
 
 ### Validation
 Precision @8 ≥ 60 % with recall @8 ≥ 98 %, measured by the existing retrieval

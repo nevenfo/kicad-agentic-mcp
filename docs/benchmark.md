@@ -777,6 +777,57 @@ worked was the one-sided form — a query term that is the longer, plural side o
 a corpus term earns a fallback and never costs anyone a rank. Symmetry was the
 bug. The comment in `capability_search.rs` says so at the site.
 
+#### F.5.2 — a compiled plan does not move precision, it leaves the metric
+
+F.5 measured retrieval on the direct shape of a task: one intent per change,
+one tool per intent. The same designs can be described instead as a compiled
+plan, which needs exactly one tool schema (`apply_plan`) where the direct shape
+needs five — so the open question was whether planning moves precision at all.
+It could not be asked while the golden suite was a scripted oracle that never
+searched.
+
+`bench/plan_retrieval.py`, at limit 8, on one build of `konnect.exe`, with the
+same union-of-top-k methodology `--load-mode search` uses (artefact:
+`bench/results/plan-retrieval-f52.json`):
+
+| shape | queries | union | needed | precision | recall |
+|---|---|---|---|---|---|
+| direct (`01_sch_divider`, from the task file) | 6 | 14 | 8 | 57.1 % | 100.0 % |
+| plan, asked for by design goal | 4 | 13 | 1 | **0.0 %** | **0.0 %** |
+| plan, asked for by naming the mechanism | 3 | 9 | 1 | 11.1 % | 100.0 % |
+
+**The answer is no, in both directions at once.**
+
+Not one of the four goal-stated queries returns `apply_plan` — not at rank 8,
+and not at rank 30 when the offline probe is allowed to look that far. "Build a
+resistive voltage divider" returns `audit_power_rails`; "add four decoupling
+capacitors on the 3V3 rail" returns `audit_decoupling` and `add_power_symbol`.
+That is not a ranking failure. `apply_plan`'s description is about the
+*mechanism of calling* — one operation expanding to many calls, references
+resolved before the first mutation — and shares no vocabulary with a query that
+says what to build. Retrieval keys on the domain words of the change, so the
+plan path is entered by prior knowledge (the starter kit, `list_toolboxes`, a
+system prompt) and never by search.
+
+For the caller who already knows the mechanism exists, retrieval finds it at
+rank 1–2 — and precision falls to 11.1 %, because the plan collapses what is
+*needed* from five tools to one without collapsing what search *returns*. The
+metric's denominator is the union; a shape that needs one tool is scored badly
+by it however well it is served.
+
+So precision @8 is the wrong instrument for the plan path, and the plan's real
+win was already measured somewhere else: the schema tokens a caller has to hold
+(−48.4 % on the divider, −61.1 % on the decoupling bank, "Phase G" above).
+
+The obvious follow-up is deliberately **not** taken here: `apply_plan` could
+name the design actions its operation library covers — place, power, label,
+wire, connect, decouple — which is precisely the lever that recovered
+`get_schematic_component` in F.5. It is left open as F.5.7 because it cuts both
+ways. A description that ranks for "place resistor symbols" puts `apply_plan`
+in competition with `batch_place_components` on every direct task, and the
+suite's 62.0 % is what would pay for it. That trade has to be measured on all
+seven tasks before it ships, not argued.
+
 ---
 
 ### Model fit — grading a local model by compiling what it writes
@@ -1011,6 +1062,7 @@ python bench\runner.py  --server .\target\release\konnect.exe --repeat 3 --load-
 python bench\analyze.py bench\results\latest-tasks.json
 python bench\probe.py   --server .\target\release\konnect.exe --script bench\probes\divider.yaml
 python bench\plan_cost.py --server .\target\release\konnect.exe --repeat 3
+python bench\plan_retrieval.py --server .\target\release\konnect.exe
 
 # model fit — needs an OpenAI-compatible backend on loopback
 python bench\model_fit.py --server .\target\release\konnect.exe --selftest
