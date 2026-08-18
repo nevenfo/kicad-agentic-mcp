@@ -241,19 +241,25 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-Two ways forward, and D.6.5 is the better one if only one gets done:
+**D.6.5** — stop throwing the error type away at the boundary: `with_ipc`
+(transport / board mismatch / business rejection), `read_lib_table_checked` (an
+`io::Error` folded into a `String`), `resolve_footprint_path` and
+`resolve_symbol_lib_path` (missing file / unresolved URI / absent item), and the
+batch paths that join heterogeneous failures into one `errors` message. Give
+each an error type that survives the return, then catalogue the call sites
+downstream and lower `KAM_ERROR_CATALOG_DEBT_CEILING` accordingly.
 
-- **D.6.5** — stop throwing the error type away at the boundary
-  (`with_ipc`, `read_lib_table_checked`, `resolve_footprint_path`,
-  `resolve_symbol_lib_path`, the batch `errors` joins). This is what caps
-  D.6.1: the remaining 82 are not 82 independent judgements, they are a few
-  signatures plus everything downstream. Existing tests assert on those
-  functions' exact messages, so changing a signature means updating them —
-  check before assuming it is mechanical.
-- **D.6.1 zone 4** — `router/meta_tools.rs` (18 sites), then
-  `sch_components.rs` (13) and `integration.rs` (12). Same method as zones 1-3;
-  never reach for `HandlerError` (D75), leave a site in prose with its reason
-  instead.
+Do this before more D.6.1 zones: the remaining 82 sites are not 82 independent
+judgements, they are these few signatures plus everything downstream of them.
+Warning before starting: existing tests assert on those functions' exact
+messages, so a signature change is not mechanical — read them first. Validate
+with `.\gate.ps1`.
+
+After D.6.5, the remaining D.6.1 zones in order: `router/meta_tools.rs` (18 —
+carries the gateway, touched by D.5 and D.8, so give it its own diff),
+`sch_components.rs` (13), `integration.rs` (12), then the smaller files. Never
+reach for `HandlerError` (D75); a site whose cause cannot be told apart keeps
+its prose and gains a comment saying why.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
