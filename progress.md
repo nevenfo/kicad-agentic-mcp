@@ -8,27 +8,42 @@ blocked until 2026-08-20 by an account limit, not by code.
 
 ## Tâche actuelle
 
-F.5.4 — measure clause splitting against the relative-threshold-alone baseline
-with `examples/retrieval_probe.rs`. Nothing lands in production until a
-combination clears precision @8 ≥ 60 % with recall @8 ≥ 98 % on both perimeters
-and `bench/runner.py --load-mode search` confirms it server-side.
+F.5.6 — close the last ~5 precision points, then port the winning
+configuration into `capability_search`. Recall is solved: all seven tasks reach
+100 % under Idf + clause splitting + G2/G3/G4 at tau=0.65, per-clause budget 4.
+Precision there is 54.9 % against a target of 60 %. What caps it is dilution on
+the two widest tasks, where a one-word clause ("nets", "svg") spends three
+slots on near-ties — being measured now as axis H (per-clause cut: decrochage
+with a floor below 3, a global budget split across clauses, a harder threshold
+for single-term clauses).
 
 ## Dernière tâche validée
 
-F.5.3 — the reverse-prefix rule in `capability_search::score_tool`, the
-one-sided form of what D6 rejected (D63). Committed at 5d4bfa1 with the probe
-that measured it.
+F.5.5 — the vocabulary measurement (23d8d5e). Three of its four levers were
+guesses and only two survived contact with the probe (D64).
 
 Validation :
-- `cargo test -p konnect-core --lib router::capability_search`: 12 passed,
-  including the pinned D6 negative control
-- `cargo fmt --all -- --check` and `cargo clippy -p konnect-core --all-targets
-  -- -D warnings` clean, examples included
-- probe: hist6 recall 100 % at every floor in {3,4,5}; all7 recall 94.3 % →
-  97.1 % at floor 3; hist6 precision 22.5 % → 22.2 %
+- probe `_retrieval-probe-f5-vocab.log`: all7 recall 94.3 % → 100 %, precision
+  20.8 % → 54.9 % (Idf, clauses, G2+G3+G4, tau=0.65, pcl=4)
+- D6 negative control holds in all 16 lever/variant combinations
+- the clause-unique invariant (F on == F off on a single-clause query) is
+  asserted at runtime, 184 comparisons per lever set
+- `cargo fmt --all -- --check`, `cargo clippy -p konnect-core --all-targets
+  -- -D warnings` clean
 
 ## Décisions actives
 
+- D65 — a search configuration is only allowed into production once
+  `bench/runner.py --load-mode search` reproduces it server-side. The offline
+  probe asserts on startup that it matches production `search()`, and its all7
+  numbers have matched the runner's to the decimal twice; that is what makes it
+  usable for exploration, not a substitute for the run of record.
+- D64 — a retrieval lever ships only if the probe shows it moving a number.
+  Measured and **dropped**: the one-character noise filter (the `s` of
+  "component's" pays +10.37 and moves no ratio anywhere). Measured and kept on
+  narrow grounds: component <-> symbol costs nothing and buys nothing except at
+  tau=0.75. Synonyms are checked against corpus document frequency before being
+  added — `location` has df 0 in this registry and would be dead weight.
 - D63 — the fix for a plural query against a singular corpus term is
   *asymmetric*. Stemming (D6) cut the "s" off both sides, which can turn a
   match into a non-match and did. Reverse prefix only ever adds a fallback

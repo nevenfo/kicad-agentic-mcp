@@ -296,7 +296,7 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
       and its negative control is now a pinned test. Measured: recall on the
       seventh task 94.3 % → 97.1 %, hist6 recall unchanged at 100 %, precision
       22.5 % → 22.2 %. It buys recall, not precision; F.5.1 stays open.
-- [ ] F.5.4 The precision ceiling is *how many* results come back, not their
+- [x] F.5.4 The precision ceiling is *how many* results come back, not their
       order: every intent returns a full `limit`, so the union is ~33.8 tools
       per task against ~7.5 needed. A relative score threshold cuts the union
       to 12 and lifts precision to 65 %, but drops recall to 94 %, and every
@@ -306,6 +306,22 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
       `export_netlist`). 8 of the 34 golden intents are composite. Measure
       clause splitting (search each clause of an intent separately, threshold
       per clause, merge by ratio-to-clause-best) against the threshold alone.
+      **Measured**: precision 22.5 % → 58.7 % at unchanged 100 % recall on the
+      historical perimeter, union 33.8 → 13.5. `apply_template` and
+      `generate_netlist` both recovered. It does nothing for the two tools left
+      in `07_sch_inspection`, whose intents are single-clause.
+- [x] F.5.5 The two stragglers are a vocabulary problem, not a ranking one, and
+      the fix is two levers that only work together: `where` → position /
+      coordinates / locations recovers `get_schematic_pin_locations`, and a
+      description that names the concept in the domain's own words —
+      `get_schematic_component` says neither "component" nor "reference"
+      anywhere but in its own name — recovers `get_schematic_component`. Two
+      other levers were measured and are not shipping (D64). All seven tasks
+      now reach 100 % recall, at 54.9 % precision.
+- [ ] F.5.6 Close the remaining ~5 precision points and port the winning
+      configuration into `capability_search`. The cap is no longer
+      `07_sch_inspection`: it is dilution on the two widest tasks, where a
+      one-word clause spends three slots on near-ties.
 
 ### Validation
 Precision @8 ≥ 60 % with recall @8 ≥ 98 %, measured by the existing retrieval
