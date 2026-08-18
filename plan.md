@@ -461,16 +461,20 @@ first, `unknown_handle` for an id never issued. A failed capture emits nothing.
 Gate green including the benchmark; the +18 tokens/task it costs are recorded in
 `docs/benchmark.md` and in the V1 criterion above.
 
-## D.6 — Error-catalog completeness, retries, recovery policy — PARTIAL (D.6.1 open)
+## D.6 — Error-catalog completeness, retries, recovery policy — DONE
 
 ### Dépendances
 D.3.
 
 ### Tâches
-- [ ] D.6.1 Cover the remaining error paths with catalogued codes, by zone,
+- [x] D.6.1 Cover the remaining error paths with catalogued codes, by zone,
       lowering D.6.4's ceiling each time. A big-bang conversion of 150-odd
-      hand-written messages would be unreviewable. Ranked by D.6.4 rather than
-      estimated; **55 sites left**.
+      hand-written messages would be unreviewable, so it went by zone, ranked
+      by D.6.4 rather than estimated: **152 → 2**. The 2 left are not a to-do
+      list — one condition (`TaskError::ListFull`) reached from two call sites,
+      where no catalogued kind is true and inventing one would be a false
+      classification. The ceiling comment says so, so a later reader does not
+      read the floor as unfinished work.
       - [x] `sch_hierarchy.rs` — 28/28, ceiling 152 → 124. No new kind was
             needed: `InvalidArgument` ×14, `NotFound` ×12, `FileNotFound` ×5.
             That is the useful finding for the rest of D.6.1 — the work is
@@ -516,8 +520,35 @@ D.3.
             argument — the input is well-formed and the task's own state
             refuses it — so `task_error_kind` returns `Option` and that `None`
             is the statement (D76)
-      - [ ] `sch_components.rs` — 13, `integration.rs` — 12, then the smaller
-            files
+      - [x] `sch_components.rs` — 13/13, ceiling 55 → 41. Five of them were
+            one sentence in two spellings, so the classification moved into one
+            helper and the prose stayed at each site. The zone also paid a
+            *catalogue* debt: **D77** adds `MalformedDocument { path, detail }`
+            — the gap between four kinds that each nearly fit (`Io`: the read
+            succeeded; `FileNotFound`: the file is there; `InvalidArgument`:
+            the call is well-formed; `NotFound`: the addressed item is present
+            and the document around it is not usable). Added once six sites
+            across four files had converged on the shape, which is the bar
+      - [x] `integration.rs` — 12/12, ceiling 41 → 29. Seven of them had no
+            true kind either: **D78** adds `UpstreamFailed { service, code,
+            detail }`. Nothing in a failed JLCPCB download is the caller's
+            fault, the filesystem's or KiCAD's, and `code` separates the two
+            failures prose cannot — `unreachable` / `server_error` are
+            `Network` (waiting is the recovery), `client_error` /
+            `unexpected_response` are `None`. 429 files with the 5xx: it is the
+            one 4xx that says "later"
+      - [x] the smaller files — `sch_batch.rs`, `pcb_board.rs`,
+            `pcb_routing.rs`, `sch_wiring.rs`, `project.rs`, `templates.rs`,
+            `sch_analysis.rs`, `config.rs`, `verification.rs`,
+            `tools/mod.rs` — 27 sites, ceiling 29 → 2. Three things came out of
+            it beyond the count: D77 reached the duplicate-label site zone 3
+            had left in prose for want of a kind; the two batch paths D.6.5
+            named and did not reach are now typed by *counting* their failure
+            causes rather than by re-reading their own joined prose, and a
+            batch that deleted nothing is classified by the worst failure it
+            collected; and `NotFound` gained `candidates` (serialized only when
+            non-empty) so `lib_symbol_not_found_error` could stop paying
+            `HandlerError` for one structured field
       - [x] D.6.5 Stop throwing the type away at the boundary — done in two
             commits, ceiling 82 → 77 → 71.
             - The IPC half: four toolsets carried a byte-identical `with_ipc`

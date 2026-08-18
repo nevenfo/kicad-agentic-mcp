@@ -2,39 +2,57 @@
 
 ## Phase actuelle
 
-D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.8 are
-DONE and D.6 is PARTIAL (only D.6.1 left). D.4 and D.7 remain untouched; D.9 is
-gated by the same GUI-session question as J.3. K.1.1 is the last dependency of
-phase M (H.6 and H.7 are DONE) and stays blocked until 2026-08-20. Phase F is
-DONE except F.5.7, which needs a decision before it is worth measuring.
+D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
+D.8 are DONE. D.4 and D.7 remain untouched; D.9 is gated by the same
+GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
+H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
+which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.6.1 zone 5 — `crates/konnect-core/src/tools/sch_components.rs` (13 sites).
-Not started.
+D.4.1 — UUID-addressed item handles across the schematic tools. Not started.
 
 ## Dernière tâche validée
 
-D.6.1 zone 4 — `router/meta_tools.rs`. 16 of 18 sites catalogued, ceiling
-71 -> 55, no new kind. Fifteen are `InvalidArgument` behind one local helper;
-two of those were D.6.5's signature problem in miniature (`agent_u32` and
-`agent_retrieval` answered `Result<_, String>` and now answer
-`Result<_, CallToolResult>`). The 2 left are one condition reached twice —
-`TaskError::ListFull`, which no catalogued kind is true of, so
-`task_error_kind` returns `Option` and that `None` is the statement (D76).
+**D.6 is DONE.** D.6.1 took the plain-text error debt from 152 sites to 2, in
+five zones after D.6.5 removed what was capping it.
 
-D.6.5 before it: the IPC and library boundaries stop answering in `String`
-(ceiling 82 -> 77 -> 71). One behavioural change there, deliberately:
-`resolve_symbol_lib_path` returned `None` both for a nickname nobody
-registered and for one whose URI does not expand.
+The two left are one condition reached twice (`kam_state::TaskError::ListFull`)
+and are a floor, not a to-do: no catalogued kind is true of them, and the
+ceiling comment in `tests/error_catalog_debt.rs` says so, so a later reader
+does not lower it by classifying falsely.
+
+Two kinds were added in the process, each only after several sites had
+converged on the same shape: `MalformedDocument` (D77) and `UpstreamFailed`
+(D78). `NotFound` also gained `candidates`, which let
+`lib_symbol_not_found_error` stop using the catch-all to carry a suggestion
+list.
 
 Validation :
-- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 195 tokens,
+- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 200 tokens,
   0 safety violations
-- the debt test enforces 55 in both directions
+- the debt test enforces 2 in both directions
 
 ## Décisions actives
 
+- D78 — a third-party service is its own failure domain. `UpstreamFailed
+  { service, code, detail }`: nothing in a failed JLCPCB download is the
+  caller's fault, the filesystem's or KiCAD's, and `code` separates what prose
+  cannot — `unreachable` / `server_error` are `Network` (waiting is the
+  recovery), `client_error` / `unexpected_response` are `None`. 429 files with
+  the 5xx: it is the one 4xx that says "later", and filing it with 404 would
+  tell a client to give up on a rate limit. `service` is the host, never the
+  URL — a field a client matches on must not change per chunk.
+- D77 — `MalformedDocument { path, detail }` is the gap between four kinds that
+  each nearly fit: `Io` (the read succeeded), `FileNotFound` (the file is
+  there), `InvalidArgument` (the call is well-formed — the caller named a
+  document that exists) and `NotFound` (the addressed item is present; the
+  document around it cannot be used). `TransientClass::None`, not `State`:
+  `State` promises that reconciling and retrying is the recovery, and
+  re-reading a board whose `(layers)` section is missing returns the same
+  board. Added only once six sites across four files had converged on the
+  shape — which, with D.6.1 zone 3 declining a kind for one site, is the bar a
+  new kind has to clear.
 - D76 — a typed boundary error carries the *reason*, and one place turns it
   into a `CallToolResult`. Two shapes proved this out: `IpcFailure` (the caller
   can only ask "may I edit the file behind KiCAD") and `FootprintPathError`
@@ -237,6 +255,10 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 - `crates/konnect-core/src/tools/ipc_boundary.rs` — the only crossing point
   between a handler and KiCAD's IPC API: `with_ipc` (typed) and
   `ipc_error_result` (catalogued). No handler re-derives either
+- `crates/konnect-core/tests/error_catalog_debt.rs` — the debt scanner and
+  its ceiling (2). Both directions fail: it counts `CallToolResult::error(`
+  call sites *and* literal `ToolErrorKind::HandlerError`, so the metric cannot
+  be satisfied by moving prose into the catch-all
 - `crates/konnect-core/src/mcp/error.rs` — `TransientClass`, `retry_after_ms()`,
   `ToolErrorKind::transient_class()`
 - `crates/konnect-core/tests/concurrent_gui_edit.rs`, `tests/lock_recovery.rs` —
@@ -254,16 +276,15 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.6.1 zone 5** — `crates/konnect-core/src/tools/sch_components.rs`, 13
-sites. Classify each with an existing `ToolErrorKind` (four zones done, none
-needed a new one), never `HandlerError` (D75); a site whose cause cannot be
-told apart keeps its prose and gains a comment saying why, and a helper that
-returns a `String` gets typed rather than worked around (D.6.5). Then lower
-`KAM_ERROR_CATALOG_DEBT_CEILING` (55) to the total the debt test prints.
-Validate with `.\gate.ps1`.
+**D.4.1** — UUID-addressed item handles across the schematic tools, keeping the
+existing path+coordinate forms accepted (D.4.2, INV8). The extraction side
+already exists: `konnect-core::graph` keys on KiCad's own UUIDs. Read
+`plan.md` D.4 first — its validation is that a call naming a UUID still
+resolves after the item moved, which is a test to write, not only a feature.
 
-After it, the remaining zones in order: `integration.rs` (12), then
-`sch_wiring.rs`, `sch_batch.rs` and `pcb_board.rs` (5 each), then the rest.
+Worth knowing before starting, from D.6.1: `NotFound` now carries an optional
+`candidates` list, and an address that resolves to nothing is exactly its
+shape.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
