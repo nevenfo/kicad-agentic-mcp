@@ -10,30 +10,22 @@ DONE except F.5.7, which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.6.1 — convert the remaining plain-text error sites to catalogued codes, by
-zone. 152 sites, ranked by `tests/error_catalog_debt.rs`: `sch_hierarchy.rs` 28,
-`pcb_components.rs` 25, `meta_tools.rs` 18, `library.rs` 16, `sch_wiring.rs` 15.
-Not started.
+D.6.1 zone 2 — `crates/konnect-core/src/tools/pcb_components.rs`, 25 sites. Not
+started.
 
 ## Dernière tâche validée
 
-D.6.2 / D.6.3 / D.6.4 — retry policy, failure modes, and the debt instrument.
-`mcp::retry::decide` is the single retry rule and `State`/`None` yield neither a
-retry nor a wait. `FailureMode` is on verdicts, with `COULD_NOT_RUN` unable to
-be `design` because the constructor for that path has no such variant to hand
-(INV1 in the type system). `MANUAL_STEP_REQUIRED` is a catalogued
-`ToolErrorKind::ManualStepRequired { tool, step }` whose `step` comes from the
-capability's own `Limitation::GuiOnlyNoApi` reason.
+D.6.1 zone 1 — `sch_hierarchy.rs`, 28/28 sites catalogued, debt ceiling
+152 -> 124. No new `ToolErrorKind` was needed (`InvalidArgument` ×14,
+`NotFound` ×12, `FileNotFound` ×5), which is the useful finding for the rest of
+D.6.1: it is classification work, not catalogue design. Message text unchanged
+throughout — only structured fields were added.
 
 Validation :
-- `gate.ps1 -Bench` PASS end to end
-- gateway tokens 2 204 -> 2 207, inside run-to-run noise (`toolsets` moved -9
-  with nothing of its own changed)
-- failure injection: missing validator -> `environment`, unsupported document ->
-  `configuration`, real findings -> `design`, `PASS` -> no mode
-- the debt instrument proved itself by failing downward: cataloguing
-  `MANUAL_STEP_REQUIRED` took the ceiling 153 -> 152
-- CI green on `agentic/main` for D.8 and D.5; D.6 pending at the time of writing
+- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 206 tokens,
+  0 safety violations
+- the debt test enforces the new ceiling in both directions
+- CI green on `agentic/main` for D.8, D.5 and D.6
 
 ## Décisions actives
 
@@ -235,15 +227,16 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-D.6.1, one zone at a time, starting with `crates/konnect-core/src/tools/
-sch_hierarchy.rs` (28 sites, the worst file). For each: replace
-`CallToolResult::error(text)` with `error_kind(ToolErrorKind::…, text)`, reusing
-an existing kind wherever one fits and adding one only when no existing kind
-carries the meaning; then lower `KAM_ERROR_CATALOG_DEBT_CEILING` in
-`crates/konnect-core/tests/error_catalog_debt.rs` by exactly what the zone
-removed, and run `.\gate.ps1`. Do not convert all 152 in one pass — 152
-hand-written messages re-classified at once is unreviewable, which is why D.6.1
-is scoped by zone.
+D.6.1 zone 2: `crates/konnect-core/src/tools/pcb_components.rs` (25 sites).
+Same method as zone 1 — replace `CallToolResult::error(text)` with
+`error_kind(ToolErrorKind::…, text)`, reuse an existing kind wherever it carries
+the meaning, never reword the message, leave a site alone and say so rather than
+guess a `kind` a client would believe. Then lower
+`KAM_ERROR_CATALOG_DEBT_CEILING` by exactly what the zone removed and run
+`.\gate.ps1`. Watch for tests asserting on `content[0].text`: `error_kind`
+turns that into a JSON body, and the assertion must move to
+`body["error"]["kind"]` rather than be dropped. Never name a real MANIFEST tool
+in a test fixture (D74).
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

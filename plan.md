@@ -467,12 +467,21 @@ Gate green including the benchmark; the +18 tokens/task it costs are recorded in
 D.3.
 
 ### Tâches
-- [ ] D.6.1 Cover the remaining error paths with catalogued codes. **152 sites**
-      still return plain text, now counted and ranked by D.6.4 rather than
-      estimated: `sch_hierarchy.rs` 28, `pcb_components.rs` 25, `meta_tools.rs`
-      18, `library.rs` 16, `sch_wiring.rs` 15. Convert by zone, lowering the
-      ceiling each time; a big-bang conversion of 152 hand-written messages
-      would be unreviewable
+- [ ] D.6.1 Cover the remaining error paths with catalogued codes, by zone,
+      lowering D.6.4's ceiling each time. A big-bang conversion of 150-odd
+      hand-written messages would be unreviewable. Ranked by D.6.4 rather than
+      estimated; **124 sites left**.
+      - [x] `sch_hierarchy.rs` — 28/28, ceiling 152 → 124. No new kind was
+            needed: `InvalidArgument` ×14, `NotFound` ×12, `FileNotFound` ×5.
+            That is the useful finding for the rest of D.6.1 — the work is
+            classification, not catalogue design. Message text is never
+            reworded, only classified: rewriting prose in bulk would drown the
+            review and lose detail written by someone who knew the case
+      - [ ] `pcb_components.rs` — 25
+      - [ ] `meta_tools.rs` — 18
+      - [ ] `library.rs` — 16
+      - [ ] `sch_wiring.rs` — 15
+      - [ ] the remaining files, smaller
 - [x] D.6.2 Retry policy driven by `TransientClass` (`state` means reconcile
       first — a blind retry is useless). `mcp::retry::decide` is the single
       rule; `State` and `None` return no retry *and no wait*, so a call site

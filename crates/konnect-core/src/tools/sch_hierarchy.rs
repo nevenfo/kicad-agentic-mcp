@@ -248,11 +248,17 @@ fn validate_pin_type(pin_type: &str) -> Result<(), CallToolResult> {
     if ALLOWED_PIN_TYPES.contains(&pin_type) {
         Ok(())
     } else {
-        Err(CallToolResult::error(format!(
-            "Invalid pin_type '{}' — must be one of: {}",
-            pin_type,
-            ALLOWED_PIN_TYPES.join(", ")
-        )))
+        Err(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "pin_type".to_string(),
+                reason: format!("must be one of: {}", ALLOWED_PIN_TYPES.join(", ")),
+            },
+            format!(
+                "Invalid pin_type '{}' — must be one of: {}",
+                pin_type,
+                ALLOWED_PIN_TYPES.join(", ")
+            ),
+        ))
     }
 }
 
@@ -412,17 +418,29 @@ async fn handle_add_hierarchical_sheet(
             .extension()
             .is_some_and(|extension| extension == "kicad_sch");
     if !valid_relative {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "sheet_file".to_string(),
+                reason: "must be a relative .kicad_sch path without parent traversal".to_string(),
+            },
             "sheet_file must be a relative .kicad_sch path without parent traversal",
         ));
     }
     if !child_path.parent().is_some_and(Path::is_dir) {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "sheet_file".to_string(),
+                reason: "the child sheet directory does not exist".to_string(),
+            },
             "The child sheet directory does not exist",
         ));
     }
     if child_path == parent_path {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "sheet_file".to_string(),
+                reason: "a hierarchical sheet cannot reference its parent file".to_string(),
+            },
             "A hierarchical sheet cannot reference its parent file",
         ));
     }
@@ -431,16 +449,26 @@ async fn handle_add_hierarchical_sheet(
     let parent = cse::Schematic::load(&parent_path)?;
 
     if parent.sheets.by_name(&sheet_name).is_some() {
-        return Ok(CallToolResult::error(format!(
-            "Sheet named '{}' already exists in this schematic — use edit_sheet to modify it \
-             or pick a different name",
-            sheet_name
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "sheet_name".to_string(),
+                reason: "already exists in this schematic".to_string(),
+            },
+            format!(
+                "Sheet named '{}' already exists in this schematic — use edit_sheet to modify it \
+                 or pick a different name",
+                sheet_name
+            ),
+        ));
     }
 
     let child_existed = child_path.is_file();
     if child_path.exists() && !child_existed {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "sheet_file".to_string(),
+                reason: "the child schematic path exists but is not a regular file".to_string(),
+            },
             "The child schematic path exists but is not a regular file",
         ));
     }
@@ -535,10 +563,14 @@ async fn handle_edit_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
     let sheet = match sch.sheets.by_name_mut(&sheet_name) {
         Some(s) => s,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Sheet '{}' not found",
-                sheet_name
-            )))
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "sheet".to_string(),
+                    key: sheet_name.clone(),
+                },
+                format!("Sheet '{}' not found", sheet_name),
+            ))
         }
     };
     let sheet_uuid = sheet.uuid.clone();
@@ -562,7 +594,11 @@ async fn handle_edit_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
     }
 
     if changed.is_empty() {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "new_name/new_file/x+y/width+height".to_string(),
+                reason: "no fields to change".to_string(),
+            },
             "No fields to change — provide at least one of: new_name, new_file, x+y, width+height",
         ));
     }
@@ -602,10 +638,14 @@ async fn handle_move_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
                 &json!({ "moved": sheet_name, "x": x, "y": y }),
             ))
         }
-        None => Ok(CallToolResult::error(format!(
-            "Sheet '{}' not found",
-            sheet_name
-        ))),
+        None => Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "sheet".to_string(),
+                key: sheet_name.clone(),
+            },
+            format!("Sheet '{}' not found", sheet_name),
+        )),
     }
 }
 
@@ -634,10 +674,14 @@ async fn handle_delete_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result
                          numbers may now have a gap — call renumber_sheet_pages if needed."
             })))
         }
-        None => Ok(CallToolResult::error(format!(
-            "Sheet '{}' not found",
-            sheet_name
-        ))),
+        None => Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "sheet".to_string(),
+                key: sheet_name.clone(),
+            },
+            format!("Sheet '{}' not found", sheet_name),
+        )),
     }
 }
 
@@ -666,10 +710,13 @@ async fn handle_duplicate_sheet(
     let parent = cse::Schematic::load(&sch_path)?;
 
     if parent.sheets.by_name(&new_name).is_some() {
-        return Ok(CallToolResult::error(format!(
-            "Sheet named '{}' already exists",
-            new_name
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "new_sheet_name".to_string(),
+                reason: "already exists".to_string(),
+            },
+            format!("Sheet named '{}' already exists", new_name),
+        ));
     }
 
     let (src_x, src_y, src_w, src_h, src_file) = match parent.sheets.by_name(&source_name) {
@@ -678,10 +725,14 @@ async fn handle_duplicate_sheet(
             (x, y, s.width, s.height, s.file().to_string())
         }
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Sheet '{}' not found",
-                source_name
-            )))
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "sheet".to_string(),
+                    key: source_name.clone(),
+                },
+                format!("Sheet '{}' not found", source_name),
+            ))
         }
     };
 
@@ -698,23 +749,39 @@ async fn handle_duplicate_sheet(
             .extension()
             .is_some_and(|extension| extension == "kicad_sch");
     if !valid_relative || !new_child.parent().is_some_and(Path::is_dir) {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "new_file".to_string(),
+                reason: "must be a relative .kicad_sch path in an existing project directory"
+                    .to_string(),
+            },
             "new_file must be a relative .kicad_sch path in an existing project directory",
         ));
     }
 
     if new_child.exists() {
-        return Ok(CallToolResult::error(format!(
-            "'{}' already exists — pick a different file name, or use add_hierarchical_sheet \
-             to link the existing file instead of duplicating",
-            new_file
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "new_file".to_string(),
+                reason: "already exists".to_string(),
+            },
+            format!(
+                "'{}' already exists — pick a different file name, or use add_hierarchical_sheet \
+                 to link the existing file instead of duplicating",
+                new_file
+            ),
+        ));
     }
     if !source_child.exists() {
-        return Ok(CallToolResult::error(format!(
-            "Source sheet's file '{}' was not found on disk — cannot duplicate",
-            src_file
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::FileNotFound {
+                path: source_child.display().to_string(),
+            },
+            format!(
+                "Source sheet's file '{}' was not found on disk — cannot duplicate",
+                src_file
+            ),
+        ));
     }
 
     const DUPLICATE_OFFSET_MM: f64 = 20.0;
@@ -794,10 +861,12 @@ async fn handle_get_sheet_hierarchy(
         .unwrap_or_else(|| project_name_for(&root_path));
 
     if !root_path.exists() {
-        return Ok(CallToolResult::error(format!(
-            "Schematic '{}' not found",
-            root_path.display()
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::FileNotFound {
+                path: root_path.display().to_string(),
+            },
+            format!("Schematic '{}' not found", root_path.display()),
+        ));
     }
 
     let mut visited = HashSet::new();
@@ -875,10 +944,12 @@ async fn handle_renumber_sheet_pages(
         .unwrap_or_else(|| project_name_for(&root_path));
 
     if !root_path.exists() {
-        return Ok(CallToolResult::error(format!(
-            "Schematic '{}' not found",
-            root_path.display()
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::FileNotFound {
+                path: root_path.display().to_string(),
+            },
+            format!("Schematic '{}' not found", root_path.display()),
+        ));
     }
 
     // Page paths are hierarchical instance paths rooted at the root sheet's
@@ -1004,10 +1075,13 @@ async fn handle_import_sheet_pins(
     };
     let side = opt_str(args, "side").unwrap_or("right").to_string();
     if side != "right" && side != "left" {
-        return Ok(CallToolResult::error(format!(
-            "Invalid side '{}' — must be 'right' or 'left'",
-            side
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "side".to_string(),
+                reason: "must be 'right' or 'left'".to_string(),
+            },
+            format!("Invalid side '{}' — must be 'right' or 'left'", side),
+        ));
     }
 
     let before = read_consistent(&sch_path)?;
@@ -1021,18 +1095,27 @@ async fn handle_import_sheet_pins(
                 (dir.join(s.file()), x, y, s.width, s.pins.len())
             }
             None => {
-                return Ok(CallToolResult::error(format!(
-                    "Sheet '{}' not found",
-                    sheet_name
-                )))
+                return Ok(CallToolResult::error_kind(
+                    crate::mcp::error::ToolErrorKind::NotFound {
+                        document: sch_path.display().to_string(),
+                        item_kind: "sheet".to_string(),
+                        key: sheet_name.clone(),
+                    },
+                    format!("Sheet '{}' not found", sheet_name),
+                ))
             }
         };
 
     if !child_path.exists() {
-        return Ok(CallToolResult::error(format!(
-            "Child file '{}' not found on disk — cannot read its hierarchical labels",
-            child_path.display()
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::FileNotFound {
+                path: child_path.display().to_string(),
+            },
+            format!(
+                "Child file '{}' not found on disk — cannot read its hierarchical labels",
+                child_path.display()
+            ),
+        ));
     }
     let child = cse::Schematic::load(&child_path)?;
     let label_names: Vec<(String, String)> = child
@@ -1132,19 +1215,29 @@ async fn handle_add_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resul
     let sheet = match sch.sheets.by_name_mut(&sheet_name) {
         Some(s) => s,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Sheet '{}' not found",
-                sheet_name
-            )))
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "sheet".to_string(),
+                    key: sheet_name.clone(),
+                },
+                format!("Sheet '{}' not found", sheet_name),
+            ))
         }
     };
     let sheet_uuid = sheet.uuid.clone();
 
     if sheet.pin_by_name(&pin_name).is_some() {
-        return Ok(CallToolResult::error(format!(
-            "Sheet '{}' already has a pin named '{}'",
-            sheet_name, pin_name
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "pin_name".to_string(),
+                reason: "sheet already has a pin with this name".to_string(),
+            },
+            format!(
+                "Sheet '{}' already has a pin named '{}'",
+                sheet_name, pin_name
+            ),
+        ));
     }
 
     sheet.add_pin(cse::SheetPin::new(
@@ -1190,20 +1283,28 @@ async fn handle_edit_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resu
     let sheet = match sch.sheets.by_name_mut(&sheet_name) {
         Some(s) => s,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Sheet '{}' not found",
-                sheet_name
-            )))
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "sheet".to_string(),
+                    key: sheet_name.clone(),
+                },
+                format!("Sheet '{}' not found", sheet_name),
+            ))
         }
     };
     let sheet_uuid = sheet.uuid.clone();
     let pin = match sheet.pin_by_name_mut(&pin_name) {
         Some(p) => p,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Pin '{}' not found on sheet '{}'",
-                pin_name, sheet_name
-            )))
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "sheet_pin".to_string(),
+                    key: pin_name.clone(),
+                },
+                format!("Pin '{}' not found on sheet '{}'", pin_name, sheet_name),
+            ))
         }
     };
 
@@ -1223,7 +1324,11 @@ async fn handle_edit_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resu
     }
 
     if changed.is_empty() {
-        return Ok(CallToolResult::error(
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "new_name/pin_type/x+y".to_string(),
+                reason: "no fields to change".to_string(),
+            },
             "No fields to change — provide at least one of: new_name, pin_type, x+y",
         ));
     }
@@ -1260,19 +1365,27 @@ async fn handle_delete_sheet_pin(
     let sheet = match sch.sheets.by_name_mut(&sheet_name) {
         Some(s) => s,
         None => {
-            return Ok(CallToolResult::error(format!(
-                "Sheet '{}' not found",
-                sheet_name
-            )))
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "sheet".to_string(),
+                    key: sheet_name.clone(),
+                },
+                format!("Sheet '{}' not found", sheet_name),
+            ))
         }
     };
     let sheet_uuid = sheet.uuid.clone();
 
     if !sheet.remove_pin(&pin_name) {
-        return Ok(CallToolResult::error(format!(
-            "Pin '{}' not found on sheet '{}'",
-            pin_name, sheet_name
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "sheet_pin".to_string(),
+                key: pin_name.clone(),
+            },
+            format!("Pin '{}' not found on sheet '{}'", pin_name, sheet_name),
+        ));
     }
     commit_edited_sheet_item(&sch_path, &before, &sch, &sheet_uuid, "Delete sheet pin")?;
 
@@ -1289,10 +1402,12 @@ async fn handle_validate_sheet_pins(
     let root_path = get_path(args, "schematic")?;
 
     if !root_path.exists() {
-        return Ok(CallToolResult::error(format!(
-            "Schematic '{}' not found",
-            root_path.display()
-        )));
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::FileNotFound {
+                path: root_path.display().to_string(),
+            },
+            format!("Schematic '{}' not found", root_path.display()),
+        ));
     }
 
     let mut issues = Vec::new();
