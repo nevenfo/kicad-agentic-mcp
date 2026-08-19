@@ -453,14 +453,14 @@ side exists (`konnect-core::graph`).
         take one — every tool there creates or reads. The half that makes the
         address usable ships with it: `list_schematic_labels` publishes uuids,
         `add_no_connect` reports the one it created
-  - [ ] D.4.1.8 No reading tool lists junctions or no-connects, so a
-        no-connect's uuid is only ever published by the call that *created* it
-        — on a document the caller did not just write, `delete_no_connect`'s
-        uuid form has no way to be reached. Either a `list_no_connects` /
-        `list_junctions`, or an existing reader extended. Decide it before the
-        plural forms (`batch_delete_no_connect`) take uuids, or they inherit
-        the same dead end. `extract_junctions` already carries the uuid
-        (D.4.1.4), so the data side is done
+  - [x] D.4.1.8 No reading tool listed junctions or no-connects, so a
+        no-connect's uuid was only ever published by the call that *created*
+        it. Resolved by extending a reader rather than adding a tool:
+        `get_schematic_layout` takes `include_junctions` and
+        `include_no_connects`, both defaulting to false so the summary costs
+        what it always did, and reads both through `cse`, which already models
+        them with their identity. Its labels now carry uuids too — wires
+        already did, and the asymmetry was a trap
   - [x] D.4.1.5 D.4's own validation — the move test — and the docs.
         `crates/konnect-core/tests/uuid_addressing.rs` runs the loop a caller
         actually runs, against `bench/fixtures/divider.kicad_sch` rather than a

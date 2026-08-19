@@ -4,7 +4,8 @@
 
 D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
 D.8 are DONE. D.4 is in progress: D.4.2 and D.4.1.1-D.4.1.5 are done,
-and D.4's stated validation is met; what is left (D.4.1.6-D.4.1.8) was found
+and D.4's stated validation is met. D.4.1.8 closed the gap it opened;
+D.4.1.6 (plural forms) and D.4.1.7 (multi-unit) are what remain, both found
 along the way. D.7 remains
 untouched; D.9 is gated by the same GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
 H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
@@ -12,33 +13,28 @@ which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.4.1.8 — nothing lists junctions or no-connects, so a no-connect's uuid is
-only reachable right after the call that created it. Not started.
+D.4.1.6 — the plural address forms (`references`, `uuids`, `positions`,
+`labels`). Not started, and it needs a shape decision before code.
 
 ## Dernière tâche validée
 
-**D.4.1.5 — D.4's validation, and the model written down.** D.4's own criterion
-was "targeted tests plus one probe on a real project": the targeted tests came
-with each toolset, and `crates/konnect-core/tests/uuid_addressing.rs` is the
-probe. It runs against `bench/fixtures/divider.kicad_sch` — the ERC-clean
-divider the bench builds on, copied first — and runs the loop a caller runs:
-list, edit through the published uuid, resolve it again. It covers the rename,
-which is where a designator and a uuid part company, and pins that an edit
-rewrites no identity but its own.
+**D.4.1.8 — the addresses that had nowhere to be read from.** A junction dot
+and a no-connect flag have no name, no designator and no net: their uuid is
+their only identity, and no reading tool published one, so
+`delete_no_connect`'s uuid form was reachable only right after
+`add_no_connect` returned it.
 
-`list_schematic_components` had to start publishing uuids for that loop to fit
-in one call (D82); it was the last reader missing them.
-
-D.4.2 is checked with it: the historical form is evaluated first and reads
-nothing extra, and every migrated tool has a test running the same operation
-both ways.
-
-The address model is now in DEV.md — which tools take a uuid, where one comes
-from, what it means, and both known gaps (D.4.1.7, D.4.1.8).
+Resolved by extending a reader rather than adding a MANIFEST tool:
+`get_schematic_layout` takes `include_junctions` and `include_no_connects`,
+both defaulting to false so the summary costs exactly what it did, and reads
+both through `cse`, which already models them with their identity. Its labels
+carry uuids now too — its wires already did, and the asymmetry was a trap.
 
 Validation :
-- `cargo test -p konnect-core` 479 lib + 4 probe + every integration suite
-  PASS; clippy `--workspace -D warnings` and `fmt --check` clean
+- `cargo test -p konnect-core` 479 lib + 5 probe + every integration suite
+  PASS; `fmt --check` and clippy `-D warnings` clean
+- the loop is a test: `a_no_connect_read_back_from_a_layout_can_be_deleted_by_its_uuid`,
+  which also pins that the default summary mentions neither
 
 ## Décisions actives
 
@@ -316,13 +312,16 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.4.1.8** — make a junction's and a no-connect's uuid obtainable on a
-document the caller did not just write. Prefer extending an existing reader to
-adding a MANIFEST tool: `get_schematic_layout` already returns a spatial
-summary with wires and labels behind flags, and the same shape fits here at no
-default token cost. `extract_junctions` already carries the uuid (D.4.1.4), so
-this is a reader change, not a data one. Decide it before D.4.1.6 gives the
-plural forms uuids, or `batch_delete_no_connect` inherits the same dead end.
+**D.4.1.6** — the plural address forms, and it needs a shape decided before any
+code: `batch_get_schematic_pin_locations` / `group_components` take
+`references`, `batch_delete_no_connect` takes `positions`, `batch_rotate_labels`
+takes `labels` entries. Either a parallel `uuids` array, or entries the resolver
+reads either way — one of the two, applied to all of them, not per tool. Weigh
+it against what a caller actually holds after a listing: the readers now publish
+uuids item by item, so a caller assembling a batch has uuids, not names. Then
+D.4.1.7 (multi-unit symbols) is the last one, and it is a `cse` question:
+`SymbolCollection` would need by-uuid lookups the seven handlers could use
+instead of redescending by designator.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

@@ -246,13 +246,17 @@ pub fn tools() -> Vec<ToolDef> {
         tool!(
             "get_schematic_layout",
             "Return a compact spatial summary of the schematic: component positions, \
-             bounding box, and optionally wire segments and label locations.",
+             bounding box, and optionally wire segments, label locations, junction \
+             dots and no-connect flags. Wires, labels, junctions and no-connects come \
+             with the uuid that addresses them.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string", "description": "Path to .kicad_sch file" },
                     "include_wires": { "type": "boolean", "description": "Include wire data", "default": true },
-                    "include_labels": { "type": "boolean", "description": "Include label data", "default": true }
+                    "include_labels": { "type": "boolean", "description": "Include label data", "default": true },
+                    "include_junctions": { "type": "boolean", "description": "Include junction dots with their uuids", "default": false },
+                    "include_no_connects": { "type": "boolean", "description": "Include no-connect flags with their uuids", "default": false }
                 },
                 "required": ["schematic"]
             }),
@@ -1029,6 +1033,8 @@ async fn handle_get_layout(
     let sch_path = get_path(args, "schematic")?;
     let include_wires = args["include_wires"].as_bool().unwrap_or(true);
     let include_labels = args["include_labels"].as_bool().unwrap_or(true);
+    let include_junctions = args["include_junctions"].as_bool().unwrap_or(false);
+    let include_no_connects = args["include_no_connects"].as_bool().unwrap_or(false);
 
     let (_, tree) = read_schematic(&sch_path)?;
     let instances = extract_symbol_instances(&tree);
@@ -1083,10 +1089,40 @@ async fn handle_get_layout(
         let labels = extract_labels(&tree);
         let label_data: Vec<serde_json::Value> = labels
             .iter()
-            .map(|l| json!({ "net": l.net, "type": format!("{:?}", l.kind), "x": l.x, "y": l.y }))
+            .map(
+                |l| json!({ "net": l.net, "type": format!("{:?}", l.kind), "x": l.x, "y": l.y, "uuid": l.uuid }),
+            )
             .collect();
         result["label_count"] = json!(label_data.len());
         result["labels"] = json!(label_data);
+    }
+
+    // Junctions and no-connects are off by default: most callers of a layout
+    // summary do not want them, and the reason they can be asked for at all is
+    // that nothing else publishes their uuids — which is the only way to
+    // address one on a document this caller did not just write (D.4.1.8).
+    // Read through `cse`, which already models both with their identity, and
+    // only when asked, so the default path still parses the document once.
+    if include_junctions || include_no_connects {
+        let sch = cse::Schematic::load(&sch_path)?;
+        if include_junctions {
+            let data: Vec<serde_json::Value> = sch
+                .junctions
+                .iter()
+                .map(|j| json!({ "x": j.x, "y": j.y, "uuid": j.uuid }))
+                .collect();
+            result["junction_count"] = json!(data.len());
+            result["junctions"] = json!(data);
+        }
+        if include_no_connects {
+            let data: Vec<serde_json::Value> = sch
+                .no_connects
+                .iter()
+                .map(|n| json!({ "x": n.x, "y": n.y, "uuid": n.uuid }))
+                .collect();
+            result["no_connect_count"] = json!(data.len());
+            result["no_connects"] = json!(data);
+        }
     }
 
     Ok(CallToolResult::json(&result))

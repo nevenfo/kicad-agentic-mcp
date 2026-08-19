@@ -199,3 +199,76 @@ async fn a_stale_uuid_is_not_found_and_names_the_candidates() {
         "the document's own symbol uuids are the hint: {candidates:?}"
     );
 }
+
+/// D.4.1.8's own check: an item whose *only* identity is a uuid — a junction
+/// dot, a no-connect flag — has to be readable off a document the caller did
+/// not just write, or its address exists and is unreachable.
+///
+/// Both are off by default in `get_schematic_layout`, so a caller that does
+/// not need them pays nothing for them.
+#[tokio::test]
+async fn a_no_connect_read_back_from_a_layout_can_be_deleted_by_its_uuid() {
+    let h = Harness::new();
+    let sch = h.repo_file(DIVIDER);
+    let sch = as_str(&sch);
+
+    // Two items whose position is all they have, placed where nothing else is.
+    let added = h
+        .json(
+            "add_no_connect",
+            json!({ "schematic": sch, "x": 60.96, "y": 60.96 }),
+        )
+        .await;
+    assert!(added.get("error").is_none(), "{added}");
+    h.json(
+        "add_junction",
+        json!({ "schematic": sch, "x": 66.04, "y": 60.96 }),
+    )
+    .await;
+
+    // The default summary says nothing about either.
+    let plain = h
+        .json("get_schematic_layout", json!({ "schematic": sch }))
+        .await;
+    assert!(plain.get("no_connects").is_none());
+    assert!(plain.get("junctions").is_none());
+
+    let layout = h
+        .json(
+            "get_schematic_layout",
+            json!({
+                "schematic": sch,
+                "include_junctions": true,
+                "include_no_connects": true
+            }),
+        )
+        .await;
+    assert_eq!(layout["junction_count"], json!(1));
+    let no_connects = layout["no_connects"].as_array().expect("listed");
+    assert_eq!(no_connects.len(), 1);
+    let uuid = no_connects[0]["uuid"]
+        .as_str()
+        .expect("published")
+        .to_string();
+
+    let deleted = h
+        .json(
+            "delete_no_connect",
+            json!({ "schematic": sch, "uuid": uuid }),
+        )
+        .await;
+    assert!(deleted.get("error").is_none(), "{deleted}");
+
+    let after = h
+        .json(
+            "get_schematic_layout",
+            json!({ "schematic": sch, "include_no_connects": true, "include_junctions": true }),
+        )
+        .await;
+    assert_eq!(after["no_connect_count"], json!(0));
+    assert_eq!(
+        after["junction_count"],
+        json!(1),
+        "deleting one point item leaves the other where it was"
+    );
+}

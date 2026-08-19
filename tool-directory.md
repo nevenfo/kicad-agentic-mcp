@@ -154,7 +154,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `batch_delete_schematic_components` | Delete multiple components by reference designator in a single atomic write. |
 | `connect_passthrough` | Add a wire stub and matching net label at a point to route a signal through a region without drawing a full path. |
 | `add_schematic_text` | Add a text annotation (non-net label) to the schematic at a given position. |
-| `get_schematic_layout` | Return a compact spatial summary of the schematic: component positions, bounding box, optionally wires and labels. |
+| `get_schematic_layout` | Return a compact spatial summary of the schematic: component positions, bounding box, optionally wires, labels, junction dots and no-connect flags — each with the uuid that addresses it. |
 | `validate_wire_connections` | Check all wire endpoints for floating ends not connected to a pin, label, or another wire. |
 | `validate_component_connections` | Check that every non-passive pin has at least one wire or label connected. Reports unconnected pins. |
 | `batch_place_components` | Place multiple symbols from KiCAD libraries in a single file read/write cycle. Pass explicit references -- there is no auto-numbering; an omitted reference becomes '?' like an eeschema-unannotated symbol, same as `add_schematic_component`. |

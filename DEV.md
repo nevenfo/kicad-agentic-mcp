@@ -221,9 +221,10 @@ reads.
 **Where an address comes from.** An address a tool accepts is an address some
 tool publishes: `list_schematic_components`, `list_schematic_labels`,
 `list_schematic_wires`, `get_sheet_hierarchy` and `get_schematic_component` all
-return uuids, and `add_no_connect` reports the one it created. Two gaps are
-known and recorded as plan.md D.4.1.8: nothing lists junctions or no-connects,
-so a no-connect's uuid is reachable only right after the call that made it.
+return uuids, and `add_no_connect` reports the one it created. A junction or a
+no-connect has no other identity to be found by, so `get_schematic_layout`
+takes `include_junctions` / `include_no_connects` — off by default, since a
+caller who does not need them should not pay for them.
 
 **What a uuid means here.** An item's identity is its *own* direct-child
 `(uuid …)`. A uuid nested inside another item — a sheet pin's, for instance —
