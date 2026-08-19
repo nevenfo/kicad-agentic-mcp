@@ -108,7 +108,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `delete_schematic_net_label` | Delete a net label by its UUID, or by net name and position. |
 | `rotate_schematic_label` | Rotate a net label, addressed by UUID or by net name and position, and update its justify direction. |
 | `move_labels_by_offset` | Move all labels matching a net name by a given X/Y offset. |
-| `batch_rotate_labels` | Rotate multiple labels by net name in a single file read/write cycle. |
+| `batch_rotate_labels` | Rotate multiple labels by net name or by label UUID in a single file read/write cycle. |
 | `add_power_symbol` | Add a power symbol (VCC, GND, etc.). Auto-numbers the internal `#PWR` reference. |
 | `add_no_connect` | Add a no-connect flag (X marker) to an unconnected pin endpoint. Reports the flag's uuid, which is what `delete_no_connect` takes to remove that one. |
 | `delete_no_connect` | Remove a no-connect flag by its UUID or at a given position. |
@@ -151,7 +151,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `batch_delete` | Delete multiple schematic items (wires, labels, junctions, components) by UUID or reference — single file write. |
 | `bulk_move_schematic_components` | Move multiple components by a uniform dx/dy offset in a single atomic write. |
 | `batch_edit_schematic_components` | Apply field updates (Value, Footprint, custom properties) to multiple components in a single atomic write. |
-| `batch_delete_schematic_components` | Delete multiple components by reference designator in a single atomic write. |
+| `batch_delete_schematic_components` | Delete multiple components by reference designator or UUID in a single atomic write. |
 | `connect_passthrough` | Add a wire stub and matching net label at a point to route a signal through a region without drawing a full path. |
 | `add_schematic_text` | Add a text annotation (non-net label) to the schematic at a given position. |
 | `get_schematic_layout` | Return a compact spatial summary of the schematic: component positions, bounding box, optionally wires, labels, junction dots and no-connect flags — each with the uuid that addresses it. |

@@ -233,9 +233,14 @@ pub fn tools() -> Vec<ToolDef> {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "List of reference designators"
+                    },
+                    "uuids": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Symbol UUIDs; pass these or 'references', or both"
                     }
                 },
-                "required": ["schematic", "references"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_batch_get_pin_locations(args, ctx).await }
         ),
@@ -267,9 +272,14 @@ pub fn tools() -> Vec<ToolDef> {
                         "items": { "type": "string" },
                         "description": "List of reference designators to group"
                     },
+                    "uuids": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Symbol UUIDs; pass these or 'references', or both"
+                    },
                     "group_name": { "type": "string", "description": "Group name to assign" }
                 },
-                "required": ["schematic", "references", "group_name"]
+                "required": ["schematic", "group_name"]
             }),
             |args, ctx| async move { handle_group_components(args, ctx).await }
         ),
@@ -1190,23 +1200,55 @@ async fn handle_batch_get_pin_locations(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let refs = args["references"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let string_array = |field: &str| {
+        args[field]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    if args["references"].is_null() && args["uuids"].is_null() {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "references".to_string(),
+                reason: "one of 'references' or 'uuids' is required to address components"
+                    .to_string(),
+            },
+            "Missing component addresses: pass 'references' or 'uuids'",
+        ));
+    }
+    let mut refs = string_array("references");
+    let uuids = string_array("uuids");
 
     let (_, tree) = read_schematic(&sch_path)?; // single read
     let instances = extract_symbol_instances(&tree);
+    // The uuids resolve against the instances this read already produced, so
+    // the second address form costs no second read (D.4.1.6). An item of
+    // another kind is not among them, so it lands in the same per-entry
+    // "not found" a missing designator gets.
+    let mut unresolved: Vec<serde_json::Value> = Vec::new();
+    for uuid in &uuids {
+        match instances
+            .iter()
+            .find(|i| i.uuid.as_deref() == Some(uuid.as_str()))
+        {
+            Some(instance) if !refs.contains(&instance.reference) => {
+                refs.push(instance.reference.clone())
+            }
+            // Already named by a `references` entry: answered once.
+            Some(_) => {}
+            None => unresolved.push(json!({ "uuid": uuid, "error": "not found" })),
+        }
+    }
     let lib_syms = tree
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
 
-    let results: Vec<serde_json::Value> = refs
+    let mut results: Vec<serde_json::Value> = refs
         .iter()
         .map(|reference| {
             let inst = match instances.iter().find(|i| &i.reference == reference) {
@@ -1254,6 +1296,7 @@ async fn handle_batch_get_pin_locations(
             json!({ "reference": reference, "x": inst.x, "y": inst.y, "pins": pins })
         })
         .collect();
+    results.extend(unresolved);
 
     Ok(CallToolResult::json(&json!({ "components": results })))
 }
@@ -1377,16 +1420,15 @@ async fn handle_group_components(
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
     };
-    let refs = args["references"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let mut content = read_consistent(&sch_path)?;
+    let expected = content.clone();
+    let batch = match crate::tools::resolve_component_batch(&content, args, &sch_path) {
+        Ok(batch) => batch,
+        Err(result) => return Ok(*result),
+    };
+    let refs = batch.references;
 
-    if refs.is_empty() {
+    if refs.is_empty() && batch.unresolved.is_empty() {
         return Ok(CallToolResult::error_kind(
             ToolErrorKind::InvalidArgument {
                 field: "references".to_string(),
@@ -1396,8 +1438,6 @@ async fn handle_group_components(
         ));
     }
 
-    let mut content = read_consistent(&sch_path)?;
-    let expected = content.clone();
     let mut grouped = Vec::new();
     let mut item_ids = Vec::new();
 
@@ -1435,7 +1475,8 @@ async fn handle_group_components(
     Ok(CallToolResult::json(&json!({
         "group_name": group_name,
         "grouped_count": grouped.len(),
-        "grouped": grouped
+        "grouped": grouped,
+        "errors": batch.unresolved
     })))
 }
 

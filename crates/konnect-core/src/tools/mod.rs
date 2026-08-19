@@ -875,6 +875,139 @@ pub(crate) fn resolve_component(
     }
 }
 
+/// Every symbol in `content` by its own direct-child `uuid`, mapped to the
+/// designator that symbol carries (D.4.1.6).
+///
+/// Indexed once for a whole batch, like `handle_batch_delete_wire`: every
+/// lookup in one call shares the same document. A uuid on an item of another
+/// kind is simply absent from the map, so no caller can edit the wrong item.
+///
+/// # Errors
+///
+/// `MalformedDocument` when `content` cannot be indexed.
+pub(crate) fn symbol_references_by_uuid(
+    content: &str,
+    sch_path: &std::path::Path,
+) -> Result<std::collections::HashMap<String, String>, Box<crate::mcp::protocol::CallToolResult>> {
+    use crate::mcp::error::ToolErrorKind;
+    use crate::mcp::protocol::CallToolResult;
+
+    let items = match konnect_sexp::item_locations(content) {
+        Ok(items) => items,
+        Err(err) => {
+            return Err(Box::new(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: err.to_string(),
+                },
+                "Cannot parse schematic document",
+            )))
+        }
+    };
+    Ok(items
+        .iter()
+        .filter(|item| item.kind.as_deref() == Some("symbol"))
+        .filter_map(|item| {
+            symbol_block_reference(&content[item.start..item.end])
+                .map(|reference| (item.id.as_str().to_string(), reference))
+        })
+        .collect())
+}
+
+/// The one wording every plural tool reports an unresolvable component uuid
+/// with, so the same address failing in two tools reads the same.
+pub(crate) fn no_component_with_uuid(uuid: &str) -> String {
+    format!("No component with UUID '{uuid}' in schematic")
+}
+
+/// The component addresses one plural call names (D.4.1.6).
+///
+/// `references` holds the designators to act on, every `references` entry in
+/// call order first — evaluated without reading anything, exactly as before —
+/// then every `uuids` entry that resolved, deduplicated so an item named by
+/// both forms is acted on once.
+pub(crate) struct ComponentBatch {
+    pub references: Vec<String>,
+    /// One message per `uuids` entry that named no symbol: a uuid absent from
+    /// the document, or present on an item of another kind.
+    pub unresolved: Vec<String>,
+}
+
+/// Resolve the `references` / `uuids` pair of a plural component tool.
+///
+/// The two arrays are accepted together and the result is their union: a
+/// caller migrating one address at a time never has to choose. Nothing is
+/// translated into the other form — a `references` entry is passed through
+/// untouched, so the historical path keeps its own not-found reporting.
+///
+/// # Errors
+///
+/// `InvalidArgument` when neither array is present (or one is present but is
+/// not an array), `MalformedDocument` when `uuids` are given and `content`
+/// cannot be indexed.
+pub(crate) fn resolve_component_batch(
+    content: &str,
+    args: &serde_json::Value,
+    sch_path: &std::path::Path,
+) -> Result<ComponentBatch, Box<crate::mcp::protocol::CallToolResult>> {
+    use crate::mcp::error::ToolErrorKind;
+    use crate::mcp::protocol::CallToolResult;
+
+    let array = |field: &str| -> Result<Vec<String>, Box<CallToolResult>> {
+        match &args[field] {
+            serde_json::Value::Null => Ok(Vec::new()),
+            serde_json::Value::Array(items) => Ok(items
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()),
+            _ => Err(Box::new(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: field.to_string(),
+                    reason: "must be an array".to_string(),
+                },
+                format!("Missing '{field}' array"),
+            ))),
+        }
+    };
+    let references = array("references")?;
+    let uuids = array("uuids")?;
+    if args["references"].is_null() && args["uuids"].is_null() {
+        return Err(Box::new(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "references".to_string(),
+                reason: "one of 'references' or 'uuids' is required to address components"
+                    .to_string(),
+            },
+            "Missing component addresses: pass 'references' or 'uuids'",
+        )));
+    }
+
+    let mut batch = ComponentBatch {
+        references,
+        unresolved: Vec::new(),
+    };
+    if uuids.is_empty() {
+        // Nothing to merge, so the historical list is passed through exactly
+        // as it arrived — duplicates included, as it always behaved.
+        return Ok(batch);
+    }
+
+    let by_uuid = symbol_references_by_uuid(content, sch_path)?;
+    for uuid in &uuids {
+        match by_uuid.get(uuid.as_str()) {
+            Some(reference) => batch.references.push(reference.clone()),
+            // A uuid on an item of another kind lands here too: the caller
+            // asked for a component and there is none at that address.
+            None => batch.unresolved.push(no_component_with_uuid(uuid)),
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    batch
+        .references
+        .retain(|reference| seen.insert(reference.clone()));
+    Ok(batch)
+}
+
 /// The `Reference` property value of one symbol block, by the same textual
 /// shape [`find_symbol_instance_block`] searches for.
 fn symbol_block_reference(block: &str) -> Option<String> {

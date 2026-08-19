@@ -218,6 +218,18 @@ spells it `source_uuid`, beside `source_sheet_name`). `sch_wiring`:
 `delete_no_connect`. `sch_buses` takes none — every tool there creates or
 reads.
 
+The plural tools take one the way their own address is already shaped
+(plan.md D.4.1.6): a `uuids` array beside `references`
+(`batch_get_schematic_pin_locations`, `group_components`,
+`bulk_move_schematic_components`, `batch_delete_schematic_components`), or a
+`uuid` field inside the entry objects they already read
+(`batch_edit_schematic_components`, `batch_rotate_labels`,
+`batch_delete_no_connect`). Both may be given at once and the batch is their
+union, each item acted on once; a uuid that resolves to nothing joins the
+per-entry errors that tool already collects, and the rest of the batch runs.
+`move_labels_by_offset` keeps only `net`, which selects every label of a net
+rather than addressing one item.
+
 **Where an address comes from.** An address a tool accepts is an address some
 tool publishes: `list_schematic_components`, `list_schematic_labels`,
 `list_schematic_wires`, `get_sheet_hierarchy` and `get_schematic_component` all

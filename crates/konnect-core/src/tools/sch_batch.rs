@@ -151,10 +151,15 @@ pub fn tools() -> Vec<ToolDef> {
                         "description": "Reference designators to move",
                         "items": { "type": "string" }
                     },
+                    "uuids": {
+                        "type": "array",
+                        "description": "Symbol UUIDs; pass these or 'references', or both",
+                        "items": { "type": "string" }
+                    },
                     "dx": { "type": "number", "description": "X offset in mm" },
                     "dy": { "type": "number", "description": "Y offset in mm" }
                 },
-                "required": ["schematic", "references", "dx", "dy"]
+                "required": ["schematic", "dx", "dy"]
             }),
             |args, ctx| async move { handle_bulk_move(args, ctx).await }
         ),
@@ -168,19 +173,19 @@ pub fn tools() -> Vec<ToolDef> {
                     "schematic": { "type": "string", "description": "Path to .kicad_sch file" },
                     "edits": {
                         "type": "array",
-                        "description": "List of {reference, value?, footprint?, fields?} edit objects",
+                        "description": "List of {reference|uuid, value?, footprint?, fields?} edit objects",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "reference": { "type": "string" },
+                                "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" },
                                 "value": { "type": "string" },
                                 "footprint": { "type": "string" },
                                 "fields": {
                                     "type": "object",
                                     "description": "Additional property fields as key:value pairs"
                                 }
-                            },
-                            "required": ["reference"]
+                            }
                         }
                     }
                 },
@@ -190,7 +195,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "batch_delete_schematic_components",
-            "Delete multiple components by reference designator in a single atomic file write.",
+            "Delete multiple components by reference designator or UUID in a single atomic file write.",
             json!({
                 "type": "object",
                 "properties": {
@@ -199,9 +204,14 @@ pub fn tools() -> Vec<ToolDef> {
                         "type": "array",
                         "description": "Reference designators to delete",
                         "items": { "type": "string" }
+                    },
+                    "uuids": {
+                        "type": "array",
+                        "description": "Symbol UUIDs; pass these or 'references', or both",
+                        "items": { "type": "string" }
                     }
                 },
-                "required": ["schematic", "references"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_batch_delete_components(args, ctx).await }
         ),
@@ -700,7 +710,6 @@ async fn handle_bulk_move(
     _ctx: &crate::tools::ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let refs = args["references"].as_array().cloned().unwrap_or_default();
     let dx = match require_f64(args, "dx") {
         Ok(v) => v,
         Err(e) => return Ok(e),
@@ -712,15 +721,18 @@ async fn handle_bulk_move(
 
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
+    let batch = match crate::tools::resolve_component_batch(&content, args, &sch_path) {
+        Ok(batch) => batch,
+        Err(result) => return Ok(*result),
+    };
     let mut edits: Vec<SexpEdit> = Vec::new();
     let mut moved: Vec<serde_json::Value> = Vec::new();
-    let mut errors: Vec<String> = Vec::new();
+    // A uuid naming no symbol joins the per-entry errors this handler already
+    // collects for a missing designator: the rest of the batch still moves.
+    let mut errors: Vec<String> = batch.unresolved;
 
-    for ref_val in &refs {
-        let reference = match ref_val.as_str() {
-            Some(r) => r,
-            None => continue,
-        };
+    for reference in &batch.references {
+        let reference = reference.as_str();
 
         // Locate symbol block for this reference
         let (sym_start, sym_end) = match find_symbol_instance_block(&content, reference) {
@@ -808,11 +820,33 @@ async fn handle_batch_edit(
     let mut changed: Vec<serde_json::Value> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
+    // One index for the whole batch, consulted only by the entries that
+    // carry a `uuid` (D.4.1.6); `reference` entries never reach it.
+    let by_uuid = if edits_arr
+        .iter()
+        .any(|spec| spec["reference"].as_str().is_none() && spec["uuid"].as_str().is_some())
+    {
+        match crate::tools::symbol_references_by_uuid(&content, &sch_path) {
+            Ok(map) => map,
+            Err(result) => return Ok(*result),
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+
     for edit_spec in &edits_arr {
-        let reference = match edit_spec["reference"].as_str() {
-            Some(r) => r,
-            None => {
-                errors.push("Missing 'reference' in edit spec".into());
+        // `reference` wins when an entry carries both, as everywhere else.
+        let reference = match (edit_spec["reference"].as_str(), edit_spec["uuid"].as_str()) {
+            (Some(r), _) => r,
+            (None, Some(uuid)) => match by_uuid.get(uuid) {
+                Some(reference) => reference.as_str(),
+                None => {
+                    errors.push(crate::tools::no_component_with_uuid(uuid));
+                    continue;
+                }
+            },
+            (None, None) => {
+                errors.push("Missing 'reference' or 'uuid' in edit spec".into());
                 continue;
             }
         };
@@ -873,30 +907,20 @@ async fn handle_batch_delete_components(
     _ctx: &crate::tools::ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let refs = match args["references"].as_array() {
-        Some(a) => a.clone(),
-        None => {
-            return Ok(CallToolResult::error_kind(
-                ToolErrorKind::InvalidArgument {
-                    field: "references".to_string(),
-                    reason: "must be an array".to_string(),
-                },
-                "Missing 'references' array",
-            ))
-        }
-    };
 
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
+    let batch = match crate::tools::resolve_component_batch(&content, args, &sch_path) {
+        Ok(batch) => batch,
+        Err(result) => return Ok(*result),
+    };
     let mut edits: Vec<SexpEdit> = Vec::new();
     let mut deleted: Vec<String> = Vec::new();
-    let mut errors: Vec<String> = Vec::new();
+    // Same policy as a designator that names nothing: reported, batch goes on.
+    let mut errors: Vec<String> = batch.unresolved;
 
-    for ref_val in &refs {
-        let reference = match ref_val.as_str() {
-            Some(r) => r,
-            None => continue,
-        };
+    for reference in &batch.references {
+        let reference = reference.as_str();
         match find_symbol_block(&content, reference) {
             Some((del_start, del_end)) => {
                 edits.push(SexpEdit::delete(del_start, del_end));

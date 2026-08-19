@@ -186,7 +186,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "batch_rotate_labels",
-            "Rotate multiple labels by net name in a single file read/write cycle.",
+            "Rotate multiple labels by net name or by label UUID in a single file read/write cycle.",
             json!({
                 "type": "object",
                 "properties": {
@@ -197,6 +197,7 @@ pub fn tools() -> Vec<ToolDef> {
                             "type": "object",
                             "properties": {
                                 "net": { "type": "string" },
+                                "uuid": { "type": "string", "description": "Label UUID; pass this or net+x+y" },
                                 "x": { "type": "number" }, "y": { "type": "number" },
                                 "rotation": { "type": "number" }
                             }
@@ -261,7 +262,10 @@ pub fn tools() -> Vec<ToolDef> {
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+                            "properties": {
+                                "x": { "type": "number" }, "y": { "type": "number" },
+                                "uuid": { "type": "string", "description": "No-connect UUID; pass this or x+y" }
+                            }
                         }
                     }
                 },
@@ -1497,6 +1501,20 @@ async fn handle_move_labels_by_offset(
     ))
 }
 
+/// The human-readable message out of a singular handler's error result, for
+/// folding into a batch tool's `errors` list. Structured errors ride inside
+/// the text content as JSON, so the `message` field is what a reader wants;
+/// anything else is passed through verbatim.
+fn result_message(result: &CallToolResult) -> String {
+    let Some(crate::mcp::protocol::ToolContent::Text { text }) = result.content.first() else {
+        return "unknown error".to_string();
+    };
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|body| body["message"].as_str().map(String::from))
+        .unwrap_or_else(|| text.clone())
+}
+
 async fn handle_batch_rotate_labels(
     args: &serde_json::Value,
     ctx: &ToolContext,
@@ -1504,18 +1522,31 @@ async fn handle_batch_rotate_labels(
     let sch_path = get_path(args, "schematic")?;
     let labels = args["labels"].as_array().cloned().unwrap_or_default();
     let mut rotated = 0usize;
+    // An entry addresses its label either way (D.4.1.6); `net` wins when both
+    // are given, which the singular handler this delegates to decides.
+    let mut errors: Vec<String> = Vec::new();
     for label_arg in &labels {
         let full_args = json!({
             "schematic": sch_path.display().to_string(),
             "net": label_arg["net"],
+            "uuid": label_arg["uuid"],
             "x": label_arg["x"],
             "y": label_arg["y"],
             "rotation": label_arg["rotation"]
         });
-        handle_rotate_label(&full_args, ctx).await?;
-        rotated += 1;
+        // The delegate returns `Ok(error_result)` for an entry it could not
+        // rotate, so counting the loop counted failures as rotations — the
+        // same fault batch_delete_no_connect was fixed for (#114).
+        let result = handle_rotate_label(&full_args, ctx).await?;
+        if result.is_error {
+            errors.push(result_message(&result));
+        } else {
+            rotated += 1;
+        }
     }
-    Ok(CallToolResult::json(&json!({ "rotated": rotated })))
+    Ok(CallToolResult::json(
+        &json!({ "rotated": rotated, "errors": errors }),
+    ))
 }
 
 async fn handle_add_power_symbol(
@@ -1789,15 +1820,47 @@ async fn handle_batch_delete_no_connect(
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let mut malformed = 0usize;
+    // Indexed once for the whole batch, and only when an entry addresses its
+    // flag by uuid (D.4.1.6) — the position path reads nothing extra.
+    let by_uuid = if positions.iter().any(|pos| pos["uuid"].is_string()) {
+        match konnect_sexp::item_locations(&content) {
+            Ok(items) => items,
+            Err(err) => {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::MalformedDocument {
+                        path: sch_path.display().to_string(),
+                        detail: err.to_string(),
+                    },
+                    "Cannot parse schematic document",
+                ));
+            }
+        }
+    } else {
+        Vec::new()
+    };
     for pos in &positions {
-        let (Some(x), Some(y)) = (pos["x"].as_f64(), pos["y"].as_f64()) else {
+        // x+y wins when an entry carries both, as everywhere else.
+        if let (Some(x), Some(y)) = (pos["x"].as_f64(), pos["y"].as_f64()) {
+            match find_no_connect_block_at(&content, x, y) {
+                Some(range) => ranges.push(range),
+                None => errors.push(format!("No no-connect at ({x}, {y})")),
+            }
+            continue;
+        }
+        let Some(uuid) = pos["uuid"].as_str() else {
             malformed += 1;
-            errors.push(format!("Position {pos} needs numeric x and y"));
+            errors.push(format!("Position {pos} needs numeric x and y, or a uuid"));
             continue;
         };
-        match find_no_connect_block_at(&content, x, y) {
+        // A uuid on an item of another kind is not a no-connect address, so
+        // it misses exactly like a position with nothing on it.
+        match by_uuid
+            .iter()
+            .find(|item| item.id.as_str() == uuid && item.kind.as_deref() == Some("no_connect"))
+            .and_then(|item| find_block_with_leading_whitespace(&content, item.start))
+        {
             Some(range) => ranges.push(range),
-            None => errors.push(format!("No no-connect at ({x}, {y})")),
+            None => errors.push(format!("No no-connect with UUID '{uuid}'")),
         }
     }
     ranges.sort_unstable();

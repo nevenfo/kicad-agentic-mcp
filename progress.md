@@ -5,36 +5,37 @@
 D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
 D.8 are DONE. D.4 is in progress: D.4.2 and D.4.1.1-D.4.1.5 are done,
 and D.4's stated validation is met. D.4.1.8 closed the gap it opened;
-D.4.1.6 (plural forms) and D.4.1.7 (multi-unit) are what remain, both found
-along the way. D.7 remains
+D.4.1.7 (multi-unit) is the only one left, and it was found along the way. D.7 remains
 untouched; D.9 is gated by the same GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
 H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
 which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.4.1.6 — the plural address forms (`references`, `uuids`, `positions`,
-`labels`). Not started, and it needs a shape decision before code.
+D.4.1.7 — multi-unit symbols: a uuid naming unit 2 lands on unit 1 in the seven
+`sch_components` handlers that redescend by designator. Not started; it is a
+`cse` question before it is a handler one.
 
 ## Dernière tâche validée
 
-**D.4.1.8 — the addresses that had nowhere to be read from.** A junction dot
-and a no-connect flag have no name, no designator and no net: their uuid is
-their only identity, and no reading tool published one, so
-`delete_no_connect`'s uuid form was reachable only right after
-`add_no_connect` returned it.
+**D.4.1.6 — the plural address forms.** Seven tools, and the shape follows each
+tool's own rather than one uniform rule: an array of strings gets a parallel
+`uuids` array; an entry that is already an object gets a `uuid` field inside
+it. Both arrays together are the union, and an item named by both is acted on
+once. `move_labels_by_offset` stays out — its `net` selects every label on a
+net, which is a selector, not an address.
 
-Resolved by extending a reader rather than adding a MANIFEST tool:
-`get_schematic_layout` takes `include_junctions` and `include_no_connects`,
-both defaulting to false so the summary costs exactly what it did, and reads
-both through `cse`, which already models them with their identity. Its labels
-carry uuids now too — its wires already did, and the asymmetry was a trap.
+Found and fixed in passing, because a test would otherwise have pinned a lie:
+`batch_rotate_labels` counted `rotated += 1` without looking at the delegate's
+result, so it reported failures as rotations — the same fault #114 fixed in
+`batch_delete_no_connect`. It now counts successes and publishes `errors`.
 
 Validation :
-- `cargo test -p konnect-core` 479 lib + 5 probe + every integration suite
-  PASS; `fmt --check` and clippy `-D warnings` clean
-- the loop is a test: `a_no_connect_read_back_from_a_layout_can_be_deleted_by_its_uuid`,
-  which also pins that the default summary mentions neither
+- `cargo test -p konnect-core` 479 lib + `uuid_addressing` 12 (5 → 12) + every
+  integration suite PASS; clippy `--workspace -D warnings` and `fmt --check`
+  clean
+- the test that carries the task: `a_mixed_call_is_the_union_and_moves_each_symbol_once`,
+  and `a_wrong_kind_uuid_is_refused_and_the_rest_of_the_batch_still_runs`
 
 ## Décisions actives
 
@@ -312,16 +313,14 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.4.1.6** — the plural address forms, and it needs a shape decided before any
-code: `batch_get_schematic_pin_locations` / `group_components` take
-`references`, `batch_delete_no_connect` takes `positions`, `batch_rotate_labels`
-takes `labels` entries. Either a parallel `uuids` array, or entries the resolver
-reads either way — one of the two, applied to all of them, not per tool. Weigh
-it against what a caller actually holds after a listing: the readers now publish
-uuids item by item, so a caller assembling a batch has uuids, not names. Then
-D.4.1.7 (multi-unit symbols) is the last one, and it is a `cse` question:
-`SymbolCollection` would need by-uuid lookups the seven handlers could use
-instead of redescending by designator.
+**D.4.1.7** — the last of D.4. Seven `sch_components` handlers go through
+`cse::Schematic` and redescend by designator, so a uuid naming unit 2 of a
+multi-unit symbol edits unit 1. Decide the `cse` side first: `SheetCollection`
+already has `by_uuid`/`by_uuid_mut`/`remove_by_uuid` and that is what made
+D.4.1.3 exact, so check what `SymbolCollection` has (`remove_by_uuid` exists)
+and add the lookups it is missing rather than working around them in
+`konnect-core`. The gap is documented in `resolve_component_reference`'s doc
+comment and in DEV.md; both should stop saying it when it is closed.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

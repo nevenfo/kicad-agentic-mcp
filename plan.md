@@ -470,11 +470,17 @@ side exists (`konnect-core::graph`).
         `list_schematic_components` had to start publishing uuids for that loop
         to exist at one call (D82). The model is written down in DEV.md,
         including both known gaps
-  - [ ] D.4.1.6 The plural address forms, left out of D.4.1.2 to keep it one
-        unit: `batch_get_schematic_pin_locations` and `group_components` take
-        `references`, and a list that may mix the two spellings is its own
-        decision (a `uuids` array beside it, or entries the resolver reads
-        either way) — not a mechanical repeat of the singular case
+  - [x] D.4.1.6 The plural address forms, left out of D.4.1.2 to keep it one
+        unit. Seven tools, and the shape follows each tool's own rather than
+        one uniform rule: an address that is an array of strings gets a
+        parallel `uuids` array (`batch_get_schematic_pin_locations`,
+        `group_components`, `bulk_move_schematic_components`,
+        `batch_delete_schematic_components`), and an address that is already an
+        object entry gets a `uuid` field inside it
+        (`batch_edit_schematic_components`, `batch_rotate_labels`,
+        `batch_delete_no_connect`). Both arrays together are the union, an item
+        named twice acted on once. `move_labels_by_offset` is deliberately out:
+        its `net` selects every label on a net — a selector, not an address
 - [x] D.4.2 Keep the existing path+coordinate forms accepted (INV8) — by
       construction rather than by promise: the historical form is evaluated
       first and reads nothing extra, and every migrated tool has a test that

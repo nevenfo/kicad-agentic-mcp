@@ -272,3 +272,301 @@ async fn a_no_connect_read_back_from_a_layout_can_be_deleted_by_its_uuid() {
         "deleting one point item leaves the other where it was"
     );
 }
+
+// ─── D.4.1.6: the plural forms ───────────────────────────────────────────────
+//
+// A tool that takes a list of addresses takes the second form the way its
+// first one is already shaped: a parallel `uuids` array beside `references`,
+// or a `uuid` field inside the entry objects it already reads. The two are
+// accepted together and the batch is their union, each item acted on once.
+
+/// A fresh copy of the divider, and its path as the tools take it.
+async fn divider() -> (Harness, String) {
+    let h = Harness::new();
+    let path = h.repo_file(DIVIDER);
+    let sch = path.display().to_string();
+    (h, sch)
+}
+
+/// The document text, for comparing two runs that must land in the same place.
+fn text(sch: &str) -> String {
+    std::fs::read_to_string(sch).expect("the schematic is readable")
+}
+
+/// Same operation, two addresses, one document — for the parallel-array form.
+#[tokio::test]
+async fn bulk_move_and_batch_delete_agree_whichever_array_addresses_them() {
+    for tool in [
+        "bulk_move_schematic_components",
+        "batch_delete_schematic_components",
+    ] {
+        let (by_ref, ref_sch) = divider().await;
+        let (by_uuid, uuid_sch) = divider().await;
+        let uuids = [
+            component_uuid(&by_uuid, &uuid_sch, "R1").await,
+            component_uuid(&by_uuid, &uuid_sch, "R2").await,
+        ];
+
+        let mut ref_args = json!({ "schematic": ref_sch, "references": ["R1", "R2"] });
+        let mut uuid_args = json!({ "schematic": uuid_sch, "uuids": uuids });
+        for args in [&mut ref_args, &mut uuid_args] {
+            args["dx"] = json!(2.54);
+            args["dy"] = json!(0.0);
+        }
+        let by_reference_result = by_ref.json(tool, ref_args).await;
+        let by_uuid_result = by_uuid.json(tool, uuid_args).await;
+        assert_eq!(
+            by_reference_result["errors"],
+            json!([]),
+            "{tool} by reference: {by_reference_result}"
+        );
+        assert_eq!(
+            by_uuid_result["errors"],
+            json!([]),
+            "{tool} by uuid: {by_uuid_result}"
+        );
+        assert_eq!(
+            text(&ref_sch),
+            text(&uuid_sch),
+            "{tool} lands in the same document either way"
+        );
+    }
+}
+
+/// The same, for the two tools whose entries are objects: a `uuid` field
+/// beside the address the entry already carried.
+#[tokio::test]
+async fn batch_edit_and_batch_rotate_agree_whichever_field_addresses_them() {
+    let (by_ref, ref_sch) = divider().await;
+    let (by_uuid, uuid_sch) = divider().await;
+    let r1 = component_uuid(&by_uuid, &uuid_sch, "R1").await;
+
+    by_ref
+        .json(
+            "batch_edit_schematic_components",
+            json!({ "schematic": ref_sch, "edits": [{ "reference": "R1", "value": "4k7" }] }),
+        )
+        .await;
+    by_uuid
+        .json(
+            "batch_edit_schematic_components",
+            json!({ "schematic": uuid_sch, "edits": [{ "uuid": r1, "value": "4k7" }] }),
+        )
+        .await;
+    assert_eq!(text(&ref_sch), text(&uuid_sch), "batch_edit by uuid");
+
+    // The label's own anchor is what the uuid path writes back, so the two
+    // rotations have to agree on it too.
+    let label = by_uuid
+        .json("list_schematic_labels", json!({ "schematic": uuid_sch }))
+        .await["labels"]
+        .as_array()
+        .expect("listed")
+        .iter()
+        .find(|l| l["net"] == json!("VOUT"))
+        .expect("the divider labels its midpoint")
+        .clone();
+
+    let rotated_by_net = by_ref
+        .json(
+            "batch_rotate_labels",
+            json!({
+                "schematic": ref_sch,
+                "labels": [{ "net": "VOUT", "x": label["x"], "y": label["y"], "rotation": 90.0 }]
+            }),
+        )
+        .await;
+    let rotated_by_uuid = by_uuid
+        .json(
+            "batch_rotate_labels",
+            json!({
+                "schematic": uuid_sch,
+                "labels": [{ "uuid": label["uuid"], "rotation": 90.0 }]
+            }),
+        )
+        .await;
+    assert_eq!(rotated_by_net["rotated"], json!(1), "{rotated_by_net}");
+    assert_eq!(rotated_by_uuid["rotated"], json!(1), "{rotated_by_uuid}");
+    assert_eq!(
+        text(&ref_sch),
+        text(&uuid_sch),
+        "batch_rotate_labels by uuid"
+    );
+}
+
+/// The read-only pair, which never writes: the pins answered are the same
+/// pins, and the answer carries the designator either way.
+#[tokio::test]
+async fn pin_locations_and_grouping_take_the_uuids_array() {
+    let (h, sch) = divider().await;
+    let r1 = component_uuid(&h, &sch, "R1").await;
+    let r2 = component_uuid(&h, &sch, "R2").await;
+
+    let by_reference = h
+        .json(
+            "batch_get_schematic_pin_locations",
+            json!({ "schematic": sch, "references": ["R1", "R2"] }),
+        )
+        .await;
+    let by_uuid = h
+        .json(
+            "batch_get_schematic_pin_locations",
+            json!({ "schematic": sch, "uuids": [r1.clone(), r2.clone()] }),
+        )
+        .await;
+    assert_eq!(by_reference, by_uuid, "the uuids name the same two symbols");
+
+    let (grouped_by_ref, ref_sch) = divider().await;
+    let (grouped_by_uuid, uuid_sch) = divider().await;
+    grouped_by_ref
+        .json(
+            "group_components",
+            json!({ "schematic": ref_sch, "references": ["R1", "R2"], "group_name": "divider" }),
+        )
+        .await;
+    grouped_by_uuid
+        .json(
+            "group_components",
+            json!({ "schematic": uuid_sch, "uuids": [r1, r2], "group_name": "divider" }),
+        )
+        .await;
+    assert_eq!(text(&ref_sch), text(&uuid_sch), "group_components by uuid");
+}
+
+/// Both forms in one call: the batch is their union, and the symbol named
+/// twice moves once.
+#[tokio::test]
+async fn a_mixed_call_is_the_union_and_moves_each_symbol_once() {
+    let (mixed_h, mixed_sch) = divider().await;
+    let (plain_h, plain_sch) = divider().await;
+    let r1 = component_uuid(&mixed_h, &mixed_sch, "R1").await;
+    let r2 = component_uuid(&mixed_h, &mixed_sch, "R2").await;
+
+    let mixed = mixed_h
+        .json(
+            "bulk_move_schematic_components",
+            json!({
+                "schematic": mixed_sch,
+                "references": ["R1"],
+                "uuids": [r1, r2],
+                "dx": 2.54, "dy": 0.0
+            }),
+        )
+        .await;
+    assert_eq!(mixed["moved_count"], json!(2), "R1 once, R2 once: {mixed}");
+    assert_eq!(mixed["errors"], json!([]));
+
+    plain_h
+        .json(
+            "bulk_move_schematic_components",
+            json!({ "schematic": plain_sch, "references": ["R1", "R2"], "dx": 2.54, "dy": 0.0 }),
+        )
+        .await;
+    assert_eq!(
+        text(&mixed_sch),
+        text(&plain_sch),
+        "R1 was named twice and moved by one offset, not two"
+    );
+}
+
+/// A uuid that names an item of another kind is refused — and the rest of the
+/// batch goes on, which is what this handler already does with a designator
+/// that names nothing.
+#[tokio::test]
+async fn a_wrong_kind_uuid_is_refused_and_the_rest_of_the_batch_still_runs() {
+    let (h, sch) = divider().await;
+    let wire = h
+        .json("list_schematic_wires", json!({ "schematic": sch }))
+        .await["wires"]
+        .as_array()
+        .expect("listed")[0]["uuid"]
+        .as_str()
+        .expect("wires publish uuids")
+        .to_string();
+    let r2 = component_uuid(&h, &sch, "R2").await;
+
+    let deleted = h
+        .json(
+            "batch_delete_schematic_components",
+            json!({ "schematic": sch, "uuids": [wire.clone(), r2] }),
+        )
+        .await;
+    assert_eq!(deleted["deleted"], json!(["R2"]), "{deleted}");
+    let errors = deleted["errors"].as_array().expect("collected");
+    assert_eq!(errors.len(), 1, "{deleted}");
+    assert!(
+        errors[0].as_str().unwrap().contains(&wire),
+        "the refused address is named: {deleted}"
+    );
+    assert!(
+        text(&sch).contains(&wire),
+        "a wire uuid never deletes the wire through a component tool"
+    );
+}
+
+/// Neither form is not an empty batch: it is a call with no address at all.
+#[tokio::test]
+async fn a_plural_call_with_no_address_is_an_invalid_argument() {
+    let (h, sch) = divider().await;
+    for tool in [
+        "batch_delete_schematic_components",
+        "bulk_move_schematic_components",
+        "batch_get_schematic_pin_locations",
+        "group_components",
+    ] {
+        let result = h
+            .call(
+                tool,
+                json!({ "schematic": sch, "dx": 1.0, "dy": 1.0, "group_name": "g" }),
+            )
+            .await
+            .expect("the call itself succeeds");
+        assert!(result.is_error, "{tool} answered {:?}", result.content);
+        assert_eq!(
+            harness::body(&result)["error"]["kind"],
+            json!("invalid_argument"),
+            "{tool}"
+        );
+    }
+}
+
+/// A no-connect has no designator, so its entry takes the uuid the tool that
+/// created it reported.
+#[tokio::test]
+async fn batch_delete_no_connect_takes_a_uuid_in_its_entry() {
+    let (h, sch) = divider().await;
+    let first = h
+        .json(
+            "add_no_connect",
+            json!({ "schematic": sch, "x": 60.96, "y": 60.96 }),
+        )
+        .await["added_no_connect"]["uuid"]
+        .as_str()
+        .expect("add_no_connect reports the uuid it created")
+        .to_string();
+    h.json(
+        "add_no_connect",
+        json!({ "schematic": sch, "x": 66.04, "y": 66.04 }),
+    )
+    .await;
+
+    let deleted = h
+        .json(
+            "batch_delete_no_connect",
+            json!({ "schematic": sch, "positions": [{ "uuid": first }] }),
+        )
+        .await;
+    assert_eq!(deleted["deleted"], json!(1), "{deleted}");
+    assert!(
+        !text(&sch).contains(&first),
+        "the named flag is the one gone"
+    );
+
+    let left = h
+        .json(
+            "get_schematic_layout",
+            json!({ "schematic": sch, "include_no_connects": true }),
+        )
+        .await;
+    assert_eq!(left["no_connect_count"], json!(1), "the other one stayed");
+}
