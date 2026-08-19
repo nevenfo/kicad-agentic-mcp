@@ -461,13 +461,24 @@ side exists (`konnect-core::graph`).
         plural forms (`batch_delete_no_connect`) take uuids, or they inherit
         the same dead end. `extract_junctions` already carries the uuid
         (D.4.1.4), so the data side is done
-  - [ ] D.4.1.5 D.4's own validation — the move test — and the docs
+  - [x] D.4.1.5 D.4's own validation — the move test — and the docs.
+        `crates/konnect-core/tests/uuid_addressing.rs` runs the loop a caller
+        actually runs, against `bench/fixtures/divider.kicad_sch` rather than a
+        hand-written fixture: list, edit through the published uuid, resolve it
+        again. It covers the rename, which is where the two address forms part
+        company, and that an edit rewrites no identity but its own.
+        `list_schematic_components` had to start publishing uuids for that loop
+        to exist at one call (D82). The model is written down in DEV.md,
+        including both known gaps
   - [ ] D.4.1.6 The plural address forms, left out of D.4.1.2 to keep it one
         unit: `batch_get_schematic_pin_locations` and `group_components` take
         `references`, and a list that may mix the two spellings is its own
         decision (a `uuids` array beside it, or entries the resolver reads
         either way) — not a mechanical repeat of the singular case
-- [ ] D.4.2 Keep the existing path+coordinate forms accepted (INV8)
+- [x] D.4.2 Keep the existing path+coordinate forms accepted (INV8) — by
+      construction rather than by promise: the historical form is evaluated
+      first and reads nothing extra, and every migrated tool has a test that
+      runs the same operation both ways and compares the documents
 
 ### Validation
 A tool call that names a UUID still resolves after the item moved; targeted tests

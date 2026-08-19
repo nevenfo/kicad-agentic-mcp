@@ -198,6 +198,49 @@ transaction abandon` escape hatch documented in
 - KiCAD installs to: `C:\KiCad\10.0\share\kicad\scripting\plugins\konnect\`
 - Both `__init__.py` (SWIG ActionPlugin for PCB editor settings dialog) and `plugin.json` (IPC exec plugin) are included
 
+## Addressing an Item (plan.md D.4)
+
+A schematic item is addressed either the way it always was — a reference
+designator, a sheet name, a coordinate pair — or by its own KiCad `uuid`. Both
+forms are accepted everywhere; the historical form never changed, and when a
+call carries both, the historical one wins.
+
+Why the second form exists: a designator survives a move but not a rename, a
+sheet name is not unique, and a coordinate names whatever happens to be at that
+point — two wires crossing there, or two labels stacked on one anchor. A uuid
+is the identity KiCad itself writes, so it survives all of that.
+
+**Which tools take one.** `sch_components`: the nine tools that address one
+component. `sch_hierarchy`: the eight that address a sheet (`duplicate_sheet`
+spells it `source_uuid`, beside `source_sheet_name`). `sch_wiring`:
+`delete_schematic_wire`, `batch_delete_schematic_wire`, `split_wire_at_point`
+(*which* wire is cut), `delete_schematic_net_label`, `rotate_schematic_label`,
+`delete_no_connect`. `sch_buses` takes none — every tool there creates or
+reads.
+
+**Where an address comes from.** An address a tool accepts is an address some
+tool publishes: `list_schematic_components`, `list_schematic_labels`,
+`list_schematic_wires`, `get_sheet_hierarchy` and `get_schematic_component` all
+return uuids, and `add_no_connect` reports the one it created. Two gaps are
+known and recorded as plan.md D.4.1.8: nothing lists junctions or no-connects,
+so a no-connect's uuid is reachable only right after the call that made it.
+
+**What a uuid means here.** An item's identity is its *own* direct-child
+`(uuid …)`. A uuid nested inside another item — a sheet pin's, for instance —
+does not address the item around it. The one exception is deliberate and
+predates this model: `batch_delete` has always accepted a nested uuid and
+deleted the enclosing item, and a test pins that so it is dropped by decision
+rather than by refactor.
+
+**When an address resolves to nothing**, the answer is `NotFound` carrying
+`item_kind` and, on the uuid path, the uuids actually present as `candidates`.
+A uuid that exists but names another kind of item is `NotFound` too — never an
+edit to the wrong item.
+
+Known limitation: for a multi-unit symbol, the seven `sch_components` handlers
+that go through `konnect_schematic_editor` redescend by designator, so a uuid
+naming unit 2 lands on unit 1 (plan.md D.4.1.7).
+
 ## Structured Errors
 
 Tool-call failures are typed via the `ToolErrorKind` enum in `crates/konnect-core/src/mcp/error.rs`. MCP's `CallToolResult` spec has no top-level `data` field, so structured errors ride inside the text content as JSON:

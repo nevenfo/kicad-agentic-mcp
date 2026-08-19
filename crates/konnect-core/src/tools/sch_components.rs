@@ -116,7 +116,8 @@ pub fn tools() -> Vec<ToolDef> {
         tool!(
             "list_schematic_components",
             "List all symbol instances in a schematic with their positions, values, \
-             footprints, and pin locations.",
+             footprints, uuids, and pin locations. A symbol's uuid is what addresses \
+             it in every editing tool here, alongside its reference.",
             json!({
                 "type": "object",
                 "properties": {
@@ -838,6 +839,9 @@ async fn handle_list_schematic_components(
             let mirror = sym.mirror.as_deref().unwrap_or("");
             json!({
                 "reference": sym.reference().unwrap_or("?"),
+                // The address every editing tool in this toolset accepts
+                // (D.4.1.2). Without it here, obtaining one costs a second call.
+                "uuid": sym.uuid,
                 "value": sym.value_str().unwrap_or(""),
                 "footprint": sym.footprint().unwrap_or(""),
                 "lib_id": sym.lib_id,

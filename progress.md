@@ -3,38 +3,42 @@
 ## Phase actuelle
 
 D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
-D.8 are DONE. D.4 is in progress (D.4.1.1-D.4.1.4 done); D.7 remains
+D.8 are DONE. D.4 is in progress: D.4.2 and D.4.1.1-D.4.1.5 are done,
+and D.4's stated validation is met; what is left (D.4.1.6-D.4.1.8) was found
+along the way. D.7 remains
 untouched; D.9 is gated by the same GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
 H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
 which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.4.1.5 — D.4's own validation and the docs. The move test exists per toolset
-already (D.4.1.2, D.4.1.3); what is left is the *probe on a real project* the
-D.4 validation asks for, and writing the address model down where a caller
-reads it.
+D.4.1.8 — nothing lists junctions or no-connects, so a no-connect's uuid is
+only reachable right after the call that created it. Not started.
 
 ## Dernière tâche validée
 
-**D.4.1.4 — `sch_wiring`, and the half that makes an address usable.** Four
-tools take a `uuid`: `split_wire_at_point` (which wire is cut, where two cross
-at the point), `delete_schematic_net_label`, `rotate_schematic_label`,
-`delete_no_connect`. `sch_buses` has nothing to convert — every tool there
-creates or reads. Plural forms stay out (D.4.1.6).
+**D.4.1.5 — D.4's validation, and the model written down.** D.4's own criterion
+was "targeted tests plus one probe on a real project": the targeted tests came
+with each toolset, and `crates/konnect-core/tests/uuid_addressing.rs` is the
+probe. It runs against `bench/fixtures/divider.kicad_sch` — the ERC-clean
+divider the bench builds on, copied first — and runs the loop a caller runs:
+list, edit through the published uuid, resolve it again. It covers the rename,
+which is where a designator and a uuid part company, and pins that an edit
+rewrites no identity but its own.
 
-`extract_junctions` now returns `Junction { x, y, uuid }`; the geometry callers
-take `extract_junction_points`. `list_schematic_labels` publishes uuids and
-`add_no_connect` reports the one it created — see D82 for why that shipped in
-the same task.
+`list_schematic_components` had to start publishing uuids for that loop to fit
+in one call (D82); it was the last reader missing them.
+
+D.4.2 is checked with it: the historical form is evaluated first and reads
+nothing extra, and every migrated tool has a test running the same operation
+both ways.
+
+The address model is now in DEV.md — which tools take a uuid, where one comes
+from, what it means, and both known gaps (D.4.1.7, D.4.1.8).
 
 Validation :
-- `cargo test -p konnect-core` 479/479 lib (465 + 14) + every integration suite
-  PASS; `cargo test -p konnect-sexp` PASS; clippy `--workspace -D warnings`
-  and `fmt --check` clean
-- the two tests that carry the task: `split_by_uuid_cuts_the_named_wire_where_a_point_cannot_choose`,
-  `two_labels_at_one_point_are_separable_only_by_uuid`, and the read→address
-  loop `a_listed_label_uuid_addresses_the_delete_tool`
+- `cargo test -p konnect-core` 479 lib + 4 probe + every integration suite
+  PASS; clippy `--workspace -D warnings` and `fmt --check` clean
 
 ## Décisions actives
 
@@ -312,14 +316,13 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.4.1.5** — D.4's own validation and the docs. The per-toolset move tests are
-already in (`a_uuid_still_addresses_the_symbol_after_it_moved`,
-`a_uuid_still_addresses_the_sheet_after_it_moved`), so what D.4's validation
-still asks for is the probe on a real project — use `examples/` or a project
-under `bench/`, do not invent a fixture — and one written statement of the
-address model a caller can read: which tools take a uuid, which publish one,
-and that the historical forms never changed (INV8). D.4.1.8 is the known hole
-and belongs in that statement rather than being quietly omitted.
+**D.4.1.8** — make a junction's and a no-connect's uuid obtainable on a
+document the caller did not just write. Prefer extending an existing reader to
+adding a MANIFEST tool: `get_schematic_layout` already returns a spatial
+summary with wires and labels behind flags, and the same shape fits here at no
+default token cost. `extract_junctions` already carries the uuid (D.4.1.4), so
+this is a reader change, not a data one. Decide it before D.4.1.6 gives the
+plural forms uuids, or `batch_delete_no_connect` inherits the same dead end.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

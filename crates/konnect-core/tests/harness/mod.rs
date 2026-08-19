@@ -119,6 +119,28 @@ impl Harness {
     pub fn path(&self, name: &str) -> PathBuf {
         self.dir.path().join(name)
     }
+
+    /// A file from the repository itself, copied into this harness's
+    /// directory. `path` is relative to the workspace root, e.g.
+    /// `"bench/fixtures/divider.kicad_sch"`.
+    ///
+    /// For a probe that must run against a whole project rather than a
+    /// hand-written fixture. Copying means the repository's own file is never
+    /// edited by a test.
+    pub fn repo_file(&self, path: &str) -> PathBuf {
+        let src = workspace_root().join(path);
+        let name = Path::new(path).file_name().expect("the path names a file");
+        let dst = self.dir.path().join(name);
+        std::fs::copy(&src, &dst).unwrap_or_else(|e| panic!("{path} is copyable: {e}"));
+        dst
+    }
+}
+
+/// The workspace root: two levels above this crate.
+pub fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 pub fn fixtures_dir() -> PathBuf {

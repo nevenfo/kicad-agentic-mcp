@@ -80,7 +80,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `delete_schematic_component` | Remove a symbol instance from the schematic by reference designator or UUID. |
 | `edit_schematic_component` | Update fields (Reference, Value, Footprint, custom properties) of a symbol instance. |
 | `get_schematic_component` | Get all properties, position, and pin locations for a symbol instance. |
-| `list_schematic_components` | List all symbol instances with positions, values, footprints, and pin locations. |
+| `list_schematic_components` | List all symbol instances with positions, values, footprints, uuids, and pin locations. A symbol's uuid is what addresses it in every editing tool here, alongside its reference. |
 | `move_schematic_component` | Move a symbol to a new position. Does NOT adjust connected wires. |
 | `rotate_schematic_component` | Rotate a symbol by setting its absolute rotation angle (0/90/180/270). |
 | `move_connected` | Move a symbol and stretch/shrink connected wire stubs to preserve connections. |
