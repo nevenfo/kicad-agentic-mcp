@@ -250,9 +250,13 @@ rather than by refactor.
 A uuid that exists but names another kind of item is `NotFound` too — never an
 edit to the wrong item.
 
-Known limitation: for a multi-unit symbol, the seven `sch_components` handlers
-that go through `konnect_schematic_editor` redescend by designator, so a uuid
-naming unit 2 lands on unit 1 (plan.md D.4.1.7).
+**A multi-unit symbol** is several top-level `(symbol …)` blocks sharing one
+designator, each with its own uuid and `(unit N)`. A uuid names one unit and
+edits that unit: the `sch_components` handlers resolve an address to the
+symbol's *position* — in the loaded schematic, among the parsed instances, or
+as a byte range — and never redescend by designator afterwards (plan.md
+D.4.1.7). A designator, having no unit in it, still means the first block
+carrying it.
 
 ## Structured Errors
 

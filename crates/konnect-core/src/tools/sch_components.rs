@@ -337,35 +337,109 @@ fn component_not_found(
     )
 }
 
-/// `reference` or `uuid` — whichever the call carries — as the reference
-/// designator, for the handlers that work through `cse::Schematic` (or the
-/// parsed tree) and never hold the document text.
+/// The one symbol a call addresses, in whichever shape the handler holding it
+/// can look up: a position in a `cse::Schematic`, a position among the parsed
+/// instances, or a byte range in the document text.
 ///
-/// A call carrying `reference` gets it back without reading anything: the
+/// Multi-unit symbols are why this is a target and not a designator (D.4.1.7):
+/// the units of one symbol are separate top-level `(symbol …)` blocks sharing
+/// one designator, so a handler that redescends by designator lands on the
+/// first unit whatever the call named. The uuid is kept beside the designator
+/// and every lookup below goes through it, so the unit named is the unit
+/// edited. A call that gave a designator resolves to the first symbol carrying
+/// it — exactly what it always did (INV8).
+struct ComponentTarget {
+    /// The designator: what the results and the error messages say, and what
+    /// the designator path looks up by. Read out of the block on the uuid path
+    /// (D80), never echoed back from the request.
+    reference: String,
+    /// `Some` only when the call addressed the symbol by uuid.
+    uuid: Option<String>,
+}
+
+impl ComponentTarget {
+    /// Position of the addressed symbol in `symbols`.
+    ///
+    /// A position, not a second address: the caller reaches the symbol with
+    /// `get_mut` / `remove_at` from here rather than re-resolving it (D81).
+    fn index_in(&self, symbols: &cse::SymbolCollection) -> Option<usize> {
+        match &self.uuid {
+            Some(uuid) => symbols.iter().position(|s| s.uuid == *uuid),
+            None => symbols
+                .iter()
+                .position(|s| s.reference() == Some(self.reference.as_str())),
+        }
+    }
+
+    /// Position of the addressed symbol among `extract_symbol_instances`, for
+    /// the handlers that hold the parsed tree instead of a `cse::Schematic`.
+    fn instance_index(
+        &self,
+        instances: &[konnect_sexp::schematic::SymbolInstance],
+    ) -> Option<usize> {
+        match &self.uuid {
+            Some(uuid) => instances
+                .iter()
+                .position(|i| i.uuid.as_deref() == Some(uuid.as_str())),
+            None => instances.iter().position(|i| i.reference == self.reference),
+        }
+    }
+
+    /// Byte range of the addressed symbol's own block in `content`, for the
+    /// handlers that edit the document text.
+    fn block_in(&self, content: &str) -> Option<(usize, usize)> {
+        self.block_by(content, &self.reference)
+    }
+
+    /// [`block_in`](Self::block_in) for a caller that has just renamed the
+    /// symbol: on the designator path the block now answers to `reference`,
+    /// while a uuid is untouched by a rename.
+    fn block_by(&self, content: &str, reference: &str) -> Option<(usize, usize)> {
+        let Some(uuid) = &self.uuid else {
+            return find_symbol_instance_block(content, reference);
+        };
+        konnect_sexp::item_locations(content)
+            .ok()?
+            .iter()
+            .find(|item| {
+                item.id.as_str() == uuid.as_str() && item.kind.as_deref() == Some("symbol")
+            })
+            .map(|item| (item.start, item.end))
+    }
+}
+
+/// The symbol a call addresses by `reference` or `uuid` — whichever it
+/// carries.
+///
+/// A call carrying `reference` is resolved without reading anything: the
 /// existing path, its "not found" errors included, stays exactly what it was
 /// (INV8). Only a `uuid` call pays for a read.
-///
-/// Multi-unit symbols: the units of one symbol share a designator, so a
-/// handler that redescends by `reference` lands on the first unit even when
-/// the `uuid` named another. Resolving the exact unit needs the byte range
-/// from [`resolve_component`], which these handlers have no way to use.
 ///
 /// # Errors
 ///
 /// The outer `Err` is a document read failure, as everywhere else in this
 /// file; the inner one is the [`CallToolResult`] to hand back.
-fn resolve_component_reference(
+fn resolve_component_target(
     args: &serde_json::Value,
     sch_path: &std::path::Path,
-) -> anyhow::Result<Result<String, Box<CallToolResult>>> {
+) -> anyhow::Result<Result<ComponentTarget, Box<CallToolResult>>> {
     if let Some(reference) = opt_str(args, "reference") {
-        return Ok(Ok(reference.to_string()));
+        return Ok(Ok(ComponentTarget {
+            reference: reference.to_string(),
+            uuid: None,
+        }));
     }
     let content = read_consistent(sch_path)?;
-    Ok(
-        crate::tools::resolve_component(&content, args, sch_path)
-            .map(|resolved| resolved.reference),
-    )
+    let resolved = match crate::tools::resolve_component(&content, args, sch_path) {
+        Ok(resolved) => resolved,
+        Err(e) => return Ok(Err(e)),
+    };
+    Ok(Ok(ComponentTarget {
+        reference: resolved.reference,
+        // Past the `reference` branch `resolve_component` only succeeds on a
+        // call that carries a `uuid`, so this is the address it matched.
+        uuid: opt_str(args, "uuid").map(str::to_string),
+    }))
 }
 
 async fn handle_create_schematic(
@@ -564,14 +638,18 @@ async fn handle_delete_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match resolve_component_reference(args, &sch_path)? {
-        Ok(r) => r,
+    let target = match resolve_component_target(args, &sch_path)? {
+        Ok(t) => t,
         Err(e) => return Ok(*e),
     };
+    let reference = target.reference.clone();
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
-    match sch.symbols.remove_by_reference(&reference) {
+    match target
+        .index_in(&sch.symbols)
+        .and_then(|i| sch.symbols.remove_at(i))
+    {
         Some(_) => {
             sch.overwrite()?;
             Ok(CallToolResult::json(&json!({ "deleted": reference })))
@@ -589,10 +667,11 @@ async fn handle_edit_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match resolve_component_reference(args, &sch_path)? {
-        Ok(r) => r,
+    let target = match resolve_component_target(args, &sch_path)? {
+        Ok(t) => t,
         Err(e) => return Ok(*e),
     };
+    let reference = target.reference.clone();
 
     let mut content = read_consistent(&sch_path)?;
     let expected = content.clone();
@@ -607,14 +686,14 @@ async fn handle_edit_schematic_component(
     // (J.2.4.1). A missing property is now created, exactly as
     // `add_component_annotation` creates one.
     let mut apply = |content: &mut String, field: &str, new_val: &str| match update_field(
-        content, &reference, field, new_val,
+        content, &target, field, new_val,
     ) {
         Ok(updated) => {
             *content = updated;
             changed.push(format!("{} → {}", field, new_val));
         }
         Err(FieldError::MissingProperty) => {
-            match insert_property(content, &reference, field, new_val) {
+            match insert_property(content, &target, field, new_val) {
                 Ok(updated) => {
                     *content = updated;
                     changed.push(format!("{} → {} (added)", field, new_val));
@@ -625,9 +704,10 @@ async fn handle_edit_schematic_component(
         Err(other) => errors.push(format!("{field}: {other}")),
     };
 
-    // Every field is located by looking the symbol up by `reference`, so the
-    // rename has to go last: renaming first made the symbol unfindable and
-    // every other field in the same call came back "symbol 'R2' not found".
+    // On the designator path every field is located by looking the symbol up
+    // by `reference`, so the rename has to go last: renaming first made the
+    // symbol unfindable and every other field in the same call came back
+    // "symbol 'R2' not found".
     if let Some(val) = opt_str(args, "value") {
         apply(&mut content, "Value", val);
     }
@@ -643,7 +723,7 @@ async fn handle_edit_schematic_component(
         // from the Reference property. Renaming only the property left
         // `kicad-cli sch export netlist` still emitting the old designator
         // while this tool reported success (J.2.3.2).
-        match update_instance_reference(&content, new_ref, &reference) {
+        match update_instance_reference(&content, &target, new_ref, &reference) {
             Ok(updated) => content = updated,
             Err(why) => errors.push(format!("instances: {why}")),
         }
@@ -666,7 +746,10 @@ async fn handle_edit_schematic_component(
     }
 
     if !changed.is_empty() {
-        let item_id = symbol_item_id(&expected, &reference)?;
+        let (start, end) = target
+            .block_in(&expected)
+            .ok_or_else(|| anyhow::anyhow!("component '{reference}' not found"))?;
+        let item_id = symbol_block_item_id(&expected[start..end])?;
         let command = SchematicCommand::replace_item_from_document(
             &expected,
             &content,
@@ -710,12 +793,13 @@ impl std::fmt::Display for FieldError {
 /// Replace the value of a property the symbol already carries.
 fn update_field(
     content: &str,
-    reference: &str,
+    target: &ComponentTarget,
     field: &str,
     new_val: &str,
 ) -> Result<String, FieldError> {
-    let (sym_start, sym_end) = find_symbol_instance_block(content, reference)
-        .ok_or_else(|| FieldError::SymbolNotFound(reference.to_string()))?;
+    let (sym_start, sym_end) = target
+        .block_in(content)
+        .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
     let sym_block = &content[sym_start..sym_end];
     let field_search = format!(r#"(property "{field}" ""#);
     let field_offset = sym_block
@@ -739,12 +823,13 @@ fn update_field(
 /// either tool looks the same in the file.
 fn insert_property(
     content: &str,
-    reference: &str,
+    target: &ComponentTarget,
     field: &str,
     value: &str,
 ) -> Result<String, FieldError> {
-    let (sym_start, sym_end) = find_symbol_instance_block(content, reference)
-        .ok_or_else(|| FieldError::SymbolNotFound(reference.to_string()))?;
+    let (sym_start, sym_end) = target
+        .block_in(content)
+        .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
     let sym_block = &content[sym_start..sym_end];
     // Before `instances` if there is one, otherwise before the block's close.
     let insert_rel = sym_block
@@ -773,10 +858,12 @@ fn insert_property(
 /// different designators for the same symbol.
 fn update_instance_reference(
     content: &str,
+    target: &ComponentTarget,
     new_ref: &str,
     old_ref: &str,
 ) -> Result<String, String> {
-    let (start, end) = find_symbol_instance_block(content, new_ref)
+    let (start, end) = target
+        .block_by(content, new_ref)
         .ok_or_else(|| format!("symbol '{new_ref}' not found after the rename"))?;
 
     let needle = format!(r#"(reference "{old_ref}")"#);
@@ -800,14 +887,18 @@ async fn handle_get_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match resolve_component_reference(args, &sch_path)? {
-        Ok(r) => r,
+    let target = match resolve_component_target(args, &sch_path)? {
+        Ok(t) => t,
         Err(e) => return Ok(*e),
     };
+    let reference = target.reference.clone();
 
     let sch = cse::Schematic::load(&sch_path)?;
 
-    match sch.symbols.by_reference(&reference) {
+    match target
+        .index_in(&sch.symbols)
+        .and_then(|i| sch.symbols.get(i))
+    {
         Some(sym) => {
             let (x, y) = sym.position();
             let rotation = sym.at.rotation.unwrap_or(0.0);
@@ -875,10 +966,11 @@ async fn handle_move_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match resolve_component_reference(args, &sch_path)? {
-        Ok(r) => r,
+    let target = match resolve_component_target(args, &sch_path)? {
+        Ok(t) => t,
         Err(e) => return Ok(*e),
     };
+    let reference = target.reference.clone();
     let new_x = match require_f64(args, "x") {
         Ok(v) => v,
         Err(e) => return Ok(e),
@@ -891,7 +983,10 @@ async fn handle_move_schematic_component(
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
-    match sch.symbols.by_reference_mut(&reference) {
+    match target
+        .index_in(&sch.symbols)
+        .and_then(|i| sch.symbols.get_mut(i))
+    {
         Some(sym) => {
             sym.move_to(new_x, new_y);
             sch.overwrite()?;
@@ -908,10 +1003,11 @@ async fn handle_rotate_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match resolve_component_reference(args, &sch_path)? {
-        Ok(r) => r,
+    let target = match resolve_component_target(args, &sch_path)? {
+        Ok(t) => t,
         Err(e) => return Ok(*e),
     };
+    let reference = target.reference.clone();
     let rotation = match require_f64(args, "rotation") {
         Ok(v) => v,
         Err(e) => return Ok(e),
@@ -919,7 +1015,10 @@ async fn handle_rotate_schematic_component(
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
-    match sch.symbols.by_reference_mut(&reference) {
+    match target
+        .index_in(&sch.symbols)
+        .and_then(|i| sch.symbols.get_mut(i))
+    {
         Some(sym) => {
             sym.set_rotation(rotation);
             sch.overwrite()?;
@@ -931,18 +1030,21 @@ async fn handle_rotate_schematic_component(
     }
 }
 
-/// Absolute pin positions of `reference`, keyed by pin number.
+/// Absolute pin positions of the addressed symbol, keyed by pin number.
 ///
 /// Returns an empty map rather than an error when the component or its
 /// embedded definition cannot be resolved: the caller uses this to *decide
 /// whether* a wire end belongs to a pin, and having no pins to match simply
 /// means nothing moves.
-fn pin_positions(sch_path: &std::path::Path, reference: &str) -> Vec<(String, (f64, f64))> {
+fn pin_positions(
+    sch_path: &std::path::Path,
+    target: &ComponentTarget,
+) -> Vec<(String, (f64, f64))> {
     let Ok((_, tree)) = read_schematic(sch_path) else {
         return Vec::new();
     };
     let instances = extract_symbol_instances(&tree);
-    let Some(inst) = instances.iter().find(|i| i.reference == reference) else {
+    let Some(inst) = target.instance_index(&instances).map(|i| &instances[i]) else {
         return Vec::new();
     };
     let lib_syms = tree
@@ -976,17 +1078,19 @@ async fn handle_move_connected(
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match resolve_component_reference(args, &sch_path)? {
-        Ok(r) => r,
+    let target = match resolve_component_target(args, &sch_path)? {
+        Ok(t) => t,
         Err(e) => return Ok(*e),
     };
 
-    let before = pin_positions(&sch_path, &reference);
+    let reference = target.reference.clone();
+
+    let before = pin_positions(&sch_path, &target);
     let moved = handle_move_schematic_component(args, ctx).await?;
     if moved.is_error {
         return Ok(moved);
     }
-    let after = pin_positions(&sch_path, &reference);
+    let after = pin_positions(&sch_path, &target);
 
     let mut sch = cse::Schematic::load(&sch_path)?;
     let mut dragged = 0usize;
@@ -1092,14 +1196,15 @@ async fn handle_get_schematic_pin_locations(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match resolve_component_reference(args, &sch_path)? {
-        Ok(r) => r,
+    let target = match resolve_component_target(args, &sch_path)? {
+        Ok(t) => t,
         Err(e) => return Ok(*e),
     };
+    let reference = target.reference.clone();
 
     let (_, tree) = read_schematic(&sch_path)?;
     let instances = extract_symbol_instances(&tree);
-    let inst = match instances.iter().find(|i| i.reference == reference) {
+    let inst = match target.instance_index(&instances).map(|i| &instances[i]) {
         Some(i) => i,
         None => {
             return Ok(component_not_found(
@@ -2631,5 +2736,253 @@ pub(crate) mod tests {
             assert_eq!(error["kind"], json!("invalid_argument"));
             assert_eq!(error["field"], json!("reference"));
         }
+    }
+    /// A multi-unit symbol as KiCad writes one: two top-level `(symbol …)`
+    /// blocks sharing the designator `U1`, each with its own `(uuid …)` and
+    /// `(unit N)`, at different positions. Built through
+    /// `add_schematic_component` so the `lib_symbols` definition is embedded
+    /// exactly the way every other fixture here gets it.
+    ///
+    /// Returns the schematic path and the two uuids, unit 1 first.
+    async fn multi_unit_schematic(
+        dir: &tempfile::TempDir,
+        ctx: &ToolContext,
+    ) -> (std::path::PathBuf, String, String) {
+        let path = dir.path().join("dual.kicad_sch");
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), ctx)
+            .await
+            .unwrap();
+        let mut uuids = Vec::new();
+        for (unit, x) in [(1u32, 100.0), (2, 150.0)] {
+            let res = handle_add_schematic_component(
+                &json!({
+                    "schematic": path.display().to_string(),
+                    "lib_id": "Device:OPAMP_DUAL",
+                    "x": x, "y": 80.0,
+                    "reference": "U1",
+                    "unit": unit
+                }),
+                ctx,
+            )
+            .await
+            .unwrap();
+            assert!(!res.is_error, "placing unit {unit}: {:?}", res.content);
+            let out: serde_json::Value = serde_json::from_str(&content_text(&res)).unwrap();
+            uuids.push(out["uuid"].as_str().unwrap().to_string());
+        }
+        (path, uuids.remove(0), uuids.remove(0))
+    }
+
+    /// Position and footprint of the symbol at `uuid`, straight from
+    /// `get_schematic_component` — which is itself one of the handlers under
+    /// test, so a lookup that landed on the wrong unit could not hide here.
+    async fn unit_state(
+        path: &std::path::Path,
+        uuid: &str,
+        ctx: &ToolContext,
+    ) -> (f64, f64, String) {
+        let res = handle_get_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": uuid }),
+            ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!res.is_error, "get {uuid}: {:?}", res.content);
+        let out: serde_json::Value = serde_json::from_str(&content_text(&res)).unwrap();
+        assert_eq!(
+            out["uuid"].as_str(),
+            Some(uuid),
+            "get returned another unit"
+        );
+        (
+            out["x"].as_f64().unwrap(),
+            out["y"].as_f64().unwrap(),
+            out["footprint"].as_str().unwrap_or("").to_string(),
+        )
+    }
+
+    #[tokio::test]
+    async fn move_by_uuid_moves_the_named_unit() {
+        // D.4.1.7: the units of one symbol share a designator, so a uuid
+        // naming unit 2 used to move unit 1 in silence.
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = test_ctx();
+        let (path, u1, u2) = multi_unit_schematic(&dir, &ctx).await;
+
+        let before_1 = unit_state(&path, &u1, &ctx).await;
+        let moved = handle_move_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": u2, "x": 200.0, "y": 120.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!moved.is_error, "{:?}", moved.content);
+
+        let after_2 = unit_state(&path, &u2, &ctx).await;
+        assert!(
+            (after_2.0 - 200.0).abs() < 1.27 && (after_2.1 - 120.0).abs() < 1.27,
+            "unit 2 must be at the requested point, is {after_2:?}"
+        );
+        assert_eq!(
+            unit_state(&path, &u1, &ctx).await,
+            before_1,
+            "unit 1 must not have moved"
+        );
+
+        // And the other way round: unit 1 by its own uuid.
+        let before_2 = unit_state(&path, &u2, &ctx).await;
+        let moved = handle_move_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": u1, "x": 60.0, "y": 40.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!moved.is_error, "{:?}", moved.content);
+        let after_1 = unit_state(&path, &u1, &ctx).await;
+        assert!(
+            (after_1.0 - 60.0).abs() < 1.27 && (after_1.1 - 40.0).abs() < 1.27,
+            "unit 1 must be at the requested point, is {after_1:?}"
+        );
+        assert_eq!(
+            unit_state(&path, &u2, &ctx).await,
+            before_2,
+            "unit 2 must not have moved"
+        );
+    }
+
+    #[tokio::test]
+    async fn move_by_reference_still_addresses_the_first_unit() {
+        // INV8: the designator path means exactly what it always meant — the
+        // first symbol carrying it, which is unit 1 here.
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = test_ctx();
+        let (path, u1, u2) = multi_unit_schematic(&dir, &ctx).await;
+
+        let before_2 = unit_state(&path, &u2, &ctx).await;
+        let moved = handle_move_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "reference": "U1", "x": 200.0, "y": 120.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!moved.is_error, "{:?}", moved.content);
+
+        let after_1 = unit_state(&path, &u1, &ctx).await;
+        assert!(
+            (after_1.0 - 200.0).abs() < 1.27 && (after_1.1 - 120.0).abs() < 1.27,
+            "the designator must still move unit 1, unit 1 is at {after_1:?}"
+        );
+        assert_eq!(
+            unit_state(&path, &u2, &ctx).await,
+            before_2,
+            "unit 2 must not have moved"
+        );
+    }
+
+    #[tokio::test]
+    async fn rotate_and_edit_by_uuid_reach_the_named_unit() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = test_ctx();
+        let (path, u1, u2) = multi_unit_schematic(&dir, &ctx).await;
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "uuid": u2,
+                "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!edited.is_error, "{:?}", edited.content);
+        assert_eq!(
+            unit_state(&path, &u2, &ctx).await.2,
+            "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+            "the edited unit is the one the uuid named"
+        );
+        assert_eq!(
+            unit_state(&path, &u1, &ctx).await.2,
+            "",
+            "unit 1 must be untouched"
+        );
+
+        let rotated = handle_rotate_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": u2, "rotation": 90.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!rotated.is_error, "{:?}", rotated.content);
+
+        let angle = |uuid: &str| {
+            let path = path.clone();
+            let uuid = uuid.to_string();
+            let ctx = test_ctx();
+            async move {
+                let res = handle_get_schematic_component(
+                    &json!({ "schematic": path.display().to_string(), "uuid": uuid }),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+                let out: serde_json::Value = serde_json::from_str(&content_text(&res)).unwrap();
+                out["rotation"].as_f64().unwrap()
+            }
+        };
+        assert_eq!(angle(&u2).await, 90.0, "unit 2 rotated");
+        assert_eq!(angle(&u1).await, 0.0, "unit 1 must not have rotated");
+    }
+
+    #[tokio::test]
+    async fn delete_and_pin_locations_by_uuid_reach_the_named_unit() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = test_ctx();
+        let (path, u1, u2) = multi_unit_schematic(&dir, &ctx).await;
+
+        // Unit 2's pins, not unit 1's superimposed or substituted.
+        let pins = handle_get_schematic_pin_locations(
+            &json!({ "schematic": path.display().to_string(), "uuid": u2 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!pins.is_error, "{:?}", pins.content);
+        let out: serde_json::Value = serde_json::from_str(&content_text(&pins)).unwrap();
+        let mut nums: Vec<String> = out["pins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["number"].as_str().unwrap().to_string())
+            .collect();
+        nums.sort();
+        assert_eq!(nums, vec!["5", "6", "7"], "unit 2 pins");
+
+        let deleted = handle_delete_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": u2 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!deleted.is_error, "{:?}", deleted.content);
+
+        let listed = handle_list_schematic_components(
+            &json!({ "schematic": path.display().to_string() }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let out: serde_json::Value = serde_json::from_str(&content_text(&listed)).unwrap();
+        let remaining: Vec<&str> = out["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["uuid"].as_str().unwrap())
+            .collect();
+        assert_eq!(remaining, vec![u1.as_str()], "unit 2 is the one deleted");
     }
 }

@@ -402,7 +402,7 @@ Silent stale-state write: possible → **refused**, asserted by test.
 ### Validation
 Error-shape tests; E9 and E11 stay closed.
 
-## D.4 — Stable IDs — TODO
+## D.4 — Stable IDs — DONE
 
 ### Objectif
 Address items by UUID rather than by path + coordinates, so a reference survives
@@ -413,7 +413,7 @@ D.1 (revisions). The graph already keys on KiCad's own UUIDs, so the extraction
 side exists (`konnect-core::graph`).
 
 ### Tâches
-- [ ] D.4.1 UUID-addressed item handles across the schematic tools
+- [x] D.4.1 UUID-addressed item handles across the schematic tools
   - [x] D.4.1.1 One resolver, not three. `konnect-sexp::command` already holds
         the real index (`ItemId`, `document_items`, both private); it exposes a
         lookup by UUID, and `tools/mod.rs` carries the handle layer beside
@@ -433,12 +433,13 @@ side exists (`konnect-core::graph`).
         handlers holding the document text) and a thin
         `resolve_component_reference` that returns `reference` without reading
         anything and only pays for a read on the `uuid` path (INV8)
-  - [ ] D.4.1.7 A `uuid` that names unit 2 of a multi-unit symbol still lands
-        on unit 1 in the seven `cse`/tree handlers: the units share a
-        designator, and those handlers redescend by it. Exact-unit addressing
-        needs either `cse::SymbolCollection` lookups by uuid (it already has
-        `remove_by_uuid`) or moving those handlers onto the byte range.
-        `add_component_annotation` and `replace_component` are already exempt
+  - [x] D.4.1.7 A `uuid` that names unit 2 of a multi-unit symbol now edits
+        unit 2. `resolve_component_reference` became
+        `resolve_component_target`, which resolves to the symbol's *position* —
+        in the loaded schematic, among the parsed instances, or as a byte range
+        — and nothing redescends by designator afterwards (D81). No
+        `by_uuid`/`by_uuid_mut` was added to `cse`: position is what the
+        handlers need, and only `remove_at` was missing
   - [x] D.4.1.3 `sch_hierarchy`: `uuid` accepted wherever `sheet_name` is —
         eight tools, plus `source_uuid` beside `duplicate_sheet`'s
         `source_sheet_name`. Cleaner than D.4.1.2 because `cse` already

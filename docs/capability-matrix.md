@@ -164,12 +164,12 @@ Not covered by any tool:
 | tool | toolset | adapter | effect | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|
 | `add_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | bench | `bench/probes/symbol_lookup_cost.yaml` |  |
-| `delete_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `delete_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `edit_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `get_schematic_component` | `sch_components` | `sexpr` | `read` | SUPPORTED | bench | `bench/tasks/07_sch_inspection.yaml` |  |
 | `list_schematic_components` | `sch_components` | `sexpr` | `read` | SUPPORTED | bench | `bench/probes/graph.yaml` |  |
 | `move_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `rotate_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `rotate_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `move_connected` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `move_region` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `annotate_schematic` | `sch_components` | `cli` | `write` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |

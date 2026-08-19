@@ -344,6 +344,13 @@ impl SymbolCollection {
             .position(|s| s.reference() == Some(reference))?;
         Some(self.symbols.remove(idx))
     }
+    /// Remove the symbol at `i`, for a caller that already resolved *which*
+    /// symbol it means to a position and must not re-address it by name — the
+    /// units of a multi-unit symbol share one designator, so `remove_by_*`
+    /// would drop the wrong unit.
+    pub fn remove_at(&mut self, i: usize) -> Option<Symbol> {
+        (i < self.symbols.len()).then(|| self.symbols.remove(i))
+    }
     pub fn remove_by_uuid(&mut self, uuid: &str) -> Option<Symbol> {
         let idx = self.symbols.iter().position(|s| s.uuid == uuid)?;
         Some(self.symbols.remove(idx))
