@@ -3,38 +3,44 @@
 ## Phase actuelle
 
 D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
-D.8 are DONE. D.4 is in progress (D.4.1.1-D.4.1.2 done); D.7 remains
+D.8 are DONE. D.4 is in progress (D.4.1.1-D.4.1.3 done); D.7 remains
 untouched; D.9 is gated by the same GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
 H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
 which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.4.1.3 — `sch_hierarchy`: `uuid` accepted wherever `sheet_name` is. Not
-started.
+D.4.1.4 — `sch_wiring` / `sch_buses`: `uuid` accepted wherever a point or a
+segment addresses an item, and `extract_junctions` starts carrying the uuid it
+drops. Not started.
 
 ## Dernière tâche validée
 
-**D.4.1.2 — `sch_components` accepts a `uuid` wherever it accepts a
-`reference`**, on the nine tools that address one component
-(`delete`/`edit`/`get`/`move`/`rotate`/`move_connected`/`get_pin_locations`/
-`add_component_annotation`/`replace_component`). The plural forms
-(`references`) are out of scope and are D.4.1.6.
+**D.4.1.3 — `sch_hierarchy` accepts a `uuid` wherever it accepts a
+`sheet_name`**: the eight tools that address a sheet, plus `source_uuid`
+beside `duplicate_sheet`'s `source_sheet_name`. `add_hierarchical_sheet` is
+untouched — its `sheet_name` names a sheet to *create*, not an address.
 
-Two resolvers, because the file has two worlds: `tools::resolve_component`
-returns the symbol's byte range and the `reference` *read from that block*, for
-the handlers holding the document text; `resolve_component_reference` returns
-`reference` without reading anything and only pays for a read on the `uuid`
-path, for the seven handlers that go through `cse::Schematic`.
+Cleaner than D.4.1.2: `cse` already addresses sheets by uuid, so no address is
+translated into a name anywhere. That is not cosmetic — sheet names are not
+unique, and `a_uuid_addresses_one_of_two_sheets_sharing_a_name` pins it.
 
 Validation :
-- `cargo test -p konnect-core` 453/453 lib (444 + 9 new) + every integration
+- `cargo test -p konnect-core` 465/465 lib (453 + 12) + every integration
   suite PASS, `capability_matrix` and `error_catalog_debt` included
-- the D.4 test exists and is named: `a_uuid_still_addresses_the_symbol_after_it_moved`
 - clippy `-D warnings` and `fmt --check` clean
 
 ## Décisions actives
 
+- D81 — a mutable lookup is reached by *position*, never by re-addressing what
+  a name already resolved. `cse` reads a missing `(uuid …)` as the empty
+  string, so translating a name-resolved sheet into its uuid would make two
+  identity-less sheets answer to the same `""`. The layer below already
+  refuses that document (`ItemId` rejects an empty uuid at commit time, so the
+  failure is a refusal and the file is untouched — pinned by
+  `a_sheet_without_a_uuid_is_refused_rather_than_edited`), which is why this
+  is structural rather than a bug fixed: the resolver should not depend on a
+  guarantee that belongs to another layer.
 - D80 — `reference` wins when a call carries both addresses, and the resolved
   `reference` is *read out of the block*, never echoed from the request: a
   `uuid` call and a `reference` call then hand the same string to everything
@@ -294,13 +300,13 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.4.1.3** — `sch_hierarchy`: accept `uuid` wherever `sheet_name` is accepted.
-Same two-resolver shape as D.4.1.2, with `kind == Some("sheet")` instead of
-`"symbol"`; the sheet's name is a `(property "Sheetname" …)`, so the analogue of
-`symbol_block_reference` reads that. Note before starting: a sheet's *pin*
-UUIDs are nested and therefore invisible to `item_locations` by design (D79) —
-decide explicitly whether a pin address is in scope for this task or a later
-one.
+**D.4.1.4** — `sch_wiring` / `sch_buses`: accept `uuid` wherever a point or a
+segment addresses an item, and make `extract_junctions` carry the uuid it
+currently drops. Unlike D.4.1.2 and D.4.1.3 this is not one more resolver: a
+coordinate pair addresses *whatever is at that point*, so decide first which
+tools take an item address (those can take a uuid) and which take a geometric
+one (those cannot). `delete_wire` already resolves a uuid — D.4.1.1 put it on
+the shared index — so start by reading it.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

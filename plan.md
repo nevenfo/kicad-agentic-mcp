@@ -439,7 +439,12 @@ side exists (`konnect-core::graph`).
         needs either `cse::SymbolCollection` lookups by uuid (it already has
         `remove_by_uuid`) or moving those handlers onto the byte range.
         `add_component_annotation` and `replace_component` are already exempt
-  - [ ] D.4.1.3 `sch_hierarchy`: `uuid` accepted wherever `sheet_name` is
+  - [x] D.4.1.3 `sch_hierarchy`: `uuid` accepted wherever `sheet_name` is —
+        eight tools, plus `source_uuid` beside `duplicate_sheet`'s
+        `source_sheet_name`. Cleaner than D.4.1.2 because `cse` already
+        addresses sheets by uuid (`by_uuid`, `by_uuid_mut`, `remove_by_uuid`),
+        so no address is ever translated into a name — which matters, since
+        sheet names are not unique and a test now pins that
   - [ ] D.4.1.4 `sch_wiring` / `sch_buses`: `uuid` accepted wherever a point or
         a segment addresses an item; `extract_junctions` starts carrying the
         uuid it currently drops

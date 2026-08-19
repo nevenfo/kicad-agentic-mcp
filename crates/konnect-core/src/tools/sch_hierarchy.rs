@@ -58,13 +58,14 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "sheet_name": { "type": "string", "description": "Current Sheetname to look up" },
+                    "uuid": { "type": "string", "description": "Sheet UUID; pass this or 'sheet_name'" },
                     "new_name": { "type": "string" },
                     "new_file": { "type": "string" },
                     "x": { "type": "number" }, "y": { "type": "number" },
                     "width": { "type": "number" }, "height": { "type": "number" },
                     "project_name": { "type": "string", "description": PROJECT_NAME_DESC }
                 },
-                "required": ["schematic", "sheet_name"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_edit_sheet(args, ctx).await }
         ),
@@ -76,9 +77,10 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "sheet_name": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Sheet UUID; pass this or 'sheet_name'" },
                     "x": { "type": "number" }, "y": { "type": "number" }
                 },
-                "required": ["schematic", "sheet_name", "x", "y"]
+                "required": ["schematic", "x", "y"]
             }),
             |args, ctx| async move { handle_move_sheet(args, ctx).await }
         ),
@@ -91,9 +93,10 @@ pub fn tools() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
-                    "sheet_name": { "type": "string" }
+                    "sheet_name": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Sheet UUID; pass this or 'sheet_name'" },
                 },
-                "required": ["schematic", "sheet_name"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_delete_sheet(args, ctx).await }
         ),
@@ -109,11 +112,12 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "source_sheet_name": { "type": "string" },
+                    "source_uuid": { "type": "string", "description": "Source sheet UUID; pass this or 'source_sheet_name'" },
                     "new_sheet_name": { "type": "string" },
                     "new_file": { "type": "string", "description": "Filename for the copy, resolved relative to the parent's directory. Must not already exist." },
                     "project_name": { "type": "string", "description": PROJECT_NAME_DESC }
                 },
-                "required": ["schematic", "source_sheet_name", "new_sheet_name", "new_file"]
+                "required": ["schematic", "new_sheet_name", "new_file"]
             }),
             |args, ctx| async move { handle_duplicate_sheet(args, ctx).await }
         ),
@@ -161,10 +165,11 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string", "description": "Path to the parent .kicad_sch file" },
                     "sheet_name": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Sheet UUID; pass this or 'sheet_name'" },
                     "side": { "type": "string", "enum": ["right", "left"], "description": "Which edge to place new pins on. Default: 'right'" },
                     "project_name": { "type": "string", "description": PROJECT_NAME_DESC }
                 },
-                "required": ["schematic", "sheet_name"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_import_sheet_pins(args, ctx).await }
         ),
@@ -178,11 +183,12 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "sheet_name": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Sheet UUID; pass this or 'sheet_name'" },
                     "pin_name": { "type": "string" },
                     "pin_type": { "type": "string", "enum": ALLOWED_PIN_TYPES },
                     "x": { "type": "number" }, "y": { "type": "number" }
                 },
-                "required": ["schematic", "sheet_name", "pin_name", "pin_type", "x", "y"]
+                "required": ["schematic", "pin_name", "pin_type", "x", "y"]
             }),
             |args, ctx| async move { handle_add_sheet_pin(args, ctx).await }
         ),
@@ -195,12 +201,13 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "sheet_name": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Sheet UUID; pass this or 'sheet_name'" },
                     "pin_name": { "type": "string", "description": "Current pin name to look up" },
                     "new_name": { "type": "string" },
                     "pin_type": { "type": "string", "enum": ALLOWED_PIN_TYPES },
                     "x": { "type": "number" }, "y": { "type": "number" }
                 },
-                "required": ["schematic", "sheet_name", "pin_name"]
+                "required": ["schematic", "pin_name"]
             }),
             |args, ctx| async move { handle_edit_sheet_pin(args, ctx).await }
         ),
@@ -212,9 +219,10 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "sheet_name": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Sheet UUID; pass this or 'sheet_name'" },
                     "pin_name": { "type": "string" }
                 },
-                "required": ["schematic", "sheet_name", "pin_name"]
+                "required": ["schematic", "pin_name"]
             }),
             |args, ctx| async move { handle_delete_sheet_pin(args, ctx).await }
         ),
@@ -243,6 +251,105 @@ const ALLOWED_PIN_TYPES: &[&str] = &["input", "output", "bidirectional", "tri_st
 const SHEET_PIN_SPACING_MM: f64 = 2.54;
 const PROJECT_NAME_DESC: &str =
     "Project name key for instance entries. Default: the schematic file's stem (matching eeschema)";
+
+// --- Sheet addressing -------------------------------------------------------
+
+/// How the caller named the sheet to act on (D.4.1.3).
+///
+/// A `uuid` address is resolved through `by_uuid`, never translated into a
+/// name first: sheet names are not unique, and translating would silently act
+/// on the first homonym instead of the sheet the caller asked for.
+#[derive(Clone, Copy, Debug)]
+enum SheetAddress<'a> {
+    Name(&'a str),
+    Uuid(&'a str),
+}
+
+impl<'a> SheetAddress<'a> {
+    fn key(&self) -> &'a str {
+        match *self {
+            SheetAddress::Name(n) => n,
+            SheetAddress::Uuid(u) => u,
+        }
+    }
+
+    fn find<'s>(&self, sheets: &'s cse::SheetCollection) -> Option<&'s cse::Sheet> {
+        self.position(sheets).and_then(|idx| sheets.get(idx))
+    }
+
+    /// Index rather than uuid, because a sheet's uuid is not guaranteed to be
+    /// there: `cse` reads a missing `(uuid …)` as the empty string, so
+    /// re-addressing a name-resolved sheet through `by_uuid_mut("")` would
+    /// land on the first sheet that happens to lack one. The index is exact
+    /// for both address forms.
+    fn position(&self, sheets: &cse::SheetCollection) -> Option<usize> {
+        match *self {
+            SheetAddress::Name(n) => sheets.iter().position(|s| s.name() == n),
+            SheetAddress::Uuid(u) => sheets.iter().position(|s| s.uuid == u),
+        }
+    }
+
+    /// The name path keeps the empty candidate list it always had; the uuid
+    /// path lists the uuids actually present, which is the only hint that can
+    /// help a caller who mistyped one.
+    fn not_found(&self, sch_path: &Path, sheets: &cse::SheetCollection) -> CallToolResult {
+        let candidates = match *self {
+            SheetAddress::Name(_) => Vec::new(),
+            SheetAddress::Uuid(_) => sheets.iter().map(|s| s.uuid.clone()).collect(),
+        };
+        CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "sheet".to_string(),
+                key: self.key().to_string(),
+                candidates,
+            },
+            format!("Sheet '{}' not found", self.key()),
+        )
+    }
+}
+
+/// `sheet_name` wins when both are given (same precedence as D80 for
+/// components), so an existing call keeps its exact behaviour.
+fn sheet_address_from<'a>(
+    args: &'a Value,
+    name_field: &str,
+    uuid_field: &str,
+) -> Result<SheetAddress<'a>, Box<CallToolResult>> {
+    if let Some(name) = opt_str(args, name_field) {
+        return Ok(SheetAddress::Name(name));
+    }
+    if let Some(uuid) = opt_str(args, uuid_field) {
+        return Ok(SheetAddress::Uuid(uuid));
+    }
+    Err(Box::new(CallToolResult::error_kind(
+        crate::mcp::error::ToolErrorKind::InvalidArgument {
+            field: name_field.to_string(),
+            reason: format!(
+                "one of '{name_field}' or '{uuid_field}' is required to address a sheet"
+            ),
+        },
+        format!("Missing sheet address: pass '{name_field}' or '{uuid_field}'"),
+    )))
+}
+
+fn sheet_address(args: &Value) -> Result<SheetAddress<'_>, Box<CallToolResult>> {
+    sheet_address_from(args, "sheet_name", "uuid")
+}
+
+/// Resolves an address to the sheet's position, so the mutable lookup that
+/// follows reaches the sheet that was actually found — see
+/// [`SheetAddress::position`] for why this is not the uuid.
+fn resolve_sheet_index(
+    address: SheetAddress<'_>,
+    sheets: &cse::SheetCollection,
+    sch_path: &Path,
+) -> Result<usize, Box<CallToolResult>> {
+    match address.position(sheets) {
+        Some(idx) => Ok(idx),
+        None => Err(Box::new(address.not_found(sch_path, sheets))),
+    }
+}
 
 fn validate_pin_type(pin_type: &str) -> Result<(), CallToolResult> {
     if ALLOWED_PIN_TYPES.contains(&pin_type) {
@@ -550,9 +657,9 @@ async fn handle_add_hierarchical_sheet(
 
 async fn handle_edit_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sheet_name = match require_str(args, "sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let address = match sheet_address(args) {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
     let project_name = opt_str(args, "project_name")
         .map(str::to_string)
@@ -560,21 +667,15 @@ async fn handle_edit_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
 
     let before = read_consistent(&sch_path)?;
     let mut sch = cse::Schematic::load(&sch_path)?;
-    let sheet = match sch.sheets.by_name_mut(&sheet_name) {
-        Some(s) => s,
-        None => {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "sheet".to_string(),
-                    key: sheet_name.clone(),
-                    candidates: Vec::new(),
-                },
-                format!("Sheet '{}' not found", sheet_name),
-            ))
-        }
+    let sheet_index = match resolve_sheet_index(address, &sch.sheets, &sch_path) {
+        Ok(u) => u,
+        Err(e) => return Ok(*e),
     };
+    let sheet = sch.sheets.get_mut(sheet_index).expect("resolved above");
     let sheet_uuid = sheet.uuid.clone();
+    // Read before any rename, so a rename still reports the sheet the caller
+    // addressed -- the behaviour the name path always had.
+    let sheet_name = sheet.name().to_string();
 
     let mut changed = Vec::new();
     if let Some(new_name) = opt_str(args, "new_name") {
@@ -615,9 +716,9 @@ async fn handle_edit_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
 
 async fn handle_move_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sheet_name = match require_str(args, "sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let address = match sheet_address(args) {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
     let x = match require_f64(args, "x") {
         Ok(v) => v,
@@ -630,62 +731,43 @@ async fn handle_move_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<C
 
     let before = read_consistent(&sch_path)?;
     let mut sch = cse::Schematic::load(&sch_path)?;
-    match sch.sheets.by_name_mut(&sheet_name) {
-        Some(sheet) => {
-            let sheet_uuid = sheet.uuid.clone();
-            sheet.move_to(x, y);
-            commit_edited_sheet_item(&sch_path, &before, &sch, &sheet_uuid, "Move sheet")?;
-            Ok(CallToolResult::json(
-                &json!({ "moved": sheet_name, "x": x, "y": y }),
-            ))
-        }
-        None => Ok(CallToolResult::error_kind(
-            crate::mcp::error::ToolErrorKind::NotFound {
-                document: sch_path.display().to_string(),
-                item_kind: "sheet".to_string(),
-                key: sheet_name.clone(),
-                candidates: Vec::new(),
-            },
-            format!("Sheet '{}' not found", sheet_name),
-        )),
-    }
+    let sheet_index = match resolve_sheet_index(address, &sch.sheets, &sch_path) {
+        Ok(u) => u,
+        Err(e) => return Ok(*e),
+    };
+    let sheet = sch.sheets.get_mut(sheet_index).expect("resolved above");
+    let sheet_uuid = sheet.uuid.clone();
+    let sheet_name = sheet.name().to_string();
+    sheet.move_to(x, y);
+    commit_edited_sheet_item(&sch_path, &before, &sch, &sheet_uuid, "Move sheet")?;
+    Ok(CallToolResult::json(
+        &json!({ "moved": sheet_name, "x": x, "y": y }),
+    ))
 }
 
 async fn handle_delete_sheet(args: &Value, _ctx: &ToolContext) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sheet_name = match require_str(args, "sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let address = match sheet_address(args) {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
 
     let before = read_consistent(&sch_path)?;
     let sch = cse::Schematic::load(&sch_path)?;
-    match sch.sheets.by_name(&sheet_name) {
-        Some(removed) => {
-            let child_file = removed.file().to_owned();
-            let command = SchematicCommand::delete_item(
-                &before,
-                ItemId::new(removed.uuid.clone())?,
-                "Delete sheet",
-            )?;
-            commit_command(&sch_path, &command)?;
-            Ok(CallToolResult::json(&json!({
-                "deleted": sheet_name,
-                "child_file_preserved": child_file,
-                "note": "The child schematic file was not deleted. Remaining sheets' page \
-                         numbers may now have a gap — call renumber_sheet_pages if needed."
-            })))
-        }
-        None => Ok(CallToolResult::error_kind(
-            crate::mcp::error::ToolErrorKind::NotFound {
-                document: sch_path.display().to_string(),
-                item_kind: "sheet".to_string(),
-                key: sheet_name.clone(),
-                candidates: Vec::new(),
-            },
-            format!("Sheet '{}' not found", sheet_name),
-        )),
-    }
+    let Some(removed) = address.find(&sch.sheets) else {
+        return Ok(address.not_found(&sch_path, &sch.sheets));
+    };
+    let sheet_name = removed.name().to_string();
+    let child_file = removed.file().to_owned();
+    let command =
+        SchematicCommand::delete_item(&before, ItemId::new(removed.uuid.clone())?, "Delete sheet")?;
+    commit_command(&sch_path, &command)?;
+    Ok(CallToolResult::json(&json!({
+        "deleted": sheet_name,
+        "child_file_preserved": child_file,
+        "note": "The child schematic file was not deleted. Remaining sheets' page \
+                 numbers may now have a gap — call renumber_sheet_pages if needed."
+    })))
 }
 
 async fn handle_duplicate_sheet(
@@ -693,9 +775,9 @@ async fn handle_duplicate_sheet(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let source_name = match require_str(args, "source_sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let source = match sheet_address_from(args, "source_sheet_name", "source_uuid") {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
     let new_name = match require_str(args, "new_sheet_name") {
         Ok(v) => v.to_string(),
@@ -722,22 +804,19 @@ async fn handle_duplicate_sheet(
         ));
     }
 
-    let (src_x, src_y, src_w, src_h, src_file) = match parent.sheets.by_name(&source_name) {
+    let (source_name, src_x, src_y, src_w, src_h, src_file) = match source.find(&parent.sheets) {
         Some(s) => {
             let (x, y) = s.position();
-            (x, y, s.width, s.height, s.file().to_string())
+            (
+                s.name().to_string(),
+                x,
+                y,
+                s.width,
+                s.height,
+                s.file().to_string(),
+            )
         }
-        None => {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "sheet".to_string(),
-                    key: source_name.clone(),
-                    candidates: Vec::new(),
-                },
-                format!("Sheet '{}' not found", source_name),
-            ))
-        }
+        None => return Ok(source.not_found(&sch_path, &parent.sheets)),
     };
 
     let dir = parent_dir(&sch_path);
@@ -1073,9 +1152,9 @@ async fn handle_import_sheet_pins(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sheet_name = match require_str(args, "sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let address = match sheet_address(args) {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
     let side = opt_str(args, "side").unwrap_or("right").to_string();
     if side != "right" && side != "left" {
@@ -1092,24 +1171,23 @@ async fn handle_import_sheet_pins(
     let mut parent = cse::Schematic::load(&sch_path)?;
     let dir = parent_dir(&sch_path);
 
-    let (child_path, sheet_x, sheet_y, sheet_w, existing_pin_count) =
-        match parent.sheets.by_name(&sheet_name) {
-            Some(s) => {
-                let (x, y) = s.position();
-                (dir.join(s.file()), x, y, s.width, s.pins.len())
-            }
-            None => {
-                return Ok(CallToolResult::error_kind(
-                    crate::mcp::error::ToolErrorKind::NotFound {
-                        document: sch_path.display().to_string(),
-                        item_kind: "sheet".to_string(),
-                        key: sheet_name.clone(),
-                        candidates: Vec::new(),
-                    },
-                    format!("Sheet '{}' not found", sheet_name),
-                ))
-            }
-        };
+    let sheet_index = match resolve_sheet_index(address, &parent.sheets, &sch_path) {
+        Ok(idx) => idx,
+        Err(e) => return Ok(*e),
+    };
+    let (sheet_name, sheet_uuid, child_path, sheet_x, sheet_y, sheet_w, existing_pin_count) = {
+        let s = parent.sheets.get(sheet_index).expect("resolved above");
+        let (x, y) = s.position();
+        (
+            s.name().to_string(),
+            s.uuid.clone(),
+            dir.join(s.file()),
+            x,
+            y,
+            s.width,
+            s.pins.len(),
+        )
+    };
 
     if !child_path.exists() {
         return Ok(CallToolResult::error_kind(
@@ -1134,11 +1212,7 @@ async fn handle_import_sheet_pins(
         })
         .collect();
 
-    let sheet = parent
-        .sheets
-        .by_name_mut(&sheet_name)
-        .expect("looked up above");
-    let sheet_uuid = sheet.uuid.clone();
+    let sheet = parent.sheets.get_mut(sheet_index).expect("looked up above");
 
     let edge_x = if side == "right" {
         sheet_x + sheet_w
@@ -1187,9 +1261,9 @@ async fn handle_import_sheet_pins(
 
 async fn handle_add_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sheet_name = match require_str(args, "sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let address = match sheet_address(args) {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
     let pin_name = match require_str(args, "pin_name") {
         Ok(v) => v.to_string(),
@@ -1217,21 +1291,13 @@ async fn handle_add_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resul
 
     let before = read_consistent(&sch_path)?;
     let mut sch = cse::Schematic::load(&sch_path)?;
-    let sheet = match sch.sheets.by_name_mut(&sheet_name) {
-        Some(s) => s,
-        None => {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "sheet".to_string(),
-                    key: sheet_name.clone(),
-                    candidates: Vec::new(),
-                },
-                format!("Sheet '{}' not found", sheet_name),
-            ))
-        }
+    let sheet_index = match resolve_sheet_index(address, &sch.sheets, &sch_path) {
+        Ok(u) => u,
+        Err(e) => return Ok(*e),
     };
+    let sheet = sch.sheets.get_mut(sheet_index).expect("resolved above");
     let sheet_uuid = sheet.uuid.clone();
+    let sheet_name = sheet.name().to_string();
 
     if sheet.pin_by_name(&pin_name).is_some() {
         return Ok(CallToolResult::error_kind(
@@ -1270,9 +1336,9 @@ async fn handle_add_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resul
 
 async fn handle_edit_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sheet_name = match require_str(args, "sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let address = match sheet_address(args) {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
     let pin_name = match require_str(args, "pin_name") {
         Ok(v) => v.to_string(),
@@ -1286,21 +1352,13 @@ async fn handle_edit_sheet_pin(args: &Value, _ctx: &ToolContext) -> anyhow::Resu
 
     let before = read_consistent(&sch_path)?;
     let mut sch = cse::Schematic::load(&sch_path)?;
-    let sheet = match sch.sheets.by_name_mut(&sheet_name) {
-        Some(s) => s,
-        None => {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "sheet".to_string(),
-                    key: sheet_name.clone(),
-                    candidates: Vec::new(),
-                },
-                format!("Sheet '{}' not found", sheet_name),
-            ))
-        }
+    let sheet_index = match resolve_sheet_index(address, &sch.sheets, &sch_path) {
+        Ok(u) => u,
+        Err(e) => return Ok(*e),
     };
+    let sheet = sch.sheets.get_mut(sheet_index).expect("resolved above");
     let sheet_uuid = sheet.uuid.clone();
+    let sheet_name = sheet.name().to_string();
     let pin = match sheet.pin_by_name_mut(&pin_name) {
         Some(p) => p,
         None => {
@@ -1359,9 +1417,9 @@ async fn handle_delete_sheet_pin(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sheet_name = match require_str(args, "sheet_name") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    let address = match sheet_address(args) {
+        Ok(a) => a,
+        Err(e) => return Ok(*e),
     };
     let pin_name = match require_str(args, "pin_name") {
         Ok(v) => v.to_string(),
@@ -1370,21 +1428,13 @@ async fn handle_delete_sheet_pin(
 
     let before = read_consistent(&sch_path)?;
     let mut sch = cse::Schematic::load(&sch_path)?;
-    let sheet = match sch.sheets.by_name_mut(&sheet_name) {
-        Some(s) => s,
-        None => {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "sheet".to_string(),
-                    key: sheet_name.clone(),
-                    candidates: Vec::new(),
-                },
-                format!("Sheet '{}' not found", sheet_name),
-            ))
-        }
+    let sheet_index = match resolve_sheet_index(address, &sch.sheets, &sch_path) {
+        Ok(u) => u,
+        Err(e) => return Ok(*e),
     };
+    let sheet = sch.sheets.get_mut(sheet_index).expect("resolved above");
     let sheet_uuid = sheet.uuid.clone();
+    let sheet_name = sheet.name().to_string();
 
     if !sheet.remove_pin(&pin_name) {
         return Ok(CallToolResult::error_kind(
@@ -2198,5 +2248,515 @@ mod tests {
         };
         let report: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(report["issue_count"], 0);
+    }
+
+    // ─── D.4.1.3: a sheet is addressable by uuid wherever it is by name ──────
+
+    fn error_body(result: &CallToolResult) -> Value {
+        let crate::mcp::protocol::ToolContent::Text { text } = result.content.first().unwrap()
+        else {
+            panic!("text content expected");
+        };
+        serde_json::from_str::<Value>(text).unwrap()["error"].clone()
+    }
+
+    /// A freshly created pin carries a random uuid, so documents that differ
+    /// only by those are compared with every uuid masked; sheet identity is
+    /// asserted separately, by uuid, in the tests that care about it.
+    fn uuid_masked(text: &str) -> String {
+        let mut out = String::new();
+        let mut rest = text;
+        while let Some(i) = rest.find("(uuid \"") {
+            out.push_str(&rest[..i + 7]);
+            rest = &rest[i + 7..];
+            let end = rest.find('"').expect("uuid literal is closed");
+            out.push_str("<uuid>");
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    fn sheet_uuid(root: &Path, name: &str) -> String {
+        cse::Schematic::load(root)
+            .unwrap()
+            .sheets
+            .by_name(name)
+            .unwrap()
+            .uuid
+            .clone()
+    }
+
+    /// Two byte-identical schematics in sibling directories, so the same file
+    /// name (and therefore the same default project name) is used on both
+    /// sides: one is driven by `sheet_name`, the other by `uuid`, and the two
+    /// documents must end up identical.
+    async fn twin_roots(ctx: &ToolContext) -> (TempDir, PathBuf, PathBuf, String) {
+        let tmp = TempDir::new().unwrap();
+        let a_dir = tmp.path().join("a");
+        let b_dir = tmp.path().join("b");
+        std::fs::create_dir_all(&a_dir).unwrap();
+        std::fs::create_dir_all(&b_dir).unwrap();
+        let a = blank_schematic(&a_dir, "root.kicad_sch");
+        handle_add_hierarchical_sheet(
+            &json!({ "schematic": a.display().to_string(), "sheet_file": "child.kicad_sch", "sheet_name": "A" }),
+            ctx,
+        )
+        .await
+        .unwrap();
+        let b = b_dir.join("root.kicad_sch");
+        std::fs::copy(&a, &b).unwrap();
+        std::fs::copy(a_dir.join("child.kicad_sch"), b_dir.join("child.kicad_sch")).unwrap();
+        let uuid = sheet_uuid(&a, "A");
+        (tmp, a, b, uuid)
+    }
+
+    /// A sheet with no `(uuid …)` has no identity, and `cse` reads that as the
+    /// empty string. Two such sheets are indistinguishable by uuid, which is
+    /// why the resolver hands the mutable lookup a *position* and never a
+    /// uuid. What actually stops the edit is one layer further down —
+    /// `ItemId` refuses an empty uuid at commit time — so the failure is a
+    /// refusal, not a write to the wrong sheet: the document is untouched.
+    #[tokio::test]
+    async fn a_sheet_without_a_uuid_is_refused_rather_than_edited() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root.kicad_sch");
+        let source = "(kicad_sch
+	(version 20260306)
+	(generator \"eeschema\")
+	(uuid \"root\")
+	(sheet
+		(at 10 10)
+		(size 20 20)
+		(property \"Sheetname\" \"First\" (at 10 9 0))
+		(property \"Sheetfile\" \"first.kicad_sch\" (at 10 31 0))
+	)
+	(sheet
+		(at 50 10)
+		(size 20 20)
+		(property \"Sheetname\" \"Second\" (at 50 9 0))
+		(property \"Sheetfile\" \"second.kicad_sch\" (at 50 31 0))
+	)
+)
+";
+        std::fs::write(&root, source).unwrap();
+
+        let sheets = cse::Schematic::load(&root).unwrap().sheets;
+        assert_eq!(sheets.as_slice().len(), 2);
+        assert!(
+            sheets.iter().all(|s| s.uuid.is_empty()),
+            "the fixture's point is that neither sheet has an identity"
+        );
+
+        let outcome = handle_move_sheet(
+            &json!({ "schematic": root.display().to_string(), "sheet_name": "Second", "x": 70.0, "y": 40.0 }),
+            &test_ctx(),
+        )
+        .await;
+        assert!(
+            outcome.is_err(),
+            "an identity-less sheet cannot be committed"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&root).unwrap(),
+            source,
+            "a refused edit leaves the document exactly as it was"
+        );
+    }
+
+    #[tokio::test]
+    async fn move_sheet_by_uuid_matches_by_sheet_name() {
+        let ctx = test_ctx();
+        let (_tmp, a, b, uuid) = twin_roots(&ctx).await;
+
+        let ra = handle_move_sheet(
+            &json!({ "schematic": a.display().to_string(), "sheet_name": "A", "x": 99.06, "y": 88.9 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_move_sheet(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid, "x": 99.06, "y": 88.9 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(format!("{:?}", ra.content), format!("{:?}", rb.content));
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_sheet_by_uuid_matches_by_sheet_name() {
+        let ctx = test_ctx();
+        let (_tmp, a, b, uuid) = twin_roots(&ctx).await;
+
+        let ra = handle_edit_sheet(
+            &json!({ "schematic": a.display().to_string(), "sheet_name": "A", "new_name": "Renamed", "width": 100.0, "height": 60.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_edit_sheet(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid, "new_name": "Renamed", "width": 100.0, "height": 60.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(format!("{:?}", ra.content), format!("{:?}", rb.content));
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_sheet_by_uuid_matches_by_sheet_name() {
+        let ctx = test_ctx();
+        let (_tmp, a, b, uuid) = twin_roots(&ctx).await;
+
+        let ra = handle_delete_sheet(
+            &json!({ "schematic": a.display().to_string(), "sheet_name": "A" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_delete_sheet(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(format!("{:?}", ra.content), format!("{:?}", rb.content));
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn add_sheet_pin_by_uuid_matches_by_sheet_name() {
+        let ctx = test_ctx();
+        let (_tmp, a, b, uuid) = twin_roots(&ctx).await;
+
+        let ra = handle_add_sheet_pin(
+            &json!({ "schematic": a.display().to_string(), "sheet_name": "A", "pin_name": "VCC", "pin_type": "input", "x": 90.17, "y": 55.88 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_add_sheet_pin(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid, "pin_name": "VCC", "pin_type": "input", "x": 90.17, "y": 55.88 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(format!("{:?}", ra.content), format!("{:?}", rb.content));
+        assert_eq!(
+            uuid_masked(&std::fs::read_to_string(&a).unwrap()),
+            uuid_masked(&std::fs::read_to_string(&b).unwrap())
+        );
+        let sheet = cse::Schematic::load(&b).unwrap();
+        assert!(sheet
+            .sheets
+            .by_uuid(&uuid)
+            .unwrap()
+            .pin_by_name("VCC")
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn edit_and_delete_sheet_pin_by_uuid_match_by_sheet_name() {
+        let ctx = test_ctx();
+        let (_tmp, a, b, uuid) = twin_roots(&ctx).await;
+
+        for (path, address) in [
+            (&a, json!({ "sheet_name": "A" })),
+            (&b, json!({ "uuid": uuid })),
+        ] {
+            let mut add = address.clone();
+            add["schematic"] = json!(path.display().to_string());
+            add["pin_name"] = json!("VCC");
+            add["pin_type"] = json!("input");
+            add["x"] = json!(90.17);
+            add["y"] = json!(55.88);
+            assert!(!handle_add_sheet_pin(&add, &ctx).await.unwrap().is_error);
+
+            let mut edit = address.clone();
+            edit["schematic"] = json!(path.display().to_string());
+            edit["pin_name"] = json!("VCC");
+            edit["new_name"] = json!("VDD");
+            assert!(!handle_edit_sheet_pin(&edit, &ctx).await.unwrap().is_error);
+
+            let mut del = address.clone();
+            del["schematic"] = json!(path.display().to_string());
+            del["pin_name"] = json!("VDD");
+            assert!(!handle_delete_sheet_pin(&del, &ctx).await.unwrap().is_error);
+        }
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn import_sheet_pins_by_uuid_matches_by_sheet_name() {
+        let ctx = test_ctx();
+        let (_tmp, a, b, uuid) = twin_roots(&ctx).await;
+        for root in [&a, &b] {
+            add_label(
+                &root.parent().unwrap().join("child.kicad_sch"),
+                "VIN",
+                "input",
+                5.0,
+                5.0,
+            );
+        }
+
+        let ra = handle_import_sheet_pins(
+            &json!({ "schematic": a.display().to_string(), "sheet_name": "A" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_import_sheet_pins(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(format!("{:?}", ra.content), format!("{:?}", rb.content));
+        assert_eq!(
+            uuid_masked(&std::fs::read_to_string(&a).unwrap()),
+            uuid_masked(&std::fs::read_to_string(&b).unwrap())
+        );
+        let sheet = cse::Schematic::load(&b).unwrap();
+        assert!(sheet
+            .sheets
+            .by_uuid(&uuid)
+            .unwrap()
+            .pin_by_name("VIN")
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn duplicate_sheet_by_source_uuid_matches_by_source_sheet_name() {
+        let ctx = test_ctx();
+        let (_tmp, a, b, uuid) = twin_roots(&ctx).await;
+
+        let ra = handle_duplicate_sheet(
+            &json!({ "schematic": a.display().to_string(), "source_sheet_name": "A", "new_sheet_name": "A-copy", "new_file": "copy.kicad_sch" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_duplicate_sheet(
+            &json!({ "schematic": b.display().to_string(), "source_uuid": uuid, "new_sheet_name": "A-copy", "new_file": "copy.kicad_sch" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        let parent = cse::Schematic::load(&b).unwrap();
+        let copy = parent.sheets.by_name("A-copy").expect("copy exists");
+        assert_eq!(copy.file(), "copy.kicad_sch");
+        assert!(b.parent().unwrap().join("copy.kicad_sch").exists());
+    }
+
+    /// The point of the whole task: sheet names are not unique, so a uuid must
+    /// reach one specific homonym — something no `sheet_name` call can do.
+    #[tokio::test]
+    async fn a_uuid_addresses_one_of_two_sheets_sharing_a_name() {
+        let tmp = TempDir::new().unwrap();
+        let root = blank_schematic(tmp.path(), "root.kicad_sch");
+        let ctx = test_ctx();
+        for (file, name) in [("a.kicad_sch", "A"), ("b.kicad_sch", "B")] {
+            handle_add_hierarchical_sheet(
+                &json!({ "schematic": root.display().to_string(), "sheet_file": file, "sheet_name": name }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        }
+        let first = sheet_uuid(&root, "A");
+        // Rename the second to the first's name: two sheets, one name.
+        let second = sheet_uuid(&root, "B");
+        assert!(!handle_edit_sheet(
+            &json!({ "schematic": root.display().to_string(), "uuid": second, "new_name": "A" }),
+            &ctx,
+        )
+        .await
+        .unwrap()
+        .is_error);
+
+        // `sheet_name` can only ever reach the first one; the uuid reaches the
+        // second, and must move exactly it.
+        assert!(!handle_move_sheet(
+            &json!({ "schematic": root.display().to_string(), "uuid": second, "x": 120.0, "y": 130.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap()
+        .is_error);
+
+        let parent = cse::Schematic::load(&root).unwrap();
+        assert_eq!(
+            parent.sheets.by_uuid(&second).unwrap().position(),
+            (120.0, 130.0)
+        );
+        assert_ne!(
+            parent.sheets.by_uuid(&first).unwrap().position(),
+            (120.0, 130.0)
+        );
+
+        // Same for a deletion: the homonym addressed by uuid goes, the other stays.
+        assert!(
+            !handle_delete_sheet(
+                &json!({ "schematic": root.display().to_string(), "uuid": second }),
+                &ctx,
+            )
+            .await
+            .unwrap()
+            .is_error
+        );
+        let parent = cse::Schematic::load(&root).unwrap();
+        assert_eq!(parent.sheets.len(), 1);
+        assert_eq!(parent.sheets.get(0).unwrap().uuid, first);
+        assert_eq!(parent.sheets.get(0).unwrap().file(), "a.kicad_sch");
+    }
+
+    /// D.4: the uuid is the stable address — a move does not invalidate it.
+    #[tokio::test]
+    async fn a_uuid_still_addresses_the_sheet_after_it_moved() {
+        let ctx = test_ctx();
+        let (_tmp, root, _b, uuid) = twin_roots(&ctx).await;
+
+        assert!(!handle_move_sheet(
+            &json!({ "schematic": root.display().to_string(), "uuid": uuid, "x": 130.0, "y": 140.0 }),
+            &ctx,
+        )
+        .await
+        .unwrap()
+        .is_error);
+
+        let again = handle_edit_sheet(
+            &json!({ "schematic": root.display().to_string(), "uuid": uuid, "new_name": "Still-Me" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!again.is_error, "{:?}", again.content);
+        let parent = cse::Schematic::load(&root).unwrap();
+        let sheet = parent
+            .sheets
+            .by_uuid(&uuid)
+            .expect("same uuid after the move");
+        assert_eq!(sheet.name(), "Still-Me");
+        assert_eq!(sheet.position(), (130.0, 140.0));
+    }
+
+    #[tokio::test]
+    async fn an_unknown_sheet_uuid_is_not_found_and_lists_the_sheet_uuids() {
+        let ctx = test_ctx();
+        let (_tmp, root, _b, uuid) = twin_roots(&ctx).await;
+
+        let result = handle_move_sheet(
+            &json!({
+                "schematic": root.display().to_string(),
+                "uuid": "00000000-0000-4000-8000-000000000000",
+                "x": 10.0, "y": 10.0
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error);
+        let error = error_body(&result);
+        assert_eq!(error["kind"], json!("not_found"));
+        assert_eq!(error["item_kind"], json!("sheet"));
+        let candidates: Vec<String> = serde_json::from_value(error["candidates"].clone()).unwrap();
+        assert_eq!(candidates, vec![uuid]);
+    }
+
+    #[tokio::test]
+    async fn neither_sheet_name_nor_uuid_is_an_invalid_argument() {
+        let ctx = test_ctx();
+        let (_tmp, root, _b, _uuid) = twin_roots(&ctx).await;
+        let schematic = root.display().to_string();
+
+        for (result, field) in [
+            (
+                handle_delete_sheet(&json!({ "schematic": &schematic }), &ctx)
+                    .await
+                    .unwrap(),
+                "sheet_name",
+            ),
+            (
+                handle_edit_sheet(&json!({ "schematic": &schematic, "new_name": "X" }), &ctx)
+                    .await
+                    .unwrap(),
+                "sheet_name",
+            ),
+            (
+                handle_delete_sheet_pin(
+                    &json!({ "schematic": &schematic, "pin_name": "VCC" }),
+                    &ctx,
+                )
+                .await
+                .unwrap(),
+                "sheet_name",
+            ),
+            (
+                handle_duplicate_sheet(
+                    &json!({ "schematic": &schematic, "new_sheet_name": "C", "new_file": "c.kicad_sch" }),
+                    &ctx,
+                )
+                .await
+                .unwrap(),
+                "source_sheet_name",
+            ),
+        ] {
+            assert!(result.is_error);
+            let error = error_body(&result);
+            assert_eq!(error["kind"], json!("invalid_argument"));
+            assert_eq!(error["field"], json!(field));
+        }
     }
 }
