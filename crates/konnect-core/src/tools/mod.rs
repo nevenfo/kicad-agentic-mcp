@@ -524,8 +524,8 @@ pub(crate) fn add_pin_midwire_junctions(
 ) -> anyhow::Result<Vec<(f64, f64)>> {
     use konnect_sexp::geometry::{point_on_segment, points_coincident};
     use konnect_sexp::schematic::{
-        extract_junctions, extract_lib_pins_for_unit, extract_symbol_instances, extract_wires,
-        pin_endpoint, read_schematic,
+        extract_junction_points, extract_lib_pins_for_unit, extract_symbol_instances,
+        extract_wires, pin_endpoint, read_schematic,
     };
     let tol = 0.01;
     let (_, tree) = read_schematic(sch_path)?;
@@ -533,7 +533,7 @@ pub(crate) fn add_pin_midwire_junctions(
     if wires.is_empty() {
         return Ok(Vec::new());
     }
-    let junctions = extract_junctions(&tree);
+    let junctions = extract_junction_points(&tree);
     let lib_syms = tree
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
@@ -689,6 +689,69 @@ pub(crate) fn find_schematic_item_block_for_delete(
         konnect_sexp::writer::find_block_with_leading_whitespace(content, start)
             .map(|(ws_start, end)| (ws_start, end, kind)),
     )
+}
+
+/// Resolve a `uuid` to one top-level item of an expected kind (D.4.1.4).
+///
+/// `kinds` is the set of s-expression tags the calling tool edits — three for
+/// a label, one for a wire or a no-connect. A uuid that names a real item of
+/// some *other* kind is `NotFound`, never a wrong-kind edit: the caller asked
+/// for a no-connect and there is none at that address.
+///
+/// Returns the item's own byte range in `content`, invalidated by any edit to
+/// that string like every other offset here.
+///
+/// # Errors
+///
+/// `MalformedDocument` when `content` cannot be indexed; `NotFound` (with the
+/// document's uuids of the requested kinds as candidates) when nothing of that
+/// kind carries the uuid.
+pub(crate) fn resolve_item_by_uuid(
+    content: &str,
+    uuid: &str,
+    kinds: &[&str],
+    item_kind: &str,
+    sch_path: &std::path::Path,
+) -> Result<(usize, usize), Box<crate::mcp::protocol::CallToolResult>> {
+    use crate::mcp::error::ToolErrorKind;
+    use crate::mcp::protocol::CallToolResult;
+
+    let items = match konnect_sexp::item_locations(content) {
+        Ok(items) => items,
+        Err(err) => {
+            return Err(Box::new(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: err.to_string(),
+                },
+                "Cannot parse schematic document",
+            )))
+        }
+    };
+    let of_kind = |item: &konnect_sexp::ItemLocation| {
+        item.kind
+            .as_deref()
+            .is_some_and(|kind| kinds.contains(&kind))
+    };
+    match items
+        .iter()
+        .find(|item| item.id.as_str() == uuid && of_kind(item))
+    {
+        Some(item) => Ok((item.start, item.end)),
+        None => Err(Box::new(CallToolResult::error_kind(
+            ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: item_kind.to_string(),
+                key: uuid.to_string(),
+                candidates: items
+                    .iter()
+                    .filter(|item| of_kind(item))
+                    .map(|item| item.id.as_str().to_string())
+                    .collect(),
+            },
+            format!("No {item_kind} with UUID '{uuid}' in schematic"),
+        ))),
+    }
 }
 
 /// A component address that resolved: which symbol instance the call meant,

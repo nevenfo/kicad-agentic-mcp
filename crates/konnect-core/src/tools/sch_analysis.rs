@@ -11,8 +11,8 @@ use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
-        extract_junctions, extract_labels, extract_lib_pins_for_unit, extract_symbol_instances,
-        extract_wires, parse_at, pin_endpoint, read_schematic, Wire,
+        extract_junction_points, extract_labels, extract_lib_pins_for_unit,
+        extract_symbol_instances, extract_wires, parse_at, pin_endpoint, read_schematic, Wire,
     },
 };
 use serde_json::json;
@@ -39,7 +39,8 @@ pub fn tools() -> Vec<ToolDef> {
         tool!(
             "list_schematic_labels",
             "List all label instances (net_label, global_label, hierarchical_label) \
-             with their positions, net names, and types.",
+             with their positions, net names, types, and uuids — a label's uuid is \
+             what addresses it in delete_schematic_net_label and rotate_schematic_label.",
             json!({ "type": "object",
                 "properties": { "schematic": { "type": "string" } },
                 "required": ["schematic"] }),
@@ -338,13 +339,13 @@ async fn handle_list_labels(
     let sch = cse::Schematic::load(&sch_path)?;
     let mut items: Vec<serde_json::Value> = Vec::new();
     for l in sch.labels.iter() {
-        items.push(json!({ "net": l.text, "type": "NetLabel", "x": l.at.x, "y": l.at.y, "rotation": l.at.rotation.unwrap_or(0.0) }));
+        items.push(json!({ "net": l.text, "type": "NetLabel", "x": l.at.x, "y": l.at.y, "rotation": l.at.rotation.unwrap_or(0.0), "uuid": l.uuid }));
     }
     for g in sch.global_labels.iter() {
-        items.push(json!({ "net": g.text, "type": "GlobalLabel", "x": g.at.x, "y": g.at.y, "rotation": g.at.rotation.unwrap_or(0.0) }));
+        items.push(json!({ "net": g.text, "type": "GlobalLabel", "x": g.at.x, "y": g.at.y, "rotation": g.at.rotation.unwrap_or(0.0), "uuid": g.uuid }));
     }
     for h in sch.hierarchical_labels.iter() {
-        items.push(json!({ "net": h.text, "type": "HierarchicalLabel", "x": h.at.x, "y": h.at.y, "rotation": h.at.rotation.unwrap_or(0.0) }));
+        items.push(json!({ "net": h.text, "type": "HierarchicalLabel", "x": h.at.x, "y": h.at.y, "rotation": h.at.rotation.unwrap_or(0.0), "uuid": h.uuid }));
     }
     Ok(CallToolResult::json(
         &json!({ "count": items.len(), "labels": items }),
@@ -461,7 +462,7 @@ async fn handle_get_pin_connections(
             ))
         }
     };
-    let mut g = build_net_graph(&wires, &labels, &extract_junctions(&tree));
+    let mut g = build_net_graph(&wires, &labels, &extract_junction_points(&tree));
     Ok(CallToolResult::json(
         &json!({ "reference": reference, "pin": pin_number, "pin_x": px, "pin_y": py, "net": g.net_at(px, py) }),
     ))
@@ -491,7 +492,7 @@ async fn handle_get_component_nets(
     let lib_sym = lib_syms
         .iter()
         .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
-    let mut g = build_net_graph(&wires, &labels, &extract_junctions(&tree));
+    let mut g = build_net_graph(&wires, &labels, &extract_junction_points(&tree));
     let pins: Vec<serde_json::Value> = if let Some(sym) = lib_sym {
         let t = inst.pin_transform();
         konnect_sexp::schematic::extract_lib_pins(sym).iter().map(|p| {
@@ -523,7 +524,7 @@ async fn handle_get_net_components(
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
-    let mut g = build_net_graph(&wires, &labels, &extract_junctions(&tree));
+    let mut g = build_net_graph(&wires, &labels, &extract_junction_points(&tree));
     let net_pts: HashSet<(i64, i64)> = g.points_on_net(&net).into_iter().collect();
     let result: Vec<serde_json::Value> = instances
         .iter()
@@ -677,7 +678,7 @@ fn find_isolated_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<serde_json::
         .find("lib_symbols")
         .map(|node| node.find_all("symbol"))
         .unwrap_or_default();
-    let mut graph = build_net_graph(&wires, &labels, &extract_junctions(tree));
+    let mut graph = build_net_graph(&wires, &labels, &extract_junction_points(tree));
     let mut isolated = Vec::new();
 
     for instance in extract_symbol_instances(tree) {
@@ -868,7 +869,7 @@ async fn handle_get_connected_items(
     let lib_sym = lib_syms
         .iter()
         .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
-    let mut g = build_net_graph(&wires, &labels, &extract_junctions(&tree));
+    let mut g = build_net_graph(&wires, &labels, &extract_junction_points(&tree));
 
     // Get nets for each pin
     let mut connected_nets: HashSet<String> = HashSet::new();

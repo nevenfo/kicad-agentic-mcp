@@ -103,15 +103,15 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `batch_add_wire` | Add multiple wire segments in a single file read/write cycle. |
 | `delete_schematic_wire` | Delete a wire segment by UUID or by matching start/end coordinates. |
 | `batch_delete_schematic_wire` | Delete multiple wire segments in a single file read/write cycle. |
-| `split_wire_at_point` | Split a wire at a given point, creating two segments and a junction. |
+| `split_wire_at_point` | Split a wire at a given point, creating two segments and a junction. Takes the wire's UUID when several cross the point. |
 | `add_schematic_net_label` | Add a net label (`net_label`, `global_label`, or `hierarchical_label`). |
-| `delete_schematic_net_label` | Delete a net label by net name and position. |
-| `rotate_schematic_label` | Rotate a net label to a new angle and update its justify direction. |
+| `delete_schematic_net_label` | Delete a net label by its UUID, or by net name and position. |
+| `rotate_schematic_label` | Rotate a net label, addressed by UUID or by net name and position, and update its justify direction. |
 | `move_labels_by_offset` | Move all labels matching a net name by a given X/Y offset. |
 | `batch_rotate_labels` | Rotate multiple labels by net name in a single file read/write cycle. |
 | `add_power_symbol` | Add a power symbol (VCC, GND, etc.). Auto-numbers the internal `#PWR` reference. |
-| `add_no_connect` | Add a no-connect flag (X marker) to an unconnected pin endpoint. |
-| `delete_no_connect` | Remove a no-connect flag at a given position. |
+| `add_no_connect` | Add a no-connect flag (X marker) to an unconnected pin endpoint. Reports the flag's uuid, which is what `delete_no_connect` takes to remove that one. |
+| `delete_no_connect` | Remove a no-connect flag by its UUID or at a given position. |
 | `batch_delete_no_connect` | Delete multiple no-connect flags in a single file read/write cycle. |
 | `add_junction` | Add a junction dot at a point where wires cross or T-intersect. |
 | `batch_add_junction` | Add multiple junction dots in a single file read/write cycle. |
@@ -127,7 +127,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 |------|-------------|
 | `list_schematic_wires` | List all wire segments with start/end coordinates and UUIDs. |
 | `list_schematic_nets` | List all distinct net names from net labels, global labels, and power symbols. |
-| `list_schematic_labels` | List all label instances (net/global/hierarchical) with positions, names, and types. |
+| `list_schematic_labels` | List all label instances (net/global/hierarchical) with positions, names, types, and uuids — a label's uuid is what addresses it in `delete_schematic_net_label` and `rotate_schematic_label`. |
 | `get_net_connections` | Get all pins and labels connected to a named net. |
 | `get_net_connectivity` | Build the full connectivity graph for a net using union-find. Returns wires, labels, and T-junction locations. |
 | `get_pin_connections` | Get the net connected to a specific pin by tracing wires from the pin endpoint. |

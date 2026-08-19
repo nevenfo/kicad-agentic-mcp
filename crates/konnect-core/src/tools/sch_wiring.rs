@@ -98,12 +98,14 @@ pub fn tools() -> Vec<ToolDef> {
         tool!(
             "split_wire_at_point",
             "Split a wire at a given point, creating two wire segments and a junction. \
-             Note: a pin landing mid-wire only needs a junction dot to connect \
-             (see add_junction) — splitting the wire is not required.",
+             The wire split is the one passing through the point, or the one named by \
+             uuid when several cross there. Note: a pin landing mid-wire only needs a \
+             junction dot to connect (see add_junction) — splitting is not required.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Wire to split; picks one when wires cross at the point" },
                     "x": { "type": "number" }, "y": { "type": "number" }
                 },
                 "required": ["schematic", "x", "y"]
@@ -138,30 +140,33 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "delete_schematic_net_label",
-            "Delete a net label by net name and position.",
+            "Delete a net label by its UUID, or by net name and position.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Label UUID; pass this or net+x+y" },
                     "net": { "type": "string" },
                     "x": { "type": "number" }, "y": { "type": "number" }
                 },
-                "required": ["schematic", "net", "x", "y"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_delete_net_label(args, ctx).await }
         ),
         tool!(
             "rotate_schematic_label",
-            "Rotate a net label to a new angle and update its justify direction accordingly.",
+            "Rotate a net label, addressed by its UUID or by net name and position, \
+             to a new angle and update its justify direction accordingly.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Label UUID; pass this or net+x+y" },
                     "net": { "type": "string" },
                     "x": { "type": "number" }, "y": { "type": "number" },
                     "rotation": { "type": "number" }
                 },
-                "required": ["schematic", "net", "x", "y", "rotation"]
+                "required": ["schematic", "rotation"]
             }),
             |args, ctx| async move { handle_rotate_label(args, ctx).await }
         ),
@@ -220,7 +225,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "add_no_connect",
-            "Add a no-connect flag (X marker) to an unconnected pin endpoint.",
+            "Add a no-connect flag (X marker) to an unconnected pin endpoint. Reports the \n             flag's uuid, which is what delete_no_connect takes to remove that one.",
             json!({
                 "type": "object",
                 "properties": {
@@ -233,14 +238,15 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "delete_no_connect",
-            "Remove a no-connect flag at a given position.",
+            "Remove a no-connect flag by its UUID or at a given position.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
+                    "uuid": { "type": "string", "description": "No-connect UUID; pass this or x+y" },
                     "x": { "type": "number" }, "y": { "type": "number" }
                 },
-                "required": ["schematic", "x", "y"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_delete_no_connect(args, ctx).await }
         ),
@@ -437,7 +443,7 @@ pub(crate) fn insert_wire_with_junctions(
     // (L-bends, and any loop calling this repeatedly, would otherwise double it).
     let existing_junctions = tree
         .as_ref()
-        .map(konnect_sexp::schematic::extract_junctions)
+        .map(konnect_sexp::schematic::extract_junction_points)
         .unwrap_or_default();
 
     // Add the new wire to the set before checking junctions (it may form T's too)
@@ -862,6 +868,14 @@ fn find_wire_block_by_endpoints(
     None
 }
 
+/// Whether `(px, py)` lies strictly inside `w`: the only place a split yields
+/// two segments instead of leaving one untouched.
+fn splittable_at(w: &konnect_sexp::schematic::Wire, px: f64, py: f64) -> bool {
+    !konnect_sexp::geometry::points_coincident(px, py, w.x1, w.y1, 0.01)
+        && !konnect_sexp::geometry::points_coincident(px, py, w.x2, w.y2, 0.01)
+        && konnect_sexp::geometry::point_on_segment(px, py, w.x1, w.y1, w.x2, w.y2, 0.01)
+}
+
 async fn handle_split_wire_at_point(
     args: &serde_json::Value,
     ctx: &ToolContext,
@@ -876,28 +890,53 @@ async fn handle_split_wire_at_point(
         Err(e) => return Ok(e),
     };
 
-    let (_, tree) = read_schematic(&sch_path)?;
+    let (content, tree) = read_schematic(&sch_path)?;
     let wires = extract_wires(&tree);
 
-    // Find the wire that contains point (px, py) but is not an endpoint
-    let target = wires.iter().find(|w| {
-        !konnect_sexp::geometry::points_coincident(px, py, w.x1, w.y1, 0.01)
-            && !konnect_sexp::geometry::points_coincident(px, py, w.x2, w.y2, 0.01)
-            && konnect_sexp::geometry::point_on_segment(px, py, w.x1, w.y1, w.x2, w.y2, 0.01)
-    });
-
-    let w = match target {
-        Some(w) => w.clone(),
-        None => {
+    // The point alone only identifies a wire while nothing else crosses it:
+    // two wires meeting at (x, y) are told apart by uuid and by nothing else
+    // the file offers, so a `uuid` call splits the wire it names. `x`/`y` stay
+    // the cut, and must fall inside that wire.
+    let w = if let Some(uuid) = opt_str(args, "uuid") {
+        if let Err(e) =
+            crate::tools::resolve_item_by_uuid(&content, uuid, &["wire"], "wire", &sch_path)
+        {
+            return Ok(*e);
+        }
+        let Some(w) = wires.iter().find(|w| w.uuid.as_deref() == Some(uuid)) else {
             return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "wire".to_string(),
-                    key: format!("({px}, {py})"),
-                    candidates: Vec::new(),
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: format!("wire '{uuid}' has no readable endpoints"),
                 },
-                "No wire found passing through that point",
-            ))
+                "Cannot read the endpoints of that wire",
+            ));
+        };
+        if !splittable_at(w, px, py) {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "x".to_string(),
+                    reason: format!("({px}, {py}) is not an interior point of wire '{uuid}'"),
+                },
+                "The split point must lie on the named wire, between its endpoints",
+            ));
+        }
+        w.clone()
+    } else {
+        // Find the wire that contains point (px, py) but is not an endpoint
+        match wires.iter().find(|w| splittable_at(w, px, py)) {
+            Some(w) => w.clone(),
+            None => {
+                return Ok(CallToolResult::error_kind(
+                    crate::mcp::error::ToolErrorKind::NotFound {
+                        document: sch_path.display().to_string(),
+                        item_kind: "wire".to_string(),
+                        key: format!("({px}, {py})"),
+                        candidates: Vec::new(),
+                    },
+                    "No wire found passing through that point",
+                ))
+            }
         }
     };
 
@@ -999,95 +1038,123 @@ async fn handle_delete_net_label(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let net = match require_str(args, "net") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
+    // The address form is settled before the file is touched, so a call with
+    // neither form fails the same way whatever the document holds. `net` wins
+    // when both are given (D80), keeping every existing call byte-identical.
+    let historical = if opt_str(args, "net").is_some() {
+        let net = match require_str(args, "net") {
+            Ok(v) => v.to_string(),
+            Err(e) => return Ok(e),
+        };
+        let target_x = match require_f64(args, "x") {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        };
+        let target_y = match require_f64(args, "y") {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        };
+        Some((net, target_x, target_y))
+    } else {
+        None
     };
-    let target_x = match require_f64(args, "x") {
-        Ok(v) => v,
-        Err(e) => return Ok(e),
-    };
-    let target_y = match require_f64(args, "y") {
-        Ok(v) => v,
-        Err(e) => return Ok(e),
-    };
+    let by_uuid = opt_str(args, "uuid");
+    if historical.is_none() && by_uuid.is_none() {
+        return Ok(missing_label_address());
+    }
 
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
 
     let labels = find_label_blocks(&content);
-    let named: Vec<&LabelBlock> = labels.iter().filter(|l| l.net == net).collect();
 
-    if named.is_empty() {
-        return Ok(CallToolResult::error_kind(
-            crate::mcp::error::ToolErrorKind::NotFound {
-                document: sch_path.display().to_string(),
-                item_kind: "label".to_string(),
-                key: net.clone(),
-                candidates: Vec::new(),
-            },
-            format!("No label named '{}' in this schematic", net),
-        ));
-    }
+    let (label, net, target_x, target_y) = match &historical {
+        Some((net, target_x, target_y)) => {
+            let (net, target_x, target_y) = (net.clone(), *target_x, *target_y);
+            let named: Vec<&LabelBlock> = labels.iter().filter(|l| l.net == net).collect();
 
-    // Exact position match. Deleting the *nearest* label instead would silently
-    // remove a same-named label elsewhere on the sheet — same-named labels are
-    // how KiCAD joins nets, so they are the normal case, not an edge case.
-    let matched: Vec<&&LabelBlock> = named
-        .iter()
-        .filter(|l| same_point(l.x, target_x) && same_point(l.y, target_y))
-        .collect();
+            if named.is_empty() {
+                return Ok(CallToolResult::error_kind(
+                    crate::mcp::error::ToolErrorKind::NotFound {
+                        document: sch_path.display().to_string(),
+                        item_kind: "label".to_string(),
+                        key: net.clone(),
+                        candidates: Vec::new(),
+                    },
+                    format!("No label named '{}' in this schematic", net),
+                ));
+            }
 
-    let label = match matched.as_slice() {
-        [one] => **one,
-        [] => {
-            let positions: Vec<String> = named
+            // Exact position match. Deleting the *nearest* label instead would
+            // silently remove a same-named label elsewhere on the sheet —
+            // same-named labels are how KiCAD joins nets, so they are the
+            // normal case, not an edge case.
+            let matched: Vec<&&LabelBlock> = named
                 .iter()
-                .map(|l| format!("{} at ({}, {})", l.kind, l.x, l.y))
+                .filter(|l| same_point(l.x, target_x) && same_point(l.y, target_y))
                 .collect();
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "label".to_string(),
-                    key: format!("{net}@({target_x}, {target_y})"),
-                    candidates: Vec::new(),
-                },
-                format!(
-                    "No label '{}' at ({}, {}). Found {} label(s) named '{}': {}",
-                    net,
-                    target_x,
-                    target_y,
-                    named.len(),
-                    net,
-                    positions.join("; ")
-                ),
-            ));
+
+            let label = match matched.as_slice() {
+                [one] => **one,
+                [] => {
+                    let positions: Vec<String> = named
+                        .iter()
+                        .map(|l| format!("{} at ({}, {})", l.kind, l.x, l.y))
+                        .collect();
+                    return Ok(CallToolResult::error_kind(
+                        crate::mcp::error::ToolErrorKind::NotFound {
+                            document: sch_path.display().to_string(),
+                            item_kind: "label".to_string(),
+                            key: format!("{net}@({target_x}, {target_y})"),
+                            candidates: Vec::new(),
+                        },
+                        format!(
+                            "No label '{}' at ({}, {}). Found {} label(s) named '{}': {}",
+                            net,
+                            target_x,
+                            target_y,
+                            named.len(),
+                            net,
+                            positions.join("; ")
+                        ),
+                    ));
+                }
+                _ => {
+                    // D77 is the kind this site was waiting for: the call is
+                    // valid and the schematic holds two labels this address
+                    // cannot tell apart. `uuid` is now the way out, and the
+                    // message says so.
+                    return Ok(CallToolResult::error_kind(
+                        ToolErrorKind::MalformedDocument {
+                            path: sch_path.display().to_string(),
+                            detail: format!(
+                                "{} labels named '{}' share position ({}, {})",
+                                matched.len(),
+                                net,
+                                target_x,
+                                target_y
+                            ),
+                        },
+                        format!(
+                            "{} labels named '{}' share position ({}, {}) — delete one by \
+                             its uuid, or remove the duplicates in eeschema",
+                            matched.len(),
+                            net,
+                            target_x,
+                            target_y
+                        ),
+                    ));
+                }
+            };
+            (label, net, target_x, target_y)
         }
-        _ => {
-            // D77 is the kind this site was waiting for: the call is valid and
-            // the schematic holds two labels the format cannot tell apart, so
-            // the document is what has to change — which is exactly what the
-            // message already told the caller to do.
-            return Ok(CallToolResult::error_kind(
-                ToolErrorKind::MalformedDocument {
-                    path: sch_path.display().to_string(),
-                    detail: format!(
-                        "{} labels named '{}' share position ({}, {})",
-                        matched.len(),
-                        net,
-                        target_x,
-                        target_y
-                    ),
-                },
-                format!(
-                    "{} labels named '{}' share position ({}, {}) — delete by uuid is not \
-                     supported yet; remove the duplicates in eeschema",
-                    matched.len(),
-                    net,
-                    target_x,
-                    target_y
-                ),
-            ));
+        None => {
+            let uuid = by_uuid.expect("checked above");
+            let label = match label_by_uuid(&content, &labels, uuid, &sch_path) {
+                Ok(l) => l,
+                Err(e) => return Ok(*e),
+            };
+            (label, label.net.clone(), label.x, label.y)
         }
     };
 
@@ -1103,6 +1170,42 @@ async fn handle_delete_net_label(
         "type": kind,
         "at": { "x": target_x, "y": target_y }
     })))
+}
+
+/// The error both label tools return when a call carries no address at all.
+fn missing_label_address() -> CallToolResult {
+    CallToolResult::error_kind(
+        ToolErrorKind::InvalidArgument {
+            field: "net".to_string(),
+            reason: "one of 'net' (with 'x' and 'y') or 'uuid' is required to address a label"
+                .to_string(),
+        },
+        "Missing label address: pass 'uuid', or 'net' with 'x' and 'y'",
+    )
+}
+
+/// The label a `uuid` names, refusing any other kind of item at that address.
+///
+/// A uuid that resolves to a real item which is not one of the three label
+/// tags is `NotFound` with `item_kind: "label"` — the caller asked for a label
+/// and there is none there — never an edit to whatever was found.
+fn label_by_uuid<'a>(
+    content: &str,
+    labels: &'a [LabelBlock],
+    uuid: &str,
+    sch_path: &std::path::Path,
+) -> Result<&'a LabelBlock, Box<CallToolResult>> {
+    let (start, _end) =
+        crate::tools::resolve_item_by_uuid(content, uuid, &LABEL_TAGS, "label", sch_path)?;
+    labels.iter().find(|l| l.start == start).ok_or_else(|| {
+        Box::new(CallToolResult::error_kind(
+            ToolErrorKind::MalformedDocument {
+                path: sch_path.display().to_string(),
+                detail: format!("label '{uuid}' has no readable name or position"),
+            },
+            "Cannot read that label block",
+        ))
+    })
 }
 
 /// One label block located in the raw file text.
@@ -1168,55 +1271,84 @@ async fn handle_rotate_label(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let net = match require_str(args, "net") {
-        Ok(v) => v.to_string(),
-        Err(e) => return Ok(e),
-    };
-    let x = match require_f64(args, "x") {
-        Ok(v) => v,
-        Err(e) => return Ok(e),
-    };
-    let y = match require_f64(args, "y") {
-        Ok(v) => v,
-        Err(e) => return Ok(e),
-    };
     let rotation = match require_f64(args, "rotation") {
         Ok(v) => v,
         Err(e) => return Ok(e),
     };
+    // As in delete: `net` wins when both forms are given, and the address is
+    // decided before the file is read.
+    let historical = if opt_str(args, "net").is_some() {
+        let net = match require_str(args, "net") {
+            Ok(v) => v.to_string(),
+            Err(e) => return Ok(e),
+        };
+        let x = match require_f64(args, "x") {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        };
+        let y = match require_f64(args, "y") {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        };
+        Some((net, x, y))
+    } else {
+        None
+    };
+    let by_uuid = opt_str(args, "uuid");
+    if historical.is_none() && by_uuid.is_none() {
+        return Ok(missing_label_address());
+    }
 
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
 
     let labels = find_label_blocks(&content);
-    let named: Vec<&LabelBlock> = labels.iter().filter(|l| l.net == net).collect();
-    let Some(label) = named
-        .iter()
-        .find(|l| same_point(l.x, x) && same_point(l.y, y))
-    else {
-        let positions: Vec<String> = named
-            .iter()
-            .map(|l| format!("{} at ({}, {})", l.kind, l.x, l.y))
-            .collect();
-        return Ok(CallToolResult::error_kind(
-            crate::mcp::error::ToolErrorKind::NotFound {
-                document: sch_path.display().to_string(),
-                item_kind: "label".to_string(),
-                key: format!("{net}@({x}, {y})"),
-                candidates: Vec::new(),
-            },
-            if positions.is_empty() {
-                format!("No label named '{}' in this schematic", net)
-            } else {
-                format!(
-                    "No label '{}' at ({}, {}). Found: {}",
-                    net,
-                    x,
-                    y,
-                    positions.join("; ")
-                )
-            },
-        ));
+
+    // `x`/`y` are what gets written back into `(at X Y ROT)`: the request's
+    // own numbers on the historical path (unchanged), the label's stored
+    // anchor on the uuid path, which carries no coordinates to write.
+    let (label, net, x, y) = match &historical {
+        Some((net, x, y)) => {
+            let (net, x, y) = (net.clone(), *x, *y);
+            let named: Vec<&LabelBlock> = labels.iter().filter(|l| l.net == net).collect();
+            let Some(label) = named
+                .iter()
+                .find(|l| same_point(l.x, x) && same_point(l.y, y))
+            else {
+                let positions: Vec<String> = named
+                    .iter()
+                    .map(|l| format!("{} at ({}, {})", l.kind, l.x, l.y))
+                    .collect();
+                return Ok(CallToolResult::error_kind(
+                    crate::mcp::error::ToolErrorKind::NotFound {
+                        document: sch_path.display().to_string(),
+                        item_kind: "label".to_string(),
+                        key: format!("{net}@({x}, {y})"),
+                        candidates: Vec::new(),
+                    },
+                    if positions.is_empty() {
+                        format!("No label named '{}' in this schematic", net)
+                    } else {
+                        format!(
+                            "No label '{}' at ({}, {}). Found: {}",
+                            net,
+                            x,
+                            y,
+                            positions.join("; ")
+                        )
+                    },
+                ));
+            };
+            (*label, net, x, y)
+        }
+        None => {
+            let uuid = by_uuid.expect("checked above");
+            let label = match label_by_uuid(&content, &labels, uuid, &sch_path) {
+                Ok(l) => l,
+                Err(e) => return Ok(*e),
+            };
+            (label, label.net.clone(), label.x, label.y)
+        }
     };
 
     let (block_start, block_end) = find_balanced_block(&content, label.start)
@@ -1524,9 +1656,12 @@ async fn handle_add_no_connect(
 
     let ((x, y), requested) = crate::tools::snap_reporting(x, y);
     let mut sch = cse::Schematic::load(&sch_path)?;
-    sch.add_no_connect(x, y);
+    // The uuid goes back to the caller because `delete_no_connect` now takes
+    // one: an address this server accepts has to be an address it hands out,
+    // and nothing else in the toolset lists no-connects.
+    let uuid = sch.add_no_connect(x, y).uuid.clone();
     sch.overwrite()?;
-    let mut result = json!({ "added_no_connect": { "x": x, "y": y } });
+    let mut result = json!({ "added_no_connect": { "x": x, "y": y, "uuid": uuid } });
     if let Some(requested) = requested {
         result["requested"] = requested;
         result["snapped_to_grid"] = json!(true);
@@ -1539,28 +1674,68 @@ async fn handle_delete_no_connect(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let x = match require_f64(args, "x") {
-        Ok(v) => v,
-        Err(e) => return Ok(e),
-    };
-    let y = match require_f64(args, "y") {
-        Ok(v) => v,
-        Err(e) => return Ok(e),
+    let by_uuid = opt_str(args, "uuid").map(str::to_string);
+    // Position wins when both forms are given, as everywhere else in D.4.1.
+    let position = match (opt_f64(args, "x"), opt_f64(args, "y")) {
+        (Some(x), Some(y)) => Some((x, y)),
+        _ if by_uuid.is_some() => None,
+        // No uuid: the position is required, and reports itself the way it
+        // always has.
+        _ => {
+            let x = match require_f64(args, "x") {
+                Ok(v) => v,
+                Err(e) => return Ok(e),
+            };
+            let y = match require_f64(args, "y") {
+                Ok(v) => v,
+                Err(e) => return Ok(e),
+            };
+            Some((x, y))
+        }
     };
 
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
-    let Some((del_start, del_end)) = find_no_connect_block_at(&content, x, y) else {
-        return Ok(CallToolResult::error_kind(
-            crate::mcp::error::ToolErrorKind::NotFound {
-                document: sch_path.display().to_string(),
-                item_kind: "no_connect".to_string(),
-                key: format!("({x}, {y})"),
-                candidates: Vec::new(),
-            },
-            "No-connect not found at that position",
-        ));
+    let range = match position {
+        Some((x, y)) => {
+            let Some(range) = find_no_connect_block_at(&content, x, y) else {
+                return Ok(CallToolResult::error_kind(
+                    crate::mcp::error::ToolErrorKind::NotFound {
+                        document: sch_path.display().to_string(),
+                        item_kind: "no_connect".to_string(),
+                        key: format!("({x}, {y})"),
+                        candidates: Vec::new(),
+                    },
+                    "No-connect not found at that position",
+                ));
+            };
+            range
+        }
+        None => {
+            let uuid = by_uuid.as_deref().expect("no position implies a uuid");
+            let (start, _end) = match crate::tools::resolve_item_by_uuid(
+                &content,
+                uuid,
+                &["no_connect"],
+                "no_connect",
+                &sch_path,
+            ) {
+                Ok(range) => range,
+                Err(e) => return Ok(*e),
+            };
+            let Some(range) = find_block_with_leading_whitespace(&content, start) else {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::MalformedDocument {
+                        path: sch_path.display().to_string(),
+                        detail: format!("no_connect '{uuid}' is not a balanced block"),
+                    },
+                    "Cannot read that no-connect block",
+                ));
+            };
+            range
+        }
     };
+    let (del_start, del_end) = range;
     let new_content = apply_edits(content, vec![SexpEdit::delete(del_start, del_end)]);
     write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
     Ok(CallToolResult::text("No-connect deleted."))
@@ -2061,7 +2236,7 @@ mod unit_aware_wiring_tests {
         assert!(!result.is_error, "{:?}", result.content);
         let after = std::fs::read_to_string(&path).unwrap();
         let tree = konnect_sexp::parse_sexp(&after).unwrap();
-        let juncs = konnect_sexp::schematic::extract_junctions(&tree);
+        let juncs = konnect_sexp::schematic::extract_junction_points(&tree);
         assert!(
             juncs
                 .iter()
@@ -2855,5 +3030,464 @@ mod no_connect_delete_tests {
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(!after.contains("nc-1"));
         assert!(after.contains("nc-2"));
+    }
+}
+#[cfg(test)]
+mod uuid_address_tests {
+    //! D.4.1.4: the four singular `sch_wiring` tools that address an existing
+    //! item also take that item's `uuid`. Position keeps working unchanged;
+    //! uuid is what makes an item addressable when position cannot tell two
+    //! of them apart.
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use serde_json::Value;
+    use std::sync::Arc;
+
+    const H_WIRE: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const V_WIRE: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const LABEL_A: &str = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const LABEL_B: &str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const NC_1: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const NC_2: &str = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    fn sch_with(body: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("addr.kicad_sch");
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch\n\t(version 20250610)\n\t(generator \"eeschema\")\n\t(uuid \"00000000-0000-4000-8000-00000000000f\")\n\t(paper \"A4\")\n{body}\n)\n"
+            ),
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    fn error_body(result: &CallToolResult) -> Value {
+        let crate::mcp::protocol::ToolContent::Text { text } = result.content.first().unwrap()
+        else {
+            panic!("text content expected");
+        };
+        serde_json::from_str::<Value>(text).unwrap()["error"].clone()
+    }
+
+    /// Two wires crossing at (5, 0): the horizontal one first in the file.
+    fn crossing_wires() -> String {
+        format!(
+            "\t(wire\n\t\t(pts (xy 0 0) (xy 10 0))\n\t\t(uuid \"{H_WIRE}\")\n\t)\n\t(wire\n\t\t(pts (xy 5 -5) (xy 5 5))\n\t\t(uuid \"{V_WIRE}\")\n\t)"
+        )
+    }
+
+    // ─── split_wire_at_point ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn split_by_uuid_cuts_the_named_wire_where_a_point_cannot_choose() {
+        // Both wires pass through (5, 0), so the point alone is settled only
+        // by document order — which is exactly what uuid replaces.
+        let (_d, path) = sch_with(&crossing_wires());
+        let result = handle_split_wire_at_point(
+            &json!({ "schematic": path.display().to_string(), "uuid": V_WIRE, "x": 5.0, "y": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{:?}", result.content);
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            after.contains(H_WIRE),
+            "the horizontal wire must be untouched"
+        );
+        assert!(!after.contains(V_WIRE), "the named wire was the one split");
+        let wires = extract_wires(&konnect_sexp::parse_sexp(&after).unwrap());
+        assert_eq!(wires.len(), 3, "one wire became two: {wires:?}");
+        assert!(wires
+            .iter()
+            .any(|w| w.y1 == -5.0 && w.y2 == 0.0 && w.x1 == 5.0));
+        assert!(wires.iter().any(|w| w.y1 == 0.0 && w.y2 == 5.0));
+
+        // The point-only call on the same document reaches the other wire,
+        // showing the two addresses are not interchangeable here.
+        let (_d2, path2) = sch_with(&crossing_wires());
+        let result = handle_split_wire_at_point(
+            &json!({ "schematic": path2.display().to_string(), "x": 5.0, "y": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+        let after2 = std::fs::read_to_string(&path2).unwrap();
+        assert!(!after2.contains(H_WIRE));
+        assert!(after2.contains(V_WIRE));
+    }
+
+    #[tokio::test]
+    async fn split_by_uuid_and_by_point_agree_on_a_lone_wire() {
+        let lone = format!("\t(wire\n\t\t(pts (xy 0 0) (xy 10 0))\n\t\t(uuid \"{H_WIRE}\")\n\t)");
+        let (_a, by_point) = sch_with(&lone);
+        let (_b, by_uuid) = sch_with(&lone);
+        for (path, args) in [
+            (&by_point, json!({ "x": 5.0, "y": 0.0 })),
+            (&by_uuid, json!({ "uuid": H_WIRE, "x": 5.0, "y": 0.0 })),
+        ] {
+            let mut call = args;
+            call["schematic"] = json!(path.display().to_string());
+            let result = handle_split_wire_at_point(&call, &test_ctx())
+                .await
+                .unwrap();
+            assert!(!result.is_error, "{:?}", result.content);
+        }
+        // Freshly written wires and the junction carry random uuids; the
+        // geometry is what must match.
+        let geometry = |path: &std::path::Path| {
+            let text = std::fs::read_to_string(path).unwrap();
+            let tree = konnect_sexp::parse_sexp(&text).unwrap();
+            let mut wires: Vec<_> = extract_wires(&tree)
+                .iter()
+                .map(|w| (w.x1, w.y1, w.x2, w.y2))
+                .collect();
+            wires.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            (
+                wires,
+                konnect_sexp::schematic::extract_junction_points(&tree),
+            )
+        };
+        assert_eq!(geometry(&by_point), geometry(&by_uuid));
+    }
+
+    #[tokio::test]
+    async fn split_refuses_a_uuid_that_is_not_a_wire() {
+        let body = format!(
+            "{}\n\t(no_connect\n\t\t(at 5 0)\n\t\t(uuid \"{NC_1}\")\n\t)",
+            crossing_wires()
+        );
+        let (_d, path) = sch_with(&body);
+        let before = std::fs::read_to_string(&path).unwrap();
+        let result = handle_split_wire_at_point(
+            &json!({ "schematic": path.display().to_string(), "uuid": NC_1, "x": 5.0, "y": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error);
+        let error = error_body(&result);
+        assert_eq!(error["kind"], json!("not_found"));
+        assert_eq!(error["item_kind"], json!("wire"));
+        let candidates: Vec<String> = serde_json::from_value(error["candidates"].clone()).unwrap();
+        assert_eq!(candidates, vec![H_WIRE, V_WIRE]);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn split_refuses_a_point_outside_the_named_wire() {
+        let (_d, path) = sch_with(&crossing_wires());
+        let before = std::fs::read_to_string(&path).unwrap();
+        let result = handle_split_wire_at_point(
+            &json!({ "schematic": path.display().to_string(), "uuid": V_WIRE, "x": 8.0, "y": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error);
+        assert_eq!(error_body(&result)["kind"], json!("invalid_argument"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    // ─── delete_schematic_net_label / rotate_schematic_label ───────────────
+
+    fn two_labels_apart() -> String {
+        format!(
+            "\t(label \"VCC\"\n\t\t(at 100 100 0)\n\t\t(effects (font (size 1.27 1.27)) (justify left bottom))\n\t\t(uuid \"{LABEL_A}\")\n\t)\n\t(label \"GND\"\n\t\t(at 200 100 0)\n\t\t(effects (font (size 1.27 1.27)) (justify left bottom))\n\t\t(uuid \"{LABEL_B}\")\n\t)"
+        )
+    }
+
+    #[tokio::test]
+    async fn deleting_a_label_by_uuid_matches_the_positional_delete() {
+        let (_a, by_pos) = sch_with(&two_labels_apart());
+        let (_b, by_uuid) = sch_with(&two_labels_apart());
+        let pos = handle_delete_net_label(
+            &json!({ "schematic": by_pos.display().to_string(), "net": "VCC", "x": 100.0, "y": 100.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        let uid = handle_delete_net_label(
+            &json!({ "schematic": by_uuid.display().to_string(), "uuid": LABEL_A }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!pos.is_error && !uid.is_error, "{:?}", uid.content);
+        assert_eq!(
+            std::fs::read_to_string(&by_pos).unwrap(),
+            std::fs::read_to_string(&by_uuid).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn two_labels_at_one_point_are_separable_only_by_uuid() {
+        // The same net twice at the same anchor: a legal file the positional
+        // address cannot resolve, which is why it reports the document as the
+        // thing to fix. The uuid names one of the two.
+        let stacked = format!(
+            "\t(label \"VCC\"\n\t\t(at 100 100 0)\n\t\t(uuid \"{LABEL_A}\")\n\t)\n\t(label \"VCC\"\n\t\t(at 100 100 0)\n\t\t(uuid \"{LABEL_B}\")\n\t)"
+        );
+        let (_d, path) = sch_with(&stacked);
+        let ambiguous = handle_delete_net_label(
+            &json!({ "schematic": path.display().to_string(), "net": "VCC", "x": 100.0, "y": 100.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(ambiguous.is_error);
+        assert_eq!(error_body(&ambiguous)["kind"], json!("malformed_document"));
+
+        let result = handle_delete_net_label(
+            &json!({ "schematic": path.display().to_string(), "uuid": LABEL_B }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{:?}", result.content);
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(after.contains(LABEL_A));
+        assert!(!after.contains(LABEL_B));
+    }
+
+    #[tokio::test]
+    async fn rotating_a_label_by_uuid_matches_the_positional_rotate() {
+        let (_a, by_pos) = sch_with(&two_labels_apart());
+        let (_b, by_uuid) = sch_with(&two_labels_apart());
+        let pos = handle_rotate_label(
+            &json!({ "schematic": by_pos.display().to_string(), "net": "GND",
+                     "x": 200.0, "y": 100.0, "rotation": 180.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        let uid = handle_rotate_label(
+            &json!({ "schematic": by_uuid.display().to_string(), "uuid": LABEL_B, "rotation": 180.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!pos.is_error && !uid.is_error, "{:?}", uid.content);
+        assert_eq!(
+            std::fs::read_to_string(&by_pos).unwrap(),
+            std::fs::read_to_string(&by_uuid).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_label_tool_refuses_a_uuid_of_another_kind() {
+        let body = format!("{}\n{}", crossing_wires(), two_labels_apart());
+        let (_d, path) = sch_with(&body);
+        let before = std::fs::read_to_string(&path).unwrap();
+        for result in [
+            handle_delete_net_label(
+                &json!({ "schematic": path.display().to_string(), "uuid": H_WIRE }),
+                &test_ctx(),
+            )
+            .await
+            .unwrap(),
+            handle_rotate_label(
+                &json!({ "schematic": path.display().to_string(), "uuid": H_WIRE, "rotation": 90.0 }),
+                &test_ctx(),
+            )
+            .await
+            .unwrap(),
+        ] {
+            assert!(result.is_error);
+            let error = error_body(&result);
+            assert_eq!(error["kind"], json!("not_found"));
+            assert_eq!(error["item_kind"], json!("label"));
+            let candidates: Vec<String> =
+                serde_json::from_value(error["candidates"].clone()).unwrap();
+            assert_eq!(candidates, vec![LABEL_A, LABEL_B]);
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn a_label_tool_without_any_address_is_invalid_argument() {
+        let (_d, path) = sch_with(&two_labels_apart());
+        for result in [
+            handle_delete_net_label(
+                &json!({ "schematic": path.display().to_string() }),
+                &test_ctx(),
+            )
+            .await
+            .unwrap(),
+            handle_rotate_label(
+                &json!({ "schematic": path.display().to_string(), "rotation": 90.0 }),
+                &test_ctx(),
+            )
+            .await
+            .unwrap(),
+        ] {
+            assert!(result.is_error);
+            let error = error_body(&result);
+            assert_eq!(error["kind"], json!("invalid_argument"));
+            assert_eq!(error["field"], json!("net"));
+        }
+    }
+
+    // ─── delete_no_connect ─────────────────────────────────────────────────
+
+    fn two_no_connects() -> String {
+        format!(
+            "\t(no_connect\n\t\t(at 127 63.5)\n\t\t(uuid \"{NC_1}\")\n\t)\n\t(no_connect\n\t\t(at 140 70)\n\t\t(uuid \"{NC_2}\")\n\t)"
+        )
+    }
+
+    #[tokio::test]
+    async fn deleting_a_no_connect_by_uuid_matches_the_positional_delete() {
+        let (_a, by_pos) = sch_with(&two_no_connects());
+        let (_b, by_uuid) = sch_with(&two_no_connects());
+        let pos = handle_delete_no_connect(
+            &json!({ "schematic": by_pos.display().to_string(), "x": 127.0, "y": 63.5 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        let uid = handle_delete_no_connect(
+            &json!({ "schematic": by_uuid.display().to_string(), "uuid": NC_1 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!pos.is_error && !uid.is_error, "{:?}", uid.content);
+        assert_eq!(
+            std::fs::read_to_string(&by_pos).unwrap(),
+            std::fs::read_to_string(&by_uuid).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_no_connect_refuses_a_wire_uuid() {
+        let body = format!("{}\n{}", crossing_wires(), two_no_connects());
+        let (_d, path) = sch_with(&body);
+        let before = std::fs::read_to_string(&path).unwrap();
+        let result = handle_delete_no_connect(
+            &json!({ "schematic": path.display().to_string(), "uuid": H_WIRE }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error);
+        let error = error_body(&result);
+        assert_eq!(error["kind"], json!("not_found"));
+        assert_eq!(error["item_kind"], json!("no_connect"));
+        let candidates: Vec<String> = serde_json::from_value(error["candidates"].clone()).unwrap();
+        assert_eq!(candidates, vec![NC_1, NC_2]);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn delete_no_connect_without_any_address_is_invalid_argument() {
+        let (_d, path) = sch_with(&two_no_connects());
+        let result = handle_delete_no_connect(
+            &json!({ "schematic": path.display().to_string() }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error);
+        let error = error_body(&result);
+        assert_eq!(error["kind"], json!("invalid_argument"));
+        assert_eq!(error["field"], json!("x"));
+    }
+
+    // ─── read an address, then use it ──────────────────────────────────────
+
+    fn json_body(result: &CallToolResult) -> Value {
+        let crate::mcp::protocol::ToolContent::Text { text } = result.content.first().unwrap()
+        else {
+            panic!("text content expected");
+        };
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_listed_label_uuid_addresses_the_delete_tool() {
+        // The loop the whole task is for: read the item, take the uuid the
+        // read published, hand it back as an address.
+        let (_d, path) = sch_with(&two_labels_apart());
+        let ctx = Arc::new(test_ctx());
+        let list = crate::tools::sch_analysis::tools()
+            .into_iter()
+            .find(|t| t.name == "list_schematic_labels")
+            .expect("list_schematic_labels is registered");
+        let listed = (list.handler)(
+            &json!({ "schematic": path.display().to_string() }),
+            ctx.clone(),
+        )
+        .await
+        .unwrap();
+        let body = json_body(&listed);
+        let gnd = body["labels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["net"] == json!("GND"))
+            .expect("GND listed");
+        let uuid = gnd["uuid"].as_str().expect("the list publishes the uuid");
+        assert_eq!(uuid, LABEL_B);
+
+        let deleted = handle_delete_net_label(
+            &json!({ "schematic": path.display().to_string(), "uuid": uuid }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!deleted.is_error, "{:?}", deleted.content);
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(!after.contains(LABEL_B));
+        assert!(after.contains(LABEL_A));
+    }
+
+    #[tokio::test]
+    async fn an_added_no_connect_reports_the_uuid_that_deletes_it() {
+        // No read tool lists no-connects, so the creating call is where this
+        // address is published.
+        let (_d, path) = sch_with("\t(lib_symbols\n\t)");
+        let added = handle_add_no_connect(
+            &json!({ "schematic": path.display().to_string(), "x": 127.0, "y": 63.5 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!added.is_error, "{:?}", added.content);
+        let uuid = json_body(&added)["added_no_connect"]["uuid"]
+            .as_str()
+            .expect("the add reports the uuid")
+            .to_string();
+
+        let deleted = handle_delete_no_connect(
+            &json!({ "schematic": path.display().to_string(), "uuid": uuid }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!deleted.is_error, "{:?}", deleted.content);
+        assert!(!std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("no_connect"));
     }
 }

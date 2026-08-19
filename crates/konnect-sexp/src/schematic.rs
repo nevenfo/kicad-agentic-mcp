@@ -108,14 +108,50 @@ fn extract_schematic_lines(tree: &SexpNode, kind: &str) -> Vec<Wire> {
         .collect()
 }
 
-/// Extract all junction dot positions from a parsed schematic tree.
-pub fn extract_junctions(tree: &SexpNode) -> Vec<(f64, f64)> {
+/// One junction dot: where it sits, and which item it is.
+///
+/// The uuid is what makes a junction addressable at all — the position alone
+/// cannot tell two dots apart, and a dot's identity is exactly what a caller
+/// needs to hand back to a tool that edits it. `None` only for a `(junction …)`
+/// written without a `(uuid …)`, which eeschema never does.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Junction {
+    pub x: f64,
+    pub y: f64,
+    pub uuid: Option<String>,
+}
+
+impl Junction {
+    /// The dot's position, for the geometry code that wants nothing else.
+    pub fn point(&self) -> (f64, f64) {
+        (self.x, self.y)
+    }
+}
+
+/// Extract all junction dots from a parsed schematic tree.
+pub fn extract_junctions(tree: &SexpNode) -> Vec<Junction> {
     tree.find_all("junction")
         .iter()
         .filter_map(|node| {
             let at = node.find("at")?;
-            Some((at.get_f64(1)?, at.get_f64(2)?))
+            Some(Junction {
+                x: at.get_f64(1)?,
+                y: at.get_f64(2)?,
+                uuid: node
+                    .find("uuid")
+                    .and_then(|u| u.get(1))
+                    .and_then(|u| u.as_str())
+                    .map(String::from),
+            })
         })
+        .collect()
+}
+
+/// Junction positions only, for callers doing pure geometry.
+pub fn extract_junction_points(tree: &SexpNode) -> Vec<(f64, f64)> {
+    extract_junctions(tree)
+        .iter()
+        .map(Junction::point)
         .collect()
 }
 

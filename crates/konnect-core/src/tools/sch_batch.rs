@@ -1220,7 +1220,7 @@ async fn handle_validate_component_connections(
     // Build net graph so we can check connectivity. Junctions matter: a pin
     // sitting mid-wire is connected only through a junction dot, so without
     // them this validator reports false "not connected" (#104).
-    let junction_pts = konnect_sexp::schematic::extract_junctions(&tree);
+    let junction_pts = konnect_sexp::schematic::extract_junction_points(&tree);
     let mut g = build_net_graph(&wires, &labels, &junction_pts);
     // Also build flat wire-endpoint list for direct presence checks
     let all_wire_eps: Vec<(f64, f64)> = wires

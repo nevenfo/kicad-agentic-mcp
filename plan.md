@@ -445,9 +445,22 @@ side exists (`konnect-core::graph`).
         addresses sheets by uuid (`by_uuid`, `by_uuid_mut`, `remove_by_uuid`),
         so no address is ever translated into a name — which matters, since
         sheet names are not unique and a test now pins that
-  - [ ] D.4.1.4 `sch_wiring` / `sch_buses`: `uuid` accepted wherever a point or
+  - [x] D.4.1.4 `sch_wiring` / `sch_buses`: `uuid` accepted wherever a point or
         a segment addresses an item; `extract_junctions` starts carrying the
-        uuid it currently drops
+        uuid it currently drops. Four tools take one
+        (`split_wire_at_point`, `delete_schematic_net_label`,
+        `rotate_schematic_label`, `delete_no_connect`); `sch_buses` has none to
+        take one — every tool there creates or reads. The half that makes the
+        address usable ships with it: `list_schematic_labels` publishes uuids,
+        `add_no_connect` reports the one it created
+  - [ ] D.4.1.8 No reading tool lists junctions or no-connects, so a
+        no-connect's uuid is only ever published by the call that *created* it
+        — on a document the caller did not just write, `delete_no_connect`'s
+        uuid form has no way to be reached. Either a `list_no_connects` /
+        `list_junctions`, or an existing reader extended. Decide it before the
+        plural forms (`batch_delete_no_connect`) take uuids, or they inherit
+        the same dead end. `extract_junctions` already carries the uuid
+        (D.4.1.4), so the data side is done
   - [ ] D.4.1.5 D.4's own validation — the move test — and the docs
   - [ ] D.4.1.6 The plural address forms, left out of D.4.1.2 to keep it one
         unit: `batch_get_schematic_pin_locations` and `group_components` take

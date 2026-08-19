@@ -251,7 +251,7 @@ async fn handle_export_netlist_summary(
     let mut g = build_net_graph(
         &wires,
         &labels,
-        &konnect_sexp::schematic::extract_junctions(&tree),
+        &konnect_sexp::schematic::extract_junction_points(&tree),
     );
 
     // Collect distinct net names

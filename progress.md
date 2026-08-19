@@ -3,35 +3,47 @@
 ## Phase actuelle
 
 D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
-D.8 are DONE. D.4 is in progress (D.4.1.1-D.4.1.3 done); D.7 remains
+D.8 are DONE. D.4 is in progress (D.4.1.1-D.4.1.4 done); D.7 remains
 untouched; D.9 is gated by the same GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
 H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
 which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.4.1.4 — `sch_wiring` / `sch_buses`: `uuid` accepted wherever a point or a
-segment addresses an item, and `extract_junctions` starts carrying the uuid it
-drops. Not started.
+D.4.1.5 — D.4's own validation and the docs. The move test exists per toolset
+already (D.4.1.2, D.4.1.3); what is left is the *probe on a real project* the
+D.4 validation asks for, and writing the address model down where a caller
+reads it.
 
 ## Dernière tâche validée
 
-**D.4.1.3 — `sch_hierarchy` accepts a `uuid` wherever it accepts a
-`sheet_name`**: the eight tools that address a sheet, plus `source_uuid`
-beside `duplicate_sheet`'s `source_sheet_name`. `add_hierarchical_sheet` is
-untouched — its `sheet_name` names a sheet to *create*, not an address.
+**D.4.1.4 — `sch_wiring`, and the half that makes an address usable.** Four
+tools take a `uuid`: `split_wire_at_point` (which wire is cut, where two cross
+at the point), `delete_schematic_net_label`, `rotate_schematic_label`,
+`delete_no_connect`. `sch_buses` has nothing to convert — every tool there
+creates or reads. Plural forms stay out (D.4.1.6).
 
-Cleaner than D.4.1.2: `cse` already addresses sheets by uuid, so no address is
-translated into a name anywhere. That is not cosmetic — sheet names are not
-unique, and `a_uuid_addresses_one_of_two_sheets_sharing_a_name` pins it.
+`extract_junctions` now returns `Junction { x, y, uuid }`; the geometry callers
+take `extract_junction_points`. `list_schematic_labels` publishes uuids and
+`add_no_connect` reports the one it created — see D82 for why that shipped in
+the same task.
 
 Validation :
-- `cargo test -p konnect-core` 465/465 lib (453 + 12) + every integration
-  suite PASS, `capability_matrix` and `error_catalog_debt` included
-- clippy `-D warnings` and `fmt --check` clean
+- `cargo test -p konnect-core` 479/479 lib (465 + 14) + every integration suite
+  PASS; `cargo test -p konnect-sexp` PASS; clippy `--workspace -D warnings`
+  and `fmt --check` clean
+- the two tests that carry the task: `split_by_uuid_cuts_the_named_wire_where_a_point_cannot_choose`,
+  `two_labels_at_one_point_are_separable_only_by_uuid`, and the read→address
+  loop `a_listed_label_uuid_addresses_the_delete_tool`
 
 ## Décisions actives
 
+- D82 — an address a tool accepts must be an address some tool publishes,
+  and the two ship together. `list_schematic_labels` returned positions and
+  net names and no uuid, so accepting a label uuid alone would have been an
+  address nobody could obtain. The rule has a live counterexample recorded as
+  D.4.1.8: nothing lists junctions or no-connects, so `delete_no_connect`'s
+  uuid form is reachable only right after `add_no_connect` returned it.
 - D81 — a mutable lookup is reached by *position*, never by re-addressing what
   a name already resolved. `cse` reads a missing `(uuid …)` as the empty
   string, so translating a name-resolved sheet into its uuid would make two
@@ -300,13 +312,14 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.4.1.4** — `sch_wiring` / `sch_buses`: accept `uuid` wherever a point or a
-segment addresses an item, and make `extract_junctions` carry the uuid it
-currently drops. Unlike D.4.1.2 and D.4.1.3 this is not one more resolver: a
-coordinate pair addresses *whatever is at that point*, so decide first which
-tools take an item address (those can take a uuid) and which take a geometric
-one (those cannot). `delete_wire` already resolves a uuid — D.4.1.1 put it on
-the shared index — so start by reading it.
+**D.4.1.5** — D.4's own validation and the docs. The per-toolset move tests are
+already in (`a_uuid_still_addresses_the_symbol_after_it_moved`,
+`a_uuid_still_addresses_the_sheet_after_it_moved`), so what D.4's validation
+still asks for is the probe on a real project — use `examples/` or a project
+under `bench/`, do not invent a fixture — and one written statement of the
+address model a caller can read: which tools take a uuid, which publish one,
+and that the historical forms never changed (INV8). D.4.1.8 is the known hole
+and belongs in that statement rather than being quietly omitted.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

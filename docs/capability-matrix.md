@@ -200,7 +200,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|
-| `add_no_connect` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `add_no_connect` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `delete_no_connect` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `batch_delete_no_connect` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `connect_to_net` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
@@ -235,7 +235,7 @@ Not covered by any tool:
 | `rotate_schematic_label` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `move_labels_by_offset` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `batch_rotate_labels` | `sch_wiring` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `list_schematic_labels` | `sch_analysis` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `list_schematic_labels` | `sch_analysis` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 
 ### buses
 
