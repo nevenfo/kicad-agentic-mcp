@@ -584,7 +584,15 @@ async fn handle_batch_delete(
     let mut errors: Vec<String> = Vec::new();
     let mut delete_ranges: HashSet<(usize, usize)> = HashSet::new();
 
-    // Delete by UUID — walk back from uuid node to enclosing top-level block
+    // Delete by UUID — walk back from uuid node to enclosing top-level block.
+    //
+    // Deliberately NOT migrated to `find_schematic_item_by_uuid`/
+    // `konnect_sexp::item_locations` (D.4.1.1): those only match an item's own
+    // direct-child `(uuid …)`, but this handler has always accepted a UUID
+    // *nested* inside a top-level item — most notably a `(sheet …)`'s own
+    // `(pin …)` UUID — and deleted the enclosing item, per
+    // `is_deletable_schematic_item` below. Switching to the direct-child index
+    // would turn that accepted input into `NotFound` (INV8 regression).
     if let Some(uuids) = args["uuids"].as_array() {
         for uuid_val in uuids {
             let uuid = match uuid_val.as_str() {
@@ -1368,6 +1376,55 @@ mod batch_delete_tests {
 
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(!after.contains("obsolete caption"));
+        assert!(after.contains("(uuid \"root\")"));
+        assert!(after.contains("(sheet_instances"));
+        assert!(konnect_sexp::parse_sexp(&after).is_ok());
+    }
+
+    /// Locks the reason this handler keeps its textual UUID search instead of
+    /// the direct-child index of D.4.1.1: a UUID *nested* inside a top-level
+    /// item — here a sheet pin's own — has always deleted the enclosing item,
+    /// and the index would answer `NotFound` for it (INV8).
+    #[tokio::test]
+    async fn batch_delete_accepts_a_uuid_nested_inside_the_deleted_item() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("batch-delete-nested.kicad_sch");
+        let pin_uuid = "33333333-3333-3333-3333-333333333333";
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch
+	(version 20260306)
+	(generator \"eeschema\")
+	(uuid \"root\")
+	(sheet
+		(at 10 10 0)
+		(uuid \"44444444-4444-4444-4444-444444444444\")
+		(pin \"CLK\" input (at 0 0 0)
+			(uuid \"{pin_uuid}\")
+		)
+	)
+	(sheet_instances (path \"/\" (page \"1\")))
+)
+"
+            ),
+        )
+        .unwrap();
+
+        let result = handle_batch_delete(
+            &json!({
+                "schematic": path.display().to_string(),
+                "uuids": [pin_uuid]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(!after.contains("44444444-4444-4444-4444-444444444444"));
+        assert!(!after.contains(pin_uuid));
         assert!(after.contains("(uuid \"root\")"));
         assert!(after.contains("(sheet_instances"));
         assert!(konnect_sexp::parse_sexp(&after).is_ok());

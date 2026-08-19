@@ -730,6 +730,71 @@ fn document_items(source: &str) -> Result<Vec<DocumentItem<'_>>, SexpError> {
         .collect()
 }
 
+/// Location and identity of a top-level schematic item, resolved by UUID.
+///
+/// `kind` is the item's S-expression head (`"wire"`, `"symbol"`, `"text"`, …),
+/// and `(start, end)` is the exact byte range of its block in the source it
+/// was resolved against — the same contract [`ItemChange`] preconditions
+/// rely on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemLocation {
+    pub id: ItemId,
+    pub kind: Option<String>,
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Resolve a single top-level schematic item by its own (direct-child)
+/// `(uuid …)`, the same identity space [`ItemChange`] targets.
+///
+/// A UUID that only appears *nested* inside another item (e.g. a sheet pin's
+/// own UUID) does not match: this indexes item identity, not every UUID
+/// string in the document.
+///
+/// # Errors
+///
+/// Returns [`SexpError::MissingNode`] if `source` has no `kicad_sch` root, or
+/// a parse error if a direct child block is malformed.
+pub fn find_item(source: &str, id: &ItemId) -> Result<Option<ItemLocation>, SexpError> {
+    let items = document_items(source)?;
+    Ok(items.into_iter().find_map(|item| {
+        if item.id.as_ref() == Some(id) {
+            Some(ItemLocation {
+                id: item.id.expect("checked Some above"),
+                kind: item.kind,
+                start: item.start,
+                end: item.end,
+            })
+        } else {
+            None
+        }
+    }))
+}
+
+/// Locations of every top-level schematic item that carries a UUID.
+///
+/// Useful for listing the UUIDs actually present in a document, e.g. to
+/// populate a `NotFound` error's candidate list.
+///
+/// # Errors
+///
+/// Returns [`SexpError::MissingNode`] if `source` has no `kicad_sch` root, or
+/// a parse error if a direct child block is malformed.
+pub fn item_locations(source: &str) -> Result<Vec<ItemLocation>, SexpError> {
+    Ok(document_items(source)?
+        .into_iter()
+        .filter_map(|item| {
+            let id = item.id?;
+            Some(ItemLocation {
+                id,
+                kind: item.kind,
+                start: item.start,
+                end: item.end,
+            })
+        })
+        .collect())
+}
+
 fn block_id(block: &str) -> Result<Option<ItemId>, SexpError> {
     let node = parse_sexp(block)?;
     node.find("uuid")

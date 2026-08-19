@@ -19,8 +19,7 @@ use konnect_sexp::{
     },
     writer::{
         apply_edits, find_balanced_block, find_block_starts, find_block_with_leading_whitespace,
-        find_direct_child_blocks, find_enclosing_block, read_consistent, write_atomic_if_unchanged,
-        SexpEdit,
+        find_direct_child_blocks, read_consistent, write_atomic_if_unchanged, SexpEdit,
     },
 };
 use serde_json::json;
@@ -620,19 +619,38 @@ async fn handle_delete_wire(
     let expected = content.clone();
 
     let delete_range = if let Some(uuid) = opt_str(args, "uuid") {
-        let search = format!(r#"(uuid "{uuid}")"#);
-        let Some(wire_offset) = content.find(&search) else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::NotFound {
-                    document: sch_path.display().to_string(),
-                    item_kind: "wire".to_string(),
-                    key: uuid.to_string(),
-                    candidates: Vec::new(),
-                },
-                format!("Wire UUID '{uuid}' not found"),
-            ));
-        };
-        wire_block_with_leading_whitespace(&content, wire_offset)
+        match crate::tools::find_schematic_item_by_uuid(&content, uuid) {
+            Ok(Some((_start, _end, kind))) if kind.as_deref() == Some("wire") => {
+                crate::tools::find_schematic_item_block_for_delete(&content, uuid)
+                    .ok()
+                    .flatten()
+                    .map(|(start, end, _kind)| (start, end))
+            }
+            // Exists but isn't a wire: falls through to the generic "cannot
+            // locate a wire block" branch below, same as an unresolved
+            // enclosing-tag search did before this lookup was unified.
+            Ok(Some(_)) => None,
+            Ok(None) => {
+                return Ok(CallToolResult::error_kind(
+                    crate::mcp::error::ToolErrorKind::NotFound {
+                        document: sch_path.display().to_string(),
+                        item_kind: "wire".to_string(),
+                        key: uuid.to_string(),
+                        candidates: Vec::new(),
+                    },
+                    format!("Wire UUID '{uuid}' not found"),
+                ));
+            }
+            Err(err) => {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::MalformedDocument {
+                        path: sch_path.display().to_string(),
+                        detail: err.to_string(),
+                    },
+                    "Cannot parse schematic document",
+                ));
+            }
+        }
     } else {
         let Some(x1) = opt_f64(args, "x1") else {
             return Ok(CallToolResult::error_kind(
@@ -725,21 +743,46 @@ async fn handle_batch_delete_wire(
     // out of joined prose is the thing this whole zone is undoing.
     let mut unparseable = 0usize;
 
-    // Collect all delete ranges first, then apply in reverse order
+    // Collect all delete ranges first, then apply in reverse order. Resolved
+    // once via the shared UUID index rather than per-uuid, since every
+    // lookup in this batch shares the same `content`.
     let mut ranges: Vec<(usize, usize)> = Vec::new();
-    for uuid in &uuids {
-        let search = format!(r#"(uuid "{uuid}")"#);
-        match content.find(&search) {
-            Some(offset) => match wire_block_with_leading_whitespace(&content, offset) {
-                Some(range) => ranges.push(range),
-                None => {
+    if !uuids.is_empty() {
+        let items = match konnect_sexp::item_locations(&content) {
+            Ok(items) => items,
+            Err(err) => {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::MalformedDocument {
+                        path: sch_path.display().to_string(),
+                        detail: err.to_string(),
+                    },
+                    "Cannot parse schematic document",
+                ));
+            }
+        };
+        for uuid in &uuids {
+            match items.iter().find(|item| item.id.as_str() == uuid.as_str()) {
+                Some(item) if item.kind.as_deref() == Some("wire") => {
+                    match find_block_with_leading_whitespace(&content, item.start) {
+                        Some(range) => ranges.push(range),
+                        None => {
+                            unparseable += 1;
+                            errors.push(format!(
+                                "UUID '{uuid}' exists but is not inside a parseable wire block"
+                            ));
+                        }
+                    }
+                }
+                // Exists but isn't a wire: same "unparseable" bucket a failed
+                // enclosing-tag search fell into before this lookup was unified.
+                Some(_) => {
                     unparseable += 1;
                     errors.push(format!(
                         "UUID '{uuid}' exists but is not inside a parseable wire block"
                     ));
                 }
-            },
-            None => errors.push(format!("Wire UUID '{uuid}' not found")),
+                None => errors.push(format!("Wire UUID '{uuid}' not found")),
+            }
         }
     }
     ranges.sort_unstable();
@@ -783,14 +826,6 @@ async fn handle_batch_delete_wire(
         "deleted": deleted,
         "errors": errors
     })))
-}
-
-fn wire_block_with_leading_whitespace(
-    content: &str,
-    contained_offset: usize,
-) -> Option<(usize, usize)> {
-    let (wire_start, _) = find_enclosing_block(content, "wire", contained_offset)?;
-    find_block_with_leading_whitespace(content, wire_start)
 }
 
 fn find_wire_block_by_endpoints(

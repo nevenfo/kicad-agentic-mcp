@@ -7,8 +7,8 @@ pub mod transaction;
 pub mod writer;
 
 pub use command::{
-    commit_command, prepare_command, DocumentRevision, ItemAnchor, ItemChange, ItemId,
-    SchematicCommand, TransactionOutcome,
+    commit_command, find_item, item_locations, prepare_command, DocumentRevision, ItemAnchor,
+    ItemChange, ItemId, ItemLocation, SchematicCommand, TransactionOutcome,
 };
 pub use error::SexpError;
 pub use geometry::{transform_pin, PinTransform};

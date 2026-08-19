@@ -3,38 +3,46 @@
 ## Phase actuelle
 
 D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
-D.8 are DONE. D.4 and D.7 remain untouched; D.9 is gated by the same
+D.8 are DONE. D.4 is in progress (D.4.1.1 done); D.7 remains untouched; D.9 is gated by the same
 GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
 H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
 which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.4.1 — UUID-addressed item handles across the schematic tools. Not started.
+D.4.1.2 — `sch_components`: `uuid` accepted wherever `reference` is. Not
+started.
 
 ## Dernière tâche validée
 
-**D.6 is DONE.** D.6.1 took the plain-text error debt from 152 sites to 2, in
-five zones after D.6.5 removed what was capping it.
+**D.4.1.1 — one resolver, not three.** `konnect-sexp` now exposes
+`find_item` / `item_locations` / `ItemLocation` over the index that was already
+there but private (`document_items`), and `tools/mod.rs` carries the two handle
+functions the text-editing paths call: `find_schematic_item_by_uuid` and
+`find_schematic_item_block_for_delete`.
 
-The two left are one condition reached twice (`kam_state::TaskError::ListFull`)
-and are a floor, not a to-do: no catalogued kind is true of them, and the
-ceiling comment in `tests/error_catalog_debt.rs` says so, so a later reader
-does not lower it by classifying falsely.
-
-Two kinds were added in the process, each only after several sites had
-converged on the same shape: `MalformedDocument` (D77) and `UpstreamFailed`
-(D78). `NotFound` also gained `candidates`, which let
-`lib_symbol_not_found_error` stop using the catch-all to carry a suggestion
-list.
+Two of the three textual `content.find(r#"(uuid "…")"#)` sites moved onto it
+(`delete_wire`, `batch_delete_wire`) — `batch_delete_wire` resolves the index
+once for the whole batch instead of per uuid. The third did not, and the reason
+is the task's own second clause (see D79).
 
 Validation :
-- `gate.ps1 -Bench` PASS; gateway 21/21, `MCP_CALLS` median 4, 2 200 tokens,
-  0 safety violations
-- the debt test enforces 2 in both directions
+- `cargo test -p konnect-core` 443/443 + all integration suites PASS;
+  `cargo test -p konnect-sexp` PASS
+- `cargo clippy --all-targets -D warnings` and `cargo fmt --check` clean
 
 ## Décisions actives
 
+- D79 — an item's identity is its *own* direct-child `(uuid …)`, and the shared
+  resolver indexes only that. `batch_delete` is therefore deliberately left on
+  its textual search: it has always accepted a UUID nested inside the item it
+  deletes — a `(sheet …)`'s own `(pin …)` — and walked out to the enclosing
+  top-level block, which the index answers `NotFound` for. The permissive input
+  is now pinned by a test rather than by the absence of one, so migrating it
+  later is a decision to drop an accepted address (INV8), not a refactor.
+  Corollary for the two sites that did move: a UUID that resolves to the wrong
+  *kind* is not `NotFound` — `delete_wire` sends it down the same "cannot
+  locate a wire block" path an unresolved enclosing-tag search produced before.
 - D78 — a third-party service is its own failure domain. `UpstreamFailed
   { service, code, detail }`: nothing in a failed JLCPCB download is the
   caller's fault, the filesystem's or KiCAD's, and `code` separates what prose
@@ -276,15 +284,11 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.4.1** — UUID-addressed item handles across the schematic tools, keeping the
-existing path+coordinate forms accepted (D.4.2, INV8). The extraction side
-already exists: `konnect-core::graph` keys on KiCad's own UUIDs. Read
-`plan.md` D.4 first — its validation is that a call naming a UUID still
-resolves after the item moved, which is a test to write, not only a feature.
-
-Worth knowing before starting, from D.6.1: `NotFound` now carries an optional
-`candidates` list, and an address that resolves to nothing is exactly its
-shape.
+**D.4.1.2** — `sch_components`: accept `uuid` wherever `reference` is accepted,
+on the resolver D.4.1.1 built (`crate::tools::find_schematic_item_by_uuid`,
+kind `"symbol"`). Keep `reference` working unchanged (D.4.2, INV8), and when a
+UUID resolves to nothing use `NotFound`'s `candidates` — `item_locations`
+returns every top-level UUID with its kind, which is the list to filter.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

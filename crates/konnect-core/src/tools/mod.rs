@@ -646,6 +646,99 @@ pub fn find_symbol_instance_block(content: &str, reference: &str) -> Option<(usi
     None
 }
 
+/// `(start, end, kind)` of a top-level schematic item's own block, resolved
+/// by UUID via the canonical index in `konnect_sexp::command`, for the
+/// text-editing tool paths.
+///
+/// Returns `Ok(None)` when no item carries this UUID as its own (direct-
+/// child) identity — a UUID nested inside another item (e.g. a sheet pin)
+/// does not match. `kind` is the item's S-expression head (`"wire"`,
+/// `"symbol"`, `"text"`, …), for callers that must reject an existing UUID
+/// belonging to the wrong kind of item.
+///
+/// # Errors
+///
+/// Propagates a [`konnect_sexp::SexpError`] if `content` cannot be indexed
+/// at all — missing `kicad_sch` root, or a direct-child block that fails to
+/// parse.
+pub(crate) fn find_schematic_item_by_uuid(
+    content: &str,
+    uuid: &str,
+) -> Result<Option<(usize, usize, Option<String>)>, konnect_sexp::SexpError> {
+    let items = konnect_sexp::item_locations(content)?;
+    Ok(items
+        .into_iter()
+        .find(|item| item.id.as_str() == uuid)
+        .map(|item| (item.start, item.end, item.kind)))
+}
+
+/// As [`find_schematic_item_by_uuid`], but including any leading
+/// whitespace/newline before the block, for callers that delete the item.
+///
+/// # Errors
+///
+/// See [`find_schematic_item_by_uuid`].
+pub(crate) fn find_schematic_item_block_for_delete(
+    content: &str,
+    uuid: &str,
+) -> Result<Option<(usize, usize, Option<String>)>, konnect_sexp::SexpError> {
+    let Some((start, _end, kind)) = find_schematic_item_by_uuid(content, uuid)? else {
+        return Ok(None);
+    };
+    Ok(
+        konnect_sexp::writer::find_block_with_leading_whitespace(content, start)
+            .map(|(ws_start, end)| (ws_start, end, kind)),
+    )
+}
+
+#[cfg(test)]
+mod schematic_item_lookup_tests {
+    use super::*;
+
+    const SCH: &str = "(kicad_sch\n\t(version 20260306)\n\t(wire\n\t\t(pts (xy 0 0) (xy 10 0))\n\t\t(uuid \"11111111-1111-1111-1111-111111111111\")\n\t)\n\t(sheet\n\t\t(at 0 0)\n\t\t(uuid \"22222222-2222-2222-2222-222222222222\")\n\t\t(pin \"Name\" input (at 0 0 0)\n\t\t\t(uuid \"33333333-3333-3333-3333-333333333333\")\n\t\t)\n\t)\n)\n";
+
+    #[test]
+    fn finds_own_uuid_with_kind() {
+        let (start, end, kind) =
+            find_schematic_item_by_uuid(SCH, "11111111-1111-1111-1111-111111111111")
+                .expect("indexable")
+                .expect("found");
+        assert_eq!(kind.as_deref(), Some("wire"));
+        assert!(SCH[start..end].starts_with("(wire"));
+    }
+
+    #[test]
+    fn does_not_match_a_nested_uuid() {
+        // A sheet pin's own UUID must not resolve to the enclosing sheet:
+        // that identity belongs to the pin, not the top-level item.
+        assert_eq!(
+            find_schematic_item_by_uuid(SCH, "33333333-3333-3333-3333-333333333333")
+                .expect("indexable"),
+            None
+        );
+    }
+
+    #[test]
+    fn unknown_uuid_is_none() {
+        assert_eq!(
+            find_schematic_item_by_uuid(SCH, "ffffffff-ffff-ffff-ffff-ffffffffffff")
+                .expect("indexable"),
+            None
+        );
+    }
+
+    #[test]
+    fn delete_variant_includes_leading_whitespace() {
+        let (start, end, kind) =
+            find_schematic_item_block_for_delete(SCH, "11111111-1111-1111-1111-111111111111")
+                .expect("indexable")
+                .expect("found");
+        assert_eq!(kind.as_deref(), Some("wire"));
+        assert!(SCH[start..end].starts_with('\n'));
+        assert!(SCH[start..end].trim_start().starts_with("(wire"));
+    }
+}
+
 #[cfg(test)]
 mod symbol_block_tests {
     use super::*;

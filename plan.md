@@ -414,6 +414,25 @@ side exists (`konnect-core::graph`).
 
 ### Tâches
 - [ ] D.4.1 UUID-addressed item handles across the schematic tools
+  - [x] D.4.1.1 One resolver, not three. `konnect-sexp::command` already holds
+        the real index (`ItemId`, `document_items`, both private); it exposes a
+        lookup by UUID, and `tools/mod.rs` carries the handle layer beside
+        `find_symbol_instance_block`. The three textual
+        `content.find(r#"(uuid "…")"#)` sites — `delete_wire`,
+        `batch_delete_wire`, `delete_schematic_items` — move onto it without
+        changing what they accept or what they protect.
+        Done for the two wire sites; the third (`batch_delete`) stays on the
+        textual search *because* of the second clause — it has always accepted
+        a UUID nested inside the item it deletes (a sheet pin's own), which the
+        direct-child index answers `NotFound` for. That acceptance is now a
+        test (`batch_delete_accepts_a_uuid_nested_inside_the_deleted_item`), so
+        the next reader migrates it only by deciding to drop the input
+  - [ ] D.4.1.2 `sch_components`: `uuid` accepted wherever `reference` is
+  - [ ] D.4.1.3 `sch_hierarchy`: `uuid` accepted wherever `sheet_name` is
+  - [ ] D.4.1.4 `sch_wiring` / `sch_buses`: `uuid` accepted wherever a point or
+        a segment addresses an item; `extract_junctions` starts carrying the
+        uuid it currently drops
+  - [ ] D.4.1.5 D.4's own validation — the move test — and the docs
 - [ ] D.4.2 Keep the existing path+coordinate forms accepted (INV8)
 
 ### Validation
