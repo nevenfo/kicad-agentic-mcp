@@ -3,36 +3,46 @@
 ## Phase actuelle
 
 D — domain stabilisation, resumed while phase K waits. D.1-D.3, D.5, D.6 and
-D.8 are DONE. D.4 is in progress (D.4.1.1 done); D.7 remains untouched; D.9 is gated by the same
-GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
+D.8 are DONE. D.4 is in progress (D.4.1.1-D.4.1.2 done); D.7 remains
+untouched; D.9 is gated by the same GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
 H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
 which needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-D.4.1.2 — `sch_components`: `uuid` accepted wherever `reference` is. Not
+D.4.1.3 — `sch_hierarchy`: `uuid` accepted wherever `sheet_name` is. Not
 started.
 
 ## Dernière tâche validée
 
-**D.4.1.1 — one resolver, not three.** `konnect-sexp` now exposes
-`find_item` / `item_locations` / `ItemLocation` over the index that was already
-there but private (`document_items`), and `tools/mod.rs` carries the two handle
-functions the text-editing paths call: `find_schematic_item_by_uuid` and
-`find_schematic_item_block_for_delete`.
+**D.4.1.2 — `sch_components` accepts a `uuid` wherever it accepts a
+`reference`**, on the nine tools that address one component
+(`delete`/`edit`/`get`/`move`/`rotate`/`move_connected`/`get_pin_locations`/
+`add_component_annotation`/`replace_component`). The plural forms
+(`references`) are out of scope and are D.4.1.6.
 
-Two of the three textual `content.find(r#"(uuid "…")"#)` sites moved onto it
-(`delete_wire`, `batch_delete_wire`) — `batch_delete_wire` resolves the index
-once for the whole batch instead of per uuid. The third did not, and the reason
-is the task's own second clause (see D79).
+Two resolvers, because the file has two worlds: `tools::resolve_component`
+returns the symbol's byte range and the `reference` *read from that block*, for
+the handlers holding the document text; `resolve_component_reference` returns
+`reference` without reading anything and only pays for a read on the `uuid`
+path, for the seven handlers that go through `cse::Schematic`.
 
 Validation :
-- `cargo test -p konnect-core` 443/443 + all integration suites PASS;
-  `cargo test -p konnect-sexp` PASS
-- `cargo clippy --all-targets -D warnings` and `cargo fmt --check` clean
+- `cargo test -p konnect-core` 453/453 lib (444 + 9 new) + every integration
+  suite PASS, `capability_matrix` and `error_catalog_debt` included
+- the D.4 test exists and is named: `a_uuid_still_addresses_the_symbol_after_it_moved`
+- clippy `-D warnings` and `fmt --check` clean
 
 ## Décisions actives
 
+- D80 — `reference` wins when a call carries both addresses, and the resolved
+  `reference` is *read out of the block*, never echoed from the request: a
+  `uuid` call and a `reference` call then hand the same string to everything
+  downstream. The `reference` branch reads nothing and keeps its own
+  "not found" messages, so INV8 is preserved by construction rather than by
+  test. Known gap, recorded as D.4.1.7 rather than papered over: the seven
+  handlers that redescend by designator land on unit 1 of a multi-unit symbol
+  even when the uuid named another unit.
 - D79 — an item's identity is its *own* direct-child `(uuid …)`, and the shared
   resolver indexes only that. `batch_delete` is therefore deliberately left on
   its textual search: it has always accepted a UUID nested inside the item it
@@ -284,11 +294,13 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**D.4.1.2** — `sch_components`: accept `uuid` wherever `reference` is accepted,
-on the resolver D.4.1.1 built (`crate::tools::find_schematic_item_by_uuid`,
-kind `"symbol"`). Keep `reference` working unchanged (D.4.2, INV8), and when a
-UUID resolves to nothing use `NotFound`'s `candidates` — `item_locations`
-returns every top-level UUID with its kind, which is the list to filter.
+**D.4.1.3** — `sch_hierarchy`: accept `uuid` wherever `sheet_name` is accepted.
+Same two-resolver shape as D.4.1.2, with `kind == Some("sheet")` instead of
+`"symbol"`; the sheet's name is a `(property "Sheetname" …)`, so the analogue of
+`symbol_block_reference` reads that. Note before starting: a sheet's *pin*
+UUIDs are nested and therefore invisible to `item_locations` by design (D79) —
+decide explicitly whether a pin address is in scope for this task or a later
+one.
 
 On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
 target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce

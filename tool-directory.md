@@ -77,7 +77,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 |------|-------------|
 | `create_schematic` | Create a new blank `.kicad_sch` schematic file. |
 | `add_schematic_component` | Add a symbol from a KiCAD library to the schematic. Snaps to the 1.27mm grid. |
-| `delete_schematic_component` | Remove a symbol instance from the schematic by its reference designator. |
+| `delete_schematic_component` | Remove a symbol instance from the schematic by reference designator or UUID. |
 | `edit_schematic_component` | Update fields (Reference, Value, Footprint, custom properties) of a symbol instance. |
 | `get_schematic_component` | Get all properties, position, and pin locations for a symbol instance. |
 | `list_schematic_components` | List all symbol instances with positions, values, footprints, and pin locations. |

@@ -691,6 +691,136 @@ pub(crate) fn find_schematic_item_block_for_delete(
     )
 }
 
+/// A component address that resolved: which symbol instance the call meant,
+/// however it was named.
+///
+/// `reference` is read out of the resolved block, never echoed from the
+/// request, so a `uuid`-addressed call and a `reference`-addressed call hand
+/// the same string to everything downstream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedComponent {
+    pub reference: String,
+    /// Byte range of the symbol's own block in the `content` it was resolved
+    /// against — invalidated by any edit to that string, like every other
+    /// offset in this module.
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Resolve `reference` or `uuid` — whichever the call carries — to one symbol
+/// instance (D.4.1.2).
+///
+/// `reference` wins when both are present: it is the form every existing
+/// caller uses, and a call that names both and means two different symbols is
+/// a caller bug, not an address to guess at (INV8 keeps the old form working
+/// unchanged).
+///
+/// A `uuid` that names a real item of the wrong kind is `NotFound` with
+/// `item_kind: "component"`, not a wrong-kind edit: the caller asked for a
+/// component and there is none at that address.
+///
+/// # Errors
+///
+/// Returns the `CallToolResult` to hand back: `InvalidArgument` when neither
+/// form is present, `NotFound` (with the document's symbol UUIDs as
+/// candidates) when the address resolves to nothing, `MalformedDocument` when
+/// `content` cannot be indexed.
+pub(crate) fn resolve_component(
+    content: &str,
+    args: &serde_json::Value,
+    sch_path: &std::path::Path,
+) -> Result<ResolvedComponent, Box<crate::mcp::protocol::CallToolResult>> {
+    use crate::mcp::error::ToolErrorKind;
+    use crate::mcp::protocol::CallToolResult;
+
+    if let Some(reference) = opt_str(args, "reference") {
+        let Some((start, end)) = find_symbol_instance_block(content, reference) else {
+            return Err(Box::new(CallToolResult::error_kind(
+                ToolErrorKind::NotFound {
+                    document: sch_path.display().to_string(),
+                    item_kind: "component".to_string(),
+                    key: reference.to_string(),
+                    candidates: Vec::new(),
+                },
+                format!("Component '{reference}' not found in schematic"),
+            )));
+        };
+        return Ok(ResolvedComponent {
+            reference: reference.to_string(),
+            start,
+            end,
+        });
+    }
+
+    let Some(uuid) = opt_str(args, "uuid") else {
+        return Err(Box::new(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "reference".to_string(),
+                reason: "one of 'reference' or 'uuid' is required to address a component"
+                    .to_string(),
+            },
+            "Missing component address: pass 'reference' or 'uuid'",
+        )));
+    };
+
+    let items = match konnect_sexp::item_locations(content) {
+        Ok(items) => items,
+        Err(err) => {
+            return Err(Box::new(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: err.to_string(),
+                },
+                "Cannot parse schematic document",
+            )))
+        }
+    };
+
+    match items
+        .iter()
+        .find(|item| item.id.as_str() == uuid && item.kind.as_deref() == Some("symbol"))
+    {
+        Some(item) => {
+            let Some(reference) = symbol_block_reference(&content[item.start..item.end]) else {
+                return Err(Box::new(CallToolResult::error_kind(
+                    ToolErrorKind::MalformedDocument {
+                        path: sch_path.display().to_string(),
+                        detail: format!("symbol '{uuid}' carries no Reference property"),
+                    },
+                    format!("Symbol '{uuid}' has no reference designator"),
+                )));
+            };
+            Ok(ResolvedComponent {
+                reference,
+                start: item.start,
+                end: item.end,
+            })
+        }
+        None => Err(Box::new(CallToolResult::error_kind(
+            ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "component".to_string(),
+                key: uuid.to_string(),
+                candidates: items
+                    .iter()
+                    .filter(|item| item.kind.as_deref() == Some("symbol"))
+                    .map(|item| item.id.as_str().to_string())
+                    .collect(),
+            },
+            format!("No component with UUID '{uuid}' in schematic"),
+        ))),
+    }
+}
+
+/// The `Reference` property value of one symbol block, by the same textual
+/// shape [`find_symbol_instance_block`] searches for.
+fn symbol_block_reference(block: &str) -> Option<String> {
+    const NEEDLE: &str = r#"(property "Reference" ""#;
+    let start = block.find(NEEDLE)? + NEEDLE.len();
+    let end = start + block[start..].find('"')?;
+    Some(block[start..end].to_string())
+}
+
 #[cfg(test)]
 mod schematic_item_lookup_tests {
     use super::*;

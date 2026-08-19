@@ -427,12 +427,28 @@ side exists (`konnect-core::graph`).
         direct-child index answers `NotFound` for. That acceptance is now a
         test (`batch_delete_accepts_a_uuid_nested_inside_the_deleted_item`), so
         the next reader migrates it only by deciding to drop the input
-  - [ ] D.4.1.2 `sch_components`: `uuid` accepted wherever `reference` is
+  - [x] D.4.1.2 `sch_components`: `uuid` accepted wherever `reference` is —
+        the nine tools that take one `reference`. Two resolvers, because the
+        file has two worlds: `tools::resolve_component` (byte range, for the
+        handlers holding the document text) and a thin
+        `resolve_component_reference` that returns `reference` without reading
+        anything and only pays for a read on the `uuid` path (INV8)
+  - [ ] D.4.1.7 A `uuid` that names unit 2 of a multi-unit symbol still lands
+        on unit 1 in the seven `cse`/tree handlers: the units share a
+        designator, and those handlers redescend by it. Exact-unit addressing
+        needs either `cse::SymbolCollection` lookups by uuid (it already has
+        `remove_by_uuid`) or moving those handlers onto the byte range.
+        `add_component_annotation` and `replace_component` are already exempt
   - [ ] D.4.1.3 `sch_hierarchy`: `uuid` accepted wherever `sheet_name` is
   - [ ] D.4.1.4 `sch_wiring` / `sch_buses`: `uuid` accepted wherever a point or
         a segment addresses an item; `extract_junctions` starts carrying the
         uuid it currently drops
   - [ ] D.4.1.5 D.4's own validation — the move test — and the docs
+  - [ ] D.4.1.6 The plural address forms, left out of D.4.1.2 to keep it one
+        unit: `batch_get_schematic_pin_locations` and `group_components` take
+        `references`, and a list that may mix the two spellings is its own
+        decision (a `uuids` array beside it, or entries the resolver reads
+        either way) — not a mechanical repeat of the singular case
 - [ ] D.4.2 Keep the existing path+coordinate forms accepted (INV8)
 
 ### Validation

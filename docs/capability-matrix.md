@@ -145,7 +145,7 @@ The always-visible gateway/discovery tools (`crates/konnect-core/src/router/meta
 | tool | toolset | adapter | effect | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|
 | `create_schematic` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
-| `add_component_annotation` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/design_review.rs` |  |
+| `add_component_annotation` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `get_schematic_view` | `sch_components` | `cli` | `read` | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `find_orphan_items` | `sch_analysis` | `sexpr` | `read` | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `check_schematic_overlaps` | `sch_analysis` | `sexpr` | `read` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
@@ -165,10 +165,10 @@ Not covered by any tool:
 |---|---|---|---|---|---|---|---|
 | `add_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | bench | `bench/probes/symbol_lookup_cost.yaml` |  |
 | `delete_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `edit_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `edit_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `get_schematic_component` | `sch_components` | `sexpr` | `read` | SUPPORTED | bench | `bench/tasks/07_sch_inspection.yaml` |  |
 | `list_schematic_components` | `sch_components` | `sexpr` | `read` | SUPPORTED | bench | `bench/probes/graph.yaml` |  |
-| `move_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `move_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `rotate_schematic_component` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `move_connected` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `move_region` | `sch_components` | `sexpr` | `write` | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |

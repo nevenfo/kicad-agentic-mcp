@@ -63,14 +63,15 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "delete_schematic_component",
-            "Remove a symbol instance from the schematic by its reference designator.",
+            "Remove a symbol instance from the schematic by reference designator or UUID.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
-                    "reference": { "type": "string", "description": "Reference designator (e.g. 'R1')" }
+                    "reference": { "type": "string", "description": "Reference designator (e.g. 'R1')" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" }
                 },
-                "required": ["schematic", "reference"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_delete_schematic_component(args, ctx).await }
         ),
@@ -82,6 +83,7 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "reference": { "type": "string", "description": "Current reference designator" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" },
                     "new_reference": { "type": "string", "description": "New reference designator (optional)" },
                     "value": { "type": "string", "description": "New value (optional)" },
                     "footprint": { "type": "string", "description": "New footprint (optional)" },
@@ -91,7 +93,7 @@ pub fn tools() -> Vec<ToolDef> {
                         "description": "Additional property fields to set as key:value pairs"
                     }
                 },
-                "required": ["schematic", "reference"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_edit_schematic_component(args, ctx).await }
         ),
@@ -104,9 +106,10 @@ pub fn tools() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
-                    "reference": { "type": "string" }
+                    "reference": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" }
                 },
-                "required": ["schematic", "reference"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_get_schematic_component(args, ctx).await }
         ),
@@ -131,10 +134,11 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "reference": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" },
                     "x": { "type": "number", "description": "New X position in mm" },
                     "y": { "type": "number", "description": "New Y position in mm" }
                 },
-                "required": ["schematic", "reference", "x", "y"]
+                "required": ["schematic", "x", "y"]
             }),
             |args, ctx| async move { handle_move_schematic_component(args, ctx).await }
         ),
@@ -146,9 +150,10 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "reference": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" },
                     "rotation": { "type": "number", "description": "Absolute rotation in degrees" }
                 },
-                "required": ["schematic", "reference", "rotation"]
+                "required": ["schematic", "rotation"]
             }),
             |args, ctx| async move { handle_rotate_schematic_component(args, ctx).await }
         ),
@@ -162,10 +167,11 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string" },
                     "reference": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" },
                     "x": { "type": "number" },
                     "y": { "type": "number" }
                 },
-                "required": ["schematic", "reference", "x", "y"]
+                "required": ["schematic", "x", "y"]
             }),
             |args, ctx| async move { handle_move_connected(args, ctx).await }
         ),
@@ -208,9 +214,10 @@ pub fn tools() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string" },
-                    "reference": { "type": "string" }
+                    "reference": { "type": "string" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" }
                 },
-                "required": ["schematic", "reference"]
+                "required": ["schematic"]
             }),
             |args, ctx| async move { handle_get_schematic_pin_locations(args, ctx).await }
         ),
@@ -239,10 +246,11 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string", "description": "Path to .kicad_sch file" },
                     "reference": { "type": "string", "description": "Component reference designator (e.g. 'R1')" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" },
                     "key": { "type": "string", "description": "Property name" },
                     "value": { "type": "string", "description": "Property value" }
                 },
-                "required": ["schematic", "reference", "key", "value"]
+                "required": ["schematic", "key", "value"]
             }),
             |args, ctx| async move { handle_add_component_annotation(args, ctx).await }
         ),
@@ -272,10 +280,11 @@ pub fn tools() -> Vec<ToolDef> {
                 "properties": {
                     "schematic": { "type": "string", "description": "Path to .kicad_sch file" },
                     "reference": { "type": "string", "description": "Component reference designator (e.g. 'U1')" },
+                    "uuid": { "type": "string", "description": "Symbol UUID; pass this or 'reference'" },
                     "new_lib_id": { "type": "string", "description": "New Library:Symbol identifier (e.g. 'Device:C')" },
                     "unit": { "type": "integer", "description": "Optional unit number for multi-unit symbols; validated against the new symbol's unit count. When omitted the existing unit is kept." }
                 },
-                "required": ["schematic", "reference", "new_lib_id"]
+                "required": ["schematic", "new_lib_id"]
             }),
             |args, ctx| async move { handle_replace_component(args, ctx).await }
         ),
@@ -314,6 +323,37 @@ fn component_not_found(
             candidates: Vec::new(),
         },
         message,
+    )
+}
+
+/// `reference` or `uuid` — whichever the call carries — as the reference
+/// designator, for the handlers that work through `cse::Schematic` (or the
+/// parsed tree) and never hold the document text.
+///
+/// A call carrying `reference` gets it back without reading anything: the
+/// existing path, its "not found" errors included, stays exactly what it was
+/// (INV8). Only a `uuid` call pays for a read.
+///
+/// Multi-unit symbols: the units of one symbol share a designator, so a
+/// handler that redescends by `reference` lands on the first unit even when
+/// the `uuid` named another. Resolving the exact unit needs the byte range
+/// from [`resolve_component`], which these handlers have no way to use.
+///
+/// # Errors
+///
+/// The outer `Err` is a document read failure, as everywhere else in this
+/// file; the inner one is the [`CallToolResult`] to hand back.
+fn resolve_component_reference(
+    args: &serde_json::Value,
+    sch_path: &std::path::Path,
+) -> anyhow::Result<Result<String, Box<CallToolResult>>> {
+    if let Some(reference) = opt_str(args, "reference") {
+        return Ok(Ok(reference.to_string()));
+    }
+    let content = read_consistent(sch_path)?;
+    Ok(
+        crate::tools::resolve_component(&content, args, sch_path)
+            .map(|resolved| resolved.reference),
     )
 }
 
@@ -513,9 +553,9 @@ async fn handle_delete_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
+    let reference = match resolve_component_reference(args, &sch_path)? {
+        Ok(r) => r,
+        Err(e) => return Ok(*e),
     };
 
     let mut sch = cse::Schematic::load(&sch_path)?;
@@ -538,9 +578,9 @@ async fn handle_edit_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
+    let reference = match resolve_component_reference(args, &sch_path)? {
+        Ok(r) => r,
+        Err(e) => return Ok(*e),
     };
 
     let mut content = read_consistent(&sch_path)?;
@@ -749,9 +789,9 @@ async fn handle_get_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
+    let reference = match resolve_component_reference(args, &sch_path)? {
+        Ok(r) => r,
+        Err(e) => return Ok(*e),
     };
 
     let sch = cse::Schematic::load(&sch_path)?;
@@ -821,9 +861,9 @@ async fn handle_move_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
+    let reference = match resolve_component_reference(args, &sch_path)? {
+        Ok(r) => r,
+        Err(e) => return Ok(*e),
     };
     let new_x = match require_f64(args, "x") {
         Ok(v) => v,
@@ -854,9 +894,9 @@ async fn handle_rotate_schematic_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
+    let reference = match resolve_component_reference(args, &sch_path)? {
+        Ok(r) => r,
+        Err(e) => return Ok(*e),
     };
     let rotation = match require_f64(args, "rotation") {
         Ok(v) => v,
@@ -922,9 +962,9 @@ async fn handle_move_connected(
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
+    let reference = match resolve_component_reference(args, &sch_path)? {
+        Ok(r) => r,
+        Err(e) => return Ok(*e),
     };
 
     let before = pin_positions(&sch_path, &reference);
@@ -1038,9 +1078,9 @@ async fn handle_get_schematic_pin_locations(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
+    let reference = match resolve_component_reference(args, &sch_path)? {
+        Ok(r) => r,
+        Err(e) => return Ok(*e),
     };
 
     let (_, tree) = read_schematic(&sch_path)?;
@@ -1244,10 +1284,6 @@ async fn handle_add_component_annotation(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
-    };
     let key = match require_str(args, "key") {
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
@@ -1260,16 +1296,24 @@ async fn handle_add_component_annotation(
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
 
-    // Find the symbol block for this reference
-    let (sym_start, sym_end) = match find_symbol_instance_block(&content, &reference) {
-        Some(r) => r,
-        None => {
-            return Ok(component_not_found(
-                &sch_path,
-                &reference,
-                format!("Component '{}' not found", reference),
-            ))
-        }
+    // Find the symbol block for this address. `reference` keeps its own lookup
+    // and its own "not found" message (INV8); `uuid` goes through the shared
+    // resolver, which hands back the exact unit's byte range.
+    let (reference, sym_start, sym_end) = match opt_str(args, "reference") {
+        Some(reference) => match find_symbol_instance_block(&content, reference) {
+            Some((start, end)) => (reference.to_string(), start, end),
+            None => {
+                return Ok(component_not_found(
+                    &sch_path,
+                    reference,
+                    format!("Component '{}' not found", reference),
+                ))
+            }
+        },
+        None => match crate::tools::resolve_component(&content, args, &sch_path) {
+            Ok(resolved) => (resolved.reference, resolved.start, resolved.end),
+            Err(e) => return Ok(*e),
+        },
     };
 
     // Find the position just before (instances in the symbol block, or before closing paren
@@ -1285,7 +1329,10 @@ async fn handle_add_component_annotation(
     );
 
     let new_content = apply_edits(content, vec![SexpEdit::insert(insert_abs, prop_sexp)]);
-    let item_id = symbol_item_id(&expected, &reference)?;
+    // From the resolved block, not from a second lookup by `reference`: the
+    // units of a multi-unit symbol share a designator, and this call meant one
+    // of them.
+    let item_id = symbol_block_item_id(&expected[sym_start..sym_end])?;
     let command = SchematicCommand::replace_item_from_document(
         &expected,
         &new_content,
@@ -1304,10 +1351,16 @@ async fn handle_add_component_annotation(
 fn symbol_item_id(content: &str, reference: &str) -> anyhow::Result<ItemId> {
     let (start, end) = find_symbol_instance_block(content, reference)
         .ok_or_else(|| anyhow::anyhow!("component '{reference}' not found"))?;
-    let symbol = parse_sexp(&content[start..end])?;
+    symbol_block_item_id(&content[start..end])
+}
+
+/// The [`ItemId`] of one already-located symbol block, for callers that hold
+/// the block and must not re-find it by designator.
+fn symbol_block_item_id(block: &str) -> anyhow::Result<ItemId> {
+    let symbol = parse_sexp(block)?;
     let uuid = symbol
         .find_str("uuid")
-        .ok_or_else(|| anyhow::anyhow!("component '{reference}' has no UUID"))?;
+        .ok_or_else(|| anyhow::anyhow!("symbol block carries no UUID"))?;
     Ok(ItemId::new(uuid.to_owned())?)
 }
 
@@ -1387,10 +1440,6 @@ async fn handle_replace_component(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let reference = match require_str(args, "reference") {
-        Ok(r) => r.to_string(),
-        Err(e) => return Ok(e),
-    };
     let new_lib_id = match require_str(args, "new_lib_id") {
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
@@ -1400,16 +1449,24 @@ async fn handle_replace_component(
     let mut content = read_consistent(&sch_path)?;
     let expected = content.clone();
 
-    // Find the symbol block for this reference
-    let (sym_start, sym_end) = match find_symbol_instance_block(&content, &reference) {
-        Some(r) => r,
-        None => {
-            return Ok(component_not_found(
-                &sch_path,
-                &reference,
-                format!("Component '{}' not found", reference),
-            ))
-        }
+    // Find the symbol block for this address. `reference` keeps its own lookup
+    // and its own "not found" message (INV8); `uuid` goes through the shared
+    // resolver, which hands back the exact unit's byte range.
+    let (reference, sym_start, sym_end) = match opt_str(args, "reference") {
+        Some(reference) => match find_symbol_instance_block(&content, reference) {
+            Some((start, end)) => (reference.to_string(), start, end),
+            None => {
+                return Ok(component_not_found(
+                    &sch_path,
+                    reference,
+                    format!("Component '{}' not found", reference),
+                ))
+            }
+        },
+        None => match crate::tools::resolve_component(&content, args, &sch_path) {
+            Ok(resolved) => (resolved.reference, resolved.start, resolved.end),
+            Err(e) => return Ok(*e),
+        },
     };
 
     // Find the (lib_id "OLD") and replace it — searching only within this
@@ -1470,10 +1527,14 @@ async fn handle_replace_component(
                 ),
             ));
         }
-        // Re-find the block (offsets moved with the lib_id edit), then update
-        // every `(unit N)` inside it — the symbol's own and the one in its
-        // (instances …) entry.
-        if let Some((s, e)) = find_symbol_instance_block(&content, &reference) {
+        // Shift the block's end by the lib_id edit rather than re-finding it by
+        // designator: the units of a multi-unit symbol share one, and this call
+        // named a single unit. The block starts before the lib_id, so its start
+        // did not move. Then update every `(unit N)` inside it — the symbol's
+        // own and the one in its (instances …) entry.
+        let s = sym_start;
+        let e = (sym_end + new_lib_id.len()).saturating_sub(old_lib_id.len());
+        {
             let block = &content[s..e];
             let mut edits = Vec::new();
             let mut from = 0usize;
@@ -2197,5 +2258,333 @@ pub(crate) mod tests {
             !val_sexp.contains("hide"),
             "Value stays visible: {val_sexp}"
         );
+    }
+    // ─── D.4.1.2: `uuid` is accepted wherever `reference` is ─────────────────
+
+    /// Two byte-identical schematics, one per directory so the file stem — and
+    /// with it the project name written into every instance path — stays the
+    /// same. Each holds R1 and R2; the returned uuid is R1's.
+    async fn twin_schematics(
+        ctx: &ToolContext,
+    ) -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        String,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let build = dir.path().join("build");
+        std::fs::create_dir_all(&build).unwrap();
+        let source = build.join("twin.kicad_sch");
+        handle_create_schematic(&json!({ "path": source.display().to_string() }), ctx)
+            .await
+            .unwrap();
+        for (reference, x) in [("R1", 100.0), ("R2", 120.0)] {
+            let res = handle_add_schematic_component(
+                &json!({
+                    "schematic": source.display().to_string(),
+                    "lib_id": "Device:R",
+                    "x": x, "y": 80.0,
+                    "reference": reference
+                }),
+                ctx,
+            )
+            .await
+            .unwrap();
+            assert!(!res.is_error, "placing {reference}: {:?}", res.content);
+        }
+
+        let (a_dir, b_dir) = (dir.path().join("a"), dir.path().join("b"));
+        std::fs::create_dir_all(&a_dir).unwrap();
+        std::fs::create_dir_all(&b_dir).unwrap();
+        let (a, b) = (a_dir.join("twin.kicad_sch"), b_dir.join("twin.kicad_sch"));
+        std::fs::copy(&source, &a).unwrap();
+        std::fs::copy(&source, &b).unwrap();
+
+        let uuid = symbol_uuid(&a, "R1");
+        (dir, a, b, uuid)
+    }
+
+    fn symbol_uuid(path: &std::path::Path, reference: &str) -> String {
+        cse::Schematic::load(path)
+            .unwrap()
+            .symbols
+            .by_reference(reference)
+            .unwrap_or_else(|| panic!("{reference} present"))
+            .uuid
+            .clone()
+    }
+
+    /// The structured `error` object of a failed result.
+    fn error_body(result: &CallToolResult) -> serde_json::Value {
+        let crate::mcp::protocol::ToolContent::Text { text } = result.content.first().unwrap()
+        else {
+            panic!("text content expected");
+        };
+        serde_json::from_str::<serde_json::Value>(text).unwrap()["error"].clone()
+    }
+
+    #[tokio::test]
+    async fn get_component_by_uuid_matches_by_reference() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, a, b, uuid) = twin_schematics(&ctx).await;
+
+        let by_ref = handle_get_schematic_component(
+            &json!({ "schematic": a.display().to_string(), "reference": "R1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let by_uuid = handle_get_schematic_component(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!by_ref.is_error && !by_uuid.is_error);
+        assert_eq!(
+            format!("{:?}", by_ref.content),
+            format!("{:?}", by_uuid.content)
+        );
+    }
+
+    #[tokio::test]
+    async fn move_component_by_uuid_matches_by_reference() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, a, b, uuid) = twin_schematics(&ctx).await;
+
+        handle_move_schematic_component(
+            &json!({ "schematic": a.display().to_string(), "reference": "R1", "x": 60.96, "y": 55.88 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        handle_move_schematic_component(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid, "x": 60.96, "y": 55.88 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap(),
+            "a uuid-addressed move must write the same document as a reference-addressed one"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_component_by_uuid_matches_by_reference() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, a, b, uuid) = twin_schematics(&ctx).await;
+
+        let fields = json!({ "value": "4k7", "footprint": "Resistor_SMD:R_0805_2012Metric" });
+        let mut by_ref = fields.clone();
+        by_ref["schematic"] = json!(a.display().to_string());
+        by_ref["reference"] = json!("R1");
+        let mut by_uuid = fields;
+        by_uuid["schematic"] = json!(b.display().to_string());
+        by_uuid["uuid"] = json!(uuid);
+
+        let ra = handle_edit_schematic_component(&by_ref, &ctx)
+            .await
+            .unwrap();
+        let rb = handle_edit_schematic_component(&by_uuid, &ctx)
+            .await
+            .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn add_annotation_by_uuid_matches_by_reference() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, a, b, uuid) = twin_schematics(&ctx).await;
+
+        let ra = handle_add_component_annotation(
+            &json!({ "schematic": a.display().to_string(), "reference": "R1", "key": "MPN", "value": "RC0805" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_add_component_annotation(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid, "key": "MPN", "value": "RC0805" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_component_by_uuid_matches_by_reference() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, a, b, uuid) = twin_schematics(&ctx).await;
+
+        let ra = handle_replace_component(
+            &json!({ "schematic": a.display().to_string(), "reference": "R1", "new_lib_id": "Device:C_Polarized" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let rb = handle_replace_component(
+            &json!({ "schematic": b.display().to_string(), "uuid": uuid, "new_lib_id": "Device:C_Polarized" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !ra.is_error && !rb.is_error,
+            "{:?} {:?}",
+            ra.content,
+            rb.content
+        );
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            std::fs::read_to_string(&b).unwrap()
+        );
+    }
+
+    /// The point of D.4: a uuid is an address that survives what the document
+    /// does to the thing it names. Position changes, designator changes; the
+    /// uuid keeps resolving to the same symbol.
+    #[tokio::test]
+    async fn a_uuid_still_addresses_the_symbol_after_it_moved() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, uuid) = twin_schematics(&ctx).await;
+
+        let moved = handle_move_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": uuid, "x": 60.96, "y": 55.88 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!moved.is_error);
+
+        let again = handle_get_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": uuid }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!again.is_error, "the address must outlive the move");
+        let crate::mcp::protocol::ToolContent::Text { text } = again.content.first().unwrap()
+        else {
+            panic!("text content expected");
+        };
+        let body: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(body["uuid"], json!(uuid));
+        assert_eq!(body["x"], json!(60.96));
+        assert_eq!(body["y"], json!(55.88));
+    }
+
+    #[tokio::test]
+    async fn an_unknown_uuid_is_not_found_and_lists_the_symbols() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, r1) = twin_schematics(&ctx).await;
+        let r2 = symbol_uuid(&path, "R2");
+
+        let result = handle_get_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "uuid": "00000000-0000-4000-8000-000000000000"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error);
+        let error = error_body(&result);
+        assert_eq!(error["kind"], json!("not_found"));
+        assert_eq!(error["item_kind"], json!("component"));
+        let candidates: Vec<String> = serde_json::from_value(error["candidates"].clone()).unwrap();
+        assert!(
+            candidates.contains(&r1) && candidates.contains(&r2),
+            "candidates must be the symbols that are there: {candidates:?}"
+        );
+    }
+
+    /// A real uuid of the wrong kind of item is `NotFound`, not an edit landing
+    /// on the wire that happened to carry it.
+    #[tokio::test]
+    async fn a_wires_uuid_does_not_address_a_component() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        let wire_uuid = {
+            let mut sch = cse::Schematic::load(&path).unwrap();
+            let wire = cse::Wire::new(50.8, 50.8, 63.5, 50.8);
+            let uuid = wire.uuid.clone();
+            sch.wires.push(wire);
+            sch.overwrite().unwrap();
+            uuid
+        };
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let result = handle_edit_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "uuid": wire_uuid, "value": "4k7" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_error);
+        assert_eq!(error_body(&result)["kind"], json!("not_found"));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "a wrong-kind address must not edit anything"
+        );
+    }
+
+    #[tokio::test]
+    async fn neither_reference_nor_uuid_is_an_invalid_argument() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        for result in [
+            handle_get_schematic_component(
+                &json!({ "schematic": path.display().to_string() }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+            handle_add_component_annotation(
+                &json!({ "schematic": path.display().to_string(), "key": "MPN", "value": "X" }),
+                &ctx,
+            )
+            .await
+            .unwrap(),
+        ] {
+            assert!(result.is_error);
+            let error = error_body(&result);
+            assert_eq!(error["kind"], json!("invalid_argument"));
+            assert_eq!(error["field"], json!("reference"));
+        }
     }
 }
