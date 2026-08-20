@@ -2,38 +2,60 @@
 
 ## Phase actuelle
 
-D — domain stabilisation, resumed while phase K waits. D.1-D.6 and D.8 are
-DONE. **D.7 is the only untouched lot left in phase D**; D.9 is gated by the
-same GUI-session question as J.3. K.1.1 is the last dependency of phase M (H.6 and
-H.7 are DONE) and stays blocked until 2026-08-20. Phase F is DONE except F.5.7,
-which needs a decision before it is worth measuring.
+D — domain stabilisation. D.1-D.6 and D.8 are DONE. **D.7 is in progress and is
+the last untouched lot of phase D**: D.7.1 and D.7.3 are DONE and committed,
+D.7.2 is the one left. D.9 is gated by the same GUI-session question as J.3.
+K.1.1's date has arrived (2026-08-20) and it is now a budget decision, not a
+blocked one. Phase F is DONE except F.5.7, which needs a decision before it is
+worth measuring.
 
 ## Tâche actuelle
 
-None active. **D.4 is DONE**, and the next task is a choice rather than a
-continuation — see NEXT ACTION.
+**D.7.2 — `changes_since(rev)`** as a meta-tool. Delegated with the design
+fixed (see the D.7 section of plan.md, which now carries it): `document` +
+`since` both required, three answers told apart — still at `rev`, moved by
+batches the journal names, moved by someone who is not us — and nothing from
+the journal in the reply.
 
 ## Dernière tâche validée
 
-**D.4.1.7, and with it D.4.** A uuid naming unit 2 of a multi-unit symbol now
-edits unit 2. `resolve_component_reference` became `resolve_component_target`,
-which resolves an address to the symbol's *position* — in the loaded
-schematic, among the parsed instances, or as a byte range — and nothing
-redescends by designator afterwards. The designator path is unchanged and still
-means the first block carrying that name.
-
-Nothing was added to `cse` except `SymbolCollection::remove_at`: position is
-what the handlers need, so `by_uuid`/`by_uuid_mut` would have been an API
-nobody calls.
+**D.7.1 and D.7.3.** A batch that changes something leaves one JSONL line under
+the state directory; the validation is a test that recomputes the semantic diff
+from the journal's own pre/post images alone and gets the same summary the
+batch reported. D.7.3 pins the handshake: `resources` stays
+`subscribe: false` / `listChanged: false`, and `tools.listChanged` stays `true`
+because it is real and describes session state, not the disk.
 
 Validation :
-- `cargo test --workspace` PASS — 58 suites, 0 failures, lib 483 (479 + 4);
-  `uuid_addressing` 12, `capability_matrix` and `error_catalog_debt` green
-- clippy `--workspace -D warnings` and `fmt --check` clean
-- the test that carries it: `move_by_uuid_moves_the_named_unit`, against a
-  two-unit `Device:OPAMP_DUAL` built through the normal placement path
+- `cargo test --workspace` PASS — 60 suites, 0 failures, lib 483 (+1 ignored),
+  kam-state 43 (5 of them the journal's)
+- clippy `--workspace --all-targets -D warnings` and `fmt --check` clean
+- the tests that carry it: `a_journal_replay_reconstructs_the_batch_s_reported_diff`,
+  `a_read_only_batch_writes_nothing_to_the_journal`, and the three in
+  `no_push_notifications.rs`
 
 ## Décisions actives
+
+- D85 — the delta path is **pull**, and the file watcher D.7.2 named is
+  deliberately not built. A watcher is a daemon that would have to survive a
+  restart to be worth anything, and the one question it would answer — has this
+  document moved since `rev` — is already answered on demand by D.1's
+  content-addressed revision, with no state to keep in sync. D.7.3 is the other
+  half: a watcher whose findings may never be pushed has no consumer but the
+  poll that exists anyway. Recorded under D.7's Validation in plan.md rather
+  than dropped silently.
+- D84 — the run journal records a *restore point*, never a capability, and a
+  field is only worth having while it is true. `rollback_token` names the entry
+  whose pre-image is on disk; nothing in MCP accepts it and nothing from the
+  journal enters a reply, because publishing an address no tool accepts is D82
+  read backwards. Its truth is re-established on the way **out** of `entries()`
+  by looking at the directory, not on the way in: the line is append-only and
+  eviction is a budget decision, not a correction to what happened. Two
+  corollaries: only the files a batch *changed* are imaged, so the cost is
+  proportional to the change and not to the project; and `root` is the one
+  absolute path in a line — every document and image path hangs off it — because
+  a journal that could not be addressed by document could not answer
+  `changes_since`.
 
 - D83 — an address resolves to a *position*, and the position is what the edit
   uses. Stated for sheets as D81 and now the rule everywhere: the units of a
@@ -249,12 +271,10 @@ Validation :
 
 ## Blocage actif
 
-K.1.1 stays blocked until **2026-08-20**: the Codex account is at its usage
-limit until that date (K.1.4). The Claude Code path alone is unblocked and is a
-budget decision, not a technical one.
+Aucun.
 
-Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
-`kicad-cli api-server` it needs.
+Phase I remains gated by hardware rather than by work: this machine has KiCad
+10.0, not the KiCad 11 / `kicad-cli api-server` it needs.
 
 ## Fichiers / zones utiles
 
@@ -282,6 +302,14 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
   returning a tool per clause, a decided query under the limit — instead of
   score-for-score equality. The run of record stays
   `bench/runner.py --load-mode search` (D65)
+- `crates/kam-state/src/journal.rs` — the whole run journal: `RunJournal`
+  (`append` / `entries` / `image`), `JournalLimits`'s three independent budgets,
+  and the eviction that leaves lines alone. Domain-free like the rest of
+  `kam-state`: it is handed its directory, and never resolves one itself. The
+  server's directory comes from `observability::journal_dir()`, which honours
+  `KONNECT_STATE_DIR` only when absolute; the write site is
+  `router::meta_tools::write_journal_entry`, called from `BatchGuard::finish`
+  while the snapshot is still alive — the only moment `before()` is reachable
 - `crates/konnect-core/src/mode_gate.rs` — the whole D.8 gate: `check()` /
   `refuse()`, consulted by `mcp/handler.rs::dispatch_tool` and by
   `handle_kicad_invoke`'s per-entry loop, never anywhere else. The mode itself
@@ -315,28 +343,26 @@ Phase I remains gated: this machine has KiCad 10.0, not the KiCad 11 /
 
 ## NEXT ACTION
 
-**A choice, not a continuation.** D.4 is closed, so phase D has one untouched
-lot left, D.7 — read its section in `plan.md` before deciding, since nothing in
-this session touched it. The alternative is F.5.7, which has been waiting on a
-decision rather than on work (below), and K.1.1 unblocks on 2026-08-20 either
-way.
+Finish **D.7.2 — `changes_since`** (design in plan.md's D.7 section), then
+`cargo test --workspace` + clippy + `fmt --check`, tick D.7.2, and phase D is
+closed except D.9, which is gated on the same GUI-session question as J.3.
 
-Nothing is half-done: the working tree is clean, every lot of D.4 is committed
-separately, and `cargo test --workspace` is green at `HEAD`.
+Nothing is half-done outside that: D.7.1 and D.7.3 are committed separately and
+`cargo test --workspace` is green at `HEAD`.
 
-Local commits are **not pushed** — `git push` has no tty in this environment
-and the `wincredman` helper refuses to persist. Eight commits sit on
-`agentic/main` ahead of `origin`.
+Local commits are **not pushed** — `git push` has no tty in this environment and
+the `wincredman` helper refuses to persist. Ten commits sit on `agentic/main`
+ahead of `origin`.
 
-On or after 2026-08-20, K.1.1: `py -3.11 bench/harness_runner.py --server
-target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
---log-dir <dir> --out <json>` for each of the two harnesses in scope (D70). The
-user chose (2026-08-18) to wait for that date and run both as one campaign
-rather than measure Claude Code alone first. Budget stays the user's call each
-time: a Claude Code run costs ~$0.06 on the lightest task with haiku, and the
-six other golden tasks all author something.
+**K.1.1 is unblocked as of today (2026-08-20)** and is now purely a budget
+decision, which is the user's each time: `py -3.11 bench/harness_runner.py
+--server target/release/konnect.exe --harness <claude|codex> --repeat 2
+--enforce --log-dir <dir> --out <json>` for each of the two harnesses in scope
+(D70). The user chose (2026-08-18) to run both as one campaign rather than
+measure Claude Code alone first. A Claude Code run costs ~$0.06 on the lightest
+task with haiku, and the six other golden tasks all author something.
 
-Actionable before that date if the user wants it: F.5.7 — whether `apply_plan`
+Also waiting on a decision rather than on work: F.5.7 — whether `apply_plan`
 should name the design actions its operation library covers. F.5.2 opened it and
 deliberately did not take it: the lever that would make the plan path
 retrievable is the same one that would put it in competition with
