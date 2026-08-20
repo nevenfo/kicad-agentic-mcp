@@ -272,7 +272,13 @@ pub fn render(coverage: &Coverage) -> String {
          `read` when it leaves nothing. It is derived from the tool's verb plus a short list of \
          named exceptions, and a tool no rule covers is `write`: over-reporting a writer costs a \
          refusal someone can see, while under-reporting one lets a mutation through a context \
-         that believed itself safe.\n"
+         that believed itself safe.\n\n\
+         `write target` (only meaningful when `effect` is `write`) is `design_document` when the \
+         call can modify a source document of the design (`.kicad_sch`, `.kicad_pcb`, \
+         `.kicad_pro`, a project library) and `derived` when it writes only a fabrication \
+         artifact, a report, or this server's own state. `operating mode Manufacturing` (the \
+         design freeze) refuses `design_document` writes and allows `derived` ones; a tool no \
+         rule covers is `design_document` by the same fail-safe reasoning as `effect`.\n"
     );
     for domain in ALL_DOMAINS {
         let tools: Vec<&Capability> = MANIFEST
@@ -292,19 +298,29 @@ pub fn render(coverage: &Coverage) -> String {
         if !tools.is_empty() {
             let _ = writeln!(
                 out,
-                "| tool | toolset | adapter | effect | status | proof | evidence | note |"
+                "| tool | toolset | adapter | effect | write target | status | proof | evidence | note |"
             );
-            let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
+            let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|");
             for capability in tools {
                 let evidence = coverage.get(capability.tool);
                 let status = capability.status(evidence.proof);
+                let effect = super::tool_effect(capability.tool);
+                let write_target = if effect == super::Effect::Write {
+                    match super::tool_write_target(capability.tool) {
+                        super::WriteTarget::DesignDocument => "design_document",
+                        super::WriteTarget::Derived => "derived",
+                    }
+                } else {
+                    "—"
+                };
                 let _ = writeln!(
                     out,
-                    "| `{}` | `{}` | `{}` | `{}` | {} | {} | {} | {} |",
+                    "| `{}` | `{}` | `{}` | `{}` | {} | {} | {} | {} | {} |",
                     capability.tool,
                     toolsets.get(capability.tool).copied().unwrap_or("—"),
                     capability.adapter.label(),
-                    super::tool_effect(capability.tool).label(),
+                    effect.label(),
+                    write_target,
                     status.label(),
                     evidence.proof.label(),
                     evidence

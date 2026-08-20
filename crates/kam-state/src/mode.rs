@@ -18,38 +18,53 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 /// How much execution risk this process is allowed to take.
 ///
-/// Four variants exist because the plan names four (`plan.md`, "D.8 —
-/// Operating mode, orthogonal to discovery"), but only one rule is measured
-/// today: [`OperatingMode::ReadOnly`] refuses a write, everything else
-/// allows it. [`OperatingMode::Manufacturing`] and
-/// [`OperatingMode::Experimental`] are accepted, parsed and carried end to
-/// end, but behave exactly like [`OperatingMode::Write`] until a MANIFEST
-/// entry exists that would let a real distinction be tested — see
-/// [`OperatingMode::tier`], the single place that fact is encoded.
+/// Three ranks exist (`plan.md`, "D.8 — Operating mode, orthogonal to
+/// discovery"): [`OperatingMode::ReadOnly`] refuses every write;
+/// [`OperatingMode::Manufacturing`] is the design freeze — the design is
+/// validated and an order is being prepared, so reads, checks and
+/// fabrication outputs pass but any write that could touch a source design
+/// document is refused; [`OperatingMode::Write`] and
+/// [`OperatingMode::Experimental`] refuse nothing. `Experimental` is a
+/// deliberate alias of `Write` — no distinct rule exists for it in this
+/// repository, and none should be invented to justify the name — kept as
+/// its own variant only so a caller can name the intent. See
+/// [`OperatingMode::tier`] for the exact ordering this produces:
+/// `ReadOnly < Manufacturing < Write == Experimental`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OperatingMode {
-    /// No write may run — the only restriction any mode enforces today.
+    /// No write may run — the most restrictive mode.
     /// Not the default: an unconfigured process is `Write` (see `Default`).
     ReadOnly,
     /// Today's implicit behaviour: nothing is refused. The process default.
     Write,
-    /// Parses and carries through identically to `Write` — no manufacturing-
-    /// specific rule is enforced yet.
+    /// The design freeze: the design is considered final and an order is
+    /// being prepared. Reads, checks and fabrication outputs (gerbers, BOM,
+    /// pick-and-place, reports) pass; any write that can touch a source
+    /// design document (`.kicad_sch`, `.kicad_pcb`, `.kicad_pro`, a project
+    /// library) is refused — see `capability::WriteTarget` and
+    /// `capability::mode_allows`, which encode that distinction. Stricter
+    /// than `Write`, looser than `ReadOnly`.
     Manufacturing,
-    /// Parses and carries through identically to `Write` — no experimental-
-    /// specific rule is enforced yet.
+    /// A deliberate alias of `Write`: parses and carries through identically
+    /// to it, on purpose, because no distinct experimental-mode rule exists
+    /// in this repository yet. Kept as its own variant so intent is
+    /// nameable, not because behaviour differs.
     Experimental,
 }
 
 impl OperatingMode {
-    /// Restrictiveness rank: lower is more restrictive. Only two ranks exist
-    /// today because only one boundary (`ReadOnly` vs. the rest) has an
-    /// enforced rule; a third rank should only be added alongside the check
-    /// that makes it observable, not in anticipation of one.
+    /// Restrictiveness rank: lower is more restrictive.
+    /// `ReadOnly` (0) < `Manufacturing` (1) < `Write` == `Experimental` (2).
+    /// `Manufacturing` sits strictly between the two: it is the design
+    /// freeze, a rule enforced by `capability::mode_allows` on
+    /// `WriteTarget::DesignDocument`, not a synonym for either neighbour.
+    /// `Write` and `Experimental` share a rank because `Experimental` is a
+    /// documented alias of `Write`, not an unmeasured placeholder.
     fn tier(self) -> u8 {
         match self {
             OperatingMode::ReadOnly => 0,
-            OperatingMode::Write | OperatingMode::Manufacturing | OperatingMode::Experimental => 1,
+            OperatingMode::Manufacturing => 1,
+            OperatingMode::Write | OperatingMode::Experimental => 2,
         }
     }
 
@@ -250,14 +265,30 @@ mod tests {
     }
 
     #[test]
-    fn restrict_to_is_a_no_op_between_the_non_read_only_variants() {
-        // Manufacturing/Experimental share Write's tier (documented, not a
-        // bug): none of the three can restrict-to any of the others.
-        let guard = ModeGuard::new(OperatingMode::Manufacturing);
+    fn manufacturing_restricts_write_and_experimental() {
+        // Manufacturing sits strictly between ReadOnly and Write: it can
+        // restrict-to from either of Write/Experimental (D69: never the
+        // other way, see restrict_to_never_elevates).
+        let guard = ModeGuard::new(OperatingMode::Write);
+        guard.restrict_to(OperatingMode::Manufacturing);
+        assert_eq!(guard.current(), OperatingMode::Manufacturing);
+
+        let guard = ModeGuard::new(OperatingMode::Experimental);
+        guard.restrict_to(OperatingMode::Manufacturing);
+        assert_eq!(guard.current(), OperatingMode::Manufacturing);
+    }
+
+    #[test]
+    fn write_and_experimental_are_a_no_op_on_each_other() {
+        // Experimental is a deliberate alias of Write (same tier): neither
+        // can restrict-to the other.
+        let guard = ModeGuard::new(OperatingMode::Write);
         guard.restrict_to(OperatingMode::Experimental);
-        assert_eq!(guard.current(), OperatingMode::Manufacturing);
+        assert_eq!(guard.current(), OperatingMode::Write);
+
+        let guard = ModeGuard::new(OperatingMode::Experimental);
         guard.restrict_to(OperatingMode::Write);
-        assert_eq!(guard.current(), OperatingMode::Manufacturing);
+        assert_eq!(guard.current(), OperatingMode::Experimental);
     }
 
     #[test]

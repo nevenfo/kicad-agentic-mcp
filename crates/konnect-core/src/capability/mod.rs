@@ -431,24 +431,125 @@ pub fn meta_tool_effect(tool: &str) -> Option<Effect> {
         .map(|(_, effect)| *effect)
 }
 
+// ─── WriteTarget ────────────────────────────────────────────────────────────
+
+/// *What* a [`Effect::Write`] call writes, orthogonal to [`Effect`] itself.
+///
+/// `Effect` says whether a call can leave something behind at all;
+/// `WriteTarget` says whether what it leaves behind is a source of the
+/// design or something derived from it. That distinction is what makes
+/// [`kam_state::OperatingMode::Manufacturing`] — the design freeze —
+/// implementable: a fabrication export writes to disk exactly like a
+/// schematic edit does, so "does it write" cannot be the axis that
+/// separates them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteTarget {
+    /// The call can modify a source document of the design: a `.kicad_sch`,
+    /// `.kicad_pcb`, `.kicad_pro`, or a project library. Refused under
+    /// `Manufacturing`. The fail-safe: a write tool with no explicit
+    /// classification is `DesignDocument`, so a tool added tomorrow is
+    /// refused under `Manufacturing` rather than allowed by accident.
+    DesignDocument,
+    /// The call writes, but never a source document of the design:
+    /// fabrication artifacts (gerbers, drill, BOM, position files), reports,
+    /// or this server's own durable state (task state, config). Allowed
+    /// under `Manufacturing`.
+    Derived,
+}
+
+/// Tools whose `Effect::Write` is [`WriteTarget::Derived`] — decided by
+/// reading each handler, not guessed from its name. Every other tool
+/// classified `Write` in [`MANIFEST`] is [`WriteTarget::DesignDocument`] by
+/// fail-safe (see [`tool_write_target`]); a stale or dead entry here is a
+/// test failure (`every_derived_write_names_a_real_tool`).
+///
+/// Every `export_*` tool is `Derived` too, but that is handled by a verb
+/// rule in [`tool_write_target`] rather than by naming all of them here —
+/// there is no MANIFEST tool named `export_*` that is a documented
+/// exception to it.
+const DERIVED_WRITES: &[&str] = &[
+    // Runs kicad-cli and writes only the netlist file the caller asked for,
+    // never a project source document.
+    "generate_netlist",
+    // Runs kicad-cli DRC; the only optional file write is the report at the
+    // caller's own `output` path (tools::verification::handle_run_drc).
+    "run_drc",
+    // Same shape as run_drc, for ERC (tools::sch_export::handle_run_erc).
+    "run_erc",
+    // Writes timestamped PDF snapshots to a caller-chosen output_dir; never
+    // the project's own documents (tools::project::handle_snapshot_project).
+    "snapshot_project",
+    // Durable task state only (kam-runtime), never a project file.
+    "start_task",
+    "update_task",
+    // Writes `.konnect/project.json` / this server's own user config file —
+    // server bookkeeping, not a KiCad document
+    // (tools::config::{handle_save_project_config, handle_save_user_config}).
+    "save_project_config",
+    "save_user_config",
+    // Pings the KiCad IPC socket; writes nothing at all
+    // (tools::project::handle_open_project).
+    "open_project",
+    // Spawns the viewer subprocess and reads the schematic to show it;
+    // writes no project file (tools::project::handle_open_viewer).
+    "open_schematic_viewer",
+];
+
+/// Which [`WriteTarget`] `tool`'s [`Effect::Write`] carries.
+///
+/// Meaningless (and unused) for a tool classified [`Effect::Read`] —
+/// callers only consult this after checking `tool_effect(tool) ==
+/// Effect::Write`. Fail-safe: a tool not named in [`DERIVED_WRITES`] and
+/// not an `export_*` verb is [`WriteTarget::DesignDocument`].
+#[must_use]
+pub fn tool_write_target(tool: &str) -> WriteTarget {
+    if tool.starts_with("export_") || DERIVED_WRITES.contains(&tool) {
+        WriteTarget::Derived
+    } else {
+        WriteTarget::DesignDocument
+    }
+}
+
+/// [`WriteTarget`] for a meta-tool's [`Effect::Write`]
+/// ([`META_TOOL_EFFECTS`]). Both `Write` meta-tools (`kicad_invoke`,
+/// `kicad_agent`) can reach a handler that writes a project source document
+/// — `kicad_invoke` carries an arbitrary batch of MANIFEST writers, and
+/// `kicad_agent`'s `execute: true` path applies a compiled Plan IR to a
+/// document — so both are `DesignDocument` by the same fail-safe
+/// [`tool_write_target`] uses, with no named exception today.
+#[must_use]
+pub fn meta_tool_write_target(_tool: &str) -> WriteTarget {
+    WriteTarget::DesignDocument
+}
+
 // ─── Mode gate ──────────────────────────────────────────────────────────────
 
-/// Whether a call with `effect` may run under `mode` (plan.md D.8).
+/// Whether a call with `effect` (and, when it writes, `write_target`) may
+/// run under `mode` (plan.md D.8, D.8.3).
 ///
-/// The only rule this enforces today: [`kam_state::OperatingMode::ReadOnly`]
-/// refuses [`Effect::Write`]. `Manufacturing` and `Experimental` are not
-/// given a distinct rule — they are accepted, parsed, carried end to end,
-/// and behave exactly like `Write` here — because no MANIFEST entry yet
-/// distinguishes them from an ordinary write; inventing an unmeasured
-/// sub-rule would be a policy this crate cannot test. Widening this match
-/// belongs next to the MANIFEST classification that makes the new rule
-/// observable, not here in anticipation of one.
+/// * [`kam_state::OperatingMode::ReadOnly`] refuses every [`Effect::Write`].
+/// * [`kam_state::OperatingMode::Manufacturing`] — the design freeze —
+///   refuses a [`Effect::Write`] only when its [`WriteTarget`] is
+///   [`WriteTarget::DesignDocument`]; a [`WriteTarget::Derived`] write
+///   (a fabrication export, a report, this server's own state) passes.
+/// * [`kam_state::OperatingMode::Write`] and
+///   [`kam_state::OperatingMode::Experimental`] refuse nothing —
+///   `Experimental` is a deliberate alias of `Write`, not a mode with its
+///   own rule.
+/// * Every mode allows every [`Effect::Read`].
 #[must_use]
-pub fn mode_allows(mode: kam_state::OperatingMode, effect: Effect) -> bool {
-    !matches!(
-        (mode, effect),
-        (kam_state::OperatingMode::ReadOnly, Effect::Write)
-    )
+pub fn mode_allows(
+    mode: kam_state::OperatingMode,
+    effect: Effect,
+    write_target: WriteTarget,
+) -> bool {
+    match (mode, effect) {
+        (kam_state::OperatingMode::ReadOnly, Effect::Write) => false,
+        (kam_state::OperatingMode::Manufacturing, Effect::Write) => {
+            write_target == WriteTarget::Derived
+        }
+        _ => true,
+    }
 }
 
 // ─── Limitations ─────────────────────────────────────────────────────────────
@@ -1141,7 +1242,7 @@ mod tests {
         assert_eq!(tool_effect("frobnicate_board"), Effect::Write);
     }
 
-    // ─── mode_allows (D.8) ────────────────────────────────────────────────
+    // ─── mode_allows (D.8, D.8.3) ───────────────────────────────────────────
 
     /// Table-driven over the whole MANIFEST: under `ReadOnly`, every tool
     /// classified `Write` is refused and every tool classified `Read` passes.
@@ -1149,7 +1250,11 @@ mod tests {
     fn read_only_refuses_exactly_the_manifest_writers() {
         for capability in MANIFEST {
             let effect = tool_effect(capability.tool);
-            let allowed = mode_allows(kam_state::OperatingMode::ReadOnly, effect);
+            let allowed = mode_allows(
+                kam_state::OperatingMode::ReadOnly,
+                effect,
+                tool_write_target(capability.tool),
+            );
             assert_eq!(
                 allowed,
                 effect == Effect::Read,
@@ -1165,7 +1270,11 @@ mod tests {
     #[test]
     fn read_only_refuses_exactly_the_write_meta_tools() {
         for (tool, effect) in META_TOOL_EFFECTS {
-            let allowed = mode_allows(kam_state::OperatingMode::ReadOnly, *effect);
+            let allowed = mode_allows(
+                kam_state::OperatingMode::ReadOnly,
+                *effect,
+                meta_tool_write_target(tool),
+            );
             assert_eq!(
                 allowed,
                 *effect == Effect::Read,
@@ -1174,34 +1283,107 @@ mod tests {
         }
     }
 
+    /// Table-driven over the whole MANIFEST: under `Manufacturing`, a write
+    /// is refused exactly when its `WriteTarget` is `DesignDocument` — a
+    /// `Derived` write (a fabrication export, a report, task state) passes.
+    #[test]
+    fn manufacturing_refuses_exactly_the_design_document_writers() {
+        for capability in MANIFEST {
+            let effect = tool_effect(capability.tool);
+            let target = tool_write_target(capability.tool);
+            let allowed = mode_allows(kam_state::OperatingMode::Manufacturing, effect, target);
+            let expected = effect == Effect::Read || target == WriteTarget::Derived;
+            assert_eq!(
+                allowed, expected,
+                "tool `{}` ({:?}, {:?}) allowed={} under Manufacturing",
+                capability.tool, effect, target, allowed
+            );
+        }
+    }
+
+    /// No `export_*` tool in `MANIFEST` is ever classified `DesignDocument`
+    /// — a fabrication export must never be refused under `Manufacturing`.
+    #[test]
+    fn no_export_tool_is_a_design_document_write() {
+        for capability in MANIFEST {
+            if capability.tool.starts_with("export_") {
+                assert_eq!(
+                    tool_write_target(capability.tool),
+                    WriteTarget::Derived,
+                    "`{}` starts with export_ but is classified DesignDocument",
+                    capability.tool
+                );
+            }
+        }
+    }
+
+    /// A `DERIVED_WRITES` entry matching no `MANIFEST` tool is a claim about
+    /// a handler nobody can check any more.
+    #[test]
+    fn every_derived_write_names_a_real_tool() {
+        let dead: Vec<&str> = DERIVED_WRITES
+            .iter()
+            .copied()
+            .filter(|tool| !MANIFEST.iter().any(|c| c.tool == *tool))
+            .collect();
+        assert!(
+            dead.is_empty(),
+            "DERIVED_WRITES entries matching no MANIFEST tool: {dead:?}"
+        );
+    }
+
     /// `Write` (the default) changes nothing relative to today's behaviour:
-    /// every tool, read or write, passes the gate.
+    /// every tool, read or write, passes the gate, whatever its `WriteTarget`.
     #[test]
     fn write_mode_allows_everything() {
         for capability in MANIFEST {
             assert!(mode_allows(
                 kam_state::OperatingMode::Write,
-                tool_effect(capability.tool)
+                tool_effect(capability.tool),
+                tool_write_target(capability.tool)
             ));
         }
-        for (_, effect) in META_TOOL_EFFECTS {
-            assert!(mode_allows(kam_state::OperatingMode::Write, *effect));
+        for (tool, effect) in META_TOOL_EFFECTS {
+            assert!(mode_allows(
+                kam_state::OperatingMode::Write,
+                *effect,
+                meta_tool_write_target(tool)
+            ));
         }
     }
 
-    /// `Manufacturing` and `Experimental` are documented to behave exactly
-    /// like `Write` today (no MANIFEST class distinguishes them yet) — this
-    /// pins that fact so a silent change of behaviour fails a named test.
+    /// `Experimental` is a deliberate alias of `Write`: this pins that every
+    /// tool and every `WriteTarget` behaves identically under both, so a
+    /// silent divergence fails a named test.
     #[test]
-    fn manufacturing_and_experimental_behave_like_write() {
-        for mode in [
-            kam_state::OperatingMode::Manufacturing,
-            kam_state::OperatingMode::Experimental,
-        ] {
-            for effect in [Effect::Read, Effect::Write] {
+    fn experimental_behaves_like_write() {
+        for effect in [Effect::Read, Effect::Write] {
+            for target in [WriteTarget::DesignDocument, WriteTarget::Derived] {
                 assert_eq!(
-                    mode_allows(mode, effect),
-                    mode_allows(kam_state::OperatingMode::Write, effect)
+                    mode_allows(kam_state::OperatingMode::Experimental, effect, target),
+                    mode_allows(kam_state::OperatingMode::Write, effect, target)
+                );
+            }
+        }
+    }
+
+    /// `Manufacturing` is strictly between `ReadOnly` and `Write`: it must
+    /// never allow what `ReadOnly` refuses (every `Write`, `Read` is
+    /// unaffected) and must never refuse what `Write` allows for a `Derived`
+    /// target — pinning the ordering `ReadOnly < Manufacturing < Write`
+    /// itself, not just the per-tool table above.
+    #[test]
+    fn manufacturing_sits_strictly_between_read_only_and_write() {
+        for effect in [Effect::Read, Effect::Write] {
+            for target in [WriteTarget::DesignDocument, WriteTarget::Derived] {
+                let read_only = mode_allows(kam_state::OperatingMode::ReadOnly, effect, target);
+                let manufacturing =
+                    mode_allows(kam_state::OperatingMode::Manufacturing, effect, target);
+                let write = mode_allows(kam_state::OperatingMode::Write, effect, target);
+                assert!(
+                    read_only <= manufacturing && manufacturing <= write,
+                    "effect={effect:?} target={target:?}: read_only={read_only} \
+                     manufacturing={manufacturing} write={write}"
                 );
             }
         }

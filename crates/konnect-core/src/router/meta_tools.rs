@@ -775,19 +775,27 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         // dispatch (see `mcp::handler::McpHandler::dispatch_tool`); this is
         // where a write inside a batch actually gets stopped.
         let effect = crate::capability::tool_effect(name);
-        if let Some(kind) = crate::mode_gate::check(ctx, name, effect) {
+        let write_target = crate::capability::tool_write_target(name);
+        if let Some(kind) = crate::mode_gate::check(ctx, name, effect, write_target) {
             let short = kind.short_code();
+            let error = match ctx.mode.current() {
+                kam_state::OperatingMode::Manufacturing => format!(
+                    "Tool '{name}' can modify a source design document, and the server is \
+                     running in operating mode 'manufacturing' — the design is frozen for \
+                     manufacturing. Nothing ran."
+                ),
+                mode => format!(
+                    "Tool '{name}' can write, and the server is running in operating mode \
+                     '{mode}', which refuses every write. Nothing ran."
+                ),
+            };
             results.push(json!({
                 "index": index,
                 "tool": name,
                 "ok": false,
                 "error_kind": short,
                 "transient": kind.transient_class(),
-                "error": format!(
-                    "Tool '{name}' can write, and the server is running in operating mode \
-                     '{}', which refuses writes. Nothing ran.",
-                    ctx.mode.current()
-                ),
+                "error": error,
             }));
             failed_at = Some(index);
             if stop_on_error {

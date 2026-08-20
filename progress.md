@@ -2,33 +2,47 @@
 
 ## Phase actuelle
 
-D — domain stabilisation. **D.9 is DONE**, and with it every lot except
-**D.8.3**, which is real work and needs no decision from anyone. D.5.3 is
-conditional by design ("reconsider *if* a session ever needs deeper history")
-and is not work owed. Phase F is DONE except F.5.7; phase I stays gated by
-hardware.
+**Phase D is closed.** D.8.3 was the last lot owing work; D.5.3 is conditional
+by design ("reconsider *if* a session ever needs deeper history") and is not
+work owed. Phase F is DONE except F.5.7; phase I stays gated by hardware (this
+machine has KiCad 10.0, not the KiCad 11 / `kicad-cli api-server` it needs).
 
 ## Tâche actuelle
 
-D.8.3 — a rule of their own for `MANUFACTURING` / `EXPERIMENTAL`. Not started.
+None active. What remains open across the project is decisions — see NEXT ACTION.
 
 ## Dernière tâche validée
 
-**D.9.2, and with it D.9 and phase D.** Atomicity on the IPC path needed two
-remedies rather than one (D88): `replace_track` wraps its delete-then-create in
-`run_commit`, while the L-bend and the differential pair became a single
-`CreateItems` via `add_tracks(&[TrackSpec])`. D.9.1 put the per-address FIFO
-underneath (D87), which is what closed `place_footprint`'s read-modify-write
-race.
+**D.8.3.** `MANUFACTURING` is a design freeze and `EXPERIMENTAL` an alias of
+`WRITE` (user decision, 2026-08-20). What made the rule implementable is that a
+fabrication output *does* write to disk, so the question is not whether a call
+writes but what it writes: `WriteTarget { DesignDocument, Derived }` sits
+orthogonal to `Effect`, and the scale is finally linear —
+`ReadOnly < Manufacturing < Write`.
 
 Validation :
-- `cargo test --workspace` PASS — 0 failures workspace-wide; `mock_server_test`
-  24 passed (+1 pre-existing ignored), konnect-core lib 487 (+1 ignored)
+- `cargo test --workspace` PASS — 61 suites, 0 failures; `tests/mode_gate.rs`
+  9 passed, `capability_matrix` 14 passed with `the_committed_matrix_is_up_to_date`
+  green without `KAM_UPDATE_MATRIX`
 - clippy `--workspace --all-targets -D warnings` and `fmt --check` clean
-- CI green on `agentic/main` at D.9.1 (run 32366230382); D.9.2 pushed after it
+- `bench/capabilities.py` unchanged at 215 entries, `is_write` unmoved
 
 ## Décisions actives
 
+- D89 — a mode restricts by *what a write leaves behind*, not by whether it
+  writes. A gerber lands on disk exactly as a schematic edit does, so `Effect`
+  could never separate them; `WriteTarget { DesignDocument, Derived }` is the
+  second axis, and it is orthogonal rather than a third `Effect` variant because
+  `Effect` answers D56's question only and the matrix's `effect` column is
+  parsed by `bench/capabilities.py`, which keeps just the exact strings `read`
+  and `write` — widening it would have silently emptied the bench's table. The
+  fail-safe is `DesignDocument`, mirroring D58: a tool added tomorrow is refused
+  under `MANUFACTURING` rather than allowed by accident, and both `Write`
+  meta-tools take it with no named exception, `kicad_agent` included. The paired
+  half: `EXPERIMENTAL` is given **no** rule, because no use case for one exists
+  anywhere in the repo and inventing one to justify a name is INV4 read
+  backwards — it is a documented alias of `WRITE`, pinned by a test that runs
+  under it the very tool `MANUFACTURING` refuses.
 - D88 — atomicity has two remedies, and a commit is only the second one. A site
   needs neither unless it sends more than one *mutation*: a single mutating
   command is already atomic in KiCad, and wrapping it in `BeginCommit`/
@@ -347,9 +361,13 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
   is caught so it cannot wedge the queue behind it
 - `crates/konnect-core/src/mode_gate.rs` — the whole D.8 gate: `check()` /
   `refuse()`, consulted by `mcp/handler.rs::dispatch_tool` and by
-  `handle_kicad_invoke`'s per-entry loop, never anywhere else. The mode itself
-  is `crates/kam-state/src/mode.rs`; the policy is
-  `capability::mode_allows`
+  `handle_kicad_invoke`'s per-entry loop, never anywhere else. `kicad_invoke`
+  stays exempt at the outer dispatch and is gated per entry, so a batch of
+  exports runs under `MANUFACTURING` while a batch touching the design does not.
+  The mode itself is `crates/kam-state/src/mode.rs` (`tier()` is where the
+  ordering lives); the policy is `capability::mode_allows`, and the second axis
+  is `capability::tool_write_target` / `meta_tool_write_target` with its
+  `DERIVED_WRITES` list
 - `crates/konnect-core/src/router/meta_tools.rs` — `define_meta_tools!` is the
   single source for both the dispatch `match` and `META_TOOL_NAMES`
 - `crates/konnect-sexp/src/writer.rs` — the whole write model: `apply_edits` and
@@ -378,17 +396,10 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-Implement **D.8.3** — `MANUFACTURING` and `EXPERIMENTAL` parse and travel end to
-end but behave exactly like `WRITE`, because no `MANIFEST` entry tells a
-manufacturing output apart from an ordinary write. Per D71 the rule and the
-classification that makes it observable have to land together, or not at all: a
-mode claiming a restriction it does not enforce is what INV4 exists to prevent.
-Start by deciding what `MANUFACTURING` actually restricts, in `capability/mod.rs`
-alongside `Effect` / `TOOL_EFFECTS`, then extend `capability::mode_allows` and
-`mode_gate.rs`; validate through `McpHandler::handle_message` the way
-`tests/mode_gate.rs` already does for `READONLY`, positive control included.
-
-Two things waiting on a decision that is the user's, neither blocking the above:
+**A decision, not a continuation — nothing is half-done.** The working tree is
+clean, `cargo test --workspace` is green at `HEAD`, `HEAD` is pushed, and CI is
+green on `agentic/main`. Two things are waiting on a decision that is the
+user's, and neither should be started silently:
 
 - **K.1.1** — budget. `py -3.11 bench/harness_runner.py --server
   target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
@@ -400,4 +411,9 @@ Two things waiting on a decision that is the user's, neither blocking the above:
   library covers. The lever that makes the plan path retrievable is the same one
   that puts it in competition with `batch_place_components` on every direct
   task, and the suite's 62.0 % is what would pay. Both sides must be measured on
-  all seven tasks, so do not start it silently.
+  all seven tasks.
+
+If neither is wanted yet, the open phases in `plan.md` are J.2.4 (all tasks
+checked — its lot heading has no status line, worth confirming), L, and M.
+Phase K beyond K.1.1 and phase M both depend on a benchmark campaign, so they
+inherit K.1.1's budget decision.

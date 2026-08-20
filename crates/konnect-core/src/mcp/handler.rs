@@ -275,7 +275,10 @@ impl McpHandler {
         // `ReadOnly` caller is allowed to run.
         if name != "kicad_invoke" {
             if let Some(effect) = crate::capability::meta_tool_effect(name) {
-                if let Some(refusal) = crate::mode_gate::refuse(&self.ctx, name, effect) {
+                let write_target = crate::capability::meta_tool_write_target(name);
+                if let Some(refusal) =
+                    crate::mode_gate::refuse(&self.ctx, name, effect, write_target)
+                {
                     return (
                         refusal,
                         CallStatus::Error,
@@ -316,7 +319,8 @@ impl McpHandler {
 
         if let Some(tool_def) = tool_def {
             let effect = crate::capability::tool_effect(name);
-            if let Some(refusal) = crate::mode_gate::refuse(&self.ctx, name, effect) {
+            let write_target = crate::capability::tool_write_target(name);
+            if let Some(refusal) = crate::mode_gate::refuse(&self.ctx, name, effect, write_target) {
                 return (
                     refusal,
                     CallStatus::Error,

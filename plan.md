@@ -369,7 +369,7 @@ server-side run confirms it.
 
 ---
 
-# Phase D — Domain stabilisation — PARTIAL (D.8.3 open; D.5.3 conditional)
+# Phase D — Domain stabilisation — DONE except D.5.3, which is conditional by design
 
 ## D.1 — Revisions and optimistic concurrency — DONE
 
@@ -764,14 +764,34 @@ F.3 (gateway), `kam-state`.
       internal path needs no second gate. New `ToolErrorKind::
       WriteRefusedByMode`, `TransientClass::None`: retrying the identical call
       can never help
-- [ ] D.8.3 Give `MANUFACTURING` / `EXPERIMENTAL` a rule of their own. They
-      parse and are carried end to end today but behave exactly like `WRITE`,
-      because no MANIFEST entry distinguishes a manufacturing output from an
-      ordinary write. The rule and the classification that makes it observable
-      have to land together — a mode that claims a restriction it does not
-      enforce is the failure mode INV4 exists to prevent
+- [x] D.8.3 `MANUFACTURING` is a **design freeze**, and `EXPERIMENTAL` is an
+      alias of `WRITE` that says so (user decision, 2026-08-20). The rule is
+      implementable because a fabrication output *does* write to disk — the
+      distinction is not whether a call writes but *what* it writes, so a
+      `WriteTarget { DesignDocument, Derived }` sits orthogonal to `Effect`
+      rather than replacing it. `Manufacturing` refuses a `Write` whose target
+      is a source document and allows a derived one, which makes the scale
+      linear at last: `ReadOnly < Manufacturing < Write`, with `restrict_to`
+      still unable to elevate (D69). The fail-safe is `DesignDocument`, the
+      mirror of D58's `Write` fail-safe: a tool added tomorrow is refused under
+      `Manufacturing` rather than allowed by accident. `EXPERIMENTAL` is given
+      no rule on purpose — no use case for one exists anywhere in the repo, and
+      inventing one to justify a name reads the rule backwards — so it is
+      documented as a deliberate alias and pinned by a test rather than left as
+      a promise (D89)
 
 ### Validation
+D.8.3 is proved in the same shape, through `McpHandler::handle_message`: under
+`MANUFACTURING` a design-document write is refused with the working directory's
+bytes identical before and after, a `Derived` write succeeds (the positive
+control, without which the refusal proves nothing), a `kicad_invoke` entry is
+gated exactly like a direct call, and `EXPERIMENTAL` runs the very tool
+`MANUFACTURING` refused. Table-driven in `capability::tests`: no `export_*` tool
+is a `DesignDocument` write and no name in the derived list is dead. The
+matrix's `effect` column is deliberately untouched — `bench/capabilities.py`
+keeps only exact `read`/`write` values, so the new fact went into a column of
+its own; the bench's table is unchanged at 215 entries.
+
 A write tool called under `READONLY` is refused before the first mutation (INV4)
 — proven end to end through `McpHandler::handle_message`, not by calling a
 handler directly, with the work directory's bytes identical before and after the
