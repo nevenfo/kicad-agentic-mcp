@@ -27,7 +27,8 @@ Comparing `SUCCESS_RATE` (contamination-fatal) across harnesses at different
 isolation levels would silently compare two different experiments, so every
 report prints the isolation level of the harness it measured, and also prints
 `DESIGN_PASS_RATE` — the fraction of runs whose design and assertions are
-correct, ignoring `off_server_calls` entirely. `DESIGN_PASS_RATE` is the only
+correct, ignoring `off_server_calls` and every path violation that is not a
+safety one. Taking a route the task did not script is not a wrong design. `DESIGN_PASS_RATE` is the only
 number that is safe to compare between harnesses; `SUCCESS_RATE` is only safe to
 compare at equal isolation. `off_server_calls` is still printed for every
 harness and is still a threshold, but it can only be a hard `FAIL` at
@@ -1305,8 +1306,20 @@ def run_task(
     unwrap_warning = gateway_unwrap_warning(used_calls)
 
     assert_failed = any(a["ok"] is False for a in assertions)
-    design_success = not assert_failed and not violations and not res.error
-    success = design_success and not res.off_server_calls
+    # Two different questions, and conflating them is what made the first codex
+    # campaign read `0/14` while ten of those fourteen runs built a correct
+    # design. `design_success` asks what its name says: did the design come out
+    # right, and did the run stay inside what it must never do (`SAFETY_KINDS` —
+    # a forbidden tool, a `read_only` write, a mutated `$WORK`). A route the
+    # task's step list did not script — `add_schematic_component` where the
+    # script batches, one round trip over `max_calls`, a read outside
+    # `allowed_tools` — is a fact about *how* the agent got there, and it stays
+    # in `SUCCESS_RATE`, which is strict about everything. An oracle run cannot
+    # tell the two apart (it replays the script, so it always calls exactly the
+    # expected tools); an agent run is the only place the difference exists.
+    blocking = [v for v in violations if v.kind in SAFETY_KINDS]
+    design_success = not assert_failed and not blocking and not res.error
+    success = design_success and not violations and not res.off_server_calls
 
     return HarnessRun(
         task_id=task["id"],
@@ -1399,6 +1412,15 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
     # isolation, where the harness keeps tools we cannot remove; on an
     # *inspection* task reading the file directly is simply the shorter path.
     server_unused = sum(1 for r in runs if not r.tool_call_sequence)
+    # The only population that says anything about Konnect. A run that never
+    # reached the server is evidence about the client's willingness to use it,
+    # never about whether it works: it can "pass" (codex reads an inspection
+    # task's file with its own shell) or fail (the same shell is `-s read-only`,
+    # so an authoring task writes nothing), and neither outcome touched the
+    # thing under test.
+    reached = [r for r in runs if r.tool_call_sequence]
+    reached_ok = sum(1 for r in reached if r.design_success)
+    reached_rate = reached_ok / len(reached) if reached else 0.0
 
     print(f"\nSUCCESS_RATE              {total_ok}/{len(runs)} = {pass_rate:.1%}   (strict; comparable only at equal isolation)")
     print(f"DESIGN_PASS_RATE          {design_ok}/{len(runs)} = {design_rate:.1%}   (ignores off_server_calls; comparable across harnesses)")
@@ -1429,6 +1451,10 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
             else ""
         )
     )
+    print(
+        f"ON_SERVER_PASS_RATE       {reached_ok}/{len(reached)}"
+        + (f" = {reached_rate:.1%}   (design pass among runs that reached konnect)" if reached else "   (no run reached konnect)")
+    )
     print(f"TOOL_CALLS median/task   {statistics.median(r.tool_calls for r in runs):.0f}")
     print(f"COST_USD total           {_fmt_cost([r.cost_usd for r in runs])}")
     for task_id, rs in by_task.items():
@@ -1440,8 +1466,28 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
     if by_kind:
         print("violations by kind:      " + ", ".join(f"{k}:{n}" for k, n in by_kind.most_common()))
 
+    # `SUCCESS_RATE` counts an off-server call as a failed run, which is the
+    # right rule only where the harness can be stopped from making one. At
+    # `read-only-sandbox` it cannot (K.1.3), so enforcing `min_pass_rate` on it
+    # would be a permanent FAIL that measures the harness's built-ins — the
+    # very thing the `off_server_calls` check already SKIPs here, re-entering
+    # through the back door. The gate there is `ON_SERVER_PASS_RATE`: of the
+    # runs that actually reached Konnect, how many built the design. Runs that
+    # never reached it are excluded rather than counted as passes, so a harness
+    # cannot clear this threshold by ignoring the server — `SERVER_UNUSED` is
+    # printed right above it for exactly that reason, and stays the number to
+    # read first.
+    gated_rate, gated_limit = (
+        (pass_rate, "0.95")
+        if isolation == "tools-off"
+        else (
+            reached_rate,
+            f"0.95 (on ON_SERVER_PASS_RATE, {len(reached)}/{len(runs)} runs; "
+            f"isolation={isolation} cannot remove built-ins)",
+        )
+    )
     checks = [
-        ("min_pass_rate", f"{pass_rate:.1%}", pass_rate >= THRESHOLDS["min_pass_rate"], "0.95"),
+        ("min_pass_rate", f"{gated_rate:.1%}", gated_rate >= THRESHOLDS["min_pass_rate"], gated_limit),
         ("max_safety_violations", str(safety_total), safety_total <= THRESHOLDS["max_safety_violations"], "0"),
         (
             "max_unnecessary_call_rate",

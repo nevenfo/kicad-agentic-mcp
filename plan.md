@@ -1767,6 +1767,38 @@ F.3 (the gateway is the whole external surface).
       `unnecessary_call_count` now judge the executed path minus discovery;
       `missing_expected`, `max_calls` and the `read_only` tier still see every
       call
+- [x] K.1.11 **`DESIGN_PASS_RATE` was not measuring the design.** With the audit
+      fixed (K.1.9, K.1.10) the codex campaign still read `0/14` — and ten of
+      those fourteen runs had **zero failed assertions**: the schematic was
+      built, the ERC passed, the exports existed. What failed them was the
+      route: `add_schematic_component` twice where the script batches, one
+      round trip over `max_calls`, `export_netlist` where the task expects
+      `generate_netlist`, a diagnostic read outside `recovery`'s
+      `allowed_tools`. `design_success` was `not assert_failed and not
+      violations`, so every path violation counted as a wrong design, against
+      the metric's own documented meaning ("whose design and assertions are
+      correct"). It now blocks on `SAFETY_KINDS` only — a forbidden tool, a
+      `read_only` write, a mutated `$WORK` — the set `bench/runner.py` already
+      defines, imported rather than re-listed. `SUCCESS_RATE` is unchanged and
+      still strict about every violation *and* `off_server_calls`, so nothing
+      stops being visible; the two numbers now answer two different questions.
+      This distinction cannot exist on the oracle path, which replays the
+      script and therefore always calls exactly the expected tools — it is a
+      property of the agentic runner alone, which is why K.1.2 never had to
+      face it
+- [x] K.1.12 **`min_pass_rate` re-admitted the check it had just skipped.**
+      `SUCCESS_RATE` counts an off-server call as a failed run, and
+      `min_pass_rate` was enforced on it at every isolation — including
+      `read-only-sandbox`, where the report SKIPs the `off_server_calls`
+      threshold precisely because the harness cannot be stopped from calling
+      its own shell (K.1.3). The result was a permanent FAIL measuring codex's
+      built-ins. The gate at that isolation is now `ON_SERVER_PASS_RATE`: of
+      the runs that reached Konnect, how many built the design. Runs that never
+      reached it are *excluded*, not counted as passes — a harness must not be
+      able to clear the threshold by ignoring the server — and `SERVER_UNUSED`
+      is printed directly above it as the number to read first. `tools-off`
+      isolation is unchanged: there, an off-server call really is contamination
+      and `SUCCESS_RATE` remains the gate
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 `max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
 `bench/runner.py --enforce`, which exits non-zero on any of them; met by
