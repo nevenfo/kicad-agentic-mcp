@@ -1351,9 +1351,24 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
     unnecessary_rate = unnecessary_total / scored_total if scored_total else 0.0
     instability_rate, per_task_instability = instability(by_task)
     off_total = sum(r.off_server_calls for r in runs)
+    # K.2.6: a run that never reached konnect measured the harness, not the
+    # server, and the two rates above cannot say so on their own — an agent
+    # that answers correctly with its own shell looks, to `DESIGN_PASS_RATE`,
+    # exactly like one that failed. Only reachable above `tools-off`
+    # isolation, where the harness keeps tools we cannot remove; on an
+    # *inspection* task reading the file directly is simply the shorter path.
+    server_unused = sum(1 for r in runs if not r.tool_call_sequence)
 
     print(f"\nSUCCESS_RATE              {total_ok}/{len(runs)} = {pass_rate:.1%}   (strict; comparable only at equal isolation)")
     print(f"DESIGN_PASS_RATE          {design_ok}/{len(runs)} = {design_rate:.1%}   (ignores off_server_calls; comparable across harnesses)")
+    print(
+        f"SERVER_UNUSED             {server_unused}/{len(runs)}"
+        + (
+            "   <- these runs measured the harness, not the server"
+            if server_unused
+            else "   (every run reached konnect)"
+        )
+    )
     print(f"SAFETY_VIOLATIONS        {safety_total}   (forbidden + safety + disk_mutation)")
     print(
         f"UNNECESSARY_CALL_RATE    {unnecessary_rate:.1%}   "

@@ -4,17 +4,18 @@
 
 **K — multi-harness.** Phases D, F and L are closed. Phase I stays gated by
 hardware (KiCad 10.0 here, not the KiCad 11 / `kicad-cli api-server` it needs).
-K holds two lots: K.1, whose claude half waits on a budget decision, and K.2,
-opened and closed this session except for K.2.6.
+K holds two lots: K.2, opened and closed this session, and K.1, whose only
+remaining task is the campaign itself — the claude half waiting on a budget
+decision, the codex half on nothing but the choice to run it.
 
 ## Tâche actuelle
 
-None active. K.2.6 is a decision about what a codex number would mean, not
-work already started — see NEXT ACTION.
+None active. What is left in the project is K.1.1 — the campaign — and it
+needs a decision, not a keystroke. See NEXT ACTION.
 
 ## Dernière tâche validée
 
-**K.2.1 – K.2.5** — Konnect declares MCP tool annotations. `readOnlyHint`
+**K.2 (K.2.1 – K.2.6)** — Konnect declares MCP tool annotations. `readOnlyHint`
 derives from the existing effect tables (K.1.2/K.1.5), never re-decided;
 `destructiveHint` is emitted explicitly on every write against a
 `DESTRUCTIVE_TOOLS` list that is **empty**, because no tool in the tree removes
@@ -33,6 +34,11 @@ Validation :
   full catalogue 29 399 → 33 183. The V1 line had been carrying a stale 2 034;
   it now carries both numbers. The cheaper shape was measured and rejected —
   dropping `openWorldHint` from reads saves 78 of the 342
+- K.2.6: the annotations unblocked the call but did not make codex *reach* for
+  the server — it answered `sch_inspection` with three shell reads and zero
+  konnect calls. The report gained `SERVER_UNUSED n/N`, since `DESIGN_PASS_RATE`
+  cannot tell a correct off-server answer from a failure. Verified by
+  re-scoring the captured run offline, which spends nothing
 
 ## Décisions actives
 
@@ -464,20 +470,21 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-**K.2.6 — a decision, then a report line.** The annotations unblocked the call
-but did not make codex reach for the server: re-running the `sch_inspection`
-golden task gives three `command_execution` and zero `mcp_tool_call` — the
-agent reads the `.kicad_sch` with its own shell and answers correctly without
-touching Konnect. That is what `read-only-sandbox` isolation costs, not an
-approval failure (the same binary answers a direct request in the same
-session). Decide what a codex number then measures — the six *authoring* tasks
-plausibly have no such escape — and make the report say it, rather than letting
-a `DESIGN_PASS_RATE` built from off-server work sit beside claude's as if the
-two were the same measurement.
+**K.1.1 — run the campaign.** Nothing else in the project owes work that no
+decision blocks. Two halves, decided separately:
 
-Still the user's to decide, unchanged: the **claude half of K.1.1** needs a
-budget *and* a model. `claude -p` with no `--model` takes `claude-opus-5`; the
-one-task smoke run cost **$0.3172** on the cheapest of seven tasks, and six of
-the seven author something. `--model` and `--max-budget-usd` are the levers.
-The codex half costs no dollars (ChatGPT subscription) and is now gated on
-K.2.6, not on K.2 and not on money.
+- **codex** — costs no dollars (ChatGPT subscription) and is no longer gated:
+  `py -3.11 bench/harness_runner.py --server <abs path to konnect.exe>
+  --harness codex --repeat 2 --enforce --log-dir <dir> --out <json>`. Watch
+  `SERVER_UNUSED`: `sch_inspection` will almost certainly land there again, and
+  the six authoring tasks should not, since `-s read-only` denies codex's own
+  shell any write. That column is the campaign's own check on whether the
+  codex number measures Konnect at all.
+- **claude** — needs a budget *and* a model from the user. `claude -p` with no
+  `--model` takes `claude-opus-5`; the one-task smoke run cost **$0.3172** on
+  the cheapest of the seven tasks, and six of the seven author something.
+  `--model` and `--max-budget-usd` are the levers. Pass the server as an
+  **absolute** path (a relative one makes CreateProcess fail from the
+  harness's own `$WORK` cwd).
+
+Phase M then depends on K.1.1 and on nothing else.

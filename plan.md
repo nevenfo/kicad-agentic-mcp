@@ -1736,7 +1736,7 @@ tools. K.1.1 is met when every harness that can be measured has been, and every
 one that cannot has its reason recorded here rather than a missing number.
 
 
-## K.2 — Konnect declares MCP tool annotations
+## K.2 — Konnect declares MCP tool annotations — DONE
 
 ### Objectif
 `tools/list` says what each tool *is* — read or write, destructive or not —
@@ -1829,7 +1829,7 @@ decide the hard question; this lot renders their answer.
       criterion is updated with both numbers rather than with the delta alone.
       The cheaper shape was measured before being rejected: dropping
       `openWorldHint` from read tools gives 2 753, saving 78 of the 342
-- [ ] K.2.6 The annotations unblocked the *call*; they did not make codex reach
+- [x] K.2.6 The annotations unblocked the *call*; they did not make codex reach
       for the server. Re-run of the `sch_inspection` golden task after K.2.1:
       three `command_execution` calls, zero `mcp_tool_call` — the agent read
       the `.kicad_sch` with its own shell and answered correctly without
@@ -1843,15 +1843,32 @@ decide the hard question; this lot renders their answer.
       schematic by hand through a read-only sandbox is not open to it — and
       say so in the report rather than letting a `DESIGN_PASS_RATE` computed
       from off-server work stand beside claude's as if the two were the same
-      measurement. K.1.1's codex half is gated on this, not on K.2
+      measurement.
+
+      **Settled.** The report gained `SERVER_UNUSED n/N` — runs whose audited
+      konnect path is empty — because the two existing rates cannot express
+      this on their own: an agent that answers correctly with its own shell
+      looks, to `DESIGN_PASS_RATE`, exactly like one that failed, and a reader
+      seeing 0 % would blame the server. No new threshold: every golden task
+      declares `expected_tools`, so such a run already fails `missing_expected`
+      — what was missing was the *reason*, not the refusal. Verified by
+      re-scoring the captured run offline, which spends nothing.
+
+      The escape is specific to inspection, and that is an argument, not yet a
+      measurement: `-s read-only` denies codex's shell any write, so the six
+      authoring tasks cannot be answered off-server the way `sch_inspection`
+      was — the campaign will confirm or refute it, and `SERVER_UNUSED` is
+      exactly the column that will say which. K.1.1's codex half is no longer
+      gated on anything but the choice to run it
 
 ### Validation
 `.\gate.ps1` green end to end at the change (fmt, clippy, test, doctest,
 build); `tools/list` over stdio shows annotations on all 215 tools, with a
 negative control; and a codex call to konnect that returns a payload where the
-same call was cancelled before. **Not** met, and deliberately not claimed: a
-codex golden-task run whose `tools called:` is non-empty — the agent no longer
-*needs* the server to answer an inspection task, which is K.2.6, not this lot.
+same call was cancelled before. A codex golden-task run whose
+`tools called:` is non-empty is **not** claimed and is not this lot's to claim:
+the agent no longer *needs* the server to answer an inspection task, which is
+K.2.6.
 
 ---
 
