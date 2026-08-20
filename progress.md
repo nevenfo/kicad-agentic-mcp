@@ -2,31 +2,43 @@
 
 ## Phase actuelle
 
-D — domain stabilisation. Every lot is done except **D.9**, which is now in
-flight rather than blocked: J.3.4 answered the GUI-session question and the
-`live-ipc` job is green on a GitHub runner. Phase F is DONE except F.5.7, which
-needs a decision before it is worth measuring. K.1.1's date has arrived
-(2026-08-20): it is a budget decision now, not a blocked one.
+D — domain stabilisation. **D.9 is DONE**, and with it every lot except
+**D.8.3**, which is real work and needs no decision from anyone. D.5.3 is
+conditional by design ("reconsider *if* a session ever needs deeper history")
+and is not work owed. Phase F is DONE except F.5.7; phase I stays gated by
+hardware.
 
 ## Tâche actuelle
 
-D.9.2 — `BeginCommit`/`EndCommit` on the IPC path. Not started.
+D.8.3 — a rule of their own for `MANUFACTURING` / `EXPERIMENTAL`. Not started.
 
 ## Dernière tâche validée
 
-**D.9.1** — a FIFO queue per IPC address, each behind its own worker thread
-(`crates/konnect-core/src/tools/ipc_queue.rs`). `with_ipc` keeps its call
-signature but is no longer an `async fn`: it submits into the queue
-synchronously and returns the future, so FIFO order is call order rather than
-poll order. None of the eleven call sites changed.
+**D.9.2, and with it D.9 and phase D.** Atomicity on the IPC path needed two
+remedies rather than one (D88): `replace_track` wraps its delete-then-create in
+`run_commit`, while the L-bend and the differential pair became a single
+`CreateItems` via `add_tracks(&[TrackSpec])`. D.9.1 put the per-address FIFO
+underneath (D87), which is what closed `place_footprint`'s read-modify-write
+race.
 
 Validation :
-- `cargo test --workspace` PASS — 0 failures workspace-wide; konnect-core lib
-  487 passed (+1 ignored), including the four new `ipc_queue` tests
+- `cargo test --workspace` PASS — 0 failures workspace-wide; `mock_server_test`
+  24 passed (+1 pre-existing ignored), konnect-core lib 487 (+1 ignored)
 - clippy `--workspace --all-targets -D warnings` and `fmt --check` clean
+- CI green on `agentic/main` at D.9.1 (run 32366230382); D.9.2 pushed after it
 
 ## Décisions actives
 
+- D88 — atomicity has two remedies, and a commit is only the second one. A site
+  needs neither unless it sends more than one *mutation*: a single mutating
+  command is already atomic in KiCad, and wrapping it in `BeginCommit`/
+  `EndCommit` would buy nothing but two round trips. Where several mutations are
+  of the same nature, merging them into one `CreateItems` beats a commit — it is
+  atomic by construction and costs less. `run_commit` is for mutations of
+  *different* natures, which cannot be merged: `replace_track`'s delete followed
+  by a create is the whole of that category on this path. Corollary that decided
+  the scope: `add_track`, `place_footprint`, `refill_zones` and the four board
+  outlines each send exactly one mutation and were deliberately left alone.
 - D87 — a serialised queue adds **no retry and no timeout**, and both refusals
   are the point. A job is an `FnOnce` whose effects are not observable from
   outside, so replaying it after a partial failure is precisely the double-apply
@@ -322,6 +334,12 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
   while the snapshot is still alive — the only moment `before()` is reachable.
   Its only reader is `handle_changes_since` in the same file, whose
   `paths_match` is what reconciles a caller's path with a journal line
+- `crates/konnect-ipc/src/client.rs` — `run_commit` (the undo transaction, drops
+  on any error), `add_tracks` / `replace_track` / `TrackSpec`, and the composite
+  `place_footprint` whose four-command read-modify-write is why D.9.1 exists.
+  Its mock lives in `crates/konnect-ipc/tests/mock_server_test.rs`: an NNG rep0
+  server on `inproc://` that records the `type_url` sequence, which is how the
+  commit behaviour is asserted without KiCAD
 - `crates/konnect-core/src/tools/ipc_queue.rs` — the per-address FIFO every IPC
   call passes through, and the only place a `KiCadIpcClient` is built outside
   tests is still `ipc_boundary.rs::with_ipc`, which is now its only caller. The
@@ -360,22 +378,26 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-Implement **D.9.2** — put the IPC path's multi-mutation sites inside
-`KiCadIpcClient::run_commit`, which already exists and already drops the commit
-on any error, and which only `place_footprint_array` and `align_footprints`
-currently use. Start with `pcb_routing.rs`'s `modify_track` (`delete_track` then
-`add_track`), where a failing second half destroys a track and puts nothing
-back; then the L-bend of `route_two_pin_net` and the differential pair. Prove it
-against the mock KiCad in `crates/konnect-ipc/tests/mock_server_test.rs` by the
-`type_url` sequence — `BeginCommit` … `EndCommit`, and `CmaDrop` rather than
-`CmaCommit` when a middle step fails.
+Implement **D.8.3** — `MANUFACTURING` and `EXPERIMENTAL` parse and travel end to
+end but behave exactly like `WRITE`, because no `MANIFEST` entry tells a
+manufacturing output apart from an ordinary write. Per D71 the rule and the
+classification that makes it observable have to land together, or not at all: a
+mode claiming a restriction it does not enforce is what INV4 exists to prevent.
+Start by deciding what `MANUFACTURING` actually restricts, in `capability/mod.rs`
+alongside `Effect` / `TOOL_EFFECTS`, then extend `capability::mode_allows` and
+`mode_gate.rs`; validate through `McpHandler::handle_message` the way
+`tests/mode_gate.rs` already does for `READONLY`, positive control included.
 
-Two things still waiting on a decision rather than on work: **K.1.1** (budget —
-`py -3.11 bench/harness_runner.py --server target/release/konnect.exe --harness
-<claude|codex> --repeat 2 --enforce --log-dir <dir> --out <json>`, both harnesses
-as one campaign per the user's 2026-08-18 choice, AGY out of scope per D70) and
-**F.5.7** (whether `apply_plan` should name the design actions its operation
-library covers — the lever that makes the plan path retrievable is the one that
-puts it in competition with `batch_place_components` on every direct task, and
-the suite's 62.0 % is what would pay, so both sides must be measured on all
-seven tasks).
+Two things waiting on a decision that is the user's, neither blocking the above:
+
+- **K.1.1** — budget. `py -3.11 bench/harness_runner.py --server
+  target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
+  --log-dir <dir> --out <json>`, once per harness. Both as one campaign per the
+  user's 2026-08-18 choice; AGY is out of scope (D70). A Claude Code run costs
+  ~$0.06 on the lightest task with haiku, and the six other golden tasks all
+  author something.
+- **F.5.7** — whether `apply_plan` should name the design actions its operation
+  library covers. The lever that makes the plan path retrievable is the same one
+  that puts it in competition with `batch_place_components` on every direct
+  task, and the suite's 62.0 % is what would pay. Both sides must be measured on
+  all seven tasks, so do not start it silently.

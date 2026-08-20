@@ -642,6 +642,290 @@ fn failed_multi_step_commit_is_dropped() {
     );
 }
 
+// ─── Track batch atomicity (D.9.2) ────────────────────────────────────────────
+
+/// Short command name from a `type_url`, e.g. `"kiapi.common.commands.CreateItems"` -> `"CreateItems"`.
+fn short_name(type_url: &str) -> String {
+    type_url.rsplit('.').next().unwrap_or(type_url).to_string()
+}
+
+fn nets_response(nets: &[(&str, i32)]) -> kiapi::common::ApiResponse {
+    let response = kiapi::board::commands::NetsResponse {
+        nets: nets
+            .iter()
+            .map(|(name, code)| kiapi::board::types::Net {
+                code: Some(kiapi::board::types::NetCode { value: *code }),
+                name: name.to_string(),
+            })
+            .collect(),
+    };
+    reply_with(builders::pack_any(
+        &response,
+        "kiapi.board.commands.NetsResponse",
+    ))
+}
+
+fn create_items_ok_response(
+    create: &kiapi::common::commands::CreateItems,
+) -> kiapi::common::ApiResponse {
+    let created_items = create
+        .items
+        .iter()
+        .cloned()
+        .map(|item| kiapi::common::commands::ItemCreationResult {
+            status: Some(kiapi::common::commands::ItemStatus {
+                code: kiapi::common::commands::ItemStatusCode::IscOk as i32,
+                error_message: String::new(),
+            }),
+            item: Some(item),
+        })
+        .collect();
+    reply_with(builders::pack_any(
+        &kiapi::common::commands::CreateItemsResponse {
+            header: None,
+            status: kiapi::common::types::ItemRequestStatus::IrsOk as i32,
+            created_items,
+        },
+        "kiapi.common.commands.CreateItemsResponse",
+    ))
+}
+
+fn track_spec(net_name: &str) -> konnect_ipc::TrackSpec {
+    konnect_ipc::TrackSpec {
+        net_name: net_name.to_string(),
+        layer: "F.Cu".to_string(),
+        width: 0.25,
+        x1: 0.0,
+        y1: 0.0,
+        x2: 1.0,
+        y2: 1.0,
+    }
+}
+
+#[test]
+fn add_tracks_sends_one_create_items_for_the_whole_batch() {
+    let sequence: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let captured_create: Arc<Mutex<Option<kiapi::common::commands::CreateItems>>> =
+        Arc::new(Mutex::new(None));
+    let seq = sequence.clone();
+    let captured = captured_create.clone();
+    let mock = spawn_mock(move |request| {
+        let message = request.message.expect("request must pack a command");
+        seq.lock().unwrap().push(short_name(&message.type_url));
+        if message.type_url.ends_with("GetOpenDocuments") {
+            Some(open_board_response())
+        } else if message.type_url.ends_with("GetNets") {
+            Some(nets_response(&[("GND", 1), ("VCC", 2)]))
+        } else {
+            assert!(message.type_url.ends_with("CreateItems"));
+            let create =
+                kiapi::common::commands::CreateItems::decode(message.value.as_slice()).unwrap();
+            let response = create_items_ok_response(&create);
+            *captured.lock().unwrap() = Some(create);
+            Some(response)
+        }
+    });
+    let client = KiCadIpcClient::new(&mock.url);
+
+    client
+        .add_tracks(&[track_spec("GND"), track_spec("VCC")])
+        .expect("batch should succeed");
+
+    let seq = sequence.lock().unwrap();
+    assert_eq!(
+        seq.iter().filter(|n| *n == "CreateItems").count(),
+        1,
+        "expected exactly one CreateItems: {seq:?}"
+    );
+    assert_eq!(
+        seq.iter().filter(|n| *n == "GetNets").count(),
+        1,
+        "expected exactly one GetNets: {seq:?}"
+    );
+    let create = captured_create
+        .lock()
+        .unwrap()
+        .take()
+        .expect("CreateItems sent");
+    assert_eq!(create.items.len(), 2);
+}
+
+#[test]
+fn replace_track_wraps_the_delete_and_the_add_in_one_commit() {
+    let sequence: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seq = sequence.clone();
+    let mock = spawn_mock(move |request| {
+        let message = request.message.expect("request must pack a command");
+        seq.lock().unwrap().push(short_name(&message.type_url));
+        if message.type_url.ends_with("GetOpenDocuments") {
+            Some(open_board_response())
+        } else if message.type_url.ends_with("GetNets") {
+            Some(nets_response(&[("GND", 1)]))
+        } else if message.type_url.ends_with("BeginCommit") {
+            let response = kiapi::common::commands::BeginCommitResponse {
+                id: Some(kiapi::common::types::Kiid {
+                    value: "commit-1".to_string(),
+                }),
+            };
+            Some(reply_with(builders::pack_any(
+                &response,
+                "kiapi.common.commands.BeginCommitResponse",
+            )))
+        } else if message.type_url.ends_with("DeleteItems") {
+            let response = kiapi::common::commands::DeleteItemsResponse {
+                header: None,
+                status: kiapi::common::types::ItemRequestStatus::IrsOk as i32,
+                deleted_items: vec![],
+            };
+            Some(reply_with(builders::pack_any(
+                &response,
+                "kiapi.common.commands.DeleteItemsResponse",
+            )))
+        } else if message.type_url.ends_with("CreateItems") {
+            let create =
+                kiapi::common::commands::CreateItems::decode(message.value.as_slice()).unwrap();
+            Some(create_items_ok_response(&create))
+        } else {
+            assert!(message.type_url.ends_with("EndCommit"));
+            let command =
+                kiapi::common::commands::EndCommit::decode(message.value.as_slice()).unwrap();
+            assert_eq!(
+                command.action(),
+                kiapi::common::commands::CommitAction::CmaCommit
+            );
+            Some(reply_with(builders::pack_any(
+                &kiapi::common::commands::EndCommitResponse {},
+                "kiapi.common.commands.EndCommitResponse",
+            )))
+        }
+    });
+    let client = KiCadIpcClient::new(&mock.url);
+
+    client
+        .replace_track("track-uuid", &track_spec("GND"))
+        .expect("replace should succeed");
+
+    let seq = sequence.lock().unwrap();
+    let milestones: Vec<&str> = seq
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| {
+            matches!(
+                *s,
+                "BeginCommit" | "DeleteItems" | "CreateItems" | "EndCommit"
+            )
+        })
+        .collect();
+    assert_eq!(
+        milestones,
+        vec!["BeginCommit", "DeleteItems", "CreateItems", "EndCommit"],
+        "unexpected order: {seq:?}"
+    );
+}
+
+#[test]
+fn a_failed_add_after_a_delete_drops_the_commit() {
+    let actions: Arc<Mutex<Vec<kiapi::common::commands::CommitAction>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let captured_actions = actions.clone();
+    let mock = spawn_mock(move |request| {
+        let message = request.message.expect("request must pack a command");
+        if message.type_url.ends_with("GetOpenDocuments") {
+            Some(open_board_response())
+        } else if message.type_url.ends_with("GetNets") {
+            Some(nets_response(&[("GND", 1)]))
+        } else if message.type_url.ends_with("BeginCommit") {
+            let response = kiapi::common::commands::BeginCommitResponse {
+                id: Some(kiapi::common::types::Kiid {
+                    value: "commit-1".to_string(),
+                }),
+            };
+            Some(reply_with(builders::pack_any(
+                &response,
+                "kiapi.common.commands.BeginCommitResponse",
+            )))
+        } else if message.type_url.ends_with("DeleteItems") {
+            let response = kiapi::common::commands::DeleteItemsResponse {
+                header: None,
+                status: kiapi::common::types::ItemRequestStatus::IrsOk as i32,
+                deleted_items: vec![],
+            };
+            Some(reply_with(builders::pack_any(
+                &response,
+                "kiapi.common.commands.DeleteItemsResponse",
+            )))
+        } else if message.type_url.ends_with("CreateItems") {
+            // KiCad refuses the create half of the swap: IRS_OK carrying no
+            // per-item results at all, same as the "ignored request" shape
+            // `create_items` already rejects.
+            let response = kiapi::common::commands::CreateItemsResponse {
+                header: None,
+                status: kiapi::common::types::ItemRequestStatus::IrsOk as i32,
+                created_items: vec![],
+            };
+            Some(reply_with(builders::pack_any(
+                &response,
+                "kiapi.common.commands.CreateItemsResponse",
+            )))
+        } else {
+            assert!(message.type_url.ends_with("EndCommit"));
+            let command =
+                kiapi::common::commands::EndCommit::decode(message.value.as_slice()).unwrap();
+            captured_actions.lock().unwrap().push(command.action());
+            Some(reply_with(builders::pack_any(
+                &kiapi::common::commands::EndCommitResponse {},
+                "kiapi.common.commands.EndCommitResponse",
+            )))
+        }
+    });
+    let client = KiCadIpcClient::new(&mock.url);
+
+    let error = client
+        .replace_track("track-uuid", &track_spec("GND"))
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("changes dropped"), "{error}");
+    assert_eq!(
+        *actions.lock().unwrap(),
+        vec![kiapi::common::commands::CommitAction::CmaDrop],
+        "the commit must never be pushed after a failed create"
+    );
+}
+
+#[test]
+fn add_tracks_sends_nothing_when_a_net_name_is_unknown() {
+    let create_items_seen = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let seen = create_items_seen.clone();
+    let mock = spawn_mock(move |request| {
+        let message = request.message.expect("request must pack a command");
+        if message.type_url.ends_with("GetOpenDocuments") {
+            Some(open_board_response())
+        } else if message.type_url.ends_with("GetNets") {
+            // Only GND exists; VCC is unknown.
+            Some(nets_response(&[("GND", 1)]))
+        } else {
+            assert!(message.type_url.ends_with("CreateItems"));
+            seen.store(true, std::sync::atomic::Ordering::SeqCst);
+            let create =
+                kiapi::common::commands::CreateItems::decode(message.value.as_slice()).unwrap();
+            Some(create_items_ok_response(&create))
+        }
+    });
+    let client = KiCadIpcClient::new(&mock.url);
+
+    let error = client
+        .add_tracks(&[track_spec("GND"), track_spec("VCC")])
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("VCC"), "{error}");
+    assert!(
+        !create_items_seen.load(std::sync::atomic::Ordering::SeqCst),
+        "an unknown net name must not let any track through"
+    );
+}
+
 // ─── IpcFailure classification ────────────────────────────────────────────────
 //
 // The file-editing fallback in konnect-core is gated on this classification:

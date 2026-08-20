@@ -369,7 +369,7 @@ server-side run confirms it.
 
 ---
 
-# Phase D — Domain stabilisation — PARTIAL
+# Phase D — Domain stabilisation — PARTIAL (D.8.3 open; D.5.3 conditional)
 
 ## D.1 — Revisions and optimistic concurrency — DONE
 
@@ -783,7 +783,7 @@ including the benchmark: gateway 21/21, `MCP_CALLS` median 4, 2 186 external
 tokens, retrieval 62.0 % / 100 % — unchanged, which is what a `Write` default
 has to mean.
 
-## D.9 — Serialised IPC command queue — PARTIAL
+## D.9 — Serialised IPC command queue — DONE
 
 ### Objectif
 KiCad's API server is single-threaded on the UI thread. The lock matters less
@@ -802,21 +802,28 @@ GitHub runner, so this lot's validation has somewhere to run.
       the decision rather than an omission (D87). The concrete failure it closes
       is `place_footprint`'s four-command read-modify-write, whose "does this
       reference already exist" check two concurrent callers could both pass
-- [ ] D.9.2 `BeginCommit`/`EndCommit` for atomicity on the IPC path (D12's gap).
-      `KiCadIpcClient::run_commit` already exists and already drops the commit on
-      any error; only two call sites use it. Three multi-mutation sites have no
-      commit at all — `pcb_routing.rs` `modify_track` (`delete_track` then
-      `add_track`: a failing second half destroys a track and puts nothing back),
-      the L-bend of `route_two_pin_net`, and the differential pair — and each
-      `add_track` is itself three commands, so the exposure is wider than the
-      call count suggests
+- [x] D.9.2 Atomicity on the IPC path, by two remedies rather than one (D88).
+      Of the three multi-mutation sites, only `modify_track` needed a commit —
+      `replace_track` wraps its `delete_track` + create in `run_commit`, because
+      a delete and a create cannot be merged and a failing second half destroyed
+      a track and put nothing back. The L-bend and the differential pair are
+      mutations of the *same* nature, so `add_tracks(&[TrackSpec])` sends them as
+      one `CreateItems` — atomic by construction, one `get_nets` for the batch
+      instead of one per track, and an unknown net name fails before anything is
+      sent. Every other IPC site sends exactly one mutation and was deliberately
+      left alone
 
 ### Validation
 Concurrent callers cannot interleave: proved by `ipc_queue`'s own tests — eight
 concurrent jobs observe a maximum concurrency of 1, jobs run in submission
 order, a panicking job does not wedge the queue, and two distinct addresses do
 reach 2. A replayed idempotency key applying once stays D.3's ledger's job;
-D.9.1 deliberately adds no second mechanism for it (D87).
+D.9.1 deliberately adds no second mechanism for it (D87). Atomicity is proved
+against the mock KiCAD by the sequence of commands actually sent:
+`BeginCommit → DeleteItems → CreateItems → EndCommit(CmaCommit)` for a
+replacement, `CmaDrop` and never `CmaCommit` when the create half fails, one
+`CreateItems` and one `GetNets` for a two-track batch, and no `CreateItems` at
+all when one of the batch's net names is unknown.
 
 ---
 

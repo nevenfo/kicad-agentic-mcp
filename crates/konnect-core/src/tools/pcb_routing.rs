@@ -379,9 +379,26 @@ async fn handle_route_pad_to_pad(
         let layer_a = layer.clone();
         let layer_b = layer.clone();
         ipc!(ctx, |c| {
-            c.add_track(&net_a, &layer_a, width, x1, y1, mid_x, mid_y)?;
-            c.add_track(&net_b, &layer_b, width, mid_x, mid_y, x2, y2)?;
-            Ok(())
+            c.add_tracks(&[
+                konnect_ipc::TrackSpec {
+                    net_name: net_a.clone(),
+                    layer: layer_a.clone(),
+                    width,
+                    x1,
+                    y1,
+                    x2: mid_x,
+                    y2: mid_y,
+                },
+                konnect_ipc::TrackSpec {
+                    net_name: net_b.clone(),
+                    layer: layer_b.clone(),
+                    width,
+                    x1: mid_x,
+                    y1: mid_y,
+                    x2,
+                    y2,
+                },
+            ])
         });
     }
 
@@ -604,10 +621,18 @@ async fn handle_modify_trace(
     let uuid_ipc = uuid.clone();
     let net_ipc = net_name.clone();
     let layer_ipc = layer.clone();
-    ipc!(ctx, |c| {
-        c.delete_track(&uuid_ipc)?;
-        c.add_track(&net_ipc, &layer_ipc, width, x1, y1, x2, y2)
-    });
+    ipc!(ctx, |c| c.replace_track(
+        &uuid_ipc,
+        &konnect_ipc::TrackSpec {
+            net_name: net_ipc.clone(),
+            layer: layer_ipc.clone(),
+            width,
+            x1,
+            y1,
+            x2,
+            y2,
+        }
+    ));
     Ok(CallToolResult::json(&json!({
         "modified_uuid": uuid,
         "net": net_name, "layer": layer, "width": width,
@@ -776,24 +801,26 @@ async fn handle_route_diff_pair(
     let nn_ipc = net_neg.clone();
     let layer_ipc = layer.clone();
     ipc!(ctx, |c| {
-        c.add_track(
-            &np_ipc,
-            &layer_ipc,
-            width,
-            x1 + perp_x,
-            y1 + perp_y,
-            x2 + perp_x,
-            y2 + perp_y,
-        )?;
-        c.add_track(
-            &nn_ipc,
-            &layer_ipc,
-            width,
-            x1 - perp_x,
-            y1 - perp_y,
-            x2 - perp_x,
-            y2 - perp_y,
-        )
+        c.add_tracks(&[
+            konnect_ipc::TrackSpec {
+                net_name: np_ipc.clone(),
+                layer: layer_ipc.clone(),
+                width,
+                x1: x1 + perp_x,
+                y1: y1 + perp_y,
+                x2: x2 + perp_x,
+                y2: y2 + perp_y,
+            },
+            konnect_ipc::TrackSpec {
+                net_name: nn_ipc.clone(),
+                layer: layer_ipc.clone(),
+                width,
+                x1: x1 - perp_x,
+                y1: y1 - perp_y,
+                x2: x2 - perp_x,
+                y2: y2 - perp_y,
+            },
+        ])
     });
 
     Ok(CallToolResult::json(&json!({

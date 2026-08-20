@@ -925,11 +925,67 @@ impl KiCadIpcClient {
         x2: f64,
         y2: f64,
     ) -> Result<()> {
-        let net_code = self.resolve_net_code(net_name)?;
-        let track = crate::builders::build_track(net_name, net_code, layer, width, x1, y1, x2, y2);
-        let any = crate::builders::pack_any(&track, "kiapi.board.types.Track");
-        self.create_items(vec![any])?;
-        Ok(())
+        self.add_tracks(std::slice::from_ref(&TrackSpec {
+            net_name: net_name.to_string(),
+            layer: layer.to_string(),
+            width,
+            x1,
+            y1,
+            x2,
+            y2,
+        }))
+    }
+
+    /// Add a batch of track segments as one atomic `CreateItems` call.
+    ///
+    /// Net names are resolved with a single [`Self::get_nets`] for the whole
+    /// batch rather than one lookup per spec, and all tracks are sent in one
+    /// `CreateItems` request: either every track is created or none is — no
+    /// partial batch can reach the board. Net-name resolution happens before
+    /// anything is sent, so an unknown net name in one spec fails the call
+    /// without creating any of the others. An empty batch is a no-op.
+    pub fn add_tracks(&self, specs: &[TrackSpec]) -> Result<()> {
+        if specs.is_empty() {
+            return Ok(());
+        }
+        let nets = self.get_nets()?;
+        let items = specs
+            .iter()
+            .map(|spec| {
+                let net_code = nets
+                    .iter()
+                    .find(|n| n.name == spec.net_name)
+                    .map(|n| n.netcode)
+                    .ok_or_else(|| anyhow::anyhow!("Net '{}' not found on board", spec.net_name))?;
+                let track = crate::builders::build_track(
+                    &spec.net_name,
+                    net_code,
+                    &spec.layer,
+                    spec.width,
+                    spec.x1,
+                    spec.y1,
+                    spec.x2,
+                    spec.y2,
+                );
+                Ok(crate::builders::pack_any(&track, "kiapi.board.types.Track"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.create_items(items)
+    }
+
+    /// Replace a track by UUID: delete it, then create its replacement, as
+    /// one KiCad undo transaction.
+    ///
+    /// Delete and create are mutations of different natures — unlike
+    /// [`Self::add_tracks`], they cannot be merged into a single
+    /// `CreateItems` call — so `run_commit` is the only way to keep this from
+    /// leaving the board with the old track gone and no replacement if the
+    /// create half fails.
+    pub fn replace_track(&self, uuid: &str, spec: &TrackSpec) -> Result<()> {
+        self.run_commit("Modify track", |c| {
+            c.delete_track(uuid)?;
+            c.add_tracks(std::slice::from_ref(spec))
+        })
     }
 
     /// Add a through via (F.Cu → B.Cu) to the board.

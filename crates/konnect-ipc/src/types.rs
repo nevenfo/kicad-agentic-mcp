@@ -107,6 +107,18 @@ pub struct IpcNet {
     pub netcode: i32,
 }
 
+/// A track segment to create, before its net name is resolved to a net code.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackSpec {
+    pub net_name: String,
+    pub layer: String,
+    pub width: f64,
+    pub x1: f64,
+    pub y1: f64,
+    pub x2: f64,
+    pub y2: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcLayer {
     pub name: String,
