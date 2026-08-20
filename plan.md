@@ -1636,17 +1636,28 @@ F.3 (the gateway is the whole external surface).
       across harnesses — and prints the isolation level next to them, so the
       two are never silently compared. Proven end-to-end by a real scored
       Claude Code run
-- [ ] K.1.4 The codex harness. Its adapter is written, and three real runs
-      on 2026-08-20 (the day the account's usage limit expired) proved
-      `parse_codex_jsonl` against live output for everything those runs
+- [x] K.1.4 The codex harness — measured. Its adapter was written against three
+      real runs on 2026-08-20 (the day the account's usage limit expired),
+      which proved `parse_codex_jsonl` against live output for everything they
       exercised: the `item.completed` envelope, `command_execution` as an
       off-server call, `mcp_tool_call` on both the completed and the failed
       path, and `usage` off `turn.completed` with no `cost_usd` in either
-      schema. What they could not exercise is a *successful* konnect call,
-      because codex cancels them all (K.1.8) — so the `mcp_tool_call` success
-      branch and `gateway_unwrap_warning`'s codex side stay unproven, and the
-      harness still owes a measurement. Isolation is now real (K.1.7); the
-      remaining blocker is K.2, in the server rather than in the bench.
+      schema. What they could not exercise was a *successful* konnect call,
+      because codex cancelled them all until K.2 landed (K.1.8). The K.1.1
+      campaign then ran the whole suite through this harness — 14 transcripts,
+      codex-cli 0.147, isolation real (K.1.7), no void run — and **8 of those
+      14 runs made 198 successful konnect calls across 38 distinct tools**. The
+      `mcp_tool_call` success branch is therefore proven against live output
+      rather than against a shape read off documentation, and the measurement
+      this task owed is paid: `bench/results/k11-codex.json`.
+
+      One branch stays unexercised, and is recorded rather than claimed: no
+      codex run ever called `kicad_invoke`, so the gateway *unwrap* path in
+      `parse_codex_jsonl` never ran. `gateway_unwrap_warning` returned `None`
+      on all 14 runs, which is exactly what it owes when no gateway call
+      survives into the audited path — the warning behaved; the unwrap had
+      nothing to unwrap. That is a fact about which tools codex chose, not work
+      still owed by the bench.
 
       **AGY is out of scope (D70, decided by the user 2026-08-18.)** The
       adapter, `AgyMcpConfigGuard` and `parse_agy_stream` stay in

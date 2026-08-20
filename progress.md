@@ -2,11 +2,11 @@
 
 ## Phase actuelle
 
-**K — multi-harness.** K.2 is closed. K.1 is down to the campaign itself
-(K.1.1), and what is left of it costs the shared Pro window, so it is the
-user's call. Phases D, F, L are closed; phase I stays gated by hardware (this
-machine has KiCad 10.0, not the KiCad 11 / `kicad-cli api-server` it needs).
-Phase M depends on K.1.1 and on nothing else.
+**K — multi-harness.** K.2 is closed, and so is K.1.4. K.1 is down to the
+campaign itself (K.1.1), and what is left of it costs the shared Pro window, so
+it is the user's call. Phases D, F, L are closed; phase I stays gated by
+hardware (this machine has KiCad 10.0, not the KiCad 11 / `kicad-cli api-server`
+it needs). Phase M depends on K.1.1 and on nothing else.
 
 ## Tâche actuelle
 
@@ -17,33 +17,32 @@ and are re-scorable offline for free (K.1.16).
 
 ## Dernière tâche validée
 
-**K.1.14 — `allowed_tools` enumerates reads, and now judges reads only** (D96,
-the user's decision). The coded rule applied `allowed ∪ expected` to every call,
-so an agent that built the same correct design with `batch_add_wire` instead of
-the scripted `connect_pins` was charged an unnecessary call for the route —
-D95's sibling one layer down. `audit()` and `unnecessary_call_count()` now judge
-only `effect: read` strays, on the same rule, so the violation and the threshold
-cannot disagree. Writes stay governed by `forbidden_tools`, the `safety` tier
-and `max_calls`, which fired on its own during this campaign.
+**K.1.4 — the codex harness has paid its measurement.** The task was still
+carrying the state of 2026-08-20's three exploratory runs, which said the
+`mcp_tool_call` success branch was unproven and the blocker was K.2. Both have
+moved: K.2 shipped the annotations, and the K.1.1 campaign put 14 real
+transcripts through this harness. Checked against the captured results, at no
+cost: **8 of the 14 runs made 198 successful konnect calls across 38 distinct
+tools**, so the success branch is proven against live output.
 
-Validated by re-scoring both captured halves, spending nothing:
-`max_unnecessary_call_rate` **7.7 % → 3.4 % PASS** (claude, 8/234) and
-**3.0 % → 0.0 % PASS** (codex); every other threshold, violation and rate
-unchanged, including K.1.15's two safety violations. That re-score is now a
-committed tool rather than a throwaway script (**K.1.16**).
+One branch stays unexercised and is recorded as such rather than claimed: no
+codex run ever called `kicad_invoke`, so the gateway unwrap path in
+`parse_codex_jsonl` never ran, and `gateway_unwrap_warning` correctly returned
+`None` on all 14 runs. That is a fact about which tools codex chose, not a debt
+of the bench.
 
-With it, the claude half's three failing thresholds are down to two, and both
-are waiting on runs rather than on a decision:
-- `max_safety_violations 2` — **real, and the tier working** (K.1.15); stays.
-- `no_void_runs 2/14` — `sch_ldo` (old $1.00 cap) and `sch_hierarchy` (spent
-  window) have to be re-run.
-
-The headline is unchanged and is the same on both harnesses: **every run that
+The headline is unchanged and identical on both harnesses: **every run that
 reached Konnect built a correct design** — codex `ON_SERVER_PASS_RATE` 8/8,
 claude 11/12. Codex's real finding is `SERVER_UNUSED 6/14`: on those runs it
 never called Konnect and solved the task with its own sandboxed shell — about
 the harness, not the server. Claude at `tools-off` isolation has
 `SERVER_UNUSED 0/12`, `OFF_SERVER_CALLS 0`.
+
+Of the claude half's thresholds, two are still red and both wait on runs rather
+than on a decision:
+- `max_safety_violations 2` — **real, and the tier working** (K.1.15); stays.
+- `no_void_runs 2/14` — `sch_ldo` (old $1.00 cap) and `sch_hierarchy` (spent
+  window) have to be re-run.
 
 ## Décisions actives
 
