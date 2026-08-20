@@ -59,7 +59,8 @@ pub fn tools() -> Vec<ToolDef> {
             "Compile a plan and return the exact tool calls it would run, changing nothing. \
              Use this to check an expansion — how many symbols a decouple actually places, \
              where they land — before applying it. A plan that cannot compile is reported \
-             here rather than half-applied.",
+             here rather than half-applied. \
+             Use it to build a whole schematic design in one call.",
             json!({
                 "type": "object",
                 "properties": {
@@ -83,7 +84,8 @@ pub fn tools() -> Vec<ToolDef> {
                  and a later operation may use an earlier one's result, so a whole design step \
                  costs one call instead of a loop. Call this through kicad_invoke so the plan \
                  inherits the batch's snapshot, rollback, diff and verify. References are checked \
-                 before the first mutation: a plan that cannot finish never starts.",
+                 before the first mutation: a plan that cannot finish never starts. \
+                 Use it to build a whole schematic design in one call.",
             input_schema: json!({
                 "type": "object",
                 "properties": {

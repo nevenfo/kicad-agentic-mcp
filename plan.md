@@ -226,7 +226,7 @@ A.2.
 
 ---
 
-# Phase F — Compact MCP surface — DONE except F.5.7
+# Phase F — Compact MCP surface — DONE
 
 ## F.1 — Capability index and tool-granular loading
 
@@ -276,7 +276,7 @@ A catalogue that never has to be refreshed: `CATALOG_TOKENS` → 0.
 render 27.3 %, now 28.6 %. Note: `bench/probes` counts as evidence as well as
 `bench/tasks`, so adding a probe can move the number.
 
-## F.5 — Retrieval precision — MET (F.5.7 open)
+## F.5 — Retrieval precision — MET
 
 ### Objectif
 22.4 % precision @8 at the recall needed to succeed. The gateway made each wrong
@@ -349,7 +349,7 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
       family key that keeps the terms of a name **in order**, because
       `get_component_nets` and `get_net_components` are different tools —
       pinned by a test, since the golden suite never asks for both.
-- [ ] F.5.7 Decide whether `apply_plan` / `preview_plan` should name the design
+- [x] F.5.7 Decide whether `apply_plan` / `preview_plan` should name the design
       actions their operation library covers — place, power, label, wire,
       connect, decouple — which is exactly the lever that recovered
       `get_schematic_component` in F.5.5. Opened by F.5.2's finding, and
@@ -358,7 +358,26 @@ None. Plural stemming was implemented, measured and **rejected** (D6): recall
       `batch_place_components` on every direct task, and the suite's 62.0 % is
       what would pay for it. Measure both sides on all seven tasks — plan
       reachability from a goal query, and precision on the direct suite —
-      before shipping either answer
+      before shipping either answer.
+      **Answer: no — the description names the *goal*, not the actions**, and
+      the two candidates were measured against the same baseline on one build
+      (62.0 % precision / 100.0 % recall, plan-by-goal 0 of 4 queries).
+      *Naming the actions* ("create a project, place component symbols, add
+      power and ground symbols for supply rails, label nets, draw wires,
+      connect pins, decouple a rail with capacitors") costs 62.0 % → 60.3 %
+      precision on the direct suite and, more legibly, **+140 catalog tokens on
+      3 of the 7 tasks** — `sch_divider`, `manufacturing_exports` and
+      `recovery` each load `apply_plan`'s schema for a task that never needs
+      it. *Naming the goal* ("Use it to build a whole schematic design in one
+      call") buys the identical reachability — `apply_plan` at rank 2 on
+      "build a resistive voltage divider", 0 of 4 goal queries → 1 of 4 — at
+      62.0 % precision unchanged and not one catalog token moved on any task.
+      The three goal queries still missing are the long ones: clause splitting
+      decides per clause, and `apply_plan` is the best answer to none of
+      "supply rails", "a wire between them", "a labelled output". So D68 stands
+      as measured — the plan path is not *retrievable* from a stated design
+      goal — but its edge is now one query wide instead of zero. Shipped: the
+      goal sentence, on both tools
 
 ### Validation
 Precision @8 ≥ 60 % with recall @8 ≥ 98 %, measured by the existing retrieval

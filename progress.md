@@ -2,10 +2,10 @@
 
 ## Phase actuelle
 
-**Phase D is closed.** D.8.3 was the last lot owing work; D.5.3 is conditional
-by design ("reconsider *if* a session ever needs deeper history") and is not
-work owed. Phase F is DONE except F.5.7; phase I stays gated by hardware (this
-machine has KiCad 10.0, not the KiCad 11 / `kicad-cli api-server` it needs).
+**Phases D and F are both closed.** F.5.7 was the last lot in F owing work;
+D.5.3 is conditional by design ("reconsider *if* a session ever needs deeper
+history") and is not work owed. Phase I stays gated by hardware (this machine
+has KiCad 10.0, not the KiCad 11 / `kicad-cli api-server` it needs).
 
 ## Tâche actuelle
 
@@ -13,22 +13,38 @@ None active. What remains open across the project is decisions — see NEXT ACTI
 
 ## Dernière tâche validée
 
-**D.8.3.** `MANUFACTURING` is a design freeze and `EXPERIMENTAL` an alias of
-`WRITE` (user decision, 2026-08-20). What made the rule implementable is that a
-fabrication output *does* write to disk, so the question is not whether a call
-writes but what it writes: `WriteTarget { DesignDocument, Derived }` sits
-orthogonal to `Effect`, and the scale is finally linear —
-`ReadOnly < Manufacturing < Write`.
+**F.5.7.** A tool description names the *goal*, not the actions — see D90.
+`apply_plan` and `preview_plan` each gained one sentence, "Use it to build a
+whole schematic design in one call"; the candidate that named place / power /
+label / wire / connect / decouple was measured and rejected.
 
 Validation :
-- `cargo test --workspace` PASS — 61 suites, 0 failures; `tests/mode_gate.rs`
-  9 passed, `capability_matrix` 14 passed with `the_committed_matrix_is_up_to_date`
-  green without `KAM_UPDATE_MATRIX`
-- clippy `--workspace --all-targets -D warnings` and `fmt --check` clean
-- `bench/capabilities.py` unchanged at 215 entries, `is_write` unmoved
+- `bench/runner.py --load-mode search` on one release build, three runs on the
+  same baseline: baseline 62.0 % precision / 100.0 % recall, action-naming
+  60.3 % / 100.0 %, goal-naming **62.0 % / 100.0 %** — 7/7 tasks in all three
+- `bench/plan_retrieval.py` same build: plan-by-goal 0 of 4 queries → 1 of 4
+  (`apply_plan` rank 2 on "build a resistive voltage divider"), identical for
+  both candidates
+- per-task catalog tokens are the decisive column: action-naming adds +140 on
+  `sch_divider`, `manufacturing_exports` and `recovery`; goal-naming moves none
+- `cargo test --workspace` PASS — 61 suites, 0 failures; clippy
+  `--workspace --all-targets -D warnings` and `fmt --check` clean
 
 ## Décisions actives
 
+- D90 — a tool description earns its retrieval by naming the *goal*, and
+  naming the actions is how it overpays. F.5.5's lever — say the thing in the
+  domain's own words — does not generalise to a tool that *composes* other
+  tools: `apply_plan`'s operations are place, power, label, wire, connect,
+  decouple, and a description saying so ranks it against
+  `batch_place_components` and `add_power_symbol` on tasks that want one edit,
+  not a plan. Measured, and the legible cost is not the 1.7 precision points
+  but the +140 catalog tokens loaded on 3 of 7 tasks for a schema none of them
+  calls. One goal sentence buys the same reachability for zero. Corollary
+  bounding the claim: the three goal queries still missing are the long ones,
+  because clause splitting decides per clause and `apply_plan` is the best
+  answer to none of "supply rails", "a wire between them", "a labelled output"
+  — D68 stands, with an edge one query wide instead of zero.
 - D89 — a mode restricts by *what a write leaves behind*, not by whether it
   writes. A gerber lands on disk exactly as a schematic edit does, so `Effect`
   could never separate them; `WriteTarget { DesignDocument, Derived }` is the
@@ -396,10 +412,10 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-**A decision, not a continuation — nothing is half-done.** The working tree is
-clean, `cargo test --workspace` is green at `HEAD`, `HEAD` is pushed, and CI is
-green on `agentic/main`. Two things are waiting on a decision that is the
-user's, and neither should be started silently:
+**A decision, not a continuation — nothing is half-done.** F.5.7 closed the
+last lot that could be settled locally. `cargo test --workspace` is green at
+`HEAD`. One thing is left waiting on a decision that is the user's, and it
+should not be started silently:
 
 - **K.1.1** — budget. `py -3.11 bench/harness_runner.py --server
   target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
@@ -407,17 +423,11 @@ user's, and neither should be started silently:
   user's 2026-08-18 choice; AGY is out of scope (D70). A Claude Code run costs
   ~$0.06 on the lightest task with haiku, and the six other golden tasks all
   author something.
-- **F.5.7** — whether `apply_plan` should name the design actions its operation
-  library covers. The lever that makes the plan path retrievable is the same one
-  that puts it in competition with `batch_place_components` on every direct
-  task, and the suite's 62.0 % is what would pay. Both sides must be measured on
-  all seven tasks.
 
-If neither is wanted yet, note what an audit of `plan.md`'s checkboxes says:
-the only phases still holding an *unchecked* task are D (D.5.3, conditional), F
-(F.5.7), I (hardware-gated), K (K.1.1, K.1.4) and M. Phase J was carrying a
-stale `TODO` heading over lots that were all `DONE` and is now marked `DONE`;
-phase L has no unchecked task either, but its two lots never declared a status,
-so its heading was left alone rather than asserted. Phase K beyond K.1.1 and
+If it is not wanted yet, note what an audit of `plan.md`'s checkboxes says:
+the only phases still holding an *unchecked* task are D (D.5.3, conditional),
+I (hardware-gated), K (K.1.1, K.1.4) and M. Phase L has no unchecked task
+either, but its two lots never declared a status, so its heading was left alone
+rather than asserted. Phase K beyond K.1.1 and
 phase M both depend on a benchmark campaign, so they inherit K.1.1's budget
 decision.
