@@ -1275,7 +1275,7 @@ A written decision with the same evidence standard as D3, or the gate stays shut
 
 ---
 
-# Phase J — Scope expansion — TODO
+# Phase J — Scope expansion — DONE
 
 ## J.1 — Close E7 — DONE
 
@@ -1399,7 +1399,7 @@ F.4 (the matrix is the instrument).
 `docs/capability-matrix.md` regenerated; the percentage moves for the right
 reason (a test that runs, not a denominator change).
 
-## J.2.4 — Defects the coverage work surfaced
+## J.2.4 — Defects the coverage work surfaced — DONE
 
 ### Objectif
 Writing the tests for J.2.3 turned up tools that work differently from what

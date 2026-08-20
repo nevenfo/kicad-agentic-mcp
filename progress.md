@@ -413,7 +413,11 @@ user's, and neither should be started silently:
   task, and the suite's 62.0 % is what would pay. Both sides must be measured on
   all seven tasks.
 
-If neither is wanted yet, the open phases in `plan.md` are J.2.4 (all tasks
-checked — its lot heading has no status line, worth confirming), L, and M.
-Phase K beyond K.1.1 and phase M both depend on a benchmark campaign, so they
-inherit K.1.1's budget decision.
+If neither is wanted yet, note what an audit of `plan.md`'s checkboxes says:
+the only phases still holding an *unchecked* task are D (D.5.3, conditional), F
+(F.5.7), I (hardware-gated), K (K.1.1, K.1.4) and M. Phase J was carrying a
+stale `TODO` heading over lots that were all `DONE` and is now marked `DONE`;
+phase L has no unchecked task either, but its two lots never declared a status,
+so its heading was left alone rather than asserted. Phase K beyond K.1.1 and
+phase M both depend on a benchmark campaign, so they inherit K.1.1's budget
+decision.
