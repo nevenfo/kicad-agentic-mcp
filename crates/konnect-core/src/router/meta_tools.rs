@@ -849,11 +849,22 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
         }
     }
 
-    let changed = guard.finish(failed_at.is_some(), &ctx.evidence, &mut body);
+    let tool_names: Vec<String> = calls
+        .iter()
+        .filter_map(|c| c["tool"].as_str().map(str::to_string))
+        .collect();
+    let task_id = args["task_id"].as_str();
+    let journal_args = JournalArgs {
+        journal: ctx.journal.as_deref(),
+        tools: &tool_names,
+        operation_id: operation_id.as_deref(),
+        task_id,
+    };
+    let changed = guard.finish(failed_at.is_some(), &ctx.evidence, journal_args, &mut body);
     if verify == Verify::Auto {
         report_validators(ctx, &changed, &mut body).await;
     }
-    if let Some(task_id) = args["task_id"].as_str() {
+    if let Some(task_id) = task_id {
         file_under_task(ctx, task_id, &changed, &mut body);
     }
 
@@ -1145,7 +1156,13 @@ mod snapshot_handle_tests {
         );
 
         let mut body = json!({});
-        guard.finish(false, &store, &mut body);
+        let no_journal = JournalArgs {
+            journal: None,
+            tools: &[],
+            operation_id: None,
+            task_id: None,
+        };
+        guard.finish(false, &store, no_journal, &mut body);
         assert_eq!(body["snapshot_evidence"], json!(uri));
     }
 
@@ -1377,6 +1394,64 @@ struct ChangedDoc {
 /// the same reply hands back.
 const MAX_REPORTED_CHANGES: usize = 25;
 
+/// What `BatchGuard::finish` needs to write one run-journal entry (D.7.1),
+/// bundled into a single argument rather than four so the extra parameter
+/// stays one thing at the call site.
+struct JournalArgs<'a> {
+    /// `None` when the server has no journal (an in-memory test context, or a
+    /// journal that failed to open) — `finish` then simply writes nothing.
+    journal: Option<&'a kam_state::RunJournal>,
+    tools: &'a [String],
+    operation_id: Option<&'a str>,
+    task_id: Option<&'a str>,
+}
+
+/// One document's before/after, owned, so it can outlive the borrow of
+/// whatever produced it long enough to build a [`kam_state::RecordedDoc`] from
+/// it just before the call to [`kam_state::RunJournal::append`].
+struct JournalDoc {
+    path: std::path::PathBuf,
+    before_revision: Option<String>,
+    after_revision: String,
+    before_bytes: Option<Vec<u8>>,
+    after_bytes: Option<Vec<u8>>,
+}
+
+/// Append one entry, if there is a journal to append it to. IO failures are
+/// logged and swallowed: the journal is an audit artefact, not a step in the
+/// mutation, so a batch that already succeeded must not fail here.
+fn write_journal_entry(
+    args: &JournalArgs<'_>,
+    outcome: kam_state::Outcome,
+    summary: Option<&str>,
+    docs: &[JournalDoc],
+) {
+    let Some(journal) = args.journal else {
+        return;
+    };
+    let documents = docs
+        .iter()
+        .map(|d| kam_state::RecordedDoc {
+            path: &d.path,
+            before_revision: d.before_revision.as_deref(),
+            after_revision: &d.after_revision,
+            before_bytes: d.before_bytes.as_deref(),
+            after_bytes: d.after_bytes.as_deref(),
+        })
+        .collect();
+    let record = kam_state::RunRecord {
+        outcome,
+        tools: args.tools,
+        documents,
+        operation_id: args.operation_id,
+        task_id: args.task_id,
+        summary,
+    };
+    if let Err(e) = journal.append(record) {
+        tracing::warn!("[journal] append failed: {e}");
+    }
+}
+
 /// The before-image a batch can be rolled back to, plus the reason there isn't
 /// one when that is the case.
 struct BatchGuard {
@@ -1460,6 +1535,7 @@ impl BatchGuard {
         self,
         failed: bool,
         store: &kam_evidence::EvidenceStore,
+        journal: JournalArgs<'_>,
         body: &mut Value,
     ) -> Vec<ChangedDoc> {
         // Set regardless of what happens next — success, rollback, or a
@@ -1498,6 +1574,41 @@ impl BatchGuard {
                     .collect::<Vec<_>>());
             }
             body["rolled_back"] = rolled_back;
+
+            // A rollback with a non-empty report is still an event: the batch
+            // did change the project, however briefly. The journal's job is to
+            // say what was undone, not only what survived.
+            let rolled_back_docs: Vec<JournalDoc> = report
+                .restored
+                .iter()
+                .chain(report.deleted.iter())
+                .map(|path| {
+                    let before_bytes = snapshot.before(path).map(<[u8]>::to_vec);
+                    let before_revision = before_bytes
+                        .as_deref()
+                        .map(|b| kam_state::DocState::of_bytes(b).token());
+                    // Read after restore, not before: a rollback puts the file
+                    // back to `before_bytes`, and the journal should show the
+                    // state the disk is actually in now, not assume it matches.
+                    let after_bytes = std::fs::read(path).ok();
+                    let after_revision = kam_state::DocState::read(path)
+                        .unwrap_or(kam_state::DocState::Absent)
+                        .token();
+                    JournalDoc {
+                        path: path.clone(),
+                        before_revision,
+                        after_revision,
+                        before_bytes,
+                        after_bytes,
+                    }
+                })
+                .collect();
+            write_journal_entry(
+                &journal,
+                kam_state::Outcome::RolledBack,
+                None,
+                &rolled_back_docs,
+            );
             return Vec::new();
         }
 
@@ -1506,6 +1617,33 @@ impl BatchGuard {
             return Vec::new();
         }
         report_diff(&snapshot, &changed, self.diff, store, body);
+        let journal_docs: Vec<JournalDoc> = changed
+            .iter()
+            .map(|(path, state)| {
+                let before_bytes = snapshot.before(path).map(<[u8]>::to_vec);
+                let before_revision = before_bytes
+                    .as_deref()
+                    .map(|b| kam_state::DocState::of_bytes(b).token());
+                JournalDoc {
+                    path: path.clone(),
+                    before_revision,
+                    after_revision: state.token(),
+                    before_bytes,
+                    // Reread from disk rather than reuse what `report_diff`
+                    // already read: the two are separate concerns (one
+                    // describes the change, one archives it), and the extra
+                    // read is cheap next to writing the bytes back out.
+                    after_bytes: std::fs::read(path).ok(),
+                }
+            })
+            .collect();
+        let diff_summary = body["diff"]["summary"].as_str().map(str::to_string);
+        write_journal_entry(
+            &journal,
+            kam_state::Outcome::Applied,
+            diff_summary.as_deref(),
+            &journal_docs,
+        );
         // Project paths are long and identical up to the filename. Factoring
         // the directory out turns four absolute Windows paths into one plus
         // four basenames — the same information for a third of the tokens.

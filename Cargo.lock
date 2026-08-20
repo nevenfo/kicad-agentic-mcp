@@ -1119,6 +1119,7 @@ name = "kam-state"
 version = "0.2.2"
 dependencies = [
  "serde",
+ "serde_json",
  "sha2",
  "tempfile",
 ]

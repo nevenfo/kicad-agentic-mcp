@@ -19,17 +19,27 @@
 //! right now?"** [`mode`] — the process-wide operating mode, independent of
 //! which toolset a client has loaded.
 //!
+//! And one that outlives any single [`snapshot::Snapshot`]: **"what did the
+//! last several batches do?"** [`journal`] — an append-only record of run
+//! outcomes with bounded before/after images, so a batch's effect can still be
+//! inspected after the process that ran it has moved on.
+//!
 //! Deliberately domain-free: this crate has no idea what a schematic is, and
 //! depends on no `konnect-*` type. It is one of the `kam-*` crates kept
 //! clean-room so the base project underneath can change without rewriting them
 //! (see `plan.md`, "License impact").
 
+pub mod journal;
 pub mod ledger;
 pub mod mode;
 pub mod revision;
 pub mod snapshot;
 pub mod task;
 
+pub use journal::{
+    DocumentEntry, ImageSide, JournalEntry, JournalLimits, Outcome, RecordedDoc, RunJournal,
+    RunRecord,
+};
 pub use ledger::{Claim, IdempotencyLedger};
 pub use mode::{ModeGuard, ModeParseError, OperatingMode};
 pub use revision::{DocState, Revision, ABSENT};

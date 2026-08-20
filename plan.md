@@ -694,13 +694,37 @@ noise (the `toolsets` mode moved −9 with nothing of its own changed).
 D.1 (revisions), E.1 (semantic diff).
 
 ### Tâches
-- [ ] D.7.1 Append-only JSONL run journal with `pre_snapshot_path`,
-      `post_snapshot_path`, `rollback_token` per entry
-- [ ] D.7.2 `changes_since(rev)` from targeted diffing + file watching
-- [ ] D.7.3 Never advertise push notifications over MCP
+- [x] D.7.1 Append-only JSONL run journal with `pre_snapshot_path`,
+      `post_snapshot_path`, `rollback_token` per entry. Paths are relative to
+      the journal directory and only the files the batch *changed* are imaged —
+      the two together are what keep the cost proportional to the change and
+      the file free of the caller's filesystem layout (D72). Nothing from the
+      journal enters an MCP reply: a `rollback_token` a client could read would
+      be an address no tool accepts (D82 read the other way round), and D12
+      keeps rollback inside the batch
+- [ ] D.7.2 `changes_since(rev)` as a **meta-tool**, not a MANIFEST tool: it
+      answers about the server's own record, and a domain tool would move
+      `CAPABILITY_COVERAGE`'s frozen denominator (D44). `rev` is a revision
+      token `kicad_invoke` already publishes (D82). Three answers it must tell
+      apart — the document is at `rev` still; it moved and the journal says
+      which batches moved it; it moved and *we* did not write it, which is the
+      foreign-edit case the revision comparison detects on the spot
+- [ ] D.7.3 Never advertise push notifications over MCP, pinned by a test
+      rather than by nobody having added one: `resources` already ships
+      `subscribe: false` / `listChanged: false` (`mcp/server.rs`), and
+      `tools.listChanged` stays `true` because it is real and fires — it
+      describes *session* state, which is not a disk mutation (D60)
 
 ### Validation
 A journal replay reconstructs the same semantic diff the batch reported.
+
+**Deliberate substitution, recorded rather than silent:** D.7.2 says "targeted
+diffing + file watching" and ships the diffing without the watcher. A watcher
+is a background daemon that has to survive a restart to be worth anything, and
+the one question it would answer — has this document moved since `rev` — is
+already answered on demand by D.1's content-addressed revision, with no state
+to keep in sync. D.7.3 is the other half of the argument: a watcher whose
+findings may never be pushed has no consumer but the poll that exists anyway.
 
 ## D.8 — Operating mode, orthogonal to discovery — DONE
 

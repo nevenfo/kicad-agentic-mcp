@@ -46,6 +46,20 @@ fn ensure_state_dir() {
     });
 }
 
+/// The `ServerConfig` every `Harness` constructor shares, parameterised only
+/// by the one field a caller has ever needed to vary.
+fn config(kicad_cli: String) -> ServerConfig {
+    ServerConfig {
+        kicad_cli,
+        kicad_binary: String::new(),
+        ipc_address: String::new(),
+        project_dir: None,
+        jlcpcb_db_path: None,
+        auto_load_toolsets: false,
+        mode: kam_state::OperatingMode::Write,
+    }
+}
+
 /// A router with every toolset reachable, and a context with no KiCAD behind
 /// it.
 pub struct Harness {
@@ -63,23 +77,40 @@ impl Harness {
     pub fn with_kicad_cli(kicad_cli: String) -> Self {
         ensure_state_dir();
         let router = Arc::new(ToolRouter::new());
-        let ctx = Arc::new(ToolContext::new(
-            ServerConfig {
-                kicad_cli,
-                kicad_binary: String::new(),
-                ipc_address: String::new(),
-                project_dir: None,
-                jlcpcb_db_path: None,
-                auto_load_toolsets: false,
-                mode: kam_state::OperatingMode::Write,
-            },
-            router.clone(),
-        ));
+        let ctx = Arc::new(ToolContext::new(config(kicad_cli), router.clone()));
         Harness {
             router,
             ctx,
             dir: tempfile::tempdir().expect("tempdir"),
         }
+    }
+
+    /// Same as [`Self::new`], but with `ctx.journal` open against a directory
+    /// this harness owns — `ToolContext::new`'s journal is always `None`
+    /// (it must stay IO-free for the tests that don't care), so this rebuilds
+    /// the context rather than patching the one `new` made.
+    ///
+    /// For D.7.1's replay probe, which needs a real journal to read back.
+    pub fn with_journal() -> Self {
+        ensure_state_dir();
+        let router = Arc::new(ToolRouter::new());
+        let mut ctx = ToolContext::new(config(String::new()), router.clone());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let journal = kam_state::RunJournal::open(dir.path().join("journal"))
+            .expect("journal dir is creatable");
+        ctx.journal = Some(Arc::new(journal));
+        Harness {
+            router,
+            ctx: Arc::new(ctx),
+            dir,
+        }
+    }
+
+    /// The context this harness calls tools through — for a probe that needs
+    /// to reach a meta-tool handler directly (`router::meta_tools::handle_meta_tool`)
+    /// rather than through [`Self::call`]'s toolset lookup.
+    pub fn ctx(&self) -> Arc<ToolContext> {
+        self.ctx.clone()
     }
 
     /// Call `tool` by name, as `tools/call` does.

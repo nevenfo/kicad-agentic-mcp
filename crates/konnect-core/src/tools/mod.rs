@@ -119,6 +119,12 @@ pub struct ToolContext {
     /// and `router::meta_tools::handle_kicad_invoke` for the two places it is
     /// enforced.
     pub mode: Arc<kam_state::ModeGuard>,
+    /// Append-only record of what `kicad_invoke` batches did (plan.md D.7.1).
+    /// `None` for `ToolContext::new` — the in-memory-only constructor used by
+    /// most tests, which must stay free of IO — and for a server whose
+    /// journal directory could not be opened; either way a batch still runs,
+    /// it just leaves no journal entry behind it.
+    pub journal: Option<Arc<kam_state::RunJournal>>,
 }
 
 impl ToolContext {
@@ -148,6 +154,7 @@ impl ToolContext {
             tasks,
             graph: Arc::default(),
             mode,
+            journal: None,
         }
     }
 
@@ -179,6 +186,15 @@ impl ToolContext {
             evidence.clone(),
             config.kicad_cli.clone(),
         ));
+        // Best-effort: a journal that fails to open is an audit trail the
+        // server runs without, never a reason to refuse to start.
+        let journal = match kam_state::RunJournal::open(crate::observability::journal_dir()) {
+            Ok(journal) => Some(Arc::new(journal)),
+            Err(e) => {
+                tracing::warn!("[journal] could not open run journal: {e}");
+                None
+            }
+        };
         ToolContext {
             config,
             router,
@@ -192,6 +208,7 @@ impl ToolContext {
             tasks,
             graph: Arc::default(),
             mode,
+            journal,
         }
     }
 }

@@ -264,6 +264,30 @@ pub fn default_calls_log_path() -> PathBuf {
     konnect_dir().join("logs").join("calls.jsonl")
 }
 
+/// Directory the run journal (`kam_state::RunJournal`) is opened under.
+///
+/// `KONNECT_STATE_DIR`, when set, wins outright — a test binary shares one
+/// process-wide environment, so the harness sets it once
+/// (`crates/konnect-core/tests/harness/mod.rs::ensure_state_dir`) to keep
+/// every test's on-disk state under `CARGO_TARGET_TMPDIR` rather than letting
+/// this resolve `APPDATA`/`HOME` and write into the real user profile that
+/// happens to be running the test suite. Anything else falls back to
+/// `konnect_dir()/journal`, the same convention `default_calls_log_path` uses
+/// for `logs`.
+pub fn journal_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("KONNECT_STATE_DIR") {
+        let dir = PathBuf::from(dir);
+        // Absolute only, like `konnect_sexp::writer`'s use of the same
+        // variable: a relative state directory would put the journal wherever
+        // the server happened to be started from, and one variable answering
+        // to two different rules is worse than either rule.
+        if dir.is_absolute() {
+            return dir.join("journal");
+        }
+    }
+    konnect_dir().join("journal")
+}
+
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
 pub fn unix_ms() -> u64 {
