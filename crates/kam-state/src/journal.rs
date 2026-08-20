@@ -139,11 +139,14 @@ pub struct JournalEntry {
     pub documents: Vec<DocumentEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// The directory `documents[].path` is relative to, itself relative to
-    /// the journal's own directory — never absolute (see the module doc and
-    /// `konnect-core`'s `snapshot_manifest`, decision D72, which made the same
-    /// call for the same reason: an absolute path buys no audit value and
-    /// leaks the caller's filesystem layout into a file meant to be portable).
+    /// The absolute common parent directory `documents[].path` is relative
+    /// to — the one absolute part of this line, deliberately. D72 keeps an
+    /// MCP response free of the caller's filesystem layout because a model
+    /// reads it; this journal is a local audit file no client ever sees, and
+    /// a reader of it needs to ask "which batches touched *this* document",
+    /// which only an absolute root can answer unambiguously across working
+    /// directories. `documents[].path` and the image paths stay relative to
+    /// it regardless.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root: Option<String>,
     /// `images/<id>/pre`, relative to the journal directory, or `None` when no

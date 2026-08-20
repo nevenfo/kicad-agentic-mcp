@@ -122,6 +122,7 @@ The always-visible gateway/discovery tools (`crates/konnect-core/src/router/meta
 | `get_active_toolsets` | `read` | reads which toolsets are loaded |
 | `get_recent_calls` | `read` | reads the shared call log |
 | `server_stats` | `read` | reads uptime/call counters |
+| `changes_since` | `read` | reads document revision state and the run journal; writes nothing |
 | `kicad_invoke` | `write` | carries an arbitrary batch, including MANIFEST writers; D57: the audit keys on each inner call's own `tool` field, not on this name |
 | `kicad_agent` | `write` | NO_LLM/ESCALATE/LOCAL touch only task state; `execute: true` applies a compiled Plan IR to `document` via agent_loop::execute — a real write |
 | `kicad_agent_verify` | `read` | runs/reads cached kicad-cli ERC/DRC and records the verdict in task state; writes no project file |

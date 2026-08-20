@@ -2,40 +2,41 @@
 
 ## Phase actuelle
 
-D — domain stabilisation. D.1-D.6 and D.8 are DONE. **D.7 is in progress and is
-the last untouched lot of phase D**: D.7.1 and D.7.3 are DONE and committed,
-D.7.2 is the one left. D.9 is gated by the same GUI-session question as J.3.
-K.1.1's date has arrived (2026-08-20) and it is now a budget decision, not a
-blocked one. Phase F is DONE except F.5.7, which needs a decision before it is
-worth measuring.
+D — domain stabilisation. **D.7 is DONE, and with it every lot of phase D
+except D.9**, which is gated by the same GUI-session question as J.3. D.1-D.6
+and D.8 were already done. K.1.1's date has arrived (2026-08-20): it is a
+budget decision now, not a blocked one. Phase F is DONE except F.5.7, which
+needs a decision before it is worth measuring.
 
 ## Tâche actuelle
 
-**D.7.2 — `changes_since(rev)`** as a meta-tool. Delegated with the design
-fixed (see the D.7 section of plan.md, which now carries it): `document` +
-`since` both required, three answers told apart — still at `rev`, moved by
-batches the journal names, moved by someone who is not us — and nothing from
-the journal in the reply.
+None active. The next step is a choice, not a continuation — see NEXT ACTION.
 
 ## Dernière tâche validée
 
-**D.7.1 and D.7.3.** A batch that changes something leaves one JSONL line under
-the state directory; the validation is a test that recomputes the semantic diff
-from the journal's own pre/post images alone and gets the same summary the
-batch reported. D.7.3 pins the handshake: `resources` stays
-`subscribe: false` / `listChanged: false`, and `tools.listChanged` stays `true`
-because it is real and describes session state, not the disk.
+**D.7.2, and with it D.7.** `changes_since(document, since)` is a meta-tool, not
+a MANIFEST tool — it answers about the server's own record, and a domain tool
+would have moved `CAPABILITY_COVERAGE`'s frozen denominator (D44). It tells
+three answers apart: the document is still at `since`; it moved and the journal
+names the batches that moved it; it moved and we did not write it
+(`foreign_edit`). D.7.1 put the journal underneath it and D.7.3 pinned the
+handshake to staying pull-only.
 
 Validation :
-- `cargo test --workspace` PASS — 60 suites, 0 failures, lib 483 (+1 ignored),
-  kam-state 43 (5 of them the journal's)
+- `cargo test --workspace` PASS — 61 suites, 0 failures, lib 483 (+1 ignored),
+  kam-state 43, `changes_since` 6, `run_journal` 2, `no_push_notifications` 3
 - clippy `--workspace --all-targets -D warnings` and `fmt --check` clean
-- the tests that carry it: `a_journal_replay_reconstructs_the_batch_s_reported_diff`,
-  `a_read_only_batch_writes_nothing_to_the_journal`, and the three in
-  `no_push_notifications.rs`
+- `capability_matrix` regenerated (`KAM_UPDATE_MATRIX=1`) and green without it
 
 ## Décisions actives
 
+- D86 — a revision names a *position in a timeline*, and the two ways an entry
+  can name it mean opposite inclusion. An entry whose `before == since` is
+  itself the change away from `since` and is the first one to report; an entry
+  whose `after == since` has already arrived there, so only what follows counts.
+  The design said "the last entry naming `since`, then everything after it" and
+  was wrong for the common case — a caller asking right after a batch — which is
+  why the rule is written here rather than left implicit in a `rposition`.
 - D85 — the delta path is **pull**, and the file watcher D.7.2 named is
   deliberately not built. A watcher is a daemon that would have to survive a
   restart to be worth anything, and the one question it would answer — has this
@@ -309,7 +310,9 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
   server's directory comes from `observability::journal_dir()`, which honours
   `KONNECT_STATE_DIR` only when absolute; the write site is
   `router::meta_tools::write_journal_entry`, called from `BatchGuard::finish`
-  while the snapshot is still alive — the only moment `before()` is reachable
+  while the snapshot is still alive — the only moment `before()` is reachable.
+  Its only reader is `handle_changes_since` in the same file, whose
+  `paths_match` is what reconciles a caller's path with a journal line
 - `crates/konnect-core/src/mode_gate.rs` — the whole D.8 gate: `check()` /
   `refuse()`, consulted by `mcp/handler.rs::dispatch_tool` and by
   `handle_kicad_invoke`'s per-entry loop, never anywhere else. The mode itself
@@ -343,24 +346,22 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-Finish **D.7.2 — `changes_since`** (design in plan.md's D.7 section), then
-`cargo test --workspace` + clippy + `fmt --check`, tick D.7.2, and phase D is
-closed except D.9, which is gated on the same GUI-session question as J.3.
-
-Nothing is half-done outside that: D.7.1 and D.7.3 are committed separately and
-`cargo test --workspace` is green at `HEAD`.
+**A choice, not a continuation.** Phase D is closed except D.9, which is gated
+on the same GUI-session question as J.3 — read D.9 in `plan.md` before deciding,
+since nothing in this session touched it. Nothing is half-done: the working tree
+is clean and `cargo test --workspace` is green at `HEAD`.
 
 Local commits are **not pushed** — `git push` has no tty in this environment and
-the `wincredman` helper refuses to persist. Ten commits sit on `agentic/main`
+the `wincredman` helper refuses to persist. Twelve commits sit on `agentic/main`
 ahead of `origin`.
 
-**K.1.1 is unblocked as of today (2026-08-20)** and is now purely a budget
-decision, which is the user's each time: `py -3.11 bench/harness_runner.py
---server target/release/konnect.exe --harness <claude|codex> --repeat 2
---enforce --log-dir <dir> --out <json>` for each of the two harnesses in scope
-(D70). The user chose (2026-08-18) to run both as one campaign rather than
-measure Claude Code alone first. A Claude Code run costs ~$0.06 on the lightest
-task with haiku, and the six other golden tasks all author something.
+**K.1.1 is unblocked as of 2026-08-20** and is purely a budget decision, which
+is the user's each time: `py -3.11 bench/harness_runner.py --server
+target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
+--log-dir <dir> --out <json>` for each of the two harnesses in scope (D70). The
+user chose (2026-08-18) to run both as one campaign rather than measure Claude
+Code alone first. A Claude Code run costs ~$0.06 on the lightest task with
+haiku, and the six other golden tasks all author something.
 
 Also waiting on a decision rather than on work: F.5.7 — whether `apply_plan`
 should name the design actions its operation library covers. F.5.2 opened it and

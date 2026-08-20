@@ -285,6 +285,34 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 "required": []
             }),
         },
+        McpToolDescription {
+            name: "changes_since".to_string(),
+            description:
+                "Report what happened to a document after the revision `since` (a token \
+                 kicad_invoke already gave you in its 'revisions' field). Returns the current \
+                 revision, whether it matches `since`, and the run-journal entries that touched \
+                 the document after that point, including edits made outside Konnect."
+                    .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "document": {
+                        "type": "string",
+                        "description": "Path of the document to check."
+                    },
+                    "since": {
+                        "type": "string",
+                        "description": "A revision token this document was previously read at."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max journal entries to return (default 20, max 100).",
+                        "default": 20
+                    }
+                },
+                "required": ["document", "since"]
+            }),
+        },
     ]
 }
 
@@ -332,6 +360,7 @@ define_meta_tools! {
     "get_active_toolsets" => handle_get_active_toolsets(ctx).await,
     "get_recent_calls" => handle_get_recent_calls(args, ctx).await,
     "server_stats" => handle_server_stats(ctx).await,
+    "changes_since" => handle_changes_since(args, ctx).await,
 }
 
 /// One `InvalidArgument` result, so this file's argument refusals cannot drift
@@ -2251,4 +2280,234 @@ async fn handle_get_active_toolsets(ctx: &std::sync::Arc<ToolContext>) -> CallTo
             .filter_map(|t| t["tool_count"].as_u64())
             .sum::<u64>()
     }))
+}
+
+/// `changes_since` — what happened to `document` after the revision `since`,
+/// read from the run journal (D.7.2). This is the intended substitute for a
+/// filesystem watcher (see `plan.md`, D.7's "Deliberate substitution" note):
+/// a client that wants to know about foreign edits polls this instead of
+/// holding an OS-level watch open, and gets a journal-backed answer plus
+/// `foreign_edit` detection for the concurrent-KiCAD-GUI case (D53).
+async fn handle_changes_since(args: &Value, ctx: &std::sync::Arc<ToolContext>) -> CallToolResult {
+    let Some(document) = args.get("document").and_then(Value::as_str) else {
+        return invalid_argument(
+            "document",
+            "must be a string",
+            "changes_since requires document: the path of a KiCAD document to check",
+        );
+    };
+    // Required, not optional (D82): `since` is a token another tool already
+    // published (`kicad_invoke`'s `revisions` field), never one this tool
+    // invents a default for. A caller with no token has never read this
+    // document through Konnect and has nothing to compare "since" against.
+    let Some(since) = args.get("since").and_then(Value::as_str) else {
+        return invalid_argument(
+            "since",
+            "must be a string",
+            "changes_since requires since: a revision token this document was previously read \
+             at (kicad_invoke publishes one per changed document in its 'revisions' field). \
+             A caller with no such token has never read this document and has no baseline for \
+             'what changed since'.",
+        );
+    };
+    // Default 20 mirrors get_recent_calls; 100 keeps one reply from ever
+    // growing enough to eclipse the tool it is meant to save a round trip
+    // against.
+    let limit = args
+        .get("limit")
+        .and_then(Value::as_u64)
+        .map(|n| n as usize)
+        .unwrap_or(20)
+        .min(100);
+
+    let doc_path = std::path::PathBuf::from(document);
+    let current_state = match kam_state::DocState::read(&doc_path) {
+        Ok(state) => state,
+        Err(e) => {
+            let kind = ToolErrorKind::Io {
+                code: "read_failed",
+                detail: e.to_string(),
+            };
+            return CallToolResult::error_kind(
+                kind,
+                format!("Could not read '{document}' to check its revision"),
+            );
+        }
+    };
+    let deleted = matches!(current_state, kam_state::DocState::Absent);
+    let current = (!deleted).then(|| current_state.token());
+
+    // No journal (an in-memory test context, or a journal that failed to
+    // open): the document's own state is still a real answer, so this
+    // returns it rather than refusing the call. `changes` is empty and
+    // `since_known`/`foreign_edit` stay false — there is no journal to know
+    // either from.
+    let Some(journal) = ctx.journal.as_deref() else {
+        let mut body = json!({
+            "document": document,
+            "since": since,
+            "current": current,
+            "up_to_date": current.as_deref() == Some(since),
+            "since_known": false,
+            "foreign_edit": false,
+            "journal": false,
+            "changes": [],
+        });
+        if deleted {
+            body["deleted"] = json!(true);
+        }
+        return CallToolResult::json(&body);
+    };
+
+    let entries = match journal.entries() {
+        Ok(entries) => entries,
+        Err(e) => {
+            let kind = ToolErrorKind::Io {
+                code: "journal_read_failed",
+                detail: e.to_string(),
+            };
+            return CallToolResult::error_kind(kind, "Could not read the run journal");
+        }
+    };
+
+    // Every (entry, doc_index) whose document resolves to the same file as
+    // `document`, oldest first (the order `entries()` already returns).
+    let matches: Vec<(&kam_state::JournalEntry, usize)> = entries
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .documents
+                .iter()
+                .position(|doc| paths_match(&journal_doc_path(entry, doc), &doc_path))
+                .map(|i| (entry, i))
+        })
+        .collect();
+
+    // A document that no longer exists is only an error when the journal has
+    // never heard of it either — otherwise it is a batch's legitimate
+    // deletion, reported through `deleted` below rather than refused.
+    if deleted && matches.is_empty() {
+        let kind = ToolErrorKind::FileNotFound {
+            path: document.to_string(),
+        };
+        return CallToolResult::error_kind(
+            kind,
+            format!("'{document}' does not exist and the run journal has no record of it"),
+        );
+    }
+
+    // The position of `since` in this document's timeline. Two ways an entry
+    // can name it, and they mean opposite inclusion: an entry whose
+    // `before == since` is itself the change *away* from `since`, so it is
+    // the first change to report; an entry whose `after == since` already
+    // *arrived* at `since`, so it and everything before it are old news and
+    // only what comes after it counts. `rposition` scans from the newest end
+    // of the oldest-first vector, so if the same content recurs later the
+    // more recent occurrence — the one a caller's `since` actually names —
+    // wins.
+    let before_match = matches
+        .iter()
+        .rposition(|(entry, i)| entry.documents[*i].before.as_deref() == Some(since));
+    let after_match = matches
+        .iter()
+        .rposition(|(entry, i)| entry.documents[*i].after == since);
+    let since_known = before_match.is_some() || after_match.is_some();
+
+    // Entries from `since`'s position onward, or every known entry when
+    // `since` was never seen — the response stays useful, it just cannot
+    // promise completeness (flagged via `since_known` instead of silently
+    // omitting older entries the journal might still have). A `before_match`
+    // is preferred when both exist, since it is the more specific answer:
+    // "this entry changed it away from since" beats "an earlier entry
+    // arrived at since", and the two agree whenever the timeline is
+    // contiguous anyway.
+    let mut tail: Vec<&(&kam_state::JournalEntry, usize)> = match (before_match, after_match) {
+        (Some(pos), _) => matches[pos..].iter().collect(),
+        (None, Some(pos)) => matches[pos + 1..].iter().collect(),
+        (None, None) => matches.iter().collect(),
+    };
+    tail.reverse(); // newest first, per the schema
+    let total = tail.len();
+    let truncated = total.saturating_sub(limit);
+    let changes: Vec<Value> = tail
+        .into_iter()
+        .take(limit)
+        .map(|(entry, i)| {
+            let doc = &entry.documents[*i];
+            json!({
+                "ts": entry.ts,
+                "outcome": entry.outcome,
+                "tools": entry.tools,
+                "from": doc.before,
+                "to": doc.after,
+                "summary": entry.summary,
+            })
+        })
+        .collect();
+
+    // The last thing the journal recorded for this document, versus what is
+    // on disk now. When the journal knows nothing at all (`matches` empty,
+    // so `since_known` is trivially false), the only honest signal left is
+    // whether the content moved at all since `since` — anything stronger
+    // would claim knowledge this branch does not have.
+    let foreign_edit = match matches.last() {
+        Some((entry, i)) => Some(entry.documents[*i].after.clone()) != current,
+        None => current.as_deref() != Some(since),
+    };
+
+    let mut body = json!({
+        "document": document,
+        "since": since,
+        "current": current,
+        "up_to_date": current.as_deref() == Some(since),
+        "since_known": since_known,
+        "foreign_edit": foreign_edit,
+        "journal": true,
+        "changes": changes,
+    });
+    if deleted {
+        body["deleted"] = json!(true);
+    }
+    if truncated > 0 {
+        body["truncated"] = json!(truncated);
+    }
+    CallToolResult::json(&body)
+}
+
+/// The absolute path a `JournalEntry`'s document resolves to: `entry.root`
+/// (already absolute — see `kam_state::journal::JournalEntry::root`) joined
+/// with the entry's slash-separated relative path, or the relative path
+/// alone when there was no common root to factor out.
+fn journal_doc_path(
+    entry: &kam_state::JournalEntry,
+    doc: &kam_state::DocumentEntry,
+) -> std::path::PathBuf {
+    let rel: std::path::PathBuf = doc.path.split('/').collect();
+    match &entry.root {
+        Some(root) => std::path::PathBuf::from(root).join(rel),
+        None => rel,
+    }
+}
+
+/// Whether two paths name the same file, for reconciling a caller-given path
+/// with a journal entry's recorded one.
+///
+/// `canonicalize` is tried first — it resolves `.`/`..`, symlinks, and, on
+/// Windows, drive-letter casing and `/` vs `\` — but only works for a path
+/// that still exists on disk, which a document a batch deleted no longer
+/// does. The fallback lossily compares lowercased, separator-normalized
+/// strings instead. Lowercasing is wrong in principle on a case-sensitive
+/// filesystem, but every path compared here was written by this same
+/// process's own journal or handed back by its own tools, so the case that
+/// would matter — two distinct files differing only in case — does not
+/// arise in practice.
+fn paths_match(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if let (Ok(ca), Ok(cb)) = (a.canonicalize(), b.canonicalize()) {
+        return ca == cb;
+    }
+    normalize_lossy(a) == normalize_lossy(b)
+}
+
+fn normalize_lossy(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
 }

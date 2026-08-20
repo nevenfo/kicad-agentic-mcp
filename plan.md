@@ -685,7 +685,7 @@ policy is table-driven over all five `TransientClass` values. Gate green
 including the benchmark; gateway tokens 2 204 → 2 207, inside the run-to-run
 noise (the `toolsets` mode moved −9 with nothing of its own changed).
 
-## D.7 — Event journal / deltas — TODO
+## D.7 — Event journal / deltas — DONE
 
 ### Objectif
 `changes_since(rev)`. KiCad has no pub/sub, so this is ours to build.
@@ -702,7 +702,7 @@ D.1 (revisions), E.1 (semantic diff).
       journal enters an MCP reply: a `rollback_token` a client could read would
       be an address no tool accepts (D82 read the other way round), and D12
       keeps rollback inside the batch
-- [ ] D.7.2 `changes_since(rev)` as a **meta-tool**, not a MANIFEST tool: it
+- [x] D.7.2 `changes_since(rev)` as a **meta-tool**, not a MANIFEST tool: it
       answers about the server's own record, and a domain tool would move
       `CAPABILITY_COVERAGE`'s frozen denominator (D44). `rev` is a revision
       token `kicad_invoke` already publishes (D82). Three answers it must tell

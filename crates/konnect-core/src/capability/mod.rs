@@ -395,6 +395,7 @@ pub const META_TOOL_EFFECTS: &[(&str, Effect)] = &[
     // ── observability: reads the shared call log / stats ───────────────────
     ("get_recent_calls", Effect::Read),
     ("server_stats", Effect::Read),
+    ("changes_since", Effect::Read),
     // Carries an arbitrary batch of inner tool calls by name, including
     // MANIFEST writers (`handle_kicad_invoke`,
     // `router::meta_tools::handle_kicad_invoke`). D57: in gateway mode the

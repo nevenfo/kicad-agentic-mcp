@@ -408,6 +408,7 @@ fn meta_tool_note(tool: &str) -> &'static str {
         "get_active_toolsets" => "reads which toolsets are loaded",
         "get_recent_calls" => "reads the shared call log",
         "server_stats" => "reads uptime/call counters",
+        "changes_since" => "reads document revision state and the run journal; writes nothing",
         "kicad_invoke" => {
             "carries an arbitrary batch, including MANIFEST writers; D57: the audit \
              keys on each inner call's own `tool` field, not on this name"
