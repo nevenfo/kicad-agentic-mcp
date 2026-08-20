@@ -54,6 +54,13 @@ Usage:
     py -3.11 bench/harness_runner.py --server target/release/konnect.exe \
         --harness agy --dry-run
 
+Two modes read finished campaigns off disk and spend nothing — no server, no
+agent, and `--server` is not required:
+    py -3.11 bench/harness_runner.py --rescore bench/results/k11-codex.json
+    py -3.11 bench/harness_runner.py --merge BASE RERUN --out MERGED
+`--merge` only folds a re-run back into the void run it replaces; `--rescore`
+is the only thing that judges. Keeping them apart is deliberate.
+
 `codex`'s JSONL event schema is confirmed against the K.1.1 campaign (14 real
 transcripts, codex-cli 0.147): `parse_codex_jsonl` reads the `item.completed`
 shape those runs emit, and keeps its defensive handling of the other
@@ -1455,6 +1462,63 @@ def rescore(path: Path) -> tuple[str, str, list[HarnessRun]]:
     return harness, data.get("label", "unlabeled"), runs
 
 
+def merge_campaigns(base: Path, rerun: Path) -> tuple[dict, list[str]]:
+    """Fold re-runs of void runs back into the campaign that voided them.
+
+    A void run is not a measurement (K.1.13): the harness cut it short — a
+    spent quota window, a budget cap — before the agent was done, so its
+    numbers describe the interruption and not the server. The remedy is to run
+    that task again, which produces a second file, and the campaign is only
+    whole once the two are one file. Doing that by hand is how a denominator
+    quietly changes, so it is a tool rather than a script — the same reason
+    K.1.16 gave for `--rescore`.
+
+    The rule is deliberately narrow: **every run in `rerun` must replace a void
+    run of the same task in `base`, one for one.** A re-run with no void to
+    replace is refused rather than appended, because appending would grow the
+    campaign's denominator and make the rates mean something other than what
+    the campaign measured. Anything genuinely new — a different model, a fresh
+    repeat — is its own campaign file and is compared, not merged.
+
+    The merged runs keep their own numbers; nothing is re-judged here.
+    `--rescore` is what re-judges, and it is the only thing that should.
+    """
+    b = json.loads(base.read_text(encoding="utf-8"))
+    r = json.loads(rerun.read_text(encoding="utf-8"))
+    if b.get("harness") != r.get("harness"):
+        raise SystemExit(
+            f"harness mismatch: {base} is {b.get('harness')!r}, "
+            f"{rerun} is {r.get('harness')!r} — different harnesses are compared, not merged"
+        )
+
+    runs = list(b["runs"])
+    replaced: list[str] = []
+    for new in r["runs"]:
+        if new.get("aborted"):
+            raise SystemExit(
+                f"{rerun}: the re-run of {new['task_id']!r} is itself void "
+                f"({new['aborted']}) — run it again rather than merging it in"
+            )
+        slot = next(
+            (
+                i
+                for i, old in enumerate(runs)
+                if old["task_id"] == new["task_id"] and old.get("aborted")
+            ),
+            None,
+        )
+        if slot is None:
+            raise SystemExit(
+                f"{rerun}: no void {new['task_id']!r} run left in {base} to replace. "
+                "A re-run is only ever a replacement; anything new is its own campaign file"
+            )
+        replaced.append(f"{new['task_id']} (was: {runs[slot]['aborted']})")
+        runs[slot] = new
+
+    b["runs"] = runs
+    return b, replaced
+
+
 def instability(by_task: dict[str, list[HarnessRun]]) -> tuple[float | None, dict[str, float]]:
     """Same signature as `runner.instability`: `(success, tuple(tools_used))`.
 
@@ -1745,6 +1809,15 @@ def main() -> None:
         help="re-judge a captured campaign (a previous --out json) with today's "
         "audit and print the thresholds; runs no agent and spends nothing",
     )
+    ap.add_argument(
+        "--merge",
+        nargs=2,
+        metavar=("BASE", "RERUN"),
+        default=None,
+        help="fold re-runs of void runs back into the campaign that voided "
+        "them, one for one, and write the result to --out; runs no agent and "
+        "spends nothing",
+    )
     ap.add_argument("--out", default=None)
     ap.add_argument(
         "--agy-mcp-config",
@@ -1753,6 +1826,26 @@ def main() -> None:
         "override with a throwaway file for testing — see AgyMcpConfigGuard)",
     )
     args = ap.parse_args()
+
+    # Like `--rescore`, a merge reads finished campaigns off disk: no server,
+    # no agent, nothing spent. It is deliberately not a rescore — it only puts
+    # the runs in one file, and `--rescore` is what judges them.
+    if args.merge:
+        base, rerun = (Path(p).resolve() for p in args.merge)
+        if not args.out:
+            raise SystemExit("--merge requires --out")
+        out = Path(args.out).resolve()
+        # A captured campaign is the only copy of runs that were paid for.
+        # Writing the merge back over either input would destroy one of them.
+        if out in (base, rerun):
+            raise SystemExit("--out would overwrite one of the campaigns being merged")
+        merged, replaced = merge_campaigns(base, rerun)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        for line in replaced:
+            print(f"replaced void run: {line}")
+        print(f"\nwrote {args.out} ({len(merged['runs'])} runs)")
+        return
 
     # A rescore reads a finished campaign off disk: no server is launched, no
     # task is run, nothing is spent. Everything below this point is about

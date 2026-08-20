@@ -10,6 +10,19 @@ decision has to survive long after the phase that produced it.
 the history, and this file owns the *why*. A decision is superseded by
 editing its entry, never by deleting it.
 
+- D97 — a re-run **replaces** the void run it re-runs, and never adds to the
+  campaign. `no_void_runs` exists because a run the harness cut short answered
+  no question (K.1.13), and the remedy is to run that task again — which
+  produces a second file that has to be folded into the first. Folding by hand
+  is how a denominator quietly changes: one appended run turns 14 into 15 and
+  silently restates every rate the campaign reports. So the fold is a tool
+  (`--merge`, K.1.17) with a narrow rule — one re-run, one void of the same
+  task, refused outright if there is no void left to replace. Anything
+  genuinely new (a different model, another repeat) is its own campaign file
+  and is *compared*, not merged. The merge judges nothing; `--rescore` (K.1.16)
+  is the only thing that judges, for the same reason a re-score does not
+  reimplement `report()`.
+
 - D96 — `allowed_tools` enumerates *reads*, and judges reads only. Its one
   user, `recovery`, says so in its own comment — "the reads a recovering caller
   may legitimately reach for to find out what state it is in" — but the coded

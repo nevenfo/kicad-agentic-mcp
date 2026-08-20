@@ -232,40 +232,43 @@
       "task_id": "sch_ldo",
       "harness": "claude",
       "success": false,
-      "design_success": false,
+      "design_success": true,
       "tools_used": [
         "load_user_config",
+        "create_project",
         "find_capabilities",
         "load_tools",
         "kicad_describe",
-        "create_project",
-        "batch_place_components",
-        "add_power_symbol",
-        "delete_schematic_component",
+        "get_symbol_info",
         "add_schematic_component",
+        "add_power_symbol",
         "connect_pins",
+        "validate_wire_connections",
         "run_erc",
-        "delete_schematic_wire"
+        "connect_to_net"
       ],
       "tool_call_sequence": [
         "load_user_config",
+        "create_project",
+        "find_capabilities",
+        "find_capabilities",
         "find_capabilities",
         "find_capabilities",
         "load_tools",
         "kicad_describe",
-        "create_project",
-        "batch_place_components",
-        "add_power_symbol",
-        "add_power_symbol",
-        "add_power_symbol",
-        "add_power_symbol",
-        "add_power_symbol",
-        "add_power_symbol",
         "find_capabilities",
         "load_tools",
-        "delete_schematic_component",
+        "kicad_describe",
+        "get_symbol_info",
+        "get_symbol_info",
         "add_schematic_component",
         "add_schematic_component",
+        "add_schematic_component",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
         "connect_pins",
         "connect_pins",
         "connect_pins",
@@ -273,31 +276,31 @@
         "connect_pins",
         "connect_pins",
         "connect_pins",
-        "connect_pins",
-        "connect_pins",
+        "validate_wire_connections",
         "run_erc",
-        "delete_schematic_component",
+        "get_symbol_info",
+        "add_schematic_component",
         "add_schematic_component",
         "connect_pins",
-        "run_erc",
-        "find_capabilities",
-        "load_tools",
-        "delete_schematic_wire"
+        "connect_pins",
+        "connect_to_net",
+        "connect_to_net",
+        "run_erc"
       ],
-      "tool_calls": 35,
+      "tool_calls": 38,
       "off_server_calls": 0,
       "off_server_names": [],
-      "cost_usd": 1.0433382,
-      "duration_ms": 135535.0,
-      "num_turns": 36,
+      "cost_usd": 0.7777651,
+      "duration_ms": 122736.0,
+      "num_turns": 39,
       "usage": {
-        "input_tokens": 46,
-        "cache_creation_input_tokens": 74426,
-        "cache_read_input_tokens": 602764,
-        "output_tokens": 12346
+        "input_tokens": 36,
+        "cache_creation_input_tokens": 79025,
+        "cache_read_input_tokens": 419737,
+        "output_tokens": 11760
       },
-      "harness_error": "per-run budget cap reached",
-      "aborted": "per-run budget cap reached",
+      "harness_error": null,
+      "aborted": null,
       "assertions": [
         {
           "kind": "all_steps_ok",
@@ -312,22 +315,22 @@
         {
           "kind": "components_present",
           "ok": true,
-          "detail": "missing=[] found=['#PWR001', '#PWR002', '#PWR003', '#PWR004', '#PWR005', 'C1', 'C2', 'FLG1', 'FLG2', 'U1']"
+          "detail": "missing=[] found=['#PWR001', '#PWR002', '#PWR003', '#PWR004', '#PWR005', '?', 'C1', 'C2', 'U1']"
         }
       ],
       "violations": [
         {
           "kind": "missing_expected",
-          "detail": "never called: ['batch_add_wire', 'batch_add_junction']"
+          "detail": "never called: ['batch_place_components', 'batch_add_wire', 'batch_add_junction']"
         },
         {
           "kind": "max_calls",
-          "detail": "35 scored calls > max_calls 15"
+          "detail": "38 scored calls > max_calls 15"
         }
       ],
       "safety_violations": 0,
       "unnecessary_calls": 0,
-      "scored_calls": 35,
+      "scored_calls": 38,
       "exposed_tools": [
         "mcp__konnect__changes_since",
         "mcp__konnect__create_project",
@@ -352,7 +355,7 @@
         "mcp__konnect__unload_toolset"
       ],
       "unwrap_warning": null,
-      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_ldo-30kpw2lx"
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_ldo-d4lf29b6"
     },
     {
       "task_id": "sch_ldo",
