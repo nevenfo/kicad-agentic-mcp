@@ -73,6 +73,57 @@ def effects(path: str | None = None) -> dict[str, str]:
     return out
 
 
+META_SECTION = "meta-tools"
+
+
+@functools.lru_cache(maxsize=None)
+def meta_tools(path: str | None = None) -> frozenset[str]:
+    """The gateway/discovery tools, read from the matrix's own `## Meta-tools`.
+
+    Same argument as `effects()`: the registry lives in Rust
+    (`capability::META_TOOL_EFFECTS`) and the matrix is its rendered form, so
+    reading the document is reading the registry. A hand-kept second list here
+    is exactly the drift D58 forbids — and it had already drifted: the copy
+    that used to live in `bench/runner.py` named six of the thirteen, missing
+    `kicad_agent_verify` among others.
+
+    The section is found by heading, not by position, and an empty result is an
+    error rather than a silent "no meta-tools" — which would put every
+    discovery call back under `allowed_tools`.
+    """
+    target = Path(path) if path else MATRIX
+    out: set[str] = set()
+    in_section = False
+    tool_col: int | None = None
+
+    for line in target.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#"):
+            in_section = line.lstrip("#").strip().lower() == META_SECTION
+            tool_col = None
+            continue
+        if not in_section:
+            continue
+        if not line.startswith("|"):
+            tool_col = None
+            continue
+        cells = _cells(line)
+        header = [_unquote(c).lower() for c in cells]
+        if "tool" in header:
+            tool_col = header.index("tool")
+            continue
+        if tool_col is None or all(set(c) <= set("-: ") for c in cells):
+            continue
+        if tool_col < len(cells):
+            out.add(_unquote(cells[tool_col]))
+
+    if not out:
+        raise SystemExit(
+            f"no `## {META_SECTION}` table found in {target} — regenerate it with "
+            "KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix"
+        )
+    return frozenset(out)
+
+
 def is_write(tool: str) -> bool:
     """Fail-safe, exactly like the Rust side: an unknown tool is a write.
 
@@ -93,3 +144,4 @@ if __name__ == "__main__":  # a developer aid, not part of any measurement
     table = effects()
     writes = sum(1 for v in table.values() if v == WRITE)
     print(f"{len(table)} tools: {writes} write, {len(table) - writes} read")
+    print(f"{len(meta_tools())} meta-tools: {', '.join(sorted(meta_tools()))}")

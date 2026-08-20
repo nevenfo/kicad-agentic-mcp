@@ -1723,6 +1723,50 @@ F.3 (the gateway is the whole external surface).
       refuses Konnect headlessly. The fix is K.2, and K.1.1's codex half is
       blocked on it. (The Codex account limit that blocked K.1.4 expired on
       2026-08-20 and is no longer what stands in the way.)
+- [x] K.1.9 **The codex half of the audit judged the door too.** The first real
+      codex campaign (14 runs, 2026-08-20) came back `0/14`, and five of those
+      runs carried the K.1.6 warning: `parse_codex_jsonl` never unwrapped
+      `kicad_invoke`, so `sch_template_stm32` was failed for never calling
+      `search_templates` / `apply_template` — both of which it *had* called,
+      inside a batch. K.1.6 fixed this for `parse_stream` only, and
+      `gateway_unwrap_warning` said why: unwrapping a schema no live run had
+      ever shown would have been a guess asserted as a measurement. The
+      campaign supplied the schema. A completed codex `mcp_tool_call` item
+      carries its reply at `result.content[0].text` — the same `content` shape
+      `_result_text` already reads for Claude Code — so `_codex_result_text`
+      reuses it and feeds the existing `unwrap_gateway_batch` rather than
+      re-deciding anything. `result: null` (a failed or in-flight call) still
+      yields `None`, which keeps the literal `kicad_invoke` visible in the
+      audited path: an unreadable reply must never become an empty batch, and
+      the warning survives for exactly that case. Verified by re-scoring the 14
+      captured transcripts offline, which spends nothing — five `warn=YES`
+      before, zero after, and `sch_template_stm32` audits to
+      `search_templates, apply_template, run_erc`. The negative control is the
+      same script against `HEAD`'s parser, which reproduces all five warnings.
+      **The first campaign's numbers are therefore void**, and K.1.1's codex
+      half is re-run on the fixed audit
+- [x] K.1.10 **The audit charged the agent for finding the tool.** The same
+      campaign failed `recovery` with
+      `not_allowed: ['list_toolboxes', 'find_capabilities', 'kicad_describe',
+      'kicad_invoke', 'kicad_agent_verify']` and put the suite's
+      unnecessary-call rate at 23.6 % (limit 5 %), most of it discovery. The
+      rule against exactly this was already written down: `runner.py`'s
+      `META_TOOLS` comment says meta-tools "count against `max_calls` ... but
+      are not subject to `allowed_tools`, `forbidden_tools` or the `read_only`
+      tier". **The constant was defined and never used** — not one reference in
+      the whole bench — so the rule had been prose since K.1.2. It had also
+      drifted: six names against the registry's thirteen, missing
+      `kicad_agent_verify`, which is why that name appeared in the violation.
+      Fixed at the source: `capabilities.meta_tools()` reads the matrix's own
+      `## Meta-tools` section (D58 — one place for the classification), and
+      `runner.discovery_tools()` is `meta_tools() ∩ read`. The intersection is
+      load-bearing, not a shortcut: `kicad_invoke` and `kicad_agent` are
+      meta-tools that *do* reach the design, so they stay judged, and a
+      `kicad_invoke` that survives unwrapping stays a visible failure instead
+      of an exemption. `allowed_tools`, `forbidden_tools` and
+      `unnecessary_call_count` now judge the executed path minus discovery;
+      `missing_expected`, `max_calls` and the `read_only` tier still see every
+      call
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 `max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
 `bench/runner.py --enforce`, which exits non-zero on any of them; met by

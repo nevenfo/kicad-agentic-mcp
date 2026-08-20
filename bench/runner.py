@@ -43,22 +43,31 @@ ENC = tiktoken.get_encoding("o200k_base")
 TASK_DIR = Path(__file__).parent / "tasks"
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
-# Discovery and gateway plumbing. These are the harness talking to the server
-# about itself, never a design operation: they count against `max_calls`,
-# because a round trip is a round trip, but they are not subject to
-# `allowed_tools`, `forbidden_tools` or the `read_only` tier — `kicad_invoke` is
-# a door, and judging the door instead of what went through it would mark every
-# gateway run as a write.
-META_TOOLS = frozenset(
-    {
-        "load_tools",
-        "load_toolset",
-        "list_toolboxes",
-        "kicad_describe",
-        "find_capabilities",
-        "kicad_invoke",
-    }
-)
+def discovery_tools() -> frozenset[str]:
+    """Meta-tools that cannot touch the design — the pure discovery surface.
+
+    These are the harness talking to the server about itself: `find_capabilities`,
+    `kicad_describe`, `load_tools`, the toolset calls, `changes_since`. They
+    count against `max_calls`, because a round trip is a round trip, but they
+    are not subject to `allowed_tools` or `forbidden_tools`. An agent *must*
+    call them to find a tool at all — charging it for that measures the
+    gateway's own discovery protocol, not whether the agent flailed. The first
+    agentic campaign is what made it visible: `recovery` was failed
+    `not_allowed` for `list_toolboxes, find_capabilities, kicad_describe`, and
+    they carried a quarter of the whole suite's unnecessary-call rate.
+
+    The set is `meta_tools() ∩ read`, both read from the matrix, and the
+    intersection is the point rather than a shortcut: `kicad_invoke` and
+    `kicad_agent` are meta-tools that *do* reach the design, so they stay
+    judged. `kicad_invoke` normally never survives to be judged — `_unwrap_invoke`
+    replaces it with what the batch ran — and when it does survive, that is a
+    transcript the audit could not read, which must stay visible rather than be
+    exempted.
+
+    Not cached: `capabilities` already caches its matrix read, and a frozenset
+    of thirteen names is not worth a second cache to invalidate.
+    """
+    return frozenset(t for t in capabilities.meta_tools() if not capabilities.is_write(t))
 
 # Pass/fail gate for the suite, from the plan. `--enforce` turns them into an
 # exit code; without it they are printed and nothing more, because
@@ -332,7 +341,16 @@ def audit(
 
     out: list[Violation] = []
 
-    hit = [t for t in used if t in forbidden]
+    # `judged` is the executed path minus pure discovery: what the task asked
+    # for is a design, and `find_capabilities` is how an agent finds the tool
+    # that builds it. `used` itself is unchanged — `missing_expected` and the
+    # `read_only` tier still see every call, so a task that expects a meta-tool
+    # is still checked for it, and a gateway call the parser could not unwrap
+    # still fails a `read_only` run instead of being waved through.
+    discovery = discovery_tools()
+    judged = [t for t in used if t not in discovery]
+
+    hit = [t for t in judged if t in forbidden]
     if hit:
         out.append(Violation("forbidden", f"called forbidden tools: {hit}"))
 
@@ -351,7 +369,7 @@ def audit(
 
     if allowed is not None:
         permitted = set(allowed) | set(expected)
-        stray = [t for t in used if t not in permitted]
+        stray = [t for t in judged if t not in permitted]
         if stray:
             out.append(Violation("not_allowed", f"outside allowed_tools: {stray}"))
 
@@ -374,7 +392,7 @@ def unnecessary_call_count(task: dict, used_calls: list[str]) -> int:
     allowed = task.get("allowed_tools")
     if allowed is None:
         return 0
-    permitted = set(allowed) | set(task.get("expected_tools", []))
+    permitted = set(allowed) | set(task.get("expected_tools", [])) | discovery_tools()
     return sum(1 for name in used_calls if name not in permitted)
 
 

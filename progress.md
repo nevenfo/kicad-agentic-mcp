@@ -4,16 +4,54 @@
 
 **K — multi-harness.** Phases D, F and L are closed. Phase I stays gated by
 hardware (KiCad 10.0 here, not the KiCad 11 / `kicad-cli api-server` it needs).
-K holds two lots: K.2, opened and closed this session, and K.1, whose only
-remaining task is the campaign itself — the claude half waiting on a budget
-decision, the codex half on nothing but the choice to run it.
+K holds two lots: K.2, closed, and K.1, down to the campaign itself. The first
+real codex campaign ran and its numbers were void — it found two audit defects
+(K.1.9, K.1.10) before it measured anything about Konnect. Both are fixed and
+the codex half is re-running. The claude half is unblocked: it never needed a
+budget, only a model.
 
 ## Tâche actuelle
 
-None active. What is left in the project is K.1.1 — the campaign — and it
-needs a decision, not a keystroke. See NEXT ACTION.
+**K.1.1 — the campaign.** The codex half is re-running on the fixed audit
+(`--repeat 2`, 14 runs); the claude half follows, on the model the user chose:
+the suite in `claude-sonnet-5`, plus one task replayed in `claude-opus-5` as an
+anchor back to the K.1.6 smoke run. See NEXT ACTION.
 
 ## Dernière tâche validée
+
+**K.1.9 + K.1.10** — the first codex campaign (14 runs, `--repeat 2`) came back
+`0/14`, and neither zero was about Konnect. Both defects were in the audit, and
+both had been *written down* before they were coded:
+
+- K.1.9 — `parse_codex_jsonl` never unwrapped `kicad_invoke`, so five runs
+  carried the K.1.6 warning and `sch_template_stm32` was failed for never
+  calling `search_templates` / `apply_template`, which it had called inside a
+  batch. K.1.6 fixed the claude parser only, and `gateway_unwrap_warning` said
+  why: no live codex transcript existed to unwrap against. The campaign
+  supplied one — a completed `mcp_tool_call` item carries its reply at
+  `result.content[0].text`, the same `content` shape `_result_text` already
+  reads — so `_codex_result_text` feeds the existing `unwrap_gateway_batch`.
+- K.1.10 — `runner.py::META_TOOLS` was **defined and never referenced**: the
+  comment beside it has said since K.1.2 that discovery is exempt from
+  `allowed_tools`/`forbidden_tools`, and nothing enforced it. `recovery` was
+  failed `not_allowed` for `list_toolboxes, find_capabilities, kicad_describe`,
+  and discovery carried most of a 23.6 % unnecessary-call rate (limit 5 %). The
+  hand-kept list had also drifted to six of thirteen names. Now
+  `capabilities.meta_tools()` reads the matrix's `## Meta-tools` section and
+  `discovery_tools()` is `meta_tools() ∩ read`.
+
+Validation :
+- `.\gate.ps1` **GATE PASSED** at the change — fmt, clippy, test, doctest, build
+- K.1.9 re-scored offline against the 14 captured transcripts, which spends
+  nothing: **five `warn=YES` before, zero after**, and `sch_template_stm32`
+  audits to `search_templates, apply_template, run_erc`. Negative control: the
+  same script against `HEAD`'s parser reproduces all five warnings
+- oracle path unchanged: `bench/runner.py --load-mode gateway --repeat 1
+  --enforce` → **7/7, unnecessary 0.0 %, exit 0**
+- `py -3.11 bench/capabilities.py` → `13 meta-tools`, naming them, against the
+  six the deleted constant held
+
+## Avant-dernière tâche validée
 
 **K.2 (K.2.1 – K.2.6)** — Konnect declares MCP tool annotations. `readOnlyHint`
 derives from the existing effect tables (K.1.2/K.1.5), never re-decided;
@@ -42,6 +80,16 @@ Validation :
 
 ## Décisions actives
 
+- D95 — an audit judges what the agent *did to the design*, never how it found
+  the tool. Discovery is the gateway's own protocol: an agent cannot call a
+  tool it has not looked up, so `find_capabilities` and `kicad_describe` are
+  exempt from `allowed_tools` and `forbidden_tools` — and still counted against
+  `max_calls`, because a round trip is a round trip. The exempt set is
+  `meta_tools() ∩ read`, derived from the matrix rather than listed by hand:
+  `kicad_invoke` and `kicad_agent` are meta-tools that reach the design and
+  stay judged. A rule that lives only in a comment is not a rule — `META_TOOLS`
+  was defined, never referenced, and drifted to six of thirteen names while
+  nobody was calling it. See K.1.10.
 - D94 — annotate what a client gates on, not what is cheapest to send. A read
   needs only `readOnlyHint: true`; a write needs `destructiveHint: false` and
   `openWorldHint: false` beside `readOnlyHint: false`, and dropping either gets
@@ -470,21 +518,27 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-**K.1.1 — run the campaign.** Nothing else in the project owes work that no
-decision blocks. Two halves, decided separately:
+**K.1.1 — finish the campaign.** Nothing else in the project owes work.
 
-- **codex** — costs no dollars (ChatGPT subscription) and is no longer gated:
-  `py -3.11 bench/harness_runner.py --server <abs path to konnect.exe>
-  --harness codex --repeat 2 --enforce --log-dir <dir> --out <json>`. Watch
-  `SERVER_UNUSED`: `sch_inspection` will almost certainly land there again, and
-  the six authoring tasks should not, since `-s read-only` denies codex's own
-  shell any write. That column is the campaign's own check on whether the
-  codex number measures Konnect at all.
-- **claude** — needs a budget *and* a model from the user. `claude -p` with no
-  `--model` takes `claude-opus-5`; the one-task smoke run cost **$0.3172** on
-  the cheapest of the seven tasks, and six of the seven author something.
-  `--model` and `--max-budget-usd` are the levers. Pass the server as an
-  **absolute** path (a relative one makes CreateProcess fail from the
+- **codex** — re-running now on the fixed audit (K.1.9, K.1.10). The first
+  attempt's numbers are void. What it did establish, and what no audit fix
+  changes, is `SERVER_UNUSED 9/14`: on five of the seven tasks codex never
+  called Konnect at all, solved the task with its own sandboxed shell, and
+  therefore wrote nothing (`-s read-only`) and failed every assertion. The
+  annotations of K.2 let the calls through; they do not make codex reach for
+  them. That is the finding the codex half is really carrying, and it is about
+  the harness, not the server.
+- **claude** — no budget was ever needed. Verified on this machine: no
+  `ANTHROPIC_API_KEY` anywhere, and `~/.claude.json` says
+  `billingType: stripe_subscription`, `organizationType: claude_pro`,
+  `hasExtraUsageEnabled: false` — `claude -p` runs on the subscription quota
+  and a spent quota blocks instead of billing. The `$0.3172` of K.1.6 is the
+  CLI's *estimated* `total_cost_usd`, not a charge. The scarce resource is the
+  Pro 5-hour window, shared with whatever Claude Code session is open, which is
+  why the model mattered and the dollar figure did not. User's decision
+  (2026-08-20): the suite in **`--model claude-sonnet-5`**, plus **one task
+  replayed in `claude-opus-5`** as an anchor back to K.1.6. Pass the server as
+  an **absolute** path (a relative one makes CreateProcess fail from the
   harness's own `$WORK` cwd).
 
 Phase M then depends on K.1.1 and on nothing else.

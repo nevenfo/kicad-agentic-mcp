@@ -44,11 +44,13 @@ Usage:
     py -3.11 bench/harness_runner.py --server target/release/konnect.exe \
         --harness agy --dry-run
 
-`codex`'s JSONL event schema has not been verified against a live run (no
-local LLM provider was reachable while this was written): `parse_codex_jsonl`
-is written defensively against the documented/likely shapes and must never
-turn an unrecognized transcript into a silent 0/0 pass. `agy`'s schema *has*
-been confirmed against a real transcript — see `parse_agy_stream`.
+`codex`'s JSONL event schema is confirmed against the K.1.1 campaign (14 real
+transcripts, codex-cli 0.147): `parse_codex_jsonl` reads the `item.completed`
+shape those runs emit, and keeps its defensive handling of the other
+documented shapes — it must never turn an unrecognized transcript into a
+silent 0/0 pass. `agy`'s schema is likewise confirmed against a real
+transcript — see `parse_agy_stream` — but nothing in it unwraps the gateway,
+since no agy run has ever reached the server.
 
 `agy`'s MCP wiring is a separate, confirmed problem: see `AgyMcpConfigGuard`.
 """
@@ -813,8 +815,40 @@ _CODEX_BUILTIN_TYPES = {
 _CODEX_BUILTIN_ITEM_TYPES = {"command_execution", "file_change", "patch", "web_search"}
 
 
+def _codex_result_text(src: dict) -> str:
+    """The reply body of one codex `mcp_tool_call` item, as text.
+
+    Confirmed against the first real codex campaign (K.1.1, 2026-08-20): a
+    completed item carries `result: {"content": [{"type": "text", "text":
+    "..."}], "structured_content": null}` — the same `content` shape
+    `_result_text` already reads for Claude Code, which is why it is reused
+    rather than re-implemented. `structured_content` is the documented
+    alternative and has never been observed populated here; it is read as a
+    fallback instead of being assumed absent.
+
+    A failed or still-running item carries `result: null`, which yields `""`;
+    `unwrap_gateway_batch` then returns `None` and the caller keeps the literal
+    `kicad_invoke` in the audited path. An unreadable reply must stay visible,
+    never become an empty batch.
+    """
+    result = src.get("result")
+    if not isinstance(result, dict):
+        return ""
+    text = _result_text(result)
+    if text:
+        return text
+    structured = result.get("structured_content")
+    return json.dumps(structured) if isinstance(structured, dict) else ""
+
+
 def parse_codex_jsonl(lines: list[str]) -> HarnessResult:
-    """Read `codex exec --json` output. Unverified against a live run.
+    """Read `codex exec --json` output.
+
+    Verified against the K.1.1 campaign (14 real transcripts, codex-cli 0.147,
+    2026-08-20): the live schema is `item.completed` carrying an item whose
+    `type` is `mcp_tool_call` (`server`, `tool`, `arguments`, `result`) or
+    `command_execution`. The older `mcp_tool_call_begin` shape is kept because
+    removing an accepted shape costs nothing and buys no accuracy.
 
     Both plausible event shapes (see `_codex_event`) are handled; an event type
     this parser does not recognize is silently ignored rather than crashing the
@@ -849,11 +883,16 @@ def parse_codex_jsonl(lines: list[str]) -> HarnessResult:
             src = item if item is not None else payload
             invocation = src.get("invocation") if isinstance(src.get("invocation"), dict) else src
             server = invocation.get("server") or src.get("server") or ""
-            tool = invocation.get("tool") or src.get("tool") or src.get("name") or "?"
+            tool = str(invocation.get("tool") or src.get("tool") or src.get("name") or "?")
             if server and server != SERVER_NAME:
                 out.off_server_calls.append(f"{server}.{tool}")
             else:
-                out.tool_calls.append(str(tool))
+                out.tool_calls.append(tool)
+                if tool == GATEWAY_TOOL:
+                    inner = unwrap_gateway_batch(_codex_result_text(src))
+                    out.audited_calls.extend(inner if inner is not None else [tool])
+                else:
+                    out.audited_calls.append(tool)
             recognized += 1
         elif kind in _CODEX_BUILTIN_TYPES or (item and item.get("type") in _CODEX_BUILTIN_ITEM_TYPES):
             out.off_server_calls.append(kind if item is None else item.get("type", kind))
@@ -1118,12 +1157,14 @@ class HarnessRun:
 def gateway_unwrap_warning(used_calls: list[str]) -> str | None:
     """Say so when the audited path still names the door.
 
-    Only `parse_stream` unwraps today, verified against a real Claude Code
-    transcript; `parse_codex_jsonl` has never been read against a live run, so
-    inventing an unwrap for it would be a guess asserted as a measurement. This
-    is the honest alternative: if a gateway call survives into the audited
-    path, the numbers derived from it are about `kicad_invoke` and not about
-    what it ran, and the report says which.
+    `parse_stream` and `parse_codex_jsonl` both unwrap, each against a real
+    transcript of its own harness — `parse_agy_stream` does not, and no run has
+    ever exercised it. The warning is not made obsolete by that: a batch whose
+    reply never arrived (a failed call, a truncated transcript) is unwrappable
+    by construction, whatever the parser. This is the honest alternative to
+    guessing: if a gateway call survives into the audited path, the numbers
+    derived from it are about `kicad_invoke` and not about what it ran, and the
+    report says which.
     """
     n = sum(1 for name in used_calls if name == GATEWAY_TOOL)
     if not n:
