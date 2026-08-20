@@ -10,6 +10,26 @@ decision has to survive long after the phase that produced it.
 the history, and this file owns the *why*. A decision is superseded by
 editing its entry, never by deleting it.
 
+- D96 — `allowed_tools` enumerates *reads*, and judges reads only. Its one
+  user, `recovery`, says so in its own comment — "the reads a recovering caller
+  may legitimately reach for to find out what state it is in" — but the coded
+  rule was `permitted = allowed ∪ expected` applied to every judged call, so an
+  agent that built the same correct design with `batch_add_wire` instead of the
+  scripted `connect_pins`, or undid a misplacement with
+  `delete_schematic_component`, was charged an unnecessary call for the route.
+  That is D95's sibling one layer down: neither is a fact about the design.
+  Writes are not waved through — `forbidden_tools`, the `safety` tier with its
+  fingerprint, and `max_calls` all still apply, and `max_calls` fired on its own
+  during the campaign that raised this. Measured by re-scoring both captured
+  halves of K.1.1 rather than by re-running them:
+  `max_unnecessary_call_rate` 7.7 % → 3.4 % (claude) and 3.0 % → 0.0 % (codex),
+  with every other threshold, violation and rate unchanged — including the two
+  real safety violations of K.1.15. What is still charged is the two
+  pin-location reads, which is the honest residue: a caller wiring by
+  coordinates does read them, and the list does not list them. Decided by the
+  user, not adopted by default: three audit defects (K.1.9–K.1.13) had already
+  come out of this one campaign, and "the campaign fails, so loosen the audit"
+  had to stop being automatic. See K.1.14.
 - D95 — an audit judges what the agent *did to the design*, never how it found
   the tool. Discovery is the gateway's own protocol: an agent cannot call a
   tool it has not looked up, so `find_capabilities` and `kicad_describe` are

@@ -368,10 +368,29 @@ def audit(
             )
 
     if allowed is not None:
+        # K.1.14: only *reads* are judged against `allowed_tools`, because a
+        # read is the only thing the list enumerates. `recovery`'s own comment
+        # says so — "the reads a recovering caller may legitimately reach for
+        # to find out what state it is in" — and the coded rule was broader
+        # than its stated meaning: applied to every call, it charged an agent
+        # for authoring the same design by a different route (`batch_add_wire`
+        # instead of the scripted `connect_pins`, `delete_schematic_component`
+        # to undo a misplacement), which is the K.1.11 route-vs-design
+        # conflation one layer down. Writes are not waved through: they stay
+        # governed by `forbidden_tools`, by the `read_only` tier and its
+        # fingerprint, and by `max_calls` — the flail detector, which fired on
+        # its own during the campaign that raised this.
+        #
+        # `is_write` is fail-safe — a tool the matrix has never heard of is a
+        # write — so an unknown tool is exempted here rather than charged. That
+        # is the direction to want: an unknown tool means the bench's matrix
+        # and the server disagree, which the `read_only` tier already fails
+        # loudly and by name, and under-counting a quality rate is a better
+        # failure than failing a campaign on a tool-name mismatch.
         permitted = set(allowed) | set(expected)
-        stray = [t for t in judged if t not in permitted]
+        stray = [t for t in judged if t not in permitted and not capabilities.is_write(t)]
         if stray:
-            out.append(Violation("not_allowed", f"outside allowed_tools: {stray}"))
+            out.append(Violation("not_allowed", f"unlisted reads outside allowed_tools: {stray}"))
 
     missing = [t for t in expected if t not in used]
     if missing:
@@ -384,16 +403,24 @@ def audit(
 
 
 def unnecessary_call_count(task: dict, used_calls: list[str]) -> int:
-    """Invocations (not distinct tools) outside `allowed_tools ∪ expected_tools`.
+    """Read invocations (not distinct tools) outside `allowed_tools ∪ expected_tools`.
 
     Counted over the executed path for the same reason the audit is: a rate
     computed from the task file would measure the task file.
+
+    Restricted to reads by K.1.14, on the same grounds as `not_allowed` above
+    and with the same rule, so the threshold and the violation can never
+    disagree about what an unnecessary call is.
     """
     allowed = task.get("allowed_tools")
     if allowed is None:
         return 0
     permitted = set(allowed) | set(task.get("expected_tools", [])) | discovery_tools()
-    return sum(1 for name in used_calls if name not in permitted)
+    return sum(
+        1
+        for name in used_calls
+        if name not in permitted and not capabilities.is_write(name)
+    )
 
 
 def install_fixture(task: dict, work: Path, name: str) -> list[str]:
@@ -782,7 +809,7 @@ def main() -> None:
     print(f"\nSAFETY_VIOLATIONS        {safety_total}   (forbidden + safety + disk_mutation)")
     print(
         f"UNNECESSARY_CALL_RATE    {unnecessary_rate:.1%}   "
-        f"({unnecessary_total}/{scored_total} scored calls outside allowed_tools)"
+        f"({unnecessary_total}/{scored_total} scored calls were unlisted reads)"
     )
     if instability_rate is None:
         print("INSTABILITY_RATE         n/a   (needs --repeat >= 2)")

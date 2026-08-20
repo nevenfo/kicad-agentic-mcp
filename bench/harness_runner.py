@@ -93,6 +93,7 @@ from runner import (  # noqa: E402
     ASSERT_TOOLS,
     SAFETY_KINDS,
     THRESHOLDS,
+    Violation,
     audit,
     check_assertion,
     fingerprint,
@@ -1410,6 +1411,50 @@ def run_task(
     )
 
 
+def rescore(path: Path) -> tuple[str, str, list[HarnessRun]]:
+    """Re-judge a captured campaign with today's audit, without re-running it.
+
+    A paid campaign is evidence that keeps: `--out` writes `asdict(HarnessRun)`
+    for every run, including `tool_call_sequence`, which is the executed path
+    `audit()` judges. So when the audit itself is corrected — K.1.9, K.1.10,
+    K.1.11, K.1.13 and now K.1.14 were all corrections found *by* a campaign —
+    the fix can be validated against the runs that found it instead of against
+    a fresh campaign nobody has paid for yet. The thresholds are recomputed by
+    `report()` verbatim, which is the point: a rescore that reimplemented them
+    would be measuring itself.
+
+    One verdict cannot be recomputed: `disk_mutation` compares a fingerprint of
+    `$WORK` before and after, and `$WORK` is a temporary directory that is long
+    gone. The paid run's own verdict is carried forward rather than silently
+    dropped, so a `read_only` violation can never disappear in a rescore.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    harness = data.get("harness", "claude")
+    if harness not in HARNESSES:
+        raise SystemExit(f"{path}: unknown harness {harness!r}")
+    tasks = {t["id"]: t for t in load_tasks(None)}
+    runs: list[HarnessRun] = []
+    for raw in data["runs"]:
+        run = HarnessRun(**raw)
+        task = tasks.get(run.task_id)
+        if task is None:
+            raise SystemExit(f"{path}: run for unknown task {run.task_id!r}")
+        used = run.tool_call_sequence
+        violations = audit(task, used, run.scored_calls, None, None)
+        violations += [
+            Violation(**v) for v in run.violations if v["kind"] == "disk_mutation"
+        ]
+        assert_failed = any(a["ok"] is False for a in run.assertions)
+        blocking = [v for v in violations if v.kind in SAFETY_KINDS]
+        run.design_success = not assert_failed and not blocking and not run.harness_error
+        run.success = run.design_success and not violations and not run.off_server_calls
+        run.violations = [asdict(v) for v in violations]
+        run.safety_violations = len(blocking)
+        run.unnecessary_calls = unnecessary_call_count(task, used)
+        runs.append(run)
+    return harness, data.get("label", "unlabeled"), runs
+
+
 def instability(by_task: dict[str, list[HarnessRun]]) -> tuple[float | None, dict[str, float]]:
     """Same signature as `runner.instability`: `(success, tuple(tools_used))`.
 
@@ -1529,7 +1574,7 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
     print(f"SAFETY_VIOLATIONS        {safety_total}   (forbidden + safety + disk_mutation)")
     print(
         f"UNNECESSARY_CALL_RATE    {unnecessary_rate:.1%}   "
-        f"({unnecessary_total}/{scored_total} calls outside allowed_tools)"
+        f"({unnecessary_total}/{scored_total} scored calls were unlisted reads)"
     )
     if instability_rate is None:
         print("INSTABILITY_RATE         n/a   (needs --repeat >= 2)")
@@ -1674,7 +1719,7 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--server", required=True)
+    ap.add_argument("--server", default=None)
     ap.add_argument("--config", default=str(Path(__file__).parent / "konnect.bench.toml"))
     ap.add_argument("--harness", choices=sorted(HARNESSES), default="claude")
     ap.add_argument("--label", default="unlabeled")
@@ -1694,6 +1739,12 @@ def main() -> None:
         help="build $WORK, the fixture and the MCP config, print the command line, spend nothing",
     )
     ap.add_argument("--enforce", action="store_true", help="exit 1 if any threshold fails")
+    ap.add_argument(
+        "--rescore",
+        default=None,
+        help="re-judge a captured campaign (a previous --out json) with today's "
+        "audit and print the thresholds; runs no agent and spends nothing",
+    )
     ap.add_argument("--out", default=None)
     ap.add_argument(
         "--agy-mcp-config",
@@ -1702,6 +1753,40 @@ def main() -> None:
         "override with a throwaway file for testing — see AgyMcpConfigGuard)",
     )
     args = ap.parse_args()
+
+    # A rescore reads a finished campaign off disk: no server is launched, no
+    # task is run, nothing is spent. Everything below this point is about
+    # running agents and does not apply.
+    if args.rescore:
+        source = Path(args.rescore).resolve()
+        # A captured campaign is the only copy of runs that were paid for; a
+        # rescore reads it and must never be able to overwrite it.
+        if args.out and Path(args.out).resolve() == source:
+            raise SystemExit("--out would overwrite the campaign being rescored")
+        args.harness, captured_label, runs = rescore(source)
+        if args.label == "unlabeled":
+            args.label = captured_label
+        failed = report(runs, args)
+        if args.out:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(
+                json.dumps(
+                    {
+                        "label": args.label,
+                        "harness": args.harness,
+                        "runs": [asdict(r) for r in runs],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            print(f"\nwrote {args.out}")
+        if args.enforce and failed:
+            raise SystemExit(f"{failed} threshold(s) failed")
+        return
+
+    if not args.server:
+        raise SystemExit("--server is required unless --rescore is given")
 
     # Resolved once, here, so every downstream user (argv builders,
     # `check_assertions`'s own `McpStdioClient`) works on the same absolute
