@@ -783,22 +783,40 @@ including the benchmark: gateway 21/21, `MCP_CALLS` median 4, 2 186 external
 tokens, retrieval 62.0 % / 100 % — unchanged, which is what a `Write` default
 has to mean.
 
-## D.9 — Serialised IPC command queue — TODO
+## D.9 — Serialised IPC command queue — PARTIAL
 
 ### Objectif
 KiCad's API server is single-threaded on the UI thread. The lock matters less
 than the guarantee that a retry never double-applies.
 
 ### Dépendances
-D.3 (idempotency keys already exist), PCB path only.
+D.3 (idempotency keys already exist), PCB path only. No longer gated on J.3:
+J.3.4 answered the GUI-session question and the `live-ipc` job is green on a
+GitHub runner, so this lot's validation has somewhere to run.
 
 ### Tâches
-- [ ] D.9.1 `mpsc` + worker task serialising IPC access, own timeout/retry policy
-- [ ] D.9.2 `BeginCommit`/`EndCommit` for atomicity on the IPC path (D12's gap)
+- [x] D.9.1 A FIFO queue per IPC address, each behind its own worker thread
+      (`tools/ipc_queue.rs`), with `with_ipc` submitting **synchronously** so the
+      order is the order callers were invoked and not the order their futures
+      were polled. Neither a retry nor a timeout was added, and both refusals are
+      the decision rather than an omission (D87). The concrete failure it closes
+      is `place_footprint`'s four-command read-modify-write, whose "does this
+      reference already exist" check two concurrent callers could both pass
+- [ ] D.9.2 `BeginCommit`/`EndCommit` for atomicity on the IPC path (D12's gap).
+      `KiCadIpcClient::run_commit` already exists and already drops the commit on
+      any error; only two call sites use it. Three multi-mutation sites have no
+      commit at all — `pcb_routing.rs` `modify_track` (`delete_track` then
+      `add_track`: a failing second half destroys a track and puts nothing back),
+      the L-bend of `route_two_pin_net`, and the differential pair — and each
+      `add_track` is itself three commands, so the exposure is wider than the
+      call count suggests
 
 ### Validation
-Concurrent callers cannot interleave; a replayed idempotency key applies once.
-Blocked in CI by the same GUI-session question as J.3.
+Concurrent callers cannot interleave: proved by `ipc_queue`'s own tests — eight
+concurrent jobs observe a maximum concurrency of 1, jobs run in submission
+order, a panicking job does not wedge the queue, and two distinct addresses do
+reach 2. A replayed idempotency key applying once stays D.3's ledger's job;
+D.9.1 deliberately adds no second mechanism for it (D87).
 
 ---
 

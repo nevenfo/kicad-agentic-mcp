@@ -2,34 +2,43 @@
 
 ## Phase actuelle
 
-D — domain stabilisation. **D.7 is DONE, and with it every lot of phase D
-except D.9**, which is gated by the same GUI-session question as J.3. D.1-D.6
-and D.8 were already done. K.1.1's date has arrived (2026-08-20): it is a
-budget decision now, not a blocked one. Phase F is DONE except F.5.7, which
-needs a decision before it is worth measuring.
+D — domain stabilisation. Every lot is done except **D.9**, which is now in
+flight rather than blocked: J.3.4 answered the GUI-session question and the
+`live-ipc` job is green on a GitHub runner. Phase F is DONE except F.5.7, which
+needs a decision before it is worth measuring. K.1.1's date has arrived
+(2026-08-20): it is a budget decision now, not a blocked one.
 
 ## Tâche actuelle
 
-None active. The next step is a choice, not a continuation — see NEXT ACTION.
+D.9.2 — `BeginCommit`/`EndCommit` on the IPC path. Not started.
 
 ## Dernière tâche validée
 
-**D.7.2, and with it D.7.** `changes_since(document, since)` is a meta-tool, not
-a MANIFEST tool — it answers about the server's own record, and a domain tool
-would have moved `CAPABILITY_COVERAGE`'s frozen denominator (D44). It tells
-three answers apart: the document is still at `since`; it moved and the journal
-names the batches that moved it; it moved and we did not write it
-(`foreign_edit`). D.7.1 put the journal underneath it and D.7.3 pinned the
-handshake to staying pull-only.
+**D.9.1** — a FIFO queue per IPC address, each behind its own worker thread
+(`crates/konnect-core/src/tools/ipc_queue.rs`). `with_ipc` keeps its call
+signature but is no longer an `async fn`: it submits into the queue
+synchronously and returns the future, so FIFO order is call order rather than
+poll order. None of the eleven call sites changed.
 
 Validation :
-- `cargo test --workspace` PASS — 61 suites, 0 failures, lib 483 (+1 ignored),
-  kam-state 43, `changes_since` 6, `run_journal` 2, `no_push_notifications` 3
+- `cargo test --workspace` PASS — 0 failures workspace-wide; konnect-core lib
+  487 passed (+1 ignored), including the four new `ipc_queue` tests
 - clippy `--workspace --all-targets -D warnings` and `fmt --check` clean
-- `capability_matrix` regenerated (`KAM_UPDATE_MATRIX=1`) and green without it
 
 ## Décisions actives
 
+- D87 — a serialised queue adds **no retry and no timeout**, and both refusals
+  are the point. A job is an `FnOnce` whose effects are not observable from
+  outside, so replaying it after a partial failure is precisely the double-apply
+  D.9 exists to prevent; the only safe retry is the caller's own, with a key,
+  which `IdempotencyLedger` already serves. A timeout is the mirror image: every
+  command is already bounded by `send_command` (5 s send / 30 s recv) and a job
+  sends a finite number of them, so a queue-level deadline would only turn "this
+  is slow" into "I no longer know whether it applied". Two corollaries: the key
+  is the IPC *address*, because it names the KiCad instance being serialised
+  against and because it is what lets tests be independent without a shared
+  environment variable (D67); and submission is synchronous, because an
+  `async fn` would have made queue order depend on poll order.
 - D86 — a revision names a *position in a timeline*, and the two ways an entry
   can name it mean opposite inclusion. An entry whose `before == since` is
   itself the change away from `since` and is the first one to report; an entry
@@ -313,6 +322,11 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
   while the snapshot is still alive — the only moment `before()` is reachable.
   Its only reader is `handle_changes_since` in the same file, whose
   `paths_match` is what reconciles a caller's path with a journal line
+- `crates/konnect-core/src/tools/ipc_queue.rs` — the per-address FIFO every IPC
+  call passes through, and the only place a `KiCadIpcClient` is built outside
+  tests is still `ipc_boundary.rs::with_ipc`, which is now its only caller. The
+  worker thread owns one client for the life of the process; a job that panics
+  is caught so it cannot wedge the queue behind it
 - `crates/konnect-core/src/mode_gate.rs` — the whole D.8 gate: `check()` /
   `refuse()`, consulted by `mcp/handler.rs::dispatch_tool` and by
   `handle_kicad_invoke`'s per-entry loop, never anywhere else. The mode itself
@@ -346,27 +360,22 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-**A choice, not a continuation.** Phase D is closed except D.9, which is gated
-on the same GUI-session question as J.3 — read D.9 in `plan.md` before deciding,
-since nothing in this session touched it. Nothing is half-done: the working tree
-is clean and `cargo test --workspace` is green at `HEAD`.
+Implement **D.9.2** — put the IPC path's multi-mutation sites inside
+`KiCadIpcClient::run_commit`, which already exists and already drops the commit
+on any error, and which only `place_footprint_array` and `align_footprints`
+currently use. Start with `pcb_routing.rs`'s `modify_track` (`delete_track` then
+`add_track`), where a failing second half destroys a track and puts nothing
+back; then the L-bend of `route_two_pin_net` and the differential pair. Prove it
+against the mock KiCad in `crates/konnect-ipc/tests/mock_server_test.rs` by the
+`type_url` sequence — `BeginCommit` … `EndCommit`, and `CmaDrop` rather than
+`CmaCommit` when a middle step fails.
 
-Local commits are **not pushed** — `git push` has no tty in this environment and
-the `wincredman` helper refuses to persist. Twelve commits sit on `agentic/main`
-ahead of `origin`.
-
-**K.1.1 is unblocked as of 2026-08-20** and is purely a budget decision, which
-is the user's each time: `py -3.11 bench/harness_runner.py --server
-target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
---log-dir <dir> --out <json>` for each of the two harnesses in scope (D70). The
-user chose (2026-08-18) to run both as one campaign rather than measure Claude
-Code alone first. A Claude Code run costs ~$0.06 on the lightest task with
-haiku, and the six other golden tasks all author something.
-
-Also waiting on a decision rather than on work: F.5.7 — whether `apply_plan`
-should name the design actions its operation library covers. F.5.2 opened it and
-deliberately did not take it: the lever that would make the plan path
-retrievable is the same one that would put it in competition with
-`batch_place_components` on every direct task, and the suite's 62.0 % is what
-would pay. It needs both sides measured on all seven tasks, so do not start it
-silently.
+Two things still waiting on a decision rather than on work: **K.1.1** (budget —
+`py -3.11 bench/harness_runner.py --server target/release/konnect.exe --harness
+<claude|codex> --repeat 2 --enforce --log-dir <dir> --out <json>`, both harnesses
+as one campaign per the user's 2026-08-18 choice, AGY out of scope per D70) and
+**F.5.7** (whether `apply_plan` should name the design actions its operation
+library covers — the lever that makes the plan path retrievable is the one that
+puts it in competition with `batch_place_components` on every direct task, and
+the suite's 62.0 % is what would pay, so both sides must be measured on all
+seven tasks).

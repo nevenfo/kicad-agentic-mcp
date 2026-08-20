@@ -6,6 +6,7 @@ pub mod design_review;
 pub mod graph;
 pub mod integration;
 mod ipc_boundary;
+pub(crate) mod ipc_queue;
 pub mod library;
 pub mod manufacturing;
 pub mod pcb_board;

@@ -14,29 +14,34 @@
 
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
+use crate::tools::ipc_queue;
 use konnect_ipc::client::KiCadIpcClient;
 use konnect_ipc::IpcFailure;
 
-/// Run `f` against a KiCAD IPC client on the blocking pool, classifying any
-/// failure with [`IpcFailure::from_error`] — by the typed marker in the error
-/// chain, never by matching the message text.
+/// Run `f` against a KiCAD IPC client, serialized (D.9.1: [`ipc_queue`])
+/// behind a single worker thread per `addr` so no two calls ever reach KiCAD
+/// concurrently, classifying any failure with [`IpcFailure::from_error`] — by
+/// the typed marker in the error chain, never by matching the message text.
 ///
-/// The outer `Err` is reserved for the task machinery itself (a panicked or
-/// cancelled blocking task): that is a bug in this process, not a statement
-/// about KiCAD, and it must not be mistaken for one.
-pub(crate) async fn with_ipc<T, F>(addr: String, f: F) -> anyhow::Result<Result<T, IpcFailure>>
+/// Submission into the queue happens synchronously in this function body,
+/// before the returned future is polled, so the FIFO order the queue
+/// promises is the order callers invoked `with_ipc`, not the order their
+/// futures happened to be polled.
+///
+/// The outer `Err` is reserved for the queue machinery itself (a panicked
+/// job, or a worker thread that is no longer running): that is a bug in this
+/// process, not a statement about KiCAD, and it must not be mistaken for one.
+pub(crate) fn with_ipc<T, F>(
+    addr: String,
+    f: F,
+) -> impl std::future::Future<Output = anyhow::Result<Result<T, IpcFailure>>>
 where
     T: Send + 'static,
     F: FnOnce(&KiCadIpcClient) -> anyhow::Result<T> + Send + 'static,
 {
-    match tokio::task::spawn_blocking(move || {
-        f(&KiCadIpcClient::new(&addr)).map_err(IpcFailure::from_error)
+    ipc_queue::submit(&addr, move |client: &KiCadIpcClient| {
+        f(client).map_err(IpcFailure::from_error)
     })
-    .await
-    {
-        Ok(result) => Ok(result),
-        Err(e) => Err(anyhow::anyhow!("Thread error: {}", e)),
-    }
 }
 
 /// The one place an `IpcFailure` becomes an agent-facing error.
