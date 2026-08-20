@@ -1571,7 +1571,15 @@ F.3 (the gateway is the whole external surface).
 - [ ] K.1.1 Run the golden suite through each harness in scope — Claude Code
       and Codex (D70). The runner exists and works (K.1.3); what is missing is
       the measurement itself, and it is gated on K.1.4's single remaining
-      external blocker, not on code
+      external blocker, not on code.
+      **Priced, on one real run** (`sch_inspection`, `--repeat 1`, claude,
+      2026-08-20): **$0.3172**, 10 turns, 8 round trips. `claude -p` with no
+      `--model` took `claude-opus-5`, not the haiku the earlier ~$0.06 estimate
+      assumed, so the campaign as specified — 7 tasks × `--repeat 2` × 2
+      harnesses — is an order of magnitude above that estimate on the cheapest
+      task, and the six others author something. Decide the model as well as
+      the budget before running it. That run also bought K.1.6, which is why
+      the smoke-first rule earned its keep: run one task before the campaign
 - [x] K.1.2 Adopt the eval design: `expected_tools`, `allowed_tools`,
       `forbidden_tools`, a `safety` tier checked against the capability registry
       (a `read_only` case rejects *any* write tool), `max_calls`, and an
@@ -1639,6 +1647,27 @@ F.3 (the gateway is the whole external surface).
       list: a `define_meta_tools!` macro generates the dispatch `match` and
       `META_TOOL_NAMES` from one invocation, so a new meta-tool without an
       effect fails a test naming it
+- [x] K.1.6 The agentic audit judged the *door*, not what went through it.
+      Found by a one-task smoke run before spending on the campaign (user
+      decision, 2026-08-20): an Opus 5 agent did the whole read-only task
+      through `kicad_invoke`, and the run came back triple-`FAIL` for reasons
+      that were two-thirds artefact — `safety: read_only task called write
+      tools: ['kicad_invoke']`, and all five `expected_tools` reported never
+      called. `bench/runner.py` has forbidden exactly this since K.1.2
+      (`executed_tools`, `_unwrap_invoke`, D57), but the harness runner read
+      tool names straight off the transcript's `tool_use` blocks and never
+      unwrapped. `HarnessResult` now carries `audited_calls` — the round trips
+      with each `kicad_invoke` replaced by its reply's per-entry `tool` field —
+      beside `tool_calls`, which stays the round-trip count `max_calls` needs.
+      Second defect from the same run: `off_server_calls` counted a `Read` the
+      CLI had *refused* ("No such tool available: Read. Read is disabled for
+      this session"). `--tools ""` worked; the model merely tried. Contamination
+      is what reached the design, not what was attempted. Only `parse_stream`
+      unwraps, verified against the captured transcript; `parse_codex_jsonl`
+      has never been read against a live run, so rather than guess an unwrap
+      for it, `gateway_unwrap_warning` prints a `WARN` on any run whose audited
+      path still names `kicad_invoke` — on passes as well as failures, since an
+      unwrapped gateway call is unreliable in both directions
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 `max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
 `bench/runner.py --enforce`, which exits non-zero on any of them; met by

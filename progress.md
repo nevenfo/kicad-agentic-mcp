@@ -2,10 +2,11 @@
 
 ## Phase actuelle
 
-**Phases D and F are both closed.** F.5.7 was the last lot in F owing work;
-D.5.3 is conditional by design ("reconsider *if* a session ever needs deeper
-history") and is not work owed. Phase I stays gated by hardware (this machine
-has KiCad 10.0, not the KiCad 11 / `kicad-cli api-server` it needs).
+**K — multi-harness.** Phases D and F are both closed (F.5.7 was the last lot
+in F owing work; D.5.3 is conditional by design and is not work owed). K.1.1 is
+the only lot in the project still owing work that no decision blocks — and the
+decision it needs is a budget. Phase I stays gated by hardware (this machine has
+KiCad 10.0, not the KiCad 11 / `kicad-cli api-server` it needs).
 
 ## Tâche actuelle
 
@@ -13,7 +14,24 @@ None active. What remains open across the project is decisions — see NEXT ACTI
 
 ## Dernière tâche validée
 
-**F.5.7.** A tool description names the *goal*, not the actions — see D90.
+**K.1.6** — the agentic audit judged the door, not what went through it. Found
+by the one-task smoke run K.1.1 was gated on: an Opus 5 agent did the whole
+`read_only` task through `kicad_invoke`, and the harness scored the door — a
+false `safety` violation and all five `expected_tools` reported never called.
+`bench/runner.py` has forbidden that since K.1.2; `bench/harness_runner.py`
+never unwrapped. Second defect, same run: a `Read` the CLI **refused** was
+counted as contamination.
+
+Validation :
+- the captured transcript re-scored through the fixed `parse_stream`:
+  `off_server_calls` 1 → 0, the `safety` violation gone, `missing_expected`
+  5 → 1 (`get_schematic_component`, a real agent gap — it used
+  `get_component_nets` for R1), `scored_calls` 8 ≤ `max_calls` 13. The run is
+  still a `FAIL`, now for the one reason that was true
+- re-scoring spends nothing: the fix is verified against the run already paid
+  for, not by re-running the agent
+
+Previously validated, same session: **F.5.7.** A tool description names the *goal*, not the actions — see D90.
 `apply_plan` and `preview_plan` each gained one sentence, "Use it to build a
 whole schematic design in one call"; the candidate that named place / power /
 label / wire / connect / decouple was measured and rejected.
@@ -32,6 +50,21 @@ Validation :
 
 ## Décisions actives
 
+- D91 — an agentic audit judges what went *through* the gateway, and a refused
+  call is not contamination. Two halves of one measurement bug, both found by
+  spending $0.32 on one task before spending on a campaign. `bench/runner.py`
+  has said since K.1.2 that `kicad_invoke` is a door and judging it marks every
+  gateway run as a write; the harness runner read names off `tool_use` blocks
+  and never unwrapped, so an agent that used the gateway — which Opus 5 does by
+  default — scored a false `safety` violation and zero `expected_tools`. The
+  names come from the reply's per-entry `tool` field, never the request, so
+  what is audited is the server's own answer about what it ran. The mirror
+  half: `--tools ""` genuinely removes a built-in, but the model can still emit
+  a call for one and get "No such tool available" back — the isolation working,
+  not a breach. Corollary that kept the fix honest: only `parse_stream` unwraps,
+  because only its shape was read against a real transcript; `parse_codex_jsonl`
+  gets a `WARN` when the audited path still names `kicad_invoke` instead of a
+  guessed unwrap asserted as a measurement.
 - D90 — a tool description earns its retrieval by naming the *goal*, and
   naming the actions is how it overpays. F.5.5's lever — say the thing in the
   domain's own words — does not generalise to a tool that *composes* other
@@ -332,7 +365,13 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 - `bench/harness_runner.py` — the agentic runner. `HARNESSES` (argv builder +
   isolation + parser per harness). The agy entries stay but are out of scope
-  (D70). `--dry-run` spends nothing and touches no config. Run it with `py -3.11`
+  (D70). `--dry-run` spends nothing and touches no config. Run it with `py -3.11`.
+  `HarnessResult` carries two paths and they answer different questions:
+  `tool_calls` (round trips, what `max_calls` counts) and `audited_calls` (what
+  `audit()` judges — `unwrap_gateway_batch` replaces each `kicad_invoke` with
+  its reply's per-entry `tool` field). `--log-dir` is what makes a paid run
+  re-scorable offline: feed the `.jsonl` back through `parse_stream` + `audit`
+  instead of re-running the agent
 - `bench/agent_prompts.yaml` — one plain-language prompt per golden task; no
   tool names, or the run would measure instruction-following
 - `bench/runner.py` — `audit()`, `fingerprint()`, `THRESHOLDS`; the harness
@@ -417,12 +456,16 @@ last lot that could be settled locally. `cargo test --workspace` is green at
 `HEAD`. One thing is left waiting on a decision that is the user's, and it
 should not be started silently:
 
-- **K.1.1** — budget. `py -3.11 bench/harness_runner.py --server
-  target/release/konnect.exe --harness <claude|codex> --repeat 2 --enforce
+- **K.1.1** — budget **and model**. `py -3.11 bench/harness_runner.py --server
+  <abs path to konnect.exe> --harness <claude|codex> --repeat 2 --enforce
   --log-dir <dir> --out <json>`, once per harness. Both as one campaign per the
-  user's 2026-08-18 choice; AGY is out of scope (D70). A Claude Code run costs
-  ~$0.06 on the lightest task with haiku, and the six other golden tasks all
-  author something.
+  user's 2026-08-18 choice; AGY is out of scope (D70). Now priced rather than
+  estimated: the smoke run cost **$0.3172** for the single cheapest task, one
+  repeat — `claude -p` with no `--model` takes `claude-opus-5`, so the full
+  7 × 2 × 2 campaign is far above the old ~$0.06/task figure, and six of the
+  seven tasks author something. `--model` and `--max-budget-usd` are the two
+  levers; pass the server as an **absolute** path (a relative one makes the
+  harness's CreateProcess fail from its own `$WORK` cwd).
 
 If it is not wanted yet, note what an audit of `plan.md`'s checkboxes says:
 the only phases still holding an *unchecked* task are D (D.5.3, conditional),

@@ -14,7 +14,10 @@ be isolated the same way:
 
 - `claude` runs with its built-in toolset genuinely emptied (`--tools ""`), so
   any call outside the MCP server is contamination, full stop. Its isolation
-  level is `tools-off`.
+  level is `tools-off`. The model can still *emit* a call for a removed tool;
+  the CLI refuses it and no result comes back. That refusal is the isolation
+  working and is not counted — contamination is what reached the design, never
+  what was attempted (`_is_refused`).
 - `codex` and `agy` have no flag to remove their built-in tools (shell, patch,
   file read, web search) entirely — the closest available guard is a read-only
   sandbox, which stops those tools from *writing* the design but cannot stop
@@ -95,6 +98,11 @@ PROMPTS_FILE = Path(__file__).parent / "agent_prompts.yaml"
 SERVER_NAME = "konnect"
 TOOL_PREFIX = f"mcp__{SERVER_NAME}__"
 
+# The gateway's batch tool. An agent that finds it does the whole task through
+# it, so what the audit sees depends entirely on whether the parser unwraps it
+# — see `unwrap_gateway_batch` and `HarnessResult.audited_calls`.
+GATEWAY_TOOL = "kicad_invoke"
+
 # codex and agy cannot have their built-in tools removed the way claude's can;
 # a read-only sandbox is the best available substitute. See module docstring.
 HARNESS_ISOLATION = {
@@ -111,7 +119,14 @@ HARNESS_ISOLATION = {
 class HarnessResult:
     """What one agent invocation produced, before any scoring."""
 
-    tool_calls: list[str] = field(default_factory=list)  # konnect tools, in order
+    tool_calls: list[str] = field(default_factory=list)  # konnect round trips, in order
+    # The path the audit judges: `tool_calls` with every `kicad_invoke` replaced
+    # by the tools its batch actually ran. Kept apart from `tool_calls` because
+    # they answer different questions — one round trip is one round trip
+    # (`max_calls`), but a batch of five reads is five reads (`expected_tools`,
+    # the `read_only` tier). A parser that cannot unwrap leaves `kicad_invoke`
+    # in here, which `gateway_unwrap_warning` reports rather than hides.
+    audited_calls: list[str] = field(default_factory=list)
     off_server_calls: list[str] = field(default_factory=list)
     cost_usd: float | None = 0.0  # None means "not reported", never fake-zero
     duration_ms: float = 0.0
@@ -491,11 +506,61 @@ def agy_argv(ctx: HarnessContext) -> tuple[list[str], Path, dict[str, str], str 
     return argv, cwd, {"mcp_wiring": "global ~/.gemini config, see AgyMcpConfigGuard"}, stdin_prompt
 
 
-def _walk_tool_uses(msg: dict) -> list[str]:
+def unwrap_gateway_batch(result_text: str) -> list[str] | None:
+    """The tools one `kicad_invoke` batch ran, from the server's own reply.
+
+    `bench/runner.py::executed_tools` states the rule this implements:
+    `kicad_invoke` is a door, and auditing the door instead of what went
+    through it marks every gateway run as a write — the `read_only` tier fails,
+    and every `expected_tool` reads as never called. The names come from the
+    reply's per-entry `tool` field, never from the request, so what is audited
+    is the gateway's own answer about what it ran.
+
+    `None` means "this is not a batch reply I can read", which the caller keeps
+    as `kicad_invoke` rather than dropping: an unreadable reply must stay
+    visible in the audited path.
+    """
+    try:
+        payload = json.loads(result_text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not isinstance(results, list):
+        return None
+    return [str(r.get("tool")) for r in results if isinstance(r, dict) and r.get("tool")]
+
+
+# A harness that removes its own built-ins still lets the model *emit* a call
+# for one; the CLI refuses it and the model never gets a result. That refusal
+# is the isolation working, not contamination, so it must not be counted as an
+# off-server call — measured on a real `tools-off` run where the model tried
+# `Read` and got "No such tool available: Read. Read is disabled for this
+# session". Matched on the refusal text because `is_error` alone also covers a
+# tool that ran and failed, which *is* contamination.
+_REFUSAL_MARKERS = ("No such tool available", "is disabled for this session")
+
+
+def _is_refused(is_error: bool, text: str) -> bool:
+    return is_error and any(m in text for m in _REFUSAL_MARKERS)
+
+
+def _result_text(block: dict) -> str:
+    content = block.get("content")
+    if isinstance(content, list):
+        return "".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return content if isinstance(content, str) else ""
+
+
+def _walk_tool_uses(msg: dict) -> list[tuple[str, str]]:
+    """Every `tool_use` in one assistant message, as `(id, name)`."""
     content = (msg.get("message") or {}).get("content")
     if not isinstance(content, list):
         return []
-    return [b.get("name", "?") for b in content if isinstance(b, dict) and b.get("type") == "tool_use"]
+    return [
+        (b.get("id", ""), b.get("name", "?"))
+        for b in content
+        if isinstance(b, dict) and b.get("type") == "tool_use"
+    ]
 
 
 def _walk_text(msg: dict) -> str:
@@ -518,11 +583,18 @@ def parse_stream(lines: list[str], tool_prefixes: tuple[str, ...]) -> HarnessRes
     Every field taken from the `result` message is read defensively: the
     schema is the harness's, not ours, and a missing key must degrade the
     metric rather than crash the suite.
+
+    Two passes, because a `tool_use` is scored by what came *back*: its result
+    arrives in a later `user` message, and both `unwrap_gateway_batch` and
+    `_is_refused` need it. The first pass indexes results by `tool_use_id`; the
+    second is the one that scores.
     """
     out = HarnessResult()
     saw_result = False
     json_lines = 0
     nonempty_lines = 0
+    parsed: list[dict] = []
+    results_by_id: dict[str, tuple[bool, str]] = {}
     for raw in lines:
         raw = raw.strip()
         if not raw:
@@ -535,16 +607,32 @@ def parse_stream(lines: list[str], tool_prefixes: tuple[str, ...]) -> HarnessRes
         except json.JSONDecodeError:
             continue
         json_lines += 1
+        parsed.append(msg)
+        content = (msg.get("message") or {}).get("content")
+        if msg.get("type") == "user" and isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id"):
+                    results_by_id[b["tool_use_id"]] = (bool(b.get("is_error")), _result_text(b))
+
+    for msg in parsed:
         kind = msg.get("type")
         if kind == "system" and msg.get("subtype") == "init":
             out.exposed_tools = list(msg.get("tools") or []) + list(msg.get("mcp_tools") or [])
         elif kind == "assistant":
-            for name in _walk_tool_uses(msg):
+            for use_id, name in _walk_tool_uses(msg):
                 prefix = next((p for p in tool_prefixes if name.startswith(p)), None)
-                if prefix is not None:
-                    out.tool_calls.append(name[len(prefix):])
+                is_error, text = results_by_id.get(use_id, (False, ""))
+                if prefix is None:
+                    if not _is_refused(is_error, text):
+                        out.off_server_calls.append(name)
+                    continue
+                short = name[len(prefix):]
+                out.tool_calls.append(short)
+                if short == GATEWAY_TOOL:
+                    inner = unwrap_gateway_batch(text)
+                    out.audited_calls.extend(inner if inner is not None else [short])
                 else:
-                    out.off_server_calls.append(name)
+                    out.audited_calls.append(short)
             out.text += _walk_text(msg)
         elif kind == "result":
             saw_result = True
@@ -906,7 +994,27 @@ class HarnessRun:
     unnecessary_calls: int = 0
     scored_calls: int = 0
     exposed_tools: list[str] = field(default_factory=list)
+    unwrap_warning: str | None = None
     work: str = ""
+
+
+def gateway_unwrap_warning(used_calls: list[str]) -> str | None:
+    """Say so when the audited path still names the door.
+
+    Only `parse_stream` unwraps today, verified against a real Claude Code
+    transcript; `parse_codex_jsonl` has never been read against a live run, so
+    inventing an unwrap for it would be a guess asserted as a measurement. This
+    is the honest alternative: if a gateway call survives into the audited
+    path, the numbers derived from it are about `kicad_invoke` and not about
+    what it ran, and the report says which.
+    """
+    n = sum(1 for name in used_calls if name == GATEWAY_TOOL)
+    if not n:
+        return None
+    return (
+        f"{n} {GATEWAY_TOOL} call(s) not unwrapped: the audit is judging the door, "
+        "so safety/expected_tools verdicts on this run are unreliable"
+    )
 
 
 def assert_tool_names(task: dict) -> list[str]:
@@ -1030,9 +1138,13 @@ def run_task(
     # outside `$WORK` entirely: it cannot register as a mutation.
     assertions = check_assertions(task, args.server, args.config, env_vars)
 
-    used_calls = res.tool_calls
+    # The audit judges what went through the gateway; `max_calls` counts the
+    # round trips that carried it. A parser that fills neither falls back to
+    # the round trips, which is what every parser did before unwrapping existed.
+    used_calls = res.audited_calls or res.tool_calls
     scored_calls = len(res.tool_calls) + len(res.off_server_calls)
     violations = audit(task, used_calls, scored_calls, fp_before, fp_after)
+    unwrap_warning = gateway_unwrap_warning(used_calls)
 
     assert_failed = any(a["ok"] is False for a in assertions)
     design_success = not assert_failed and not violations and not res.error
@@ -1059,6 +1171,7 @@ def run_task(
         unnecessary_calls=unnecessary_call_count(task, used_calls),
         scored_calls=scored_calls,
         exposed_tools=res.exposed_tools,
+        unwrap_warning=unwrap_warning,
         work=str(work),
     )
 
@@ -1198,6 +1311,13 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
         print("unstable tasks:          " + ", ".join(
             f"{t}:{v:.0%}" for t, v in per_task_instability.items() if v > 0
         ))
+
+    # Printed for every run, passing or failing: an unwrapped gateway call makes
+    # a verdict unreliable in both directions, so hiding it behind a FAIL would
+    # let a false pass through silently.
+    for r in runs:
+        if r.unwrap_warning:
+            print(f"\nWARN {r.task_id} ({r.harness}): {r.unwrap_warning}")
 
     for r in runs:
         if r.success:
