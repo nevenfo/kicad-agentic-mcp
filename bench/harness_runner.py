@@ -395,6 +395,115 @@ def _toml_literal_str(value: str) -> str:
     return f"'{value}'"
 
 
+CODEX_AUTH_FILE = "auth.json"
+
+
+def codex_user_home() -> Path:
+    """The real `CODEX_HOME` — the one holding the user's credentials."""
+    env = os.environ.get("CODEX_HOME")
+    return Path(env) if env else Path.home() / ".codex"
+
+
+class CodexHomeError(RuntimeError):
+    pass
+
+
+class CodexHomeGuard:
+    """A throwaway `CODEX_HOME` holding the credentials and nothing else.
+
+    `codex exec --ignore-user-config` skips exactly one file, and its own
+    `--help` says which: `$CODEX_HOME/config.toml` ("auth still uses
+    `CODEX_HOME`"). Everything else a personal home carries still reaches the
+    model — `AGENTS.md`, `skills/`, `plugins/`, the execpolicy `.rules`. The
+    first real codex run proved it rather than suspected it: the transcript
+    opens with "Skill descriptions were shortened to fit the skills context
+    budget", and the agent's first three actions are `rtk proxy pwsh`,
+    `rtk fd`, `rtk read` — a private toolchain this bench has never heard of,
+    each one refused by the sandbox. A run carrying the operator's own
+    instructions measures the operator, not Konnect.
+
+    So the campaign gets a home of its own: a temp directory holding a copy of
+    `auth.json` and nothing else. Auth survives (it is read from `CODEX_HOME`
+    whatever else is absent), instructions and skills do not.
+
+    It **copies** rather than symlinks, so a token codex refreshes lands in the
+    throwaway copy and never rewrites the user's own file. The copy is
+    credentials, so it is deleted on every exit path — normal, exception,
+    `SIGINT`, interpreter shutdown — the same four `AgyMcpConfigGuard` covers.
+
+    Scope: only ever constructed for `--harness codex`, and never for
+    `--dry-run`, which spends nothing and touches nothing.
+    """
+
+    def __init__(self, source_home: Path):
+        self.source = source_home
+        self.home: Path | None = None
+        self._prev_env: str | None = None
+        self._prev_env_set = False
+        self._cleaned = False
+        self._prev_sigint = None
+
+    def __enter__(self) -> CodexHomeGuard:
+        auth = self.source / CODEX_AUTH_FILE
+        if not auth.is_file():
+            raise CodexHomeError(
+                f"{auth} est introuvable : codex n'est pas authentifié dans "
+                f"{self.source}, ou CODEX_HOME pointe ailleurs. Lance "
+                "`codex login` avant de mesurer."
+            )
+        self.home = Path(tempfile.mkdtemp(prefix="kam-codex-home-"))
+        shutil.copy2(auth, self.home / CODEX_AUTH_FILE)
+
+        self._prev_env_set = "CODEX_HOME" in os.environ
+        self._prev_env = os.environ.get("CODEX_HOME")
+        # The child inherits this process's environment (`run_harness` passes
+        # no `env=`), so setting it here is what reaches codex.
+        os.environ["CODEX_HOME"] = str(self.home)
+
+        atexit.register(self._clean_best_effort)
+        self._prev_sigint = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, self._on_sigint)
+        return self
+
+    def _on_sigint(self, signum, frame):
+        self._clean_best_effort()
+        if self._prev_sigint is not None:
+            signal.signal(signal.SIGINT, self._prev_sigint)
+        raise KeyboardInterrupt
+
+    def clean(self) -> None:
+        """Restore `CODEX_HOME` and delete the copied credentials."""
+        if self._cleaned:
+            return
+        if self._prev_env_set:
+            os.environ["CODEX_HOME"] = self._prev_env or ""
+        else:
+            os.environ.pop("CODEX_HOME", None)
+        if self.home is not None and self.home.exists():
+            shutil.rmtree(self.home, ignore_errors=True)
+            if (self.home / CODEX_AUTH_FILE).exists():
+                raise CodexHomeError(
+                    f"impossible de supprimer la copie des identifiants "
+                    f"{self.home / CODEX_AUTH_FILE} — supprime-la manuellement."
+                )
+        self._cleaned = True
+
+    def _clean_best_effort(self) -> None:
+        # Reached from `atexit` or the SIGINT handler, where raising is either
+        # swallowed or printed as a confusing traceback: report loudly instead.
+        try:
+            self.clean()
+        except Exception as exc:  # noqa: BLE001 - last-resort safety net
+            print(f"AVERTISSEMENT: nettoyage de {self.home} a échoué : {exc}", file=sys.stderr)
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if self._prev_sigint is not None:
+            signal.signal(signal.SIGINT, self._prev_sigint)
+        atexit.unregister(self._clean_best_effort)
+        self.clean()
+        return False
+
+
 def codex_argv(ctx: HarnessContext) -> tuple[list[str], Path, dict[str, str], str | None]:
     """`codex exec`, mcp server passed by `-c` override (no `.mcp.json` file).
 
@@ -403,10 +512,13 @@ def codex_argv(ctx: HarnessContext) -> tuple[list[str], Path, dict[str, str], st
     codex has no flag to remove exec/patch/read tools outright, so the
     guarantee here is weaker: those tools can still be *called*, just not used
     to write the design (see `HARNESS_ISOLATION`). `--ignore-user-config` keeps
-    the run from inheriting the user's `~/.codex/config.toml` (including any
-    MCP servers already configured there), the codex equivalent of claude's
-    `--strict-mcp-config`; API auth is unaffected, it is read from `CODEX_HOME`
-    regardless. `codex exec` never prompts for interactive approval — that is
+    the run from inheriting the user's `config.toml` (including any MCP servers
+    already configured there) and `--ignore-rules` its execpolicy `.rules`;
+    API auth is unaffected, it is read from `CODEX_HOME` regardless. Those two
+    flags are not isolation on their own — `AGENTS.md`, `skills/` and
+    `plugins/` load from `CODEX_HOME` whatever they say, which is why
+    `CodexHomeGuard` points `CODEX_HOME` at a home holding only the
+    credentials. `codex exec` never prompts for interactive approval — that is
     the point of the non-interactive mode — so no separate approval-policy flag
     is needed; the sandbox is the only gate. There is no per-run budget flag on
     codex, unlike claude's `--max-budget-usd`; the guard here is
@@ -432,6 +544,7 @@ def codex_argv(ctx: HarnessContext) -> tuple[list[str], Path, dict[str, str], st
         "-s",
         "read-only",
         "--ignore-user-config",
+        "--ignore-rules",
         "-c",
         mcp_command,
         "-c",
@@ -439,7 +552,11 @@ def codex_argv(ctx: HarnessContext) -> tuple[list[str], Path, dict[str, str], st
     ]
     if ctx.model:
         argv += ["-m", ctx.model]
-    return argv, ctx.work, {"mcp_config": "inline via -c overrides (no file written)"}, ctx.prompt
+    meta = {
+        "mcp_config": "inline via -c overrides (no file written)",
+        "codex_home": os.environ.get("CODEX_HOME") or f"{codex_user_home()} (user default)",
+    }
+    return argv, ctx.work, meta, ctx.prompt
 
 
 def agy_argv(ctx: HarnessContext) -> tuple[list[str], Path, dict[str, str], str | None]:
@@ -1396,6 +1513,11 @@ def main() -> None:
     # nothing) or for any harness other than agy.
     if args.harness == "agy" and not args.dry_run:
         with AgyMcpConfigGuard(Path(args.agy_mcp_config).resolve(), args.server, args.config):
+            runs = _run_all()
+    elif args.harness == "codex" and not args.dry_run:
+        # Same rule: a guard that copies credentials is never built for a
+        # `--dry-run`, which spends nothing and touches nothing.
+        with CodexHomeGuard(codex_user_home()):
             runs = _run_all()
     else:
         runs = _run_all()
