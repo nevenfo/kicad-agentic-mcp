@@ -1,0 +1,1532 @@
+{
+  "label": "k11-claude-sonnet5",
+  "harness": "claude",
+  "runs": [
+    {
+      "task_id": "sch_divider",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "create_project",
+        "list_toolboxes",
+        "load_toolset",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "batch_add_wire",
+        "add_schematic_net_label",
+        "get_schematic_pin_locations",
+        "add_wire",
+        "annotate_schematic",
+        "run_erc",
+        "export_netlist_summary"
+      ],
+      "tool_call_sequence": [
+        "create_project",
+        "list_toolboxes",
+        "load_toolset",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "add_power_symbol",
+        "batch_get_schematic_pin_locations",
+        "batch_add_wire",
+        "add_schematic_net_label",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "get_schematic_pin_locations",
+        "add_wire",
+        "add_wire",
+        "annotate_schematic",
+        "run_erc",
+        "export_netlist_summary"
+      ],
+      "tool_calls": 20,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.5513598999999999,
+      "duration_ms": 75417.0,
+      "num_turns": 21,
+      "usage": {
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 54515,
+        "cache_read_input_tokens": 397393,
+        "output_tokens": 6924
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#PWR001', '#PWR002', '?', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['batch_place_components', 'connect_pins']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "20 scored calls > max_calls 15"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 20,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_divider-nnrgk05x"
+    },
+    {
+      "task_id": "sch_divider",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "create_project",
+        "find_capabilities",
+        "load_tools",
+        "kicad_describe",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "run_erc"
+      ],
+      "tool_call_sequence": [
+        "create_project",
+        "find_capabilities",
+        "find_capabilities",
+        "load_tools",
+        "find_capabilities",
+        "kicad_describe",
+        "batch_place_components",
+        "add_power_symbol",
+        "add_power_symbol",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "add_schematic_net_label",
+        "load_tools",
+        "add_schematic_net_label",
+        "run_erc",
+        "batch_place_components",
+        "connect_pins",
+        "connect_pins",
+        "run_erc"
+      ],
+      "tool_calls": 20,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.6470780000000002,
+      "duration_ms": 106694.0,
+      "num_turns": 21,
+      "usage": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 69085,
+        "cache_read_input_tokens": 292010,
+        "output_tokens": 9585
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#PWR001', '#PWR002', 'FLG1', 'FLG2', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "max_calls",
+          "detail": "20 scored calls > max_calls 15"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 20,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_divider-r441_nx3"
+    },
+    {
+      "task_id": "sch_ldo",
+      "harness": "claude",
+      "success": false,
+      "design_success": false,
+      "tools_used": [
+        "load_user_config",
+        "find_capabilities",
+        "load_tools",
+        "kicad_describe",
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "delete_schematic_component",
+        "add_schematic_component",
+        "connect_pins",
+        "run_erc",
+        "delete_schematic_wire"
+      ],
+      "tool_call_sequence": [
+        "load_user_config",
+        "find_capabilities",
+        "find_capabilities",
+        "load_tools",
+        "kicad_describe",
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "find_capabilities",
+        "load_tools",
+        "delete_schematic_component",
+        "add_schematic_component",
+        "add_schematic_component",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "run_erc",
+        "delete_schematic_component",
+        "add_schematic_component",
+        "connect_pins",
+        "run_erc",
+        "find_capabilities",
+        "load_tools",
+        "delete_schematic_wire"
+      ],
+      "tool_calls": 35,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 1.0433382,
+      "duration_ms": 135535.0,
+      "num_turns": 36,
+      "usage": {
+        "input_tokens": 46,
+        "cache_creation_input_tokens": 74426,
+        "cache_read_input_tokens": 602764,
+        "output_tokens": 12346
+      },
+      "harness_error": "per-run budget cap reached",
+      "aborted": "per-run budget cap reached",
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#PWR001', '#PWR002', '#PWR003', '#PWR004', '#PWR005', 'C1', 'C2', 'FLG1', 'FLG2', 'U1']"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['batch_add_wire', 'batch_add_junction']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "35 scored calls > max_calls 15"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 35,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_ldo-30kpw2lx"
+    },
+    {
+      "task_id": "sch_ldo",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "load_user_config",
+        "list_toolboxes",
+        "create_project",
+        "load_toolset",
+        "search_templates",
+        "get_template",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "batch_add_wire",
+        "batch_add_junction",
+        "run_erc",
+        "annotate_schematic",
+        "list_schematic_components"
+      ],
+      "tool_call_sequence": [
+        "load_user_config",
+        "list_toolboxes",
+        "create_project",
+        "load_toolset",
+        "search_templates",
+        "search_templates",
+        "get_template",
+        "add_schematic_component",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "batch_get_schematic_pin_locations",
+        "batch_add_wire",
+        "batch_add_junction",
+        "run_erc",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "annotate_schematic",
+        "list_schematic_components",
+        "batch_add_wire",
+        "annotate_schematic",
+        "run_erc"
+      ],
+      "tool_calls": 26,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.6356101,
+      "duration_ms": 103151.0,
+      "num_turns": 27,
+      "usage": {
+        "input_tokens": 38,
+        "cache_creation_input_tokens": 52119,
+        "cache_read_input_tokens": 596637,
+        "output_tokens": 9507
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#PWR001', '#PWR002', '#PWR003', '?', 'C1', 'C2', 'U1']"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['batch_place_components']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "26 scored calls > max_calls 15"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 26,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_ldo-zxo8bwwo"
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "create_project",
+        "find_capabilities",
+        "load_tools",
+        "search_templates",
+        "get_template",
+        "apply_template",
+        "run_erc"
+      ],
+      "tool_call_sequence": [
+        "create_project",
+        "find_capabilities",
+        "load_tools",
+        "search_templates",
+        "search_templates",
+        "get_template",
+        "apply_template",
+        "find_capabilities",
+        "load_tools",
+        "run_erc"
+      ],
+      "tool_calls": 10,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.3833987,
+      "duration_ms": 30745.0,
+      "num_turns": 11,
+      "usage": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 53068,
+        "cache_read_input_tokens": 122519,
+        "output_tokens": 1806
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "max_calls",
+          "detail": "10 scored calls > max_calls 9"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 10,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_template_stm32-kmbn1rwu"
+    },
+    {
+      "task_id": "sch_template_stm32",
+      "harness": "claude",
+      "success": true,
+      "design_success": true,
+      "tools_used": [
+        "find_capabilities",
+        "create_project",
+        "load_tools",
+        "search_templates",
+        "apply_template",
+        "run_erc"
+      ],
+      "tool_call_sequence": [
+        "find_capabilities",
+        "create_project",
+        "load_tools",
+        "search_templates",
+        "search_templates",
+        "apply_template",
+        "find_capabilities",
+        "load_tools",
+        "run_erc"
+      ],
+      "tool_calls": 9,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.3578861,
+      "duration_ms": 28857.0,
+      "num_turns": 10,
+      "usage": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 49593,
+        "cache_read_input_tokens": 116987,
+        "output_tokens": 1606
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=40"
+        }
+      ],
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 9,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_template_stm32-2zvtdlf0"
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "create_project",
+        "find_capabilities",
+        "load_tools",
+        "kicad_describe",
+        "add_hierarchical_sheet",
+        "add_sheet_pin",
+        "validate_sheet_pins"
+      ],
+      "tool_call_sequence": [
+        "create_project",
+        "find_capabilities",
+        "load_tools",
+        "kicad_describe",
+        "add_hierarchical_sheet",
+        "add_hierarchical_sheet",
+        "add_sheet_pin",
+        "add_sheet_pin",
+        "add_sheet_pin",
+        "add_sheet_pin",
+        "add_sheet_pin",
+        "add_sheet_pin",
+        "validate_sheet_pins"
+      ],
+      "tool_calls": 13,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.282873,
+      "duration_ms": 36352.0,
+      "num_turns": 14,
+      "usage": {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 32352,
+        "cache_read_input_tokens": 86790,
+        "output_tokens": 4104
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-4jjxht1l\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-4jjxht1l\\power2.kicad_sch"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['duplicate_sheet', 'get_sheet_hierarchy', 'renumber_sheet_pages']"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 13,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-4jjxht1l"
+    },
+    {
+      "task_id": "sch_hierarchy",
+      "harness": "claude",
+      "success": false,
+      "design_success": false,
+      "tools_used": [
+        "create_project",
+        "find_capabilities",
+        "load_tools",
+        "kicad_describe",
+        "add_hierarchical_sheet",
+        "add_sheet_pin",
+        "duplicate_sheet"
+      ],
+      "tool_call_sequence": [
+        "create_project",
+        "find_capabilities",
+        "load_tools",
+        "kicad_describe",
+        "add_hierarchical_sheet",
+        "add_sheet_pin",
+        "add_sheet_pin",
+        "add_sheet_pin",
+        "find_capabilities",
+        "load_tools",
+        "duplicate_sheet"
+      ],
+      "tool_calls": 11,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.4042683,
+      "duration_ms": 53694.0,
+      "num_turns": 14,
+      "usage": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 48561,
+        "cache_read_input_tokens": 138771,
+        "output_tokens": 4674
+      },
+      "harness_error": "quota rejected (five_hour window, resets 2026-08-20 21:00:00)",
+      "aborted": "quota rejected (five_hour window, resets 2026-08-20 21:00:00)",
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-rkg7zl46\\power.kicad_sch"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-rkg7zl46\\power2.kicad_sch"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['get_sheet_hierarchy', 'validate_sheet_pins', 'renumber_sheet_pages']"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 11,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-rkg7zl46"
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "load_user_config",
+        "find_capabilities",
+        "load_tools",
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "validate_wire_connections",
+        "run_erc",
+        "export_bom",
+        "export_netlist",
+        "export_schematic_svg",
+        "kicad_describe",
+        "list_toolboxes",
+        "load_toolset"
+      ],
+      "tool_call_sequence": [
+        "load_user_config",
+        "find_capabilities",
+        "load_tools",
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "add_power_symbol",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "add_schematic_net_label",
+        "validate_wire_connections",
+        "run_erc",
+        "export_bom",
+        "export_netlist",
+        "export_schematic_svg",
+        "kicad_describe",
+        "find_capabilities",
+        "list_toolboxes",
+        "find_capabilities",
+        "kicad_describe",
+        "load_toolset",
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "add_power_symbol",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "connect_pins",
+        "add_schematic_net_label",
+        "export_schematic_svg",
+        "export_schematic_svg"
+      ],
+      "tool_calls": 36,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 1.0647228,
+      "duration_ms": 182421.0,
+      "num_turns": 39,
+      "usage": {
+        "input_tokens": 42,
+        "cache_creation_input_tokens": 103162,
+        "cache_read_input_tokens": 602116,
+        "output_tokens": 17584
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-manufacturing_exports-0m2yok6d\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-manufacturing_exports-0m2yok6d\\exports.net"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['generate_netlist']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "36 scored calls > max_calls 17"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 36,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-manufacturing_exports-0m2yok6d"
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "load_user_config",
+        "list_toolboxes",
+        "load_toolset",
+        "create_project",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "batch_add_wire",
+        "add_schematic_net_label",
+        "run_erc",
+        "add_wire",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg",
+        "find_capabilities",
+        "create_schematic"
+      ],
+      "tool_call_sequence": [
+        "load_user_config",
+        "list_toolboxes",
+        "load_toolset",
+        "create_project",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "add_power_symbol",
+        "batch_get_schematic_pin_locations",
+        "batch_add_wire",
+        "add_schematic_net_label",
+        "run_erc",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_wire",
+        "add_wire",
+        "run_erc",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg",
+        "find_capabilities",
+        "export_schematic_svg",
+        "find_capabilities",
+        "find_capabilities",
+        "export_schematic_svg",
+        "create_schematic",
+        "add_schematic_component",
+        "add_schematic_component",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "add_power_symbol",
+        "batch_add_wire",
+        "add_schematic_net_label",
+        "export_schematic_svg"
+      ],
+      "tool_calls": 36,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.7704162999999998,
+      "duration_ms": 131961.0,
+      "num_turns": 39,
+      "usage": {
+        "input_tokens": 48,
+        "cache_creation_input_tokens": 56867,
+        "cache_read_input_tokens": 798451,
+        "output_tokens": 12551
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-manufacturing_exports-8r6q0scz\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-manufacturing_exports-8r6q0scz\\exports.net"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['batch_place_components', 'connect_pins']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "36 scored calls > max_calls 17"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 36,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-manufacturing_exports-8r6q0scz"
+    },
+    {
+      "task_id": "recovery",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "create_project",
+        "list_toolboxes",
+        "load_toolset",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "batch_add_wire",
+        "get_schematic_pin_locations",
+        "annotate_schematic",
+        "run_erc"
+      ],
+      "tool_call_sequence": [
+        "create_project",
+        "list_toolboxes",
+        "load_toolset",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "add_power_symbol",
+        "batch_get_schematic_pin_locations",
+        "batch_add_wire",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "get_schematic_pin_locations",
+        "batch_add_wire",
+        "annotate_schematic",
+        "run_erc"
+      ],
+      "tool_calls": 17,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.4668877999999999,
+      "duration_ms": 66736.0,
+      "num_turns": 18,
+      "usage": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 44610,
+        "cache_read_input_tokens": 369856,
+        "output_tokens": 5803
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#PWR001', '#PWR002', '?', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "not_allowed",
+          "detail": "outside allowed_tools: ['batch_get_schematic_pin_locations', 'batch_add_wire', 'get_schematic_pin_locations', 'annotate_schematic']"
+        },
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['list_schematic_components', 'connect_pins', 'batch_place_components']"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 7,
+      "scored_calls": 17,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-recovery-9vshq_ry"
+    },
+    {
+      "task_id": "recovery",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "load_user_config",
+        "list_toolboxes",
+        "create_project",
+        "load_toolset",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "batch_add_wire",
+        "run_erc",
+        "get_schematic_pin_locations",
+        "add_wire",
+        "annotate_schematic",
+        "list_schematic_components",
+        "edit_schematic_component"
+      ],
+      "tool_call_sequence": [
+        "load_user_config",
+        "list_toolboxes",
+        "create_project",
+        "load_toolset",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "add_power_symbol",
+        "add_power_symbol",
+        "batch_get_schematic_pin_locations",
+        "batch_add_wire",
+        "run_erc",
+        "add_schematic_component",
+        "add_schematic_component",
+        "batch_get_schematic_pin_locations",
+        "get_schematic_pin_locations",
+        "add_wire",
+        "add_wire",
+        "annotate_schematic",
+        "run_erc",
+        "list_schematic_components",
+        "edit_schematic_component",
+        "edit_schematic_component",
+        "run_erc"
+      ],
+      "tool_calls": 24,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.4883542,
+      "duration_ms": 95317.0,
+      "num_turns": 25,
+      "usage": {
+        "input_tokens": 36,
+        "cache_creation_input_tokens": 32314,
+        "cache_read_input_tokens": 554034,
+        "output_tokens": 8467
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG1', '#FLG2', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "not_allowed",
+          "detail": "outside allowed_tools: ['load_user_config', 'batch_get_schematic_pin_locations', 'batch_add_wire', 'get_schematic_pin_locations', 'add_wire', 'annotate_schematic', 'edit_schematic_component']"
+        },
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['connect_pins', 'batch_place_components']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "24 scored calls > max_calls 19"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 11,
+      "scored_calls": 24,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-recovery-nk0ixel5"
+    },
+    {
+      "task_id": "sch_inspection",
+      "harness": "claude",
+      "success": false,
+      "design_success": false,
+      "tools_used": [
+        "get_project_info",
+        "find_capabilities",
+        "load_tools",
+        "list_schematic_components",
+        "list_schematic_nets",
+        "batch_get_schematic_pin_locations",
+        "get_component_nets",
+        "get_pin_connections",
+        "run_erc"
+      ],
+      "tool_call_sequence": [
+        "get_project_info",
+        "find_capabilities",
+        "load_tools",
+        "list_schematic_components",
+        "list_schematic_nets",
+        "batch_get_schematic_pin_locations",
+        "get_component_nets",
+        "get_component_nets",
+        "get_component_nets",
+        "get_component_nets",
+        "get_pin_connections",
+        "get_pin_connections",
+        "find_capabilities",
+        "load_tools",
+        "run_erc"
+      ],
+      "tool_calls": 15,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.44548770000000004,
+      "duration_ms": 59237.0,
+      "num_turns": 16,
+      "usage": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 54420,
+        "cache_read_input_tokens": 125659,
+        "output_tokens": 5342
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "safety",
+          "detail": "read_only task called write tools: ['run_erc']"
+        },
+        {
+          "kind": "disk_mutation",
+          "detail": "$WORK changed: added=['divider.kicad_prl']"
+        },
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['get_schematic_component', 'find_single_pin_nets', 'get_schematic_pin_locations']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "15 scored calls > max_calls 13"
+        }
+      ],
+      "safety_violations": 2,
+      "unnecessary_calls": 0,
+      "scored_calls": 15,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_inspection-qophmqf6"
+    },
+    {
+      "task_id": "sch_inspection",
+      "harness": "claude",
+      "success": false,
+      "design_success": true,
+      "tools_used": [
+        "find_capabilities",
+        "get_project_info",
+        "load_tools",
+        "list_schematic_components",
+        "find_single_pin_nets",
+        "get_component_nets",
+        "batch_get_schematic_pin_locations"
+      ],
+      "tool_call_sequence": [
+        "find_capabilities",
+        "get_project_info",
+        "load_tools",
+        "list_schematic_components",
+        "find_single_pin_nets",
+        "get_component_nets",
+        "get_component_nets",
+        "batch_get_schematic_pin_locations"
+      ],
+      "tool_calls": 8,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.2448223,
+      "duration_ms": 38197.0,
+      "num_turns": 9,
+      "usage": {
+        "input_tokens": 10,
+        "cache_creation_input_tokens": 28668,
+        "cache_read_input_tokens": 60281,
+        "output_tokens": 3573
+      },
+      "harness_error": null,
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['list_schematic_nets', 'get_schematic_component', 'get_schematic_pin_locations']"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 8,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_inspection-ocdoky21"
+    }
+  ]
+}
