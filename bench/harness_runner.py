@@ -36,6 +36,15 @@ harness and is still a threshold, but it can only be a hard `FAIL` at
 count there does not necessarily mean the design was reached off-server, only
 that a built-in tool was *invoked* (e.g. to read a file back).
 
+Every rate above is computed over the runs that actually ran. A run the harness
+cut short on a cap of its own — a spent quota, the per-run budget cap, a timeout
+— asked no question and so cannot answer one; it is reported as `VOID_RUNS`,
+with its cause, and excluded from `SUCCESS_RATE`, `DESIGN_PASS_RATE`,
+`ON_SERVER_PASS_RATE` and `INSTABILITY_RATE` alike. `COST_USD` is the exception,
+because it is spend and not a rate. So that the exclusion can never launder a
+half-finished campaign, `no_void_runs` is itself a hard threshold: a campaign
+with void runs must be re-run, not interpreted.
+
 Usage:
     py -3.11 bench/harness_runner.py --server target/release/konnect.exe --dry-run
     py -3.11 bench/harness_runner.py --server target/release/konnect.exe \
@@ -61,6 +70,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import collections
+import datetime
 import json
 import os
 import shutil
@@ -137,6 +147,12 @@ class HarnessResult:
     usage: dict = field(default_factory=dict)
     result_subtype: str = ""
     error: str | None = None
+    # Set when the *harness* stopped the run for its own reasons — a spent
+    # quota, a budget cap, a timeout — rather than the agent finishing, well
+    # or badly. Such a run carries no evidence about the server and must not
+    # be scored as a failure (K.1.13); `error` still carries the same text so
+    # nothing becomes less visible.
+    aborted: str | None = None
     exposed_tools: list[str] = field(default_factory=list)
     text: str = ""
 
@@ -754,6 +770,8 @@ def parse_stream(lines: list[str], tool_prefixes: tuple[str, ...]) -> HarnessRes
                 else:
                     out.audited_calls.append(short)
             out.text += _walk_text(msg)
+        elif kind == "rate_limit_event":
+            out.aborted = out.aborted or rate_limit_cause(msg.get("rate_limit_info") or {})
         elif kind == "result":
             saw_result = True
             out.result_subtype = msg.get("subtype", "")
@@ -767,7 +785,16 @@ def parse_stream(lines: list[str], tool_prefixes: tuple[str, ...]) -> HarnessRes
                     k: v for k, v in usage.items() if isinstance(v, (int, float))
                 }
             if msg.get("is_error") or out.result_subtype not in ("success", ""):
-                out.error = f"result subtype={out.result_subtype or '?'}"
+                out.aborted = out.aborted or ABORT_SUBTYPES.get(out.result_subtype)
+                # A rejected quota arrives as `is_error` with `subtype:
+                # "success"`, so the subtype alone would print the opposite of
+                # what happened. Prefer the cause when one was identified, and
+                # say plainly that the subtype is not the answer when it is not.
+                out.error = out.aborted or (
+                    f"result subtype={out.result_subtype}"
+                    if out.result_subtype not in ("success", "")
+                    else "result is_error (subtype says success)"
+                )
             if isinstance(msg.get("result"), str) and not out.text:
                 out.text = msg["result"]
     if not saw_result:
@@ -1101,7 +1128,8 @@ def run_harness(
     if not res.duration_ms:
         res.duration_ms = wall
     if timed_out:
-        res.error = f"harness timeout after {timeout}s"
+        res.aborted = f"harness timeout after {timeout}s"
+        res.error = res.aborted
     elif code != 0 and not res.error:
         res.error = f"harness exit {code}: {stderr.strip()[:300] or stdout.strip()[-300:]}"
     return res
@@ -1145,6 +1173,10 @@ class HarnessRun:
     num_turns: int = 0
     usage: dict = field(default_factory=dict)
     harness_error: str | None = None
+    # K.1.13: the harness cut this run short on a cap of its own (a spent
+    # quota, a budget cap, a timeout). It is not a failed run — it is not a
+    # run — and `report` keeps it out of every rate.
+    aborted: str | None = None
     assertions: list[dict] = field(default_factory=list)
     violations: list[dict] = field(default_factory=list)
     safety_violations: int = 0
@@ -1153,6 +1185,36 @@ class HarnessRun:
     exposed_tools: list[str] = field(default_factory=list)
     unwrap_warning: str | None = None
     work: str = ""
+
+
+# `result` subtypes that mean the harness cut the run short on a cap of its
+# own, not that the agent failed the task. Everything else in a `subtype` is
+# about the agent and stays a normal failure.
+ABORT_SUBTYPES = {
+    "error_max_budget_usd": "per-run budget cap reached",
+    "error_max_turns": "per-run turn cap reached",
+}
+
+
+def rate_limit_cause(info: dict) -> str | None:
+    """Name a rejected quota window, or `None` if the quota was not the reason.
+
+    The claude CLI reports a spent subscription window as a `rate_limit_event`
+    with `status: rejected`, and then emits a `result` line carrying
+    `is_error: true` *with* `subtype: "success"` — the subtype names the
+    opposite of what happened. This is the only place the true cause is
+    written down.
+    """
+    if info.get("status") != "rejected":
+        return None
+    window = info.get("rateLimitType") or "?"
+    resets = info.get("resetsAt")
+    when = (
+        datetime.datetime.fromtimestamp(resets).isoformat(" ", "seconds")
+        if isinstance(resets, (int, float))
+        else "?"
+    )
+    return f"quota rejected ({window} window, resets {when})"
 
 
 def gateway_unwrap_warning(used_calls: list[str]) -> str | None:
@@ -1336,6 +1398,7 @@ def run_task(
         num_turns=res.num_turns,
         usage=res.usage,
         harness_error=res.error,
+        aborted=res.aborted,
         assertions=assertions,
         violations=[asdict(v) for v in violations],
         safety_violations=sum(1 for v in violations if v.kind in SAFETY_KINDS),
@@ -1373,12 +1436,33 @@ def _fmt_cost(costs: list[float | None]) -> str:
 
 
 def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
+    # K.1.13: a run the harness cut short on a cap of its own never asked the
+    # question, so it cannot contribute an answer. The claude half of the K.1.1
+    # campaign spent its 5-hour window mid-suite; the last six runs came back in
+    # ~380 ms with zero tool calls, zero cost and `is_error` — and were scored as
+    # six failed runs, dragging `DESIGN_PASS_RATE` to 6/14 and pushing
+    # `INSTABILITY_RATE` to 28.6 % across four tasks that each had one real run
+    # and one that never happened. Excluding them is not charity to the harness:
+    # `VOID_RUNS` is printed with its causes and is a hard threshold, because a
+    # campaign missing runs must be re-run, not interpreted.
+    void = [r for r in runs if r.aborted]
+    scored = [r for r in runs if not r.aborted]
+
     by_task: dict[str, list[HarnessRun]] = {}
-    for r in runs:
+    for r in scored:
         by_task.setdefault(r.task_id, []).append(r)
 
     isolation = HARNESSES[args.harness]["isolation"]
-    print(f"\nharness: {args.harness}   isolation: {isolation}   tasks: {len(by_task)}   runs: {len(runs)}\n")
+    print(
+        f"\nharness: {args.harness}   isolation: {isolation}   tasks: {len(by_task)}   "
+        f"runs: {len(scored)}" + (f" (+{len(void)} void)" if void else "") + "\n"
+    )
+    if not scored:
+        print("no scored run: the harness cut every run short")
+        for r in void:
+            print(f"  VOID {r.task_id}: {r.aborted}")
+        print(f"\nTHRESHOLDS\n  FAIL  no_void_runs               {len(void):>8}   (limit 0)")
+        return 1
     header = (
         f"{'task':<24} {'ok':>6} {'calls':>6} {'off':>4} {'turns':>6} "
         f"{'p50 ms':>8} {'usd':>9}"
@@ -1395,37 +1479,47 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
             f"{_fmt_cost([r.cost_usd for r in rs]):>9}"
         )
 
-    total_ok = sum(1 for r in runs if r.success)
-    pass_rate = total_ok / len(runs)
-    design_ok = sum(1 for r in runs if r.design_success)
-    design_rate = design_ok / len(runs)
-    safety_total = sum(r.safety_violations for r in runs)
-    scored_total = sum(r.scored_calls for r in runs)
-    unnecessary_total = sum(r.unnecessary_calls for r in runs)
+    total_ok = sum(1 for r in scored if r.success)
+    pass_rate = total_ok / len(scored)
+    design_ok = sum(1 for r in scored if r.design_success)
+    design_rate = design_ok / len(scored)
+    safety_total = sum(r.safety_violations for r in scored)
+    scored_total = sum(r.scored_calls for r in scored)
+    unnecessary_total = sum(r.unnecessary_calls for r in scored)
     unnecessary_rate = unnecessary_total / scored_total if scored_total else 0.0
     instability_rate, per_task_instability = instability(by_task)
-    off_total = sum(r.off_server_calls for r in runs)
+    off_total = sum(r.off_server_calls for r in scored)
     # K.2.6: a run that never reached konnect measured the harness, not the
     # server, and the two rates above cannot say so on their own — an agent
     # that answers correctly with its own shell looks, to `DESIGN_PASS_RATE`,
     # exactly like one that failed. Only reachable above `tools-off`
     # isolation, where the harness keeps tools we cannot remove; on an
     # *inspection* task reading the file directly is simply the shorter path.
-    server_unused = sum(1 for r in runs if not r.tool_call_sequence)
+    server_unused = sum(1 for r in scored if not r.tool_call_sequence)
     # The only population that says anything about Konnect. A run that never
     # reached the server is evidence about the client's willingness to use it,
     # never about whether it works: it can "pass" (codex reads an inspection
     # task's file with its own shell) or fail (the same shell is `-s read-only`,
     # so an authoring task writes nothing), and neither outcome touched the
     # thing under test.
-    reached = [r for r in runs if r.tool_call_sequence]
+    reached = [r for r in scored if r.tool_call_sequence]
     reached_ok = sum(1 for r in reached if r.design_success)
     reached_rate = reached_ok / len(reached) if reached else 0.0
 
-    print(f"\nSUCCESS_RATE              {total_ok}/{len(runs)} = {pass_rate:.1%}   (strict; comparable only at equal isolation)")
-    print(f"DESIGN_PASS_RATE          {design_ok}/{len(runs)} = {design_rate:.1%}   (ignores off_server_calls; comparable across harnesses)")
+    print(f"\nSUCCESS_RATE              {total_ok}/{len(scored)} = {pass_rate:.1%}   (strict; comparable only at equal isolation)")
+    print(f"DESIGN_PASS_RATE          {design_ok}/{len(scored)} = {design_rate:.1%}   (ignores off_server_calls; comparable across harnesses)")
     print(
-        f"SERVER_UNUSED             {server_unused}/{len(runs)}"
+        f"VOID_RUNS                 {len(void)}/{len(runs)}"
+        + (
+            "   <- cut short by the harness; excluded from every rate above and below"
+            if void
+            else "   (every run ran to completion)"
+        )
+    )
+    for cause, n in collections.Counter(r.aborted for r in void).most_common():
+        print(f"                          {n}x {cause}")
+    print(
+        f"SERVER_UNUSED             {server_unused}/{len(scored)}"
         + (
             "   <- these runs measured the harness, not the server"
             if server_unused
@@ -1455,13 +1549,19 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
         f"ON_SERVER_PASS_RATE       {reached_ok}/{len(reached)}"
         + (f" = {reached_rate:.1%}   (design pass among runs that reached konnect)" if reached else "   (no run reached konnect)")
     )
-    print(f"TOOL_CALLS median/task   {statistics.median(r.tool_calls for r in runs):.0f}")
+    print(f"TOOL_CALLS median/task   {statistics.median(r.tool_calls for r in scored):.0f}")
+    # Every run, void included: this line is money actually spent, not a rate.
+    # A quota-rejected run costs 0.0 and a budget-capped one costs what it burned
+    # before the cap — both are real, and excluding them would understate the bill.
     print(f"COST_USD total           {_fmt_cost([r.cost_usd for r in runs])}")
-    for task_id, rs in by_task.items():
-        print(f"  {task_id:<22} {_fmt_cost([r.cost_usd for r in rs])}")
+    cost_by_task: dict[str, list[float | None]] = {}
+    for r in runs:
+        cost_by_task.setdefault(r.task_id, []).append(r.cost_usd)
+    for task_id, costs in cost_by_task.items():
+        print(f"  {task_id:<22} {_fmt_cost(costs)}")
 
     by_kind: collections.Counter[str] = collections.Counter()
-    for r in runs:
+    for r in scored:
         by_kind.update(v["kind"] for v in r.violations)
     if by_kind:
         print("violations by kind:      " + ", ".join(f"{k}:{n}" for k, n in by_kind.most_common()))
@@ -1482,7 +1582,7 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
         if isolation == "tools-off"
         else (
             reached_rate,
-            f"0.95 (on ON_SERVER_PASS_RATE, {len(reached)}/{len(runs)} runs; "
+            f"0.95 (on ON_SERVER_PASS_RATE, {len(reached)}/{len(scored)} runs; "
             f"isolation={isolation} cannot remove built-ins)",
         )
     )
@@ -1518,6 +1618,17 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
                 f"0 (skip: isolation={isolation}, built-in tools cannot be removed)",
             )
         )
+    # The counterweight to excluding void runs from every rate. Dropping them
+    # makes the rates honest; making their absence a FAIL is what stops the
+    # exclusion from being a way to launder a half-finished campaign.
+    checks.append(
+        (
+            "no_void_runs",
+            f"{len(void)}/{len(runs)}",
+            not void,
+            "0 (a run the harness cut short is not a measurement; re-run it)",
+        )
+    )
 
     print("\nTHRESHOLDS")
     failed = 0
@@ -1531,14 +1642,19 @@ def report(runs: list[HarnessRun], args: argparse.Namespace) -> int:
             f"{t}:{v:.0%}" for t, v in per_task_instability.items() if v > 0
         ))
 
+    # Named individually, not just counted: `no_void_runs` says the campaign is
+    # incomplete, and this says which runs have to be redone.
+    for r in void:
+        print(f"\nVOID {r.task_id}   {r.aborted}   (work={r.work})")
+
     # Printed for every run, passing or failing: an unwrapped gateway call makes
     # a verdict unreliable in both directions, so hiding it behind a FAIL would
     # let a false pass through silently.
-    for r in runs:
+    for r in scored:
         if r.unwrap_warning:
             print(f"\nWARN {r.task_id} ({r.harness}): {r.unwrap_warning}")
 
-    for r in runs:
+    for r in scored:
         if r.success:
             continue
         print(f"\nFAIL {r.task_id}   (work={r.work})")

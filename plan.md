@@ -1799,6 +1799,26 @@ F.3 (the gateway is the whole external surface).
       is printed directly above it as the number to read first. `tools-off`
       isolation is unchanged: there, an off-server call really is contamination
       and `SUCCESS_RATE` remains the gate
+- [x] K.1.13 **A run the harness cut short was scored as a failed run.** The
+      claude half of the campaign spent its Pro 5-hour window mid-suite. The
+      last six runs came back in ~380 ms with zero tool calls, zero cost and
+      `is_error` — and a seventh, `sch_hierarchy`, was cut off after 11 real
+      calls. All seven were scored as failures. They dragged
+      `DESIGN_PASS_RATE` to 6/14 and pushed `INSTABILITY_RATE` to 28.6 % over
+      tasks that each had one real run and one that never happened. Worse, the
+      operator could not see it: the claude CLI reports a rejected quota as a
+      `rate_limit_event` plus a `result` line carrying `is_error: true` **with**
+      `subtype: "success"`, and the parser printed `result subtype=success` —
+      the opposite of what happened. `rate_limit_cause()` now names the window
+      and its reset time, `ABORT_SUBTYPES` covers the budget and turn caps, and
+      a harness timeout joins them. `report()` splits the runs in two: a void
+      run is excluded from `SUCCESS_RATE`, `DESIGN_PASS_RATE`,
+      `ON_SERVER_PASS_RATE` and `INSTABILITY_RATE` alike, but not from
+      `COST_USD`, which is spend and not a rate. So the exclusion can never
+      launder a half-finished campaign, `no_void_runs` is itself a hard
+      threshold and each void run is named with its cause: a campaign missing
+      runs must be re-run, not interpreted. Same family as K.1.9/K.1.10 — the
+      campaign's own numbers were measuring the audit, not the server
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 `max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
 `bench/runner.py --enforce`, which exits non-zero on any of them; met by
