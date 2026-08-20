@@ -709,7 +709,7 @@ D.1 (revisions), E.1 (semantic diff).
       apart — the document is at `rev` still; it moved and the journal says
       which batches moved it; it moved and *we* did not write it, which is the
       foreign-edit case the revision comparison detects on the spot
-- [ ] D.7.3 Never advertise push notifications over MCP, pinned by a test
+- [x] D.7.3 Never advertise push notifications over MCP, pinned by a test
       rather than by nobody having added one: `resources` already ships
       `subscribe: false` / `listChanged: false` (`mcp/server.rs`), and
       `tools.listChanged` stays `true` because it is real and fires — it
