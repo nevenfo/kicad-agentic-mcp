@@ -431,6 +431,57 @@ pub fn meta_tool_effect(tool: &str) -> Option<Effect> {
         .map(|(_, effect)| *effect)
 }
 
+// ─── Tool annotations (MCP `tools/list`) ──────────────────────────────────────
+
+/// Tools whose write is irreversible — not simply "writes", but a write
+/// neither the batch rollback (D12, `kicad_invoke`'s pre-call [`kam_state::Snapshot`])
+/// nor a project snapshot (D.5) can undo.
+///
+/// Empty today, on purpose: [`kam_state::TRACKED_EXTENSIONS`] covers every
+/// design-document suffix a MANIFEST write touches (`kicad_sch`, `kicad_pcb`,
+/// `kicad_sym`, `kicad_mod`, …), and `router::batch::discover_roots` derives a
+/// snapshot root from *any* argument carrying such a suffix regardless of its
+/// key — so even a tool like `delete_symbol`, which edits a library file by
+/// its `library_path` argument rather than a `schematic`/`board` one, still
+/// gets captured when called through `kicad_invoke`. Every real deletion this
+/// crate performs was read (`sch_hierarchy::handle_delete_sheet` preserves the
+/// child schematic file; the rest are scratch renders/archives already gone
+/// before the caller sees a result) or reduces to editing a tracked file in
+/// place. An empty list is that finding, not an oversight — the moment a tool
+/// is added whose write reaches outside `TRACKED_EXTENSIONS` or outside any
+/// root `discover_roots` can infer, it belongs here, pinned by
+/// `destructive_tools_list_is_pinned`.
+pub const DESTRUCTIVE_TOOLS: &[&str] = &[];
+
+/// Build the `tools/list` annotation hints for a tool with this [`Effect`],
+/// whose name may or may not be in [`DESTRUCTIVE_TOOLS`].
+///
+/// Only fields that differ from the MCP defaults
+/// (`readOnlyHint=false, destructiveHint=true, idempotentHint=false,
+/// openWorldHint=true`) are worth sending, except `readOnlyHint`, which is
+/// always set so a client that filters on it (the problem K.2 exists to fix)
+/// sees an explicit answer for every tool rather than inheriting the default
+/// `false`. `destructiveHint` is set for every `Write` tool, including one
+/// whose value matches the MCP default of `true`, precisely because
+/// [`DESTRUCTIVE_TOOLS`] being empty must never be indistinguishable, on the
+/// wire, from `destructiveHint` never having been considered.
+#[must_use]
+pub fn tool_annotations(effect: Effect, tool: &str) -> crate::mcp::protocol::ToolAnnotations {
+    use crate::mcp::protocol::ToolAnnotations;
+    match effect {
+        Effect::Read => ToolAnnotations {
+            read_only_hint: Some(true),
+            destructive_hint: None,
+            open_world_hint: Some(false),
+        },
+        Effect::Write => ToolAnnotations {
+            read_only_hint: Some(false),
+            destructive_hint: Some(DESTRUCTIVE_TOOLS.contains(&tool)),
+            open_world_hint: Some(false),
+        },
+    }
+}
+
 // ─── WriteTarget ────────────────────────────────────────────────────────────
 
 /// *What* a [`Effect::Write`] call writes, orthogonal to [`Effect`] itself.
@@ -1387,5 +1438,76 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Pins [`DESTRUCTIVE_TOOLS`]'s content so a future change to it is a
+    /// visible diff in this test, not a silent widening or shrinking of what
+    /// `tools/list` calls irreversible.
+    #[test]
+    fn destructive_tools_list_is_pinned() {
+        assert_eq!(DESTRUCTIVE_TOOLS, &[] as &[&str]);
+    }
+
+    /// A read tool emits exactly `readOnlyHint` and `openWorldHint`, both
+    /// present, nothing else — asserted on the serialized JSON, not the
+    /// struct, so an extra field would fail here even if `Option` still
+    /// compared equal to `None` elsewhere.
+    #[test]
+    fn read_tool_annotations_serialize_to_exactly_two_fields() {
+        let annotations = tool_annotations(Effect::Read, "get_something");
+        let value = serde_json::to_value(annotations).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"readOnlyHint": true, "openWorldHint": false})
+        );
+    }
+
+    /// A non-destructive write tool emits all three chosen fields.
+    #[test]
+    fn write_tool_annotations_serialize_to_exactly_three_fields() {
+        let annotations = tool_annotations(Effect::Write, "add_something");
+        let value = serde_json::to_value(annotations).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "openWorldHint": false
+            })
+        );
+    }
+
+    /// Every meta-tool listed in `tools/list` carries annotations, and the
+    /// discovery/gateway tools that a headless task must be able to call
+    /// without a human in the loop are `readOnlyHint: true`, while the tools
+    /// that actually apply a plan are `readOnlyHint: false`.
+    #[test]
+    fn every_meta_tool_carries_annotations() {
+        let tools = crate::router::meta_tools::meta_tool_descriptions();
+        assert_eq!(
+            tools.len(),
+            crate::router::meta_tools::META_TOOL_NAMES.len()
+        );
+        for tool in &tools {
+            assert!(
+                tool.annotations.is_some(),
+                "meta-tool '{}' has no annotations",
+                tool.name
+            );
+        }
+        let read_only_hint = |name: &str| -> bool {
+            tools
+                .iter()
+                .find(|t| t.name == name)
+                .unwrap()
+                .annotations
+                .unwrap()
+                .read_only_hint
+                .unwrap()
+        };
+        assert!(read_only_hint("find_capabilities"));
+        assert!(read_only_hint("load_tools"));
+        assert!(!read_only_hint("kicad_invoke"));
+        assert!(!read_only_hint("kicad_agent"));
     }
 }

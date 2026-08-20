@@ -129,6 +129,27 @@ pub struct McpToolDescription {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<ToolAnnotations>,
+}
+
+/// MCP tool annotation hints (spec: `tools/list` `annotations`).
+///
+/// Only the hints [`crate::capability::tool_annotations`] actually decides are
+/// set; every other field stays `None` and is dropped from the wire form by
+/// `skip_serializing_if`. `title` and `idempotentHint` are never emitted —
+/// K.2 found `tools/list` at startup already over its V1 token budget
+/// (2,034 against ~1,000), and every hint here is paid for on every session,
+/// not only when it changes a client's decision.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolAnnotations {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_world_hint: Option<bool>,
 }
 
 /// tools/call params

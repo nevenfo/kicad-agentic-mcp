@@ -60,10 +60,12 @@ pub struct ToolDef {
 
 impl ToolDef {
     pub fn to_mcp_description(&self) -> McpToolDescription {
+        let effect = crate::capability::tool_effect(self.name);
         McpToolDescription {
             name: self.name.to_string(),
             description: self.description.to_string(),
             input_schema: self.input_schema.clone(),
+            annotations: Some(crate::capability::tool_annotations(effect, self.name)),
         }
     }
 }

@@ -2,46 +2,47 @@
 
 ## Phase actuelle
 
-**K — multi-harness.** Phases D, F and L are closed — L's every task was
-already checked and `.\gate.ps1` is re-verified green at `6e298e1`. Phase I
-stays gated by hardware (KiCad 10.0 here, not the KiCad 11 /
-`kicad-cli api-server` it needs). K now holds two lots: K.1, whose claude half
-waits on a budget decision, and **K.2**, opened this session — Konnect declares
-no MCP tool annotations, and that is what blocks the codex half.
+**K — multi-harness.** Phases D, F and L are closed. Phase I stays gated by
+hardware (KiCad 10.0 here, not the KiCad 11 / `kicad-cli api-server` it needs).
+K holds two lots: K.1, whose claude half waits on a budget decision, and K.2,
+opened and closed this session except for K.2.6.
 
 ## Tâche actuelle
 
-**K.2.1** — `McpToolDescription` gains an optional `annotations` object, filled
-by both producers. Nothing is half-written yet.
+None active. K.2.6 is a decision about what a codex number would mean, not
+work already started — see NEXT ACTION.
 
 ## Dernière tâche validée
 
-**K.1.7 and K.1.8** — two findings from three real codex runs on the day the
-account's usage limit expired.
-
-K.1.7: `codex exec --ignore-user-config` skips only `$CODEX_HOME/config.toml`;
-`AGENTS.md`, `skills/`, `plugins/` and `.rules` load anyway, and the first run
-spent its whole budget trying the operator's private `rtk` toolchain.
-`CodexHomeGuard` gives the campaign a temp `CODEX_HOME` holding a copy of
-`auth.json` and nothing else.
-
-K.1.8: codex 0.147 cancels an MCP tool call whose tool carries no annotations —
-an approval request with no responder in non-interactive `exec`. That, not the
-prompt and not the wiring, is why codex called Konnect zero times.
+**K.2.1 – K.2.5** — Konnect declares MCP tool annotations. `readOnlyHint`
+derives from the existing effect tables (K.1.2/K.1.5), never re-decided;
+`destructiveHint` is emitted explicitly on every write against a
+`DESTRUCTIVE_TOOLS` list that is **empty**, because no tool in the tree removes
+a document; `openWorldHint: false` everywhere. Which hints are load-bearing was
+measured on the stand-in server, not reasoned about.
 
 Validation :
-- second real codex run: the `rtk` attempts are gone, konnect still uncalled
-- a four-tool stand-in MCP server, one `tools/list`, all four called in one run:
-  `readOnlyHint: true` **ran**, no annotations **cancelled**,
-  `readOnlyHint: false + destructiveHint: false` **ran**,
-  `destructiveHint: true` **cancelled**
-- ruled out first, each by its own run: `approval_policy="never"`,
-  `mcp_servers.<name>.default_tools_approval_mode="auto"`, project
-  `trust_level`, and a wiring fault (`codex mcp list` shows the server declared,
-  and codex did emit a real `mcp_tool_call` for `konnect.find_capabilities`)
+- `.\gate.ps1` **GATE PASSED** at the change — fmt, clippy, test, doctest, build
+- `protocol_stdio.rs::every_listed_tool_declares_whether_it_is_read_only`
+  asserts on the wire across all 215 tools; negative control run, fails naming
+  all 215 with `annotations: None`
+- the run only a real client can give: same server, same flags, same codex that
+  had cancelled it — `find_capabilities` and `list_toolboxes` both returned
+  payloads
+- cost (K.2.5): baseline `tools/list` 2 489 → **2 831** tokens (+342, +13.7 %),
+  full catalogue 29 399 → 33 183. The V1 line had been carrying a stale 2 034;
+  it now carries both numbers. The cheaper shape was measured and rejected —
+  dropping `openWorldHint` from reads saves 78 of the 342
 
 ## Décisions actives
 
+- D94 — annotate what a client gates on, not what is cheapest to send. A read
+  needs only `readOnlyHint: true`; a write needs `destructiveHint: false` and
+  `openWorldHint: false` beside `readOnlyHint: false`, and dropping either gets
+  it cancelled — all measured, not inferred. Reads still send
+  `openWorldHint: false` although nothing requires it, because omitting it
+  asserts *open world* about a tool that never leaves this machine, and the
+  saving is 78 tokens.
 - D93 — MCP `annotations` are part of the shipping surface, not a nicety: a
   client that gates on them refuses an unannotated server outright, with no
   human in the loop to override it. And `destructiveHint` means *irreversible*,
@@ -389,7 +390,11 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
   plan shape under `--load-mode search`'s own methodology, control read from
   the task file so it cannot drift in the plan's favour
 - `crates/konnect-core/src/capability/mod.rs` — `MANIFEST`, `Effect`,
-  `VERB_EFFECTS` / `TOOL_EFFECTS` / `META_TOOL_EFFECTS`. Regenerate the matrix
+  `VERB_EFFECTS` / `TOOL_EFFECTS` / `META_TOOL_EFFECTS`, and `tool_annotations`
+  / `DESTRUCTIVE_TOOLS` (K.2), the single place the MCP hints are decided —
+  both `tools/list` producers call it rather than building hints of their own.
+  `bench/mcp_annotation_probe.py` is what says which hints a client requires;
+  its docstring carries the measured table. Regenerate the matrix
   with `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`
 - `crates/konnect-core/src/router/capability_search.rs` — the whole retrieval
   pipeline in one file: `Idf`, `split_clauses`, `CLAUSE_SCORE_RATIO`,
@@ -459,18 +464,20 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-Implement **K.2.1** — add the optional `annotations` object to
-`McpToolDescription` (`crates/konnect-core/src/mcp/protocol.rs`) and fill it in
-both producers: `meta_tools::meta_tool_descriptions()` and
-`ToolDef::to_mcp_description`, the two sites `mcp/handler.rs`'s `tools/list`
-arm concatenates. Then K.2.2 derives `readOnlyHint` from the existing effect
-table and K.2.3 decides `destructiveHint` per tool. Validate with
-`cargo test --workspace`, then the run K.2.4 names: one codex
-`--task sch_inspection` whose `tools called:` is no longer empty.
+**K.2.6 — a decision, then a report line.** The annotations unblocked the call
+but did not make codex reach for the server: re-running the `sch_inspection`
+golden task gives three `command_execution` and zero `mcp_tool_call` — the
+agent reads the `.kicad_sch` with its own shell and answers correctly without
+touching Konnect. That is what `read-only-sandbox` isolation costs, not an
+approval failure (the same binary answers a direct request in the same
+session). Decide what a codex number then measures — the six *authoring* tasks
+plausibly have no such escape — and make the report say it, rather than letting
+a `DESIGN_PASS_RATE` built from off-server work sit beside claude's as if the
+two were the same measurement.
 
-Still open and still the user's to decide, unchanged by this session: the
-**claude half of K.1.1** needs a budget *and* a model. `claude -p` with no
-`--model` takes `claude-opus-5`; the one-task smoke run cost **$0.3172** on the
-cheapest of the seven tasks, and six of the seven author something. `--model`
-and `--max-budget-usd` are the two levers. The codex half costs no dollars
-(ChatGPT subscription) and is blocked on K.2, not on money.
+Still the user's to decide, unchanged: the **claude half of K.1.1** needs a
+budget *and* a model. `claude -p` with no `--model` takes `claude-opus-5`; the
+one-task smoke run cost **$0.3172** on the cheapest of seven tasks, and six of
+the seven author something. `--model` and `--max-budget-usd` are the levers.
+The codex half costs no dollars (ChatGPT subscription) and is now gated on
+K.2.6, not on K.2 and not on money.

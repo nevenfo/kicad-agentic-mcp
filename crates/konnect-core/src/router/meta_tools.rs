@@ -29,8 +29,18 @@ use crate::tools::ToolContext;
 use serde_json::{json, Value};
 
 /// Return the meta-tool MCP descriptions (always in the tools/list response).
+///
+/// Each literal below carries `annotations: None`; this function is the one
+/// place that fills it in, keyed by name against
+/// `capability::meta_tool_effect`, so the 13 literals never have to be edited
+/// by hand to change a hint. A meta-tool with no declared effect is a bug in
+/// `capability::META_TOOL_EFFECTS`, not something to paper over with a
+/// fallback — `every_meta_tool_has_a_declared_effect`
+/// (`crates/konnect-core/tests/capability_matrix.rs`) already keeps that list
+/// exhaustive against `META_TOOL_NAMES`; this `expect` is what makes a future
+/// gap fail loudly here too, instead of silently shipping an unannotated tool.
 pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
-    vec![
+    let mut tools = vec![
         McpToolDescription {
             name: "find_capabilities".to_string(),
             description: "Search all 196 KiCAD tools by intent and return the best matches as \
@@ -55,6 +65,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["query"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "load_tools".to_string(),
@@ -74,6 +85,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["names"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "kicad_describe".to_string(),
@@ -94,6 +106,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["names"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "kicad_invoke".to_string(),
@@ -159,6 +172,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["calls"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "kicad_agent".to_string(),
@@ -176,6 +190,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["task_id", "decision"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "kicad_agent_verify".to_string(),
@@ -185,6 +200,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 "properties": {"task_id": {"type": "string"}, "document": {"type": "string"}},
                 "required": ["task_id", "document"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "list_toolboxes".to_string(),
@@ -200,6 +216,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 "properties": {},
                 "required": []
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "load_toolset".to_string(),
@@ -223,6 +240,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["name"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "unload_toolset".to_string(),
@@ -240,6 +258,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["name"]
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "get_active_toolsets".to_string(),
@@ -251,6 +270,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 "properties": {},
                 "required": []
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "get_recent_calls".to_string(),
@@ -271,6 +291,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": []
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "server_stats".to_string(),
@@ -284,6 +305,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 "properties": {},
                 "required": []
             }),
+            annotations: None,
         },
         McpToolDescription {
             name: "changes_since".to_string(),
@@ -312,8 +334,19 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
                 },
                 "required": ["document", "since"]
             }),
+            annotations: None,
         },
-    ]
+    ];
+    for tool in &mut tools {
+        let effect = crate::capability::meta_tool_effect(&tool.name).unwrap_or_else(|| {
+            panic!(
+                "meta-tool '{}' has no declared Effect in capability::META_TOOL_EFFECTS",
+                tool.name
+            )
+        });
+        tool.annotations = Some(crate::capability::tool_annotations(effect, &tool.name));
+    }
+    tools
 }
 
 /// Generates the meta-tool dispatch `match` and [`META_TOOL_NAMES`] from one

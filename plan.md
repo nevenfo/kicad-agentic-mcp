@@ -135,8 +135,16 @@ Current values: `docs/benchmark.md`. Targets are never moved (INV6).
 - [ ] external tokens/task ≤ 2 000 — **~2 204**, missed by ~204 in deliberate
       trades (diff on by default, task filing, verification, and D.5's snapshot
       handle at +18); recorded as missed, never netted off against a win
-- [ ] `tools/list` at startup ≤ ~1 000 — **2 034**, missed; only reachable by
-      retiring the toolset-loading path, which would break every shipped skill
+- [ ] `tools/list` at startup ≤ ~1 000 — **2 831**, missed; only reachable by
+      retiring the toolset-loading path, which would break every shipped skill.
+      Re-measured at `91b9911` before touching anything: the recorded 2 034 was
+      stale — the surface had already drifted to **2 489** as descriptions grew.
+      K.2's annotations then cost **+342** (2 489 → 2 831, +13.7 %; full catalog
+      29 399 → 33 183). Paid deliberately: a surface a headless client will not
+      call is worth no tokens at all. The cheaper shape was measured, not
+      assumed — dropping `openWorldHint` from read tools saves 78 of the 342
+      and was rejected, because omitting it asserts the MCP default of
+      *open world* about every read tool to save 2.8 %
 - [x] retrieval precision @8 ≥ 60 % — **62.0 %** (recall @8 **100 %**) — F.5
 - [ ] `LLM_CALLS_PER_SUCCESSFUL_TASK` materially below baseline — measured
       **15 → 5.5** inside the model-fit harness, but **no baseline for this
@@ -1732,7 +1740,7 @@ one that cannot has its reason recorded here rather than a missing number.
 
 ### Objectif
 `tools/list` says what each tool *is* — read or write, destructive or not —
-in the field the MCP spec reserves for it. Today it says nothing, and a client
+in the field the MCP spec reserves for it. It said nothing, and a client
 that gates on that field refuses Konnect entirely: codex 0.147 cancels every
 unannotated call without ever asking a human (K.1.8). The point is not to make
 one harness happy but to stop shipping a surface whose only description of
@@ -1744,12 +1752,34 @@ K.1.2 (`capability::tool_effect`, the read/write axis) and K.1.5
 decide the hard question; this lot renders their answer.
 
 ### Tâches
-- [ ] K.2.1 `McpToolDescription` gains an optional `annotations` object
-      (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`,
-      `openWorldHint`), camelCase, omitted entirely when absent so the wire
-      shape is unchanged for a tool that has none. Both producers fill it:
-      `meta_tools::meta_tool_descriptions()` and `ToolDef::to_mcp_description`
-- [ ] K.2.2 `readOnlyHint` is derived from the existing effect table, never
+- [x] K.2.1 `McpToolDescription` gains an optional `annotations` object,
+      camelCase, omitted entirely when absent so the wire shape is unchanged
+      for a tool that has none. Both producers fill it:
+      `meta_tools::meta_tool_descriptions()` (21 struct literals — fill them in
+      one pass keyed on `name` rather than by editing each) and
+      `ToolDef::to_mcp_description`.
+
+      **Emit only what differs from the MCP default, plus `readOnlyHint`
+      always.** The defaults are `readOnlyHint false`, `destructiveHint true`,
+      `idempotentHint false`, `openWorldHint true`, so the honest minimum is
+      `{readOnlyHint: true, openWorldHint: false}` for a read and
+      `{readOnlyHint: false, destructiveHint: false, openWorldHint: false}` for
+      a non-destructive write. No `title`: 196 mechanically-titled tools is
+      payload, not information. This is not tidiness — `tools/list` at startup
+      is a V1 criterion already missed at 2 034 tokens against ~1 000, and every
+      hint is paid for on every session.
+
+      **Which hints are load-bearing was measured, not reasoned about**, on the
+      same stand-in server (`bench/mcp_annotation_probe.py`, nine tools, three
+      runs): a read needs `readOnlyHint: true` and nothing else; a write needs
+      `destructiveHint: false` **and** `openWorldHint: false` beside its
+      `readOnlyHint: false` — drop either and codex cancels it; `idempotentHint`
+      never changes an outcome; `openWorldHint` alone does not qualify a tool,
+      so `readOnlyHint` is the field the gate reads. Reads keep
+      `openWorldHint: false` anyway, though nothing requires it: omitting it
+      asserts the MCP default of *open world* about a tool that only touches
+      this machine, and the measured saving is 78 tokens (K.2.5)
+- [x] K.2.2 `readOnlyHint` is derived from the existing effect table, never
       re-decided: `Effect::Read` ⇒ `true`. That keeps the D56 meaning — can
       this call mutate the *project on disk* — which deliberately marks
       `load_tools` / `load_toolset` / `unload_toolset` read-only even though
@@ -1757,24 +1787,71 @@ decide the hard question; this lot renders their answer.
       annotations are built, since it is the kind of nuance a later reader
       inverts by accident, and it is load-bearing: a gateway whose discovery
       tools need approval cannot be used headlessly at all
-- [ ] K.2.3 `destructiveHint` is a decision, not a derivation, and it is the
+- [x] K.2.3 `destructiveHint` is a decision, not a derivation, and it is the
       expensive one: codex cancels a destructive tool as readily as an
       unannotated one (K.1.8), so marking a routine write destructive removes
-      it from every headless client. It means *irreversible* — a write the
-      undo transaction and the snapshot handles cannot take back — not merely
-      "writes". Decide it per tool with the same discipline K.1.5 used for
-      `META_TOOL_EFFECTS`: a hand-decided table, exhaustive by construction, a
-      test that fails naming any tool without an entry
-- [ ] K.2.4 Prove it end to end rather than by unit test alone: one
-      `tools/list` over the real stdio transport asserting every listed tool
-      carries annotations, and one codex run of the `sch_inspection` task
-      where the konnect calls actually execute — the run that K.1.8's four-tool
-      stand-in predicts and nothing else can confirm
+      it from every headless client. It means *irreversible* — a write that
+      neither the batch rollback (D12) nor a project snapshot (D.5) can take
+      back — not merely "writes", and by that measure a `delete_*` of a symbol
+      or a trace is **not** destructive: the transaction restores the document
+      whole. Rather than a 196-entry table restating one answer, the rule is a
+      documented default of `false` plus a named `DESTRUCTIVE_TOOLS` list for
+      the exceptions, and a test that pins the list's contents so growing it is
+      a deliberate act. **The list is empty**, and that is the finding: no
+      `delete_*` or `remove_*` in the tree removes a document. `handle_delete_sheet`
+      explicitly preserves the child file (`child_file_preserved`); the only
+      `remove_file` / `remove_dir_all` call sites touch scratch renders and
+      import archives already gone before the caller sees a result. Recorded
+      beside the list, with the one caveat the search turned up: the rollback
+      that makes this true covers calls arriving through `kicad_invoke`, and a
+      direct `tools/call` on a MANIFEST writer has none — uniformly, for every
+      writer, so it does not separate one tool from another. `destructiveHint`
+      is nonetheless emitted explicitly on every write, so an empty list is
+      never indistinguishable on the wire from the question never having been
+      asked
+- [x] K.2.4 Proven end to end, not by unit test alone.
+      `protocol_stdio.rs::every_listed_tool_declares_whether_it_is_read_only`
+      loads every toolset and asserts on the **wire** that all 215 tools carry
+      `readOnlyHint`, and that each write carries `destructiveHint` and
+      `openWorldHint` too — over stdio rather than against the structs, because
+      the whole failure it guards is a serialization one: a `None` that never
+      reaches the wire is, to a client, a tool nobody classified. Negative
+      control run: with `annotations: None` restored it fails naming all 215.
+      Then the run that only a real client can give — same server, same flags,
+      same codex that had cancelled it an hour earlier: `find_capabilities` and
+      `list_toolboxes` both **returned payloads**. The prediction K.1.8's
+      stand-in made about Konnect holds against Konnect
+- [x] K.2.5 Measured, and the measurement corrected the criterion it belongs
+      to. `bench/surface.py` at `91b9911`, same commit both sides: baseline
+      `tools/list` **2 489 → 2 831 tokens (+342, +13.7 %)**, full catalogue
+      29 399 → 33 183. The V1 line had been carrying **2 034**, a figure the
+      surface had drifted past on its own as descriptions grew — so the
+      criterion is updated with both numbers rather than with the delta alone.
+      The cheaper shape was measured before being rejected: dropping
+      `openWorldHint` from read tools gives 2 753, saving 78 of the 342
+- [ ] K.2.6 The annotations unblocked the *call*; they did not make codex reach
+      for the server. Re-run of the `sch_inspection` golden task after K.2.1:
+      three `command_execution` calls, zero `mcp_tool_call` — the agent read
+      the `.kicad_sch` with its own shell and answered correctly without
+      touching Konnect. That is not an approval failure any more (the same
+      binary answers a direct request in the same session, K.2.4); it is what
+      `read-only-sandbox` isolation costs. Claude runs at `tools-off`, where
+      `--tools ""` genuinely removes the alternative; codex keeps a shell that
+      can read any file in `$WORK`, so on an *inspection* task the shell is
+      simply the shorter path. Decide what the codex number then measures —
+      the six authoring tasks may not have that escape, since writing a
+      schematic by hand through a read-only sandbox is not open to it — and
+      say so in the report rather than letting a `DESIGN_PASS_RATE` computed
+      from off-server work stand beside claude's as if the two were the same
+      measurement. K.1.1's codex half is gated on this, not on K.2
 
 ### Validation
-`cargo test --workspace` green; `tools/list` over stdio shows annotations on
-all tools; a codex `--task sch_inspection` run whose `tools called:` is no
-longer empty.
+`.\gate.ps1` green end to end at the change (fmt, clippy, test, doctest,
+build); `tools/list` over stdio shows annotations on all 215 tools, with a
+negative control; and a codex call to konnect that returns a payload where the
+same call was cancelled before. **Not** met, and deliberately not claimed: a
+codex golden-task run whose `tools called:` is non-empty — the agent no longer
+*needs* the server to answer an inspection task, which is K.2.6, not this lot.
 
 ---
 

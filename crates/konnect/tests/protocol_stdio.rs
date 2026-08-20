@@ -1877,3 +1877,67 @@ fn a_missing_parent_directory_is_classified_as_io_not_swallowed_into_handler_err
         "an unrecognised io code stays 'none' rather than a class it has not earned"
     );
 }
+
+/// Every tool on the wire says whether it is read-only, and says it in the
+/// field the MCP spec reserves for that (K.2).
+///
+/// This is asserted over the real stdio transport rather than on the structs
+/// because the whole failure it guards against is a serialization one: a
+/// client reads `annotations`, and a `None` that never reaches the wire is
+/// indistinguishable, to that client, from a tool nobody ever classified.
+/// codex 0.147 cancels such a call outright, with no human asked (K.1.8).
+///
+/// The full catalogue is checked, not the baseline: a tool that only appears
+/// after `load_toolset` is exactly the one a reader would forget.
+#[test]
+fn every_listed_tool_declares_whether_it_is_read_only() {
+    let mut p = McpProcess::spawn();
+
+    let boxes = McpProcess::tool_body(&p.call_tool("list_toolboxes", json!({})));
+    let toolsets: Vec<String> = boxes["toolsets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    for name in &toolsets {
+        p.call_tool("load_toolset", json!({ "name": name }));
+    }
+
+    let tools = p.request("tools/list", json!({}));
+    let tools = tools["result"]["tools"].as_array().unwrap();
+    assert!(
+        tools.len() > 100,
+        "expected the full catalogue, got {}",
+        tools.len()
+    );
+
+    let mut unannotated: Vec<&str> = Vec::new();
+    let mut writes_without_destructive: Vec<&str> = Vec::new();
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap();
+        match tool.get("annotations").and_then(|a| a.get("readOnlyHint")) {
+            None => unannotated.push(name),
+            Some(read_only) => {
+                // A write says both of the other two things a gating client
+                // needs: that it is not irreversible, and that it stays inside
+                // this machine. Both differ from the MCP default, so silence
+                // would assert the opposite of what is true.
+                if read_only == false {
+                    let a = &tool["annotations"];
+                    if a.get("destructiveHint").is_none() || a.get("openWorldHint").is_none() {
+                        writes_without_destructive.push(name);
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        unannotated.is_empty(),
+        "tools with no readOnlyHint on the wire: {unannotated:?}"
+    );
+    assert!(
+        writes_without_destructive.is_empty(),
+        "write tools missing destructiveHint or openWorldHint: {writes_without_destructive:?}"
+    );
+}
