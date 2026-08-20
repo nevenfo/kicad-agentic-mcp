@@ -1570,8 +1570,11 @@ F.3 (the gateway is the whole external surface).
 ### Tâches
 - [ ] K.1.1 Run the golden suite through each harness in scope — Claude Code
       and Codex (D70). The runner exists and works (K.1.3); what is missing is
-      the measurement itself, and it is gated on K.1.4's single remaining
-      external blocker, not on code.
+      the measurement itself. The two halves are blocked on different things
+      and can be settled separately: the claude half on a budget and a model
+      (below), the codex half on K.2 — until Konnect declares MCP annotations
+      every codex call to it is cancelled (K.1.8), so a codex campaign today
+      would buy seven runs of an agent reading files with its own shell.
       **Priced, on one real run** (`sch_inspection`, `--repeat 1`, claude,
       2026-08-20): **$0.3172**, 10 turns, 8 round trips. `claude -p` with no
       `--model` took `claude-opus-5`, not the haiku the earlier ~$0.06 estimate
@@ -1610,10 +1613,17 @@ F.3 (the gateway is the whole external surface).
       across harnesses — and prints the isolation level next to them, so the
       two are never silently compared. Proven end-to-end by a real scored
       Claude Code run
-- [ ] K.1.4 The codex harness. Its adapter is written and its transcript
-      parser proven against real output, but it cannot produce a measurement
-      yet for a reason outside the code: the Codex account is at its usage
-      limit until 2026-08-20.
+- [ ] K.1.4 The codex harness. Its adapter is written, and three real runs
+      on 2026-08-20 (the day the account's usage limit expired) proved
+      `parse_codex_jsonl` against live output for everything those runs
+      exercised: the `item.completed` envelope, `command_execution` as an
+      off-server call, `mcp_tool_call` on both the completed and the failed
+      path, and `usage` off `turn.completed` with no `cost_usd` in either
+      schema. What they could not exercise is a *successful* konnect call,
+      because codex cancels them all (K.1.8) — so the `mcp_tool_call` success
+      branch and `gateway_unwrap_warning`'s codex side stay unproven, and the
+      harness still owes a measurement. Isolation is now real (K.1.7); the
+      remaining blocker is K.2, in the server rather than in the bench.
 
       **AGY is out of scope (D70, decided by the user 2026-08-18.)** The
       adapter, `AgyMcpConfigGuard` and `parse_agy_stream` stay in
@@ -1668,6 +1678,43 @@ F.3 (the gateway is the whole external surface).
       for it, `gateway_unwrap_warning` prints a `WARN` on any run whose audited
       path still names `kicad_invoke` — on passes as well as failures, since an
       unwrapped gateway call is unreliable in both directions
+- [x] K.1.7 A codex run carried the operator's own home into the measurement.
+      `codex exec --ignore-user-config` skips exactly one file, and its own
+      `--help` says which: `$CODEX_HOME/config.toml` ("auth still uses
+      `CODEX_HOME`"). `AGENTS.md`, `skills/`, `plugins/` and the execpolicy
+      `.rules` load regardless. The first real codex run showed it rather than
+      implied it: the transcript opens with "Skill descriptions were shortened
+      to fit the skills context budget" and the agent's first three actions are
+      `rtk proxy pwsh`, `rtk fd`, `rtk read` — a private toolchain this bench
+      has never heard of, every one of them refused by the sandbox. A run
+      carrying the operator's instructions measures the operator.
+      `CodexHomeGuard` gives the campaign a home of its own: a temp directory
+      holding a copy of `auth.json` and nothing else — auth survives, because
+      it is read from `CODEX_HOME` whatever else is absent; instructions and
+      skills do not. It copies rather than links, so a refreshed token never
+      rewrites the user's file, and the copy is deleted on all four exit paths
+      `AgyMcpConfigGuard` already covers. `--ignore-rules` is passed too.
+      Verified on a second real run: the `rtk` attempts are gone. Account-level
+      plugins (a Canva connector) still arrive from the ChatGPT account and
+      cannot be removed from the client side; that is recorded, not fixed
+- [x] K.1.8 **Codex cancels every unannotated MCP tool call, which is why the
+      codex half of K.1.1 measured nothing of Konnect.** Two clean runs read
+      the schematic with the sandboxed shell and called Konnect zero times;
+      told explicitly to call `find_capabilities`, codex answered
+      `user cancelled MCP tool call` — an approval request with no responder in
+      non-interactive `exec`. Neither `approval_policy="never"` nor
+      `mcp_servers.<name>.default_tools_approval_mode="auto"` changes it.
+      What decides it is the tool's own MCP `annotations`, proven by a
+      four-tool stand-in server answering one `tools/list`, all four called in
+      a single run:
+      `readOnlyHint: true` **ran**; no annotations at all **cancelled**;
+      `readOnlyHint: false, destructiveHint: false` **ran**;
+      `destructiveHint: true` **cancelled**. Konnect declares no annotations on
+      any of its 21 gateway tools, so every call is cancelled — and this is a
+      product gap, not a bench gap: any client that gates on annotations
+      refuses Konnect headlessly. The fix is K.2, and K.1.1's codex half is
+      blocked on it. (The Codex account limit that blocked K.1.4 expired on
+      2026-08-20 and is no longer what stands in the way.)
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 `max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
 `bench/runner.py --enforce`, which exits non-zero on any of them; met by
@@ -1680,11 +1727,60 @@ stated reason at `read-only-sandbox`, where the harness cannot remove its own
 tools. K.1.1 is met when every harness that can be measured has been, and every
 one that cannot has its reason recorded here rather than a missing number.
 
+
+## K.2 — Konnect declares MCP tool annotations
+
+### Objectif
+`tools/list` says what each tool *is* — read or write, destructive or not —
+in the field the MCP spec reserves for it. Today it says nothing, and a client
+that gates on that field refuses Konnect entirely: codex 0.147 cancels every
+unannotated call without ever asking a human (K.1.8). The point is not to make
+one harness happy but to stop shipping a surface whose only description of
+risk is prose in a `description` string.
+
+### Dépendances
+K.1.2 (`capability::tool_effect`, the read/write axis) and K.1.5
+(`META_TOOL_EFFECTS`, the same axis for the twelve gateway tools). Both already
+decide the hard question; this lot renders their answer.
+
+### Tâches
+- [ ] K.2.1 `McpToolDescription` gains an optional `annotations` object
+      (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`,
+      `openWorldHint`), camelCase, omitted entirely when absent so the wire
+      shape is unchanged for a tool that has none. Both producers fill it:
+      `meta_tools::meta_tool_descriptions()` and `ToolDef::to_mcp_description`
+- [ ] K.2.2 `readOnlyHint` is derived from the existing effect table, never
+      re-decided: `Effect::Read` ⇒ `true`. That keeps the D56 meaning — can
+      this call mutate the *project on disk* — which deliberately marks
+      `load_tools` / `load_toolset` / `unload_toolset` read-only even though
+      they change what `tools/list` exposes. Write that reasoning where the
+      annotations are built, since it is the kind of nuance a later reader
+      inverts by accident, and it is load-bearing: a gateway whose discovery
+      tools need approval cannot be used headlessly at all
+- [ ] K.2.3 `destructiveHint` is a decision, not a derivation, and it is the
+      expensive one: codex cancels a destructive tool as readily as an
+      unannotated one (K.1.8), so marking a routine write destructive removes
+      it from every headless client. It means *irreversible* — a write the
+      undo transaction and the snapshot handles cannot take back — not merely
+      "writes". Decide it per tool with the same discipline K.1.5 used for
+      `META_TOOL_EFFECTS`: a hand-decided table, exhaustive by construction, a
+      test that fails naming any tool without an entry
+- [ ] K.2.4 Prove it end to end rather than by unit test alone: one
+      `tools/list` over the real stdio transport asserting every listed tool
+      carries annotations, and one codex run of the `sch_inspection` task
+      where the konnect calls actually execute — the run that K.1.8's four-tool
+      stand-in predicts and nothing else can confirm
+
+### Validation
+`cargo test --workspace` green; `tools/list` over stdio shows annotations on
+all tools; a codex `--task sch_inspection` run whose `tools called:` is no
+longer empty.
+
 ---
 
-# Phase L — Hardening — TODO
+# Phase L — Hardening — DONE
 
-## L.1 — Known debt
+## L.1 — Known debt — DONE
 
 ### Tâches
 - [x] L.1.1 E10 — `MutexGuard` held across `await` in `sch_components.rs`. A real
@@ -1733,8 +1829,10 @@ one that cannot has its reason recorded here rather than a missing number.
 ### Validation
 `cargo clippy --workspace --locked --all-targets -- -D warnings` clean, and
 `.\gate.ps1` green end to end — including the `fmt` step, which L.1.4 unblocks.
+Re-verified at `6e298e1` on 2026-08-20: `.\gate.ps1` **GATE PASSED** — fmt,
+clippy, test, doctest and build.
 
-## L.2 — Failure injection and concurrency
+## L.2 — Failure injection and concurrency — DONE
 
 ### Tâches
 - [x] L.2.1 Fuzz the S-expression parser/writer round trip. The round trip that

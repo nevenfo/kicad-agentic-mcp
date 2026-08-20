@@ -2,54 +2,58 @@
 
 ## Phase actuelle
 
-**K — multi-harness.** Phases D and F are both closed (F.5.7 was the last lot
-in F owing work; D.5.3 is conditional by design and is not work owed). K.1.1 is
-the only lot in the project still owing work that no decision blocks — and the
-decision it needs is a budget. Phase I stays gated by hardware (this machine has
-KiCad 10.0, not the KiCad 11 / `kicad-cli api-server` it needs).
+**K — multi-harness.** Phases D, F and L are closed — L's every task was
+already checked and `.\gate.ps1` is re-verified green at `6e298e1`. Phase I
+stays gated by hardware (KiCad 10.0 here, not the KiCad 11 /
+`kicad-cli api-server` it needs). K now holds two lots: K.1, whose claude half
+waits on a budget decision, and **K.2**, opened this session — Konnect declares
+no MCP tool annotations, and that is what blocks the codex half.
 
 ## Tâche actuelle
 
-None active. What remains open across the project is decisions — see NEXT ACTION.
+**K.2.1** — `McpToolDescription` gains an optional `annotations` object, filled
+by both producers. Nothing is half-written yet.
 
 ## Dernière tâche validée
 
-**K.1.6** — the agentic audit judged the door, not what went through it. Found
-by the one-task smoke run K.1.1 was gated on: an Opus 5 agent did the whole
-`read_only` task through `kicad_invoke`, and the harness scored the door — a
-false `safety` violation and all five `expected_tools` reported never called.
-`bench/runner.py` has forbidden that since K.1.2; `bench/harness_runner.py`
-never unwrapped. Second defect, same run: a `Read` the CLI **refused** was
-counted as contamination.
+**K.1.7 and K.1.8** — two findings from three real codex runs on the day the
+account's usage limit expired.
+
+K.1.7: `codex exec --ignore-user-config` skips only `$CODEX_HOME/config.toml`;
+`AGENTS.md`, `skills/`, `plugins/` and `.rules` load anyway, and the first run
+spent its whole budget trying the operator's private `rtk` toolchain.
+`CodexHomeGuard` gives the campaign a temp `CODEX_HOME` holding a copy of
+`auth.json` and nothing else.
+
+K.1.8: codex 0.147 cancels an MCP tool call whose tool carries no annotations —
+an approval request with no responder in non-interactive `exec`. That, not the
+prompt and not the wiring, is why codex called Konnect zero times.
 
 Validation :
-- the captured transcript re-scored through the fixed `parse_stream`:
-  `off_server_calls` 1 → 0, the `safety` violation gone, `missing_expected`
-  5 → 1 (`get_schematic_component`, a real agent gap — it used
-  `get_component_nets` for R1), `scored_calls` 8 ≤ `max_calls` 13. The run is
-  still a `FAIL`, now for the one reason that was true
-- re-scoring spends nothing: the fix is verified against the run already paid
-  for, not by re-running the agent
-
-Previously validated, same session: **F.5.7.** A tool description names the *goal*, not the actions — see D90.
-`apply_plan` and `preview_plan` each gained one sentence, "Use it to build a
-whole schematic design in one call"; the candidate that named place / power /
-label / wire / connect / decouple was measured and rejected.
-
-Validation :
-- `bench/runner.py --load-mode search` on one release build, three runs on the
-  same baseline: baseline 62.0 % precision / 100.0 % recall, action-naming
-  60.3 % / 100.0 %, goal-naming **62.0 % / 100.0 %** — 7/7 tasks in all three
-- `bench/plan_retrieval.py` same build: plan-by-goal 0 of 4 queries → 1 of 4
-  (`apply_plan` rank 2 on "build a resistive voltage divider"), identical for
-  both candidates
-- per-task catalog tokens are the decisive column: action-naming adds +140 on
-  `sch_divider`, `manufacturing_exports` and `recovery`; goal-naming moves none
-- `cargo test --workspace` PASS — 61 suites, 0 failures; clippy
-  `--workspace --all-targets -D warnings` and `fmt --check` clean
+- second real codex run: the `rtk` attempts are gone, konnect still uncalled
+- a four-tool stand-in MCP server, one `tools/list`, all four called in one run:
+  `readOnlyHint: true` **ran**, no annotations **cancelled**,
+  `readOnlyHint: false + destructiveHint: false` **ran**,
+  `destructiveHint: true` **cancelled**
+- ruled out first, each by its own run: `approval_policy="never"`,
+  `mcp_servers.<name>.default_tools_approval_mode="auto"`, project
+  `trust_level`, and a wiring fault (`codex mcp list` shows the server declared,
+  and codex did emit a real `mcp_tool_call` for `konnect.find_capabilities`)
 
 ## Décisions actives
 
+- D93 — MCP `annotations` are part of the shipping surface, not a nicety: a
+  client that gates on them refuses an unannotated server outright, with no
+  human in the loop to override it. And `destructiveHint` means *irreversible*,
+  not "writes" — codex cancels a destructive tool exactly as readily as an
+  unannotated one, so spending that flag on a routine write removes the tool
+  from every headless client. See K.2.
+- D92 — a headless harness measures its own home unless the home is replaced.
+  A CLI flag that promises to ignore user configuration ignores one file;
+  instructions, skills and plugins arrive regardless. The bench's answer is a
+  throwaway `CODEX_HOME` carrying only credentials, not a longer flag list.
+  What comes from the *account* rather than the machine — codex's own remote
+  plugins — cannot be removed client-side and is recorded rather than fixed.
 - D91 — an agentic audit judges what went *through* the gateway, and a refused
   call is not contamination. Two halves of one measurement bug, both found by
   spending $0.32 on one task before spending on a campaign. `bench/runner.py`
@@ -371,7 +375,11 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
   `audit()` judges — `unwrap_gateway_batch` replaces each `kicad_invoke` with
   its reply's per-entry `tool` field). `--log-dir` is what makes a paid run
   re-scorable offline: feed the `.jsonl` back through `parse_stream` + `audit`
-  instead of re-running the agent
+  instead of re-running the agent. `CodexHomeGuard` (built in `main`, never for
+  `--dry-run`) is what keeps a codex run out of the operator's own
+  `CODEX_HOME`; `codex mcp list -c <same overrides>` answers "is the server even
+  declared" without spending a model call, and `codex exec --help` is the
+  authority on what `--ignore-user-config` does and does not skip
 - `bench/agent_prompts.yaml` — one plain-language prompt per golden task; no
   tool names, or the run would measure instruction-following
 - `bench/runner.py` — `audit()`, `fingerprint()`, `THRESHOLDS`; the harness
@@ -451,26 +459,18 @@ Phase I remains gated by hardware rather than by work: this machine has KiCad
 
 ## NEXT ACTION
 
-**A decision, not a continuation — nothing is half-done.** F.5.7 closed the
-last lot that could be settled locally. `cargo test --workspace` is green at
-`HEAD`. One thing is left waiting on a decision that is the user's, and it
-should not be started silently:
+Implement **K.2.1** — add the optional `annotations` object to
+`McpToolDescription` (`crates/konnect-core/src/mcp/protocol.rs`) and fill it in
+both producers: `meta_tools::meta_tool_descriptions()` and
+`ToolDef::to_mcp_description`, the two sites `mcp/handler.rs`'s `tools/list`
+arm concatenates. Then K.2.2 derives `readOnlyHint` from the existing effect
+table and K.2.3 decides `destructiveHint` per tool. Validate with
+`cargo test --workspace`, then the run K.2.4 names: one codex
+`--task sch_inspection` whose `tools called:` is no longer empty.
 
-- **K.1.1** — budget **and model**. `py -3.11 bench/harness_runner.py --server
-  <abs path to konnect.exe> --harness <claude|codex> --repeat 2 --enforce
-  --log-dir <dir> --out <json>`, once per harness. Both as one campaign per the
-  user's 2026-08-18 choice; AGY is out of scope (D70). Now priced rather than
-  estimated: the smoke run cost **$0.3172** for the single cheapest task, one
-  repeat — `claude -p` with no `--model` takes `claude-opus-5`, so the full
-  7 × 2 × 2 campaign is far above the old ~$0.06/task figure, and six of the
-  seven tasks author something. `--model` and `--max-budget-usd` are the two
-  levers; pass the server as an **absolute** path (a relative one makes the
-  harness's CreateProcess fail from its own `$WORK` cwd).
-
-If it is not wanted yet, note what an audit of `plan.md`'s checkboxes says:
-the only phases still holding an *unchecked* task are D (D.5.3, conditional),
-I (hardware-gated), K (K.1.1, K.1.4) and M. Phase L has no unchecked task
-either, but its two lots never declared a status, so its heading was left alone
-rather than asserted. Phase K beyond K.1.1 and
-phase M both depend on a benchmark campaign, so they inherit K.1.1's budget
-decision.
+Still open and still the user's to decide, unchanged by this session: the
+**claude half of K.1.1** needs a budget *and* a model. `claude -p` with no
+`--model` takes `claude-opus-5`; the one-task smoke run cost **$0.3172** on the
+cheapest of the seven tasks, and six of the seven author something. `--model`
+and `--max-budget-usd` are the two levers. The codex half costs no dollars
+(ChatGPT subscription) and is blocked on K.2, not on money.
