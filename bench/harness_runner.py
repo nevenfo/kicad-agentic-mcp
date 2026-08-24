@@ -37,8 +37,9 @@ count there does not necessarily mean the design was reached off-server, only
 that a built-in tool was *invoked* (e.g. to read a file back).
 
 Every rate above is computed over the runs that actually ran. A run the harness
-cut short on a cap of its own — a spent quota, the per-run budget cap, a timeout
-— asked no question and so cannot answer one; it is reported as `VOID_RUNS`,
+cut short before the agent answered — a spent quota, the per-run budget cap, an
+authentication or upstream API failure, a timeout — asked no question and so
+cannot answer one; it is reported as `VOID_RUNS`,
 with its cause, and excluded from `SUCCESS_RATE`, `DESIGN_PASS_RATE`,
 `ON_SERVER_PASS_RATE` and `INSTABILITY_RATE` alike. `COST_USD` is the exception,
 because it is spend and not a rate. So that the exclusion can never launder a
@@ -155,8 +156,9 @@ class HarnessResult:
     usage: dict = field(default_factory=dict)
     result_subtype: str = ""
     error: str | None = None
-    # Set when the *harness* stopped the run for its own reasons — a spent
-    # quota, a budget cap, a timeout — rather than the agent finishing, well
+# Set when the *harness* stopped the run before the agent answered — a spent
+# quota, a budget cap, an auth/upstream API failure, a timeout — rather than
+# the agent finishing, well
     # or badly. Such a run carries no evidence about the server and must not
     # be scored as a failure (K.1.13); `error` still carries the same text so
     # nothing becomes less visible.
@@ -783,6 +785,7 @@ def parse_stream(lines: list[str], tool_prefixes: tuple[str, ...]) -> HarnessRes
         elif kind == "result":
             saw_result = True
             out.result_subtype = msg.get("subtype", "")
+            out.aborted = out.aborted or api_error_cause(msg)
             cost = msg.get("total_cost_usd")
             out.cost_usd = float(cost) if isinstance(cost, (int, float)) else None
             out.duration_ms = float(msg.get("duration_ms") or 0.0)
@@ -1181,9 +1184,9 @@ class HarnessRun:
     num_turns: int = 0
     usage: dict = field(default_factory=dict)
     harness_error: str | None = None
-    # K.1.13: the harness cut this run short on a cap of its own (a spent
-    # quota, a budget cap, a timeout). It is not a failed run — it is not a
-    # run — and `report` keeps it out of every rate.
+    # K.1.13/K.1.18: the harness stopped before the agent answered (a spent
+    # quota, a budget cap, an auth/upstream API failure, a timeout). It is not
+    # a failed run — it is not a run — and `report` keeps it out of every rate.
     aborted: str | None = None
     assertions: list[dict] = field(default_factory=list)
     violations: list[dict] = field(default_factory=list)
@@ -1223,6 +1226,19 @@ def rate_limit_cause(info: dict) -> str | None:
         else "?"
     )
     return f"quota rejected ({window} window, resets {when})"
+
+
+def api_error_cause(msg: dict) -> str | None:
+    """Name an auth/upstream API failure that happened before the agent ran."""
+    status = msg.get("api_error_status")
+    if msg.get("terminal_reason") != "api_error" and status is None:
+        return None
+    label = f"harness API error {status}" if status is not None else "harness API error"
+    detail = msg.get("result")
+    if not isinstance(detail, str) or not detail.strip():
+        return label
+    first_line = detail.strip().splitlines()[0][:160]
+    return f"{label}: {first_line}"
 
 
 def gateway_unwrap_warning(used_calls: list[str]) -> str | None:

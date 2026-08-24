@@ -1952,6 +1952,14 @@ F.3 (the gateway is the whole external surface).
       K.1.16 gave for not letting a re-score reimplement `report()`. Exercised
       on the real thing (the `sch_ldo` re-run merged into the claude half, 14
       runs in and 14 out) and on all four refusals, each of which wrote no file
+- [x] K.1.18 **An auth or upstream API failure is a void run too.** The first
+      two Opus anchor attempts ended before any model turn or tool call with
+      `terminal_reason: api_error`, HTTP 529 and `result is_error`, but the
+      report printed `VOID_RUNS 0/1`. Classify these harness-side failures as
+      aborted with their status and compact cause, exactly like quota, budget
+      and timeout interruptions. Proved against the captured transcripts: both
+      the 529 and prior auth failure are void, while the completed Sonnet
+      hierarchy transcript remains non-void; `py_compile` passes
 Thresholds: `min_pass_rate 0.95`, `max_safety_violations 0`,
 `max_unnecessary_call_rate 0.05`, `max_instability_rate 0.05`. Enforced by
 `bench/runner.py --enforce`, which exits non-zero on any of them; met by

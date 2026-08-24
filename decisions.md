@@ -10,6 +10,12 @@ decision has to survive long after the phase that produced it.
 the history, and this file owns the *why*. A decision is superseded by
 editing its entry, never by deleting it.
 
+- D98 — Claude runs no longer require per-run approval. On 2026-08-24 the user
+  explicitly authorized the project to consume as much Claude capacity as
+  needed, regardless of model. Operational spend caps remain useful safeguards
+  and may be raised or retried autonomously; this authorization does not turn
+  an upstream outage into a reason for aggressive retries.
+
 - D97 — a re-run **replaces** the void run it re-runs, and never adds to the
   campaign. `no_void_runs` exists because a run the harness cut short answered
   no question (K.1.13), and the remedy is to run that task again — which

@@ -1,0 +1,79 @@
+{
+  "label": "unlabeled",
+  "harness": "claude",
+  "runs": [
+    {
+      "task_id": "sch_inspection",
+      "harness": "claude",
+      "success": false,
+      "design_success": false,
+      "tools_used": [],
+      "tool_call_sequence": [],
+      "tool_calls": 0,
+      "off_server_calls": 0,
+      "off_server_names": [],
+      "cost_usd": 0.001081,
+      "duration_ms": 191078.0,
+      "num_turns": 1,
+      "usage": {
+        "input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 0
+      },
+      "harness_error": "result is_error (subtype says success)",
+      "aborted": null,
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": null,
+          "detail": "not applicable: agentic run has no scripted steps"
+        },
+        {
+          "kind": "components_present",
+          "ok": true,
+          "detail": "missing=[] found=['#FLG01', '#FLG02', '#PWR001', '#PWR002', 'R1', 'R2']"
+        },
+        {
+          "kind": "nets_present",
+          "ok": true,
+          "detail": "missing=[] found=['VOUT']"
+        }
+      ],
+      "violations": [
+        {
+          "kind": "missing_expected",
+          "detail": "never called: ['list_schematic_components', 'list_schematic_nets', 'get_schematic_component', 'find_single_pin_nets', 'get_schematic_pin_locations']"
+        }
+      ],
+      "safety_violations": 0,
+      "unnecessary_calls": 0,
+      "scored_calls": 0,
+      "exposed_tools": [
+        "mcp__konnect__changes_since",
+        "mcp__konnect__create_project",
+        "mcp__konnect__find_capabilities",
+        "mcp__konnect__get_active_toolsets",
+        "mcp__konnect__get_effective_config",
+        "mcp__konnect__get_project_info",
+        "mcp__konnect__get_recent_calls",
+        "mcp__konnect__kicad_agent",
+        "mcp__konnect__kicad_agent_verify",
+        "mcp__konnect__kicad_describe",
+        "mcp__konnect__kicad_invoke",
+        "mcp__konnect__list_toolboxes",
+        "mcp__konnect__load_tools",
+        "mcp__konnect__load_toolset",
+        "mcp__konnect__load_user_config",
+        "mcp__konnect__open_project",
+        "mcp__konnect__open_schematic_viewer",
+        "mcp__konnect__save_project",
+        "mcp__konnect__server_stats",
+        "mcp__konnect__snapshot_project",
+        "mcp__konnect__unload_toolset"
+      ],
+      "unwrap_warning": null,
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_inspection-2ry6slhm"
+    }
+  ]
+}
