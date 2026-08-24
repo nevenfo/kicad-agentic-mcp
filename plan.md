@@ -3218,7 +3218,34 @@ None. Each item below is independent of the others except where stated.
         `kicad-cli exited with 1:` — nothing at all. The pre-existing board
         export probe passed throughout because it asks for a single layer; it
         takes two to make the duplicate.
-  - [ ] P.6.7.8 #263 (`run_erc` on a sub-sheet reports invocation artefacts)
+  - [x] P.6.7.8 #263 — `run_erc` on a sub-sheet reports invocation artefacts.
+        Reproduced against KiCad 10.0.3 before writing anything, on a copy of
+        `demos/complex_hierarchy`: `sch erc` on the sub-sheet `ampli_ht`
+        returns **67 violations, 46 of them `lib_symbol_issues`** ("the current
+        configuration does not include the symbol library"), against **0** on
+        the project's own root sheet. Confirmed as described.
+        Done: `owning_project_root` recognises a sheet that belongs to a
+        project rooted elsewhere and `run_erc` refuses it with a structured
+        `invalid_argument` on `schematic` naming the root to retry against.
+        The audit is wrong on one point — `project_root_for` does **not**
+        exist in this fork's `library.rs` — so nothing was made `pub(crate)`
+        there; only `MAX_HIERARCHY_DEPTH` was, and the detection looks in the
+        file's own directory rather than walking ancestors. Stated bound: a
+        sheet moved out of its project's directory is not caught, and that is
+        deliberate, not a gap to fix silently.
+        The refusal is the only behaviour change, and the reverse bound is
+        tested as explicitly as the defect: a root, a project-less schematic, an
+        unreferenced neighbour and a directory holding several projects are all
+        left alone. Red before: the sub-sheet resolved to `None`, so no refusal
+        was raised at all.
+  - [ ] P.6.7.11 The measurement P.6.7.8 rests on lives only in a comment.
+        The refusal is decided before `kicad-cli` is reached, so the unit tests
+        prove the server's own logic and no live probe was owed — but nothing
+        in the suite would notice if a future KiCad stopped producing those
+        `lib_symbol_issues`, which would leave the refusal unjustified and
+        invisible. Same shape as D113. A probe over a copied demo hierarchy,
+        asserting the sub-sheet/root asymmetry rather than an absolute count,
+        would anchor it. Decide whether it belongs in the gating E2E job.
 - [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
       carries its precise next action in `docs/upstream-audit.md`; re-read it
       rather than re-deriving. #271 depends on P.6.3.

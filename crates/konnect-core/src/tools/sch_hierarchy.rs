@@ -246,7 +246,7 @@ pub fn tools() -> Vec<ToolDef> {
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
-const MAX_HIERARCHY_DEPTH: usize = 20;
+pub(crate) const MAX_HIERARCHY_DEPTH: usize = 20;
 const ALLOWED_PIN_TYPES: &[&str] = &["input", "output", "bidirectional", "tri_state", "passive"];
 const SHEET_PIN_SPACING_MM: f64 = 2.54;
 const PROJECT_NAME_DESC: &str =

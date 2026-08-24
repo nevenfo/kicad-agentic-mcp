@@ -4,7 +4,8 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte (P.6.7.1 à P.6.7.7 closes, P.6.7.8 à P.6.7.10 restent), P.6.8 à P.6.11
+est ouverte : les huit items d'origine (P.6.7.1 à P.6.7.8) sont clos,
+P.6.7.9 à P.6.7.11 sont des découvertes ouvertes, P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -14,23 +15,27 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.7 — les arguments de tracé PCB que KiCad 10 rejetait.
-`single_file_pcb_export_args` dans `cli.rs` joint les couches en une seule
-valeur séparée par des virgules et passe `--mode-single` ; `export_pdf` et
-`export_svg_pcb` y passent tous deux. Une liste vide ne passe aucun `--layers`.
-`cli_failure_diagnostics` retombe sur **stdout** quand stderr est vide, car
-c'est là que `kicad-cli` écrit ses erreurs d'argument.
+P.6.7.8 — `run_erc` refuse une sous-feuille au lieu de rapporter des artefacts
+d'invocation. `owning_project_root` dans `sch_export.rs` reconnaît une feuille
+appartenant à un projet enraciné ailleurs, et le refus est un
+`invalid_argument` structuré sur `schematic` qui **nomme la racine** à
+réessayer. Borne assumée : la détection regarde le répertoire propre du fichier,
+pas ses ancêtres — une feuille déplacée hors du dossier de son projet n'est pas
+attrapée.
+
+Défaut reproduit contre `kicad-cli` 10.0.3 avant de coder, sur une copie de
+`demos/complex_hierarchy` : `sch erc` sur la sous-feuille `ampli_ht` rend **67
+violations, dont 46 `lib_symbol_issues`**, contre **0** sur la feuille racine.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
 - sondes live `cli_tools` avec `KICAD_CLI` : PASS, 10/10
-- rouge-avant vérifié sur la sonde live : `export_pdf` avec deux couches échoue
-  (`Duplicate argument --layers`), et avec l'ancien diagnostic stderr seul le
-  message entier se réduisait à `kicad-cli exited with 1:` — vide. La sonde
-  d'export de board préexistante passait parce qu'elle ne demande qu'une seule
-  couche : il en faut deux pour créer le doublon
+- rouge-avant vérifié en neutralisant la détection : la sous-feuille résout à
+  `None` et aucun refus n'est émis. La borne inverse est testée aussi
+  explicitement que le défaut — racine, schéma sans projet, voisin non
+  référencé et répertoire multi-projets restent intacts
 
 ## Décisions actives
 
@@ -125,13 +130,18 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.8 — `#263` : `run_erc` sur une sous-feuille rapporte des
-artefacts d'invocation plutôt que la conception. `kicad-cli` traite le fichier
-qu'on lui donne comme la racine de la hiérarchie et cherche un `.kicad_pro` à
-côté ; une sous-feuille n'en a pas, donc la `sym-lib-table` du projet n'est
-jamais chargée. Relire l'entrée `#263` de `docs/upstream-audit.md` pour le
-mécanisme complet et l'état exact dans ce fork avant de coder. Vérifier le
-comportement réel contre `kicad-cli` local (voir D118) plutôt que de le déduire
-du diff upstream. Valider par `cargo fmt` / `clippy -D warnings` /
-`cargo test --workspace --lib --tests` plus `cli_tools -- --ignored`, qui doit
-rester à 10/10 en plus de la nouvelle sonde.
+Choisir la prochaine tâche de P.6, le lot P.6.7 d'origine étant clos. Les
+candidates, par valeur décroissante :
+- **P.6.10** — `parse_sexp` répond `Ok` sur un document qu'il n'a pas consommé
+  (`konnect-sexp/src/parser.rs:89-111`) : c'est la même forme de faux-propre
+  que P.6.1 et P.5, et elle touche **tout** lecteur de fichier. Deux parties :
+  refuser une entrée non consommée plutôt que fabriquer une racine implicite,
+  et une conformance de corpus sur les boards de démo qui échoue bruyamment
+  (voir D113 et D116, qui donne le cas d'échec attendu).
+- **P.6.9** — triage des 16 correctifs upstream partis directement sur `main`
+  (annexe A de `docs/upstream-audit.md`), à faire avant d'en implémenter un.
+- **P.6.11**, **P.6.7.9**, **P.6.7.10**, **P.6.8** — plus petites, chacune
+  portant son action précise dans `plan.md`.
+
+Sauf indication contraire, prendre **P.6.10** : c'est la plus large et la seule
+dont dépend la confiance dans tous les autres correctifs de lecture.

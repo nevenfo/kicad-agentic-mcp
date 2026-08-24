@@ -8,6 +8,7 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, ToolContext, ToolDef};
+use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
@@ -19,6 +20,8 @@ use konnect_sexp::{
     },
 };
 use serde_json::json;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use super::cli;
 use super::sch_analysis::build_net_graph;
@@ -340,6 +343,30 @@ async fn handle_run_erc(
     let sch_path = get_path(args, "schematic")?;
     let min_severity = args["severity"].as_str().unwrap_or("warning");
 
+    if let Some(root) = owning_project_root(&sch_path) {
+        // Structured, not free text: a caller can react to `invalid_argument`
+        // on `schematic` by retrying against the named root, which is exactly
+        // what the message says to do.
+        let reason = format!(
+            "{} is a sheet inside the project rooted at {}, not a project root of its own. \
+             kicad-cli treats the file it is handed as the root and looks for a .kicad_pro \
+             beside it, so the project's sym-lib-table is never read and every symbol from a \
+             project library is reported as an unknown library — violations that describe the \
+             invocation, not the design. ERC covers the whole hierarchy in any case: run it on \
+             {}.",
+            sch_path.display(),
+            root.display(),
+            root.display()
+        );
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "schematic".to_string(),
+                reason: reason.clone(),
+            },
+            reason,
+        ));
+    }
+
     let violations = cli::run_erc(&ctx.config.kicad_cli, &sch_path).await?;
 
     let severity_rank = |s: &str| match s {
@@ -525,4 +552,257 @@ async fn handle_fix_connectivity(
         "dry_run": dry_run,
         "fixes": fixes
     })))
+}
+
+// ─── Project-root detection for ERC ───────────────────────────────────────────
+
+/// The root schematic of the project that owns `file` as a sub-sheet, if any.
+///
+/// `kicad-cli` treats whatever file it is handed as the root of the hierarchy
+/// and looks for a `.kicad_pro` named after it. A sub-sheet has no such file,
+/// so the project's `sym-lib-table` is never read and every symbol from a
+/// project library comes back as an unknown library (measured against
+/// KiCad 10.0.3: running `sch erc` on a sub-sheet of `demos/complex_hierarchy`
+/// produces 67 violations, 46 of them `lib_symbol_issues` — "the current
+/// configuration does not include the symbol library" — against 0 when run on
+/// the project's own root sheet). Those violations describe the invocation
+/// rather than the design, and the obvious remedy — registering the library
+/// again — is the wrong one, so the case is worth naming.
+///
+/// This looks for the owning project only in `file`'s own directory, not by
+/// walking up ancestors: this fork has no ancestor-walking `project_root_for`
+/// (unlike upstream's `library.rs`), and every sub-sheet reachable from a
+/// hierarchy — including both bundled KiCad demo hierarchies — sits beside
+/// its project's `.kicad_pro`. A sheet that has been moved to a different
+/// directory than its project is not a case this refusal claims to catch.
+///
+/// Returns `None` for a schematic that is a root in its own right, one that
+/// belongs to no project, and one that sits beside a project without appearing
+/// in its sheet tree.
+fn owning_project_root(file: &Path) -> Option<PathBuf> {
+    if file.with_extension("kicad_pro").is_file() {
+        return None;
+    }
+    let dir = file.parent().unwrap_or_else(|| Path::new("."));
+    let root = project_root_schematic(dir)?;
+    if same_file(&root, file) {
+        return None;
+    }
+    let mut visited = HashSet::new();
+    sheet_tree_contains(&root, file, 0, &mut visited).then_some(root)
+}
+
+/// The `<stem>.kicad_sch` beside the single `.kicad_pro` in `dir`. A directory
+/// holding more than one project says nothing definite about which root a loose
+/// sheet belongs to, so it yields nothing rather than a guess.
+fn project_root_schematic(dir: &Path) -> Option<PathBuf> {
+    let mut found: Option<PathBuf> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "kicad_pro") {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(path);
+        }
+    }
+    let sch = found?.with_extension("kicad_sch");
+    sch.is_file().then_some(sch)
+}
+
+/// Whether `target` is reachable as a sheet from `root`. Depth and visited set
+/// guard the same way [`crate::tools::sch_hierarchy::build_hierarchy_node`]
+/// does: a sheet may reference a file that references it back.
+fn sheet_tree_contains(
+    root: &Path,
+    target: &Path,
+    depth: usize,
+    visited: &mut HashSet<PathBuf>,
+) -> bool {
+    if depth > crate::tools::sch_hierarchy::MAX_HIERARCHY_DEPTH {
+        return false;
+    }
+    let canon = canonical(root);
+    if !visited.insert(canon) {
+        return false;
+    }
+    let Ok(sch) = cse::Schematic::load(root) else {
+        return false;
+    };
+    let dir = root.parent().unwrap_or_else(|| Path::new("."));
+    sch.sheets.iter().any(|sheet| {
+        let child = dir.join(sheet.file());
+        same_file(&child, target) || sheet_tree_contains(&child, target, depth + 1, visited)
+    })
+}
+
+/// Path equality that survives `.\foo` versus `foo` and case-insensitive
+/// filesystems. Falls back to a literal comparison for paths that do not exist.
+fn same_file(a: &Path, b: &Path) -> bool {
+    canonical(a) == canonical(b)
+}
+
+fn canonical(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+}
+
+#[cfg(test)]
+mod erc_project_root_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// A root sheet holding one sub-sheet reference. The `(sheet …)` block is
+    /// shaped the way KiCad 10 writes one — trimmed to the fields the loader
+    /// reads.
+    fn root_with_child(dir: &Path, root: &str, child_file: &str) -> PathBuf {
+        let path = dir.join(root);
+        std::fs::write(
+            &path,
+            format!(
+                r#"(kicad_sch
+	(version 20250610)
+	(generator "konnect")
+	(generator_version "10.0")
+	(uuid "00000000-0000-4000-8000-000000000001")
+	(paper "A4")
+	(sheet
+		(at 40 50)
+		(size 80 25)
+		(uuid "00000000-0000-4000-8000-000000000002")
+		(property "Sheetname" "Child"
+			(at 40 49.365 0)
+		)
+		(property "Sheetfile" "{child_file}"
+			(at 40 75.635 0)
+		)
+	)
+	(sheet_instances
+		(path "/" (page "1"))
+	)
+)
+"#
+            ),
+        )
+        .unwrap();
+        path
+    }
+
+    fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    fn blank(dir: &Path, name: &str) -> PathBuf {
+        write(dir, name, &crate::tools::blank_schematic_template())
+    }
+
+    #[test]
+    fn child_sheet_resolves_to_its_project_root() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "proj.kicad_pro", "{}");
+        let root = root_with_child(tmp.path(), "proj.kicad_sch", "child.kicad_sch");
+        let child = blank(tmp.path(), "child.kicad_sch");
+
+        assert_eq!(owning_project_root(&child), Some(root));
+    }
+
+    #[test]
+    fn a_root_of_its_own_is_left_alone() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "proj.kicad_pro", "{}");
+        let root = root_with_child(tmp.path(), "proj.kicad_sch", "child.kicad_sch");
+        blank(tmp.path(), "child.kicad_sch");
+
+        assert_eq!(owning_project_root(&root), None);
+    }
+
+    #[test]
+    fn a_sheet_belonging_to_no_project_is_left_alone() {
+        let tmp = TempDir::new().unwrap();
+        let loose = blank(tmp.path(), "loose.kicad_sch");
+
+        assert_eq!(owning_project_root(&loose), None);
+    }
+
+    /// The refusal is a structured `invalid_argument` naming `schematic`, so a
+    /// caller can react by retrying against the root the message names.
+    #[tokio::test]
+    async fn the_sub_sheet_refusal_is_structured_and_names_the_field() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "proj.kicad_pro", "{}");
+        root_with_child(tmp.path(), "proj.kicad_sch", "child.kicad_sch");
+        let child = blank(tmp.path(), "child.kicad_sch");
+
+        let ctx = crate::tools::ToolContext::new(
+            crate::tools::ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            std::sync::Arc::new(crate::router::ToolRouter::new()),
+        );
+        let result = handle_run_erc(
+            &serde_json::json!({ "schematic": child.display().to_string() }),
+            &ctx,
+        )
+        .await
+        .expect("a refusal is a tool error, not a transport error");
+
+        assert!(result.is_error);
+        let text = match result.content.first() {
+            Some(crate::mcp::protocol::ToolContent::Text { text }) => text.clone(),
+            other => panic!("expected text content, got {other:?}"),
+        };
+        let output: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(output["error"]["kind"], "invalid_argument");
+        assert_eq!(output["error"]["field"], "schematic");
+        assert!(output["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("proj.kicad_sch"));
+    }
+
+    /// Sitting beside a project is not the same as belonging to it — the file
+    /// has to appear in the sheet tree.
+    #[test]
+    fn unrelated_neighbour_is_left_alone() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "proj.kicad_pro", "{}");
+        root_with_child(tmp.path(), "proj.kicad_sch", "child.kicad_sch");
+        blank(tmp.path(), "child.kicad_sch");
+        let stranger = blank(tmp.path(), "stranger.kicad_sch");
+
+        assert_eq!(owning_project_root(&stranger), None);
+    }
+
+    /// A sheet cycle must not hang the walk.
+    #[test]
+    fn a_reference_cycle_terminates() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "proj.kicad_pro", "{}");
+        root_with_child(tmp.path(), "proj.kicad_sch", "a.kicad_sch");
+        root_with_child(tmp.path(), "a.kicad_sch", "proj.kicad_sch");
+        let stranger = blank(tmp.path(), "stranger.kicad_sch");
+
+        assert_eq!(owning_project_root(&stranger), None);
+    }
+
+    /// A directory with two candidate `.kicad_pro` files says nothing definite
+    /// about which root a loose sheet belongs to; refusing arbitrarily would be
+    /// worse than doing nothing, so this stays a pass-through.
+    #[test]
+    fn a_directory_with_multiple_projects_does_not_refuse_arbitrarily() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "one.kicad_pro", "{}");
+        write(tmp.path(), "two.kicad_pro", "{}");
+        root_with_child(tmp.path(), "one.kicad_sch", "child.kicad_sch");
+        let child = blank(tmp.path(), "child.kicad_sch");
+
+        assert_eq!(owning_project_root(&child), None);
+    }
 }
