@@ -15,7 +15,7 @@ use konnect_sexp::{
     parser::parse_sexp,
     schematic::{
         extract_symbol_instances, extract_wires, find_lib_symbol, find_t_junctions,
-        format_junction, format_wire, parse_at, pin_endpoint, read_schematic,
+        format_junction, format_wire, parse_at, pin_endpoint, read_schematic, Wire,
     },
     writer::{
         apply_edits, find_balanced_block, find_block_starts, find_block_with_leading_whitespace,
@@ -68,7 +68,8 @@ pub fn tools() -> Vec<ToolDef> {
             "delete_schematic_wire",
             "Delete a wire segment by its UUID, or by matching BOTH endpoints \
              (all four of x1/y1/x2/y2, either direction). Fails without deleting \
-             anything when no wire matches.",
+             anything when no wire matches. Junction dots the wire leaves \
+             unjustified are removed with it.",
             json!({
                 "type": "object",
                 "properties": {
@@ -84,7 +85,9 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "batch_delete_schematic_wire",
-            "Delete multiple wire segments in a single file read/write cycle.",
+            "Delete multiple wire segments in a single file read/write cycle. \
+             Junction dots the wires leave unjustified are removed with them, \
+             reported as junctions_pruned_count.",
             json!({
                 "type": "object",
                 "properties": {
@@ -626,109 +629,201 @@ async fn handle_delete_wire(
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
 
-    let delete_range = if let Some(uuid) = opt_str(args, "uuid") {
-        match crate::tools::find_schematic_item_by_uuid(&content, uuid) {
+    let (del_start, del_end) = match locate_wire_for_delete(&content, args, &sch_path) {
+        Ok(range) => range,
+        Err(e) => return Ok(e),
+    };
+
+    let removed = wires_in_ranges(&content, &[(del_start, del_end)]);
+    let edits = vec![SexpEdit::delete(del_start, del_end)];
+    let new_content = apply_edits(content, edits);
+    let (new_content, pruned) = prune_orphaned_junctions(new_content, &removed);
+    write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
+    Ok(CallToolResult::text(match pruned {
+        0 => "Wire deleted.".to_string(),
+        n => format!("Wire deleted. Removed {n} orphaned junction(s)."),
+    }))
+}
+
+/// Byte range of the wire block the `uuid` or `x1/y1/x2/y2` arguments name.
+///
+/// Ported from upstream #214's `locate_wire_for_delete`, but resolved through
+/// this fork's shared `item_locations` uuid index rather than a standalone
+/// `wire_block_with_leading_whitespace` scan, so a uuid naming a non-wire item
+/// reports `NotFound` here the same way the batch path already does.
+fn locate_wire_for_delete(
+    content: &str,
+    args: &serde_json::Value,
+    sch_path: &std::path::Path,
+) -> Result<(usize, usize), CallToolResult> {
+    if let Some(uuid) = opt_str(args, "uuid") {
+        return match crate::tools::find_schematic_item_by_uuid(content, uuid) {
             Ok(Some((_start, _end, kind))) if kind.as_deref() == Some("wire") => {
-                crate::tools::find_schematic_item_block_for_delete(&content, uuid)
+                crate::tools::find_schematic_item_block_for_delete(content, uuid)
                     .ok()
                     .flatten()
                     .map(|(start, end, _kind)| (start, end))
+                    .ok_or_else(|| {
+                        CallToolResult::error_kind(
+                            crate::mcp::error::ToolErrorKind::NotFound {
+                                document: sch_path.display().to_string(),
+                                item_kind: "wire".to_string(),
+                                key: uuid.to_string(),
+                                candidates: Vec::new(),
+                            },
+                            "Cannot locate a wire block matching the requested identity",
+                        )
+                    })
             }
             // Exists but isn't a wire: falls through to the generic "cannot
             // locate a wire block" branch below, same as an unresolved
             // enclosing-tag search did before this lookup was unified.
-            Ok(Some(_)) => None,
-            Ok(None) => {
-                return Ok(CallToolResult::error_kind(
-                    crate::mcp::error::ToolErrorKind::NotFound {
-                        document: sch_path.display().to_string(),
-                        item_kind: "wire".to_string(),
-                        key: uuid.to_string(),
-                        candidates: Vec::new(),
-                    },
-                    format!("Wire UUID '{uuid}' not found"),
-                ));
-            }
-            Err(err) => {
-                return Ok(CallToolResult::error_kind(
-                    ToolErrorKind::MalformedDocument {
-                        path: sch_path.display().to_string(),
-                        detail: err.to_string(),
-                    },
-                    "Cannot parse schematic document",
-                ));
-            }
-        }
-    } else {
-        let Some(x1) = opt_f64(args, "x1") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "x1".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        let Some(y1) = opt_f64(args, "y1") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "y1".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        let Some(x2) = opt_f64(args, "x2") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "x2".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        let Some(y2) = opt_f64(args, "y2") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "y2".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        find_wire_block_by_endpoints(&content, x1, y1, x2, y2)
-    };
-
-    let (del_start, del_end) = match delete_range {
-        Some(r) => r,
-        None => {
-            let identity = opt_str(args, "uuid")
-                .map(str::to_string)
-                .unwrap_or_else(|| {
-                    format!(
-                        "({:?},{:?})-({:?},{:?})",
-                        opt_f64(args, "x1"),
-                        opt_f64(args, "y1"),
-                        opt_f64(args, "x2"),
-                        opt_f64(args, "y2")
-                    )
-                });
-            return Ok(CallToolResult::error_kind(
+            Ok(Some(_)) | Ok(None) => Err(CallToolResult::error_kind(
                 crate::mcp::error::ToolErrorKind::NotFound {
                     document: sch_path.display().to_string(),
                     item_kind: "wire".to_string(),
-                    key: identity,
+                    key: uuid.to_string(),
                     candidates: Vec::new(),
                 },
-                "Cannot locate a wire block matching the requested identity",
-            ));
-        }
+                format!("Wire UUID '{uuid}' not found"),
+            )),
+            Err(err) => Err(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: err.to_string(),
+                },
+                "Cannot parse schematic document",
+            )),
+        };
+    }
+
+    let (Some(x1), Some(y1), Some(x2), Some(y2)) = (
+        opt_f64(args, "x1"),
+        opt_f64(args, "y1"),
+        opt_f64(args, "x2"),
+        opt_f64(args, "y2"),
+    ) else {
+        return Err(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "x1".to_string(),
+                reason: "required when uuid is not given".to_string(),
+            },
+            "Provide either uuid or all x1/y1/x2/y2 coordinates",
+        ));
     };
 
-    let edits = vec![SexpEdit::delete(del_start, del_end)];
-    let new_content = apply_edits(content, edits);
-    write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
-    Ok(CallToolResult::text("Wire deleted."))
+    find_wire_block_by_endpoints(content, x1, y1, x2, y2).ok_or_else(|| {
+        CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "wire".to_string(),
+                key: format!("({x1:?},{y1:?})-({x2:?},{y2:?})"),
+                candidates: Vec::new(),
+            },
+            "Cannot locate a wire block matching the requested identity",
+        )
+    })
+}
+
+/// The wires inside the given byte ranges of the document.
+fn wires_in_ranges(content: &str, ranges: &[(usize, usize)]) -> Vec<Wire> {
+    // `extract_wires` expects wires as direct children of the parsed document
+    // root, so wrap every range in one minimal root and parse it once.
+    let mut wrapped = String::from("(kicad_sch ");
+    for &(start, end) in ranges {
+        wrapped.push_str(&content[start..end]);
+    }
+    wrapped.push(')');
+    parse_sexp(&wrapped)
+        .map(|node| extract_wires(&node))
+        .unwrap_or_default()
+}
+
+/// Drop the junction dots the removed wires left with nothing to justify them.
+///
+/// Deleting a wire used to leave its dots behind, so a tap deleted off a rail
+/// left the dot on the rail alone, and KiCad reads that leftover dot as a
+/// connection between whatever still crosses it there — silently joining two
+/// wires that only ever touched because of the tap that is now gone. A dot
+/// needs two wires to mean anything, with one exception: one wire plus a pin
+/// landing mid-segment, which is exactly what `pins_mid_segment` creates. So a
+/// junction is pruned when no wire is left through it, or one is and no pin
+/// sits there. Junctions no removed wire touched are left alone.
+fn prune_orphaned_junctions(content: String, removed: &[Wire]) -> (String, usize) {
+    const TOL: f64 = 0.01;
+    // Two is as high as this needs to count, so it stops there.
+    let wires_through = |wires: &[Wire], jx: f64, jy: f64| {
+        wires
+            .iter()
+            .filter(|w| {
+                konnect_sexp::geometry::point_on_segment(jx, jy, w.x1, w.y1, w.x2, w.y2, TOL)
+            })
+            .take(2)
+            .count()
+    };
+
+    // The dots the removed wires ran through, with the block to delete. Most
+    // deletions find none, and the document parse below is only for those.
+    let mut candidates: Vec<((usize, usize), (f64, f64))> = Vec::new();
+    for start in find_block_starts(&content, "junction") {
+        let Some((ws_start, block_end)) = find_block_with_leading_whitespace(&content, start)
+        else {
+            continue;
+        };
+        let Ok(node) = parse_sexp(&content[start..block_end]) else {
+            continue;
+        };
+        let Some((jx, jy, _)) = parse_at(&node) else {
+            continue;
+        };
+        if wires_through(removed, jx, jy) > 0 {
+            candidates.push(((ws_start, block_end), (jx, jy)));
+        }
+    }
+    if candidates.is_empty() {
+        return (content, 0);
+    }
+
+    let Ok(tree) = parse_sexp(&content) else {
+        return (content, 0);
+    };
+    let remaining = extract_wires(&tree);
+    // Resolving pins walks every symbol against `lib_symbols`, so it waits
+    // until a dot is down to its last wire and the answer decides the case.
+    let mut pins: Option<(Vec<(f64, f64)>, bool)> = None;
+
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for (range, (jx, jy)) in candidates {
+        let orphaned = match wires_through(&remaining, jx, jy) {
+            0 => true,
+            1 => {
+                let (pins, pins_known) = pins.get_or_insert_with(|| {
+                    let pins = crate::tools::all_pin_endpoints(&tree);
+                    // A sheet with symbols but no resolvable pin means the
+                    // `lib_symbols` lookup failed, not that nothing is
+                    // connected. Only the unambiguous zero-wire case prunes
+                    // then, rather than guess a pin isn't there.
+                    let known = !pins.is_empty() || extract_symbol_instances(&tree).is_empty();
+                    (pins, known)
+                });
+                *pins_known
+                    && !pins.iter().any(|&(px, py)| {
+                        konnect_sexp::geometry::points_coincident(px, py, jx, jy, TOL)
+                    })
+            }
+            _ => false,
+        };
+        if orphaned {
+            ranges.push(range);
+        }
+    }
+
+    let pruned = ranges.len();
+    let edits = ranges
+        .into_iter()
+        .map(|(s, e)| SexpEdit::delete(s, e))
+        .collect();
+    (apply_edits(content, edits), pruned)
 }
 
 async fn handle_batch_delete_wire(
@@ -824,14 +919,17 @@ async fn handle_batch_delete_wire(
         });
     }
 
+    let removed = wires_in_ranges(&content, &ranges);
     let edits: Vec<SexpEdit> = ranges
         .into_iter()
         .map(|(s, e)| SexpEdit::delete(s, e))
         .collect();
     let content = apply_edits(content, edits);
+    let (content, pruned) = prune_orphaned_junctions(content, &removed);
     write_atomic_if_unchanged(&sch_path, &expected, &content)?;
     Ok(CallToolResult::json(&json!({
         "deleted": deleted,
+        "junctions_pruned_count": pruned,
         "errors": errors
     })))
 }
@@ -880,7 +978,7 @@ fn splittable_at(w: &konnect_sexp::schematic::Wire, px: f64, py: f64) -> bool {
 
 async fn handle_split_wire_at_point(
     args: &serde_json::Value,
-    ctx: &ToolContext,
+    _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
     let px = match require_f64(args, "x") {
@@ -892,7 +990,9 @@ async fn handle_split_wire_at_point(
         Err(e) => return Ok(e),
     };
 
-    let (content, tree) = read_schematic(&sch_path)?;
+    let content = read_consistent(&sch_path)?;
+    let expected = content.clone();
+    let tree = parse_sexp(&content)?;
     let wires = extract_wires(&tree);
 
     // The point alone only identifies a wire while nothing else crosses it:
@@ -942,25 +1042,34 @@ async fn handle_split_wire_at_point(
         }
     };
 
-    // Delete the original wire and insert two halves + junction
-    let del_args = if let Some(uuid) = &w.uuid {
-        json!({ "schematic": sch_path.display().to_string(), "uuid": uuid })
-    } else {
-        json!({
-            "schematic": sch_path.display().to_string(),
-            "x1": w.x1,
-            "y1": w.y1,
-            "x2": w.x2,
-            "y2": w.y2
-        })
+    // Delete the original wire and insert two halves + junction. Not through
+    // `handle_delete_wire`: the two halves cover the same segment, so every
+    // junction the original wire justified is still justified after the
+    // split, and running it through the pruning `handle_delete_wire` now does
+    // would drop dots in the gap between the delete and the re-insert below.
+    let block = match &w.uuid {
+        Some(uuid) => crate::tools::find_schematic_item_block_for_delete(&content, uuid)
+            .ok()
+            .flatten()
+            .map(|(start, end, _kind)| (start, end)),
+        None => find_wire_block_by_endpoints(&content, w.x1, w.y1, w.x2, w.y2),
     };
-    let delete_result = handle_delete_wire(&del_args, ctx).await?;
-    if delete_result.is_error {
-        return Ok(delete_result);
-    }
+    let Some((del_start, del_end)) = block else {
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "wire".to_string(),
+                key: w
+                    .uuid
+                    .clone()
+                    .unwrap_or_else(|| format!("({},{})-({},{})", w.x1, w.y1, w.x2, w.y2)),
+                candidates: Vec::new(),
+            },
+            "Cannot locate a wire block matching the requested identity",
+        ));
+    };
+    let content = apply_edits(content, vec![SexpEdit::delete(del_start, del_end)]);
 
-    let content = read_consistent(&sch_path)?;
-    let expected = content.clone();
     let w1 = format_wire(w.x1, w.y1, px, py);
     let w2 = format_wire(px, py, w.x2, w.y2);
     let junc = format_junction(px, py);
@@ -2812,6 +2921,116 @@ mod wire_delete_tests {
         assert_eq!(wires.len(), 2);
         assert!(after.contains("(junction"));
         assert!(!wires.iter().any(|wire| wire.x1 == 0.0 && wire.x2 == 10.0));
+    }
+
+    // ─── Deleting a wire takes its junction dots with it (upstream #214) ───
+
+    /// The same two wires the fixtures above use, named for their role here.
+    const RAIL: &str = WIRE_1;
+    const TAP: &str = WIRE_2;
+
+    /// A rail with one tap onto it, the dot at the T, and a second dot far
+    /// away that no delete below touches.
+    fn t_junction_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("junction-prune.kicad_sch");
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols)\n\t(wire\n\t\t(pts (xy 50.8 50.8) (xy 76.2 50.8))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{RAIL}\")\n\t)\n\t(wire\n\t\t(pts (xy 63.5 50.8) (xy 63.5 63.5))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{TAP}\")\n\t)\n\t(junction (at 63.5 50.8) (diameter 0) (color 0 0 0 0) (uuid \"aaaa0000-0000-0000-0000-000000000001\"))\n\t(junction (at 25.4 25.4) (diameter 0) (color 0 0 0 0) (uuid \"aaaa0000-0000-0000-0000-000000000002\"))\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n"
+            ),
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    fn junctions_in(path: &std::path::Path) -> Vec<(f64, f64)> {
+        let content = std::fs::read_to_string(path).unwrap();
+        let tree = konnect_sexp::parse_sexp(&content).unwrap();
+        konnect_sexp::schematic::extract_junctions(&tree)
+            .into_iter()
+            .map(|j| (j.x, j.y))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn deleting_every_wire_through_a_junction_removes_the_dot() {
+        let (_dir, path) = t_junction_schematic();
+        let result = handle_batch_delete_wire(
+            &json!({ "schematic": path.display().to_string(), "uuids": [RAIL, TAP] }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        // The far dot is on no deleted wire, so it stays whatever justifies it.
+        assert_eq!(junctions_in(&path), vec![(25.4, 25.4)]);
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text content");
+        };
+        let body: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(body["junctions_pruned_count"], json!(1));
+    }
+
+    #[tokio::test]
+    async fn deleting_the_tap_removes_the_dot_left_on_the_rail() {
+        let (_dir, path) = t_junction_schematic();
+        let result = handle_delete_wire(
+            &json!({ "schematic": path.display().to_string(), "uuid": TAP }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(after.contains(RAIL), "the rail must survive: {after}");
+        assert_eq!(junctions_in(&path), vec![(25.4, 25.4)]);
+        assert!(konnect_sexp::parse_sexp(&after).is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_dot_on_a_mid_segment_pin_survives_losing_its_second_wire() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pin-junction.kicad_sch");
+        // U1's pin tip is at (101.6, 76.2): a rail straight through it, a stub
+        // arriving from below, and the dot the T needs.
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols\n\t\t(symbol \"Test:P1\"\n\t\t\t(symbol \"P1_1_1\"\n\t\t\t\t(pin passive line (at 0 0 0) (length 2.54)\n\t\t\t\t\t(name \"~\" (effects (font (size 1.27 1.27))))\n\t\t\t\t\t(number \"1\" (effects (font (size 1.27 1.27))))\n\t\t\t\t)\n\t\t\t)\n\t\t)\n\t)\n\t(symbol\n\t\t(lib_id \"Test:P1\")\n\t\t(at 101.6 76.2 0)\n\t\t(unit 1)\n\t\t(uuid \"u1\")\n\t\t(property \"Reference\" \"U1\"\n\t\t\t(at 101.6 71.12 0)\n\t\t)\n\t)\n\t(wire\n\t\t(pts (xy 96.52 76.2) (xy 106.68 76.2))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{RAIL}\")\n\t)\n\t(wire\n\t\t(pts (xy 101.6 76.2) (xy 101.6 68.58))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{TAP}\")\n\t)\n\t(junction (at 101.6 76.2) (diameter 0) (color 0 0 0 0) (uuid \"aaaa0000-0000-0000-0000-000000000003\"))\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n"
+            ),
+        )
+        .unwrap();
+
+        let result = handle_delete_wire(
+            &json!({ "schematic": path.display().to_string(), "uuid": TAP }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        // One wire left through the dot, but the pin lands mid-segment there —
+        // that is the connection, and pruning it would silently break the net.
+        assert_eq!(junctions_in(&path), vec![(101.6, 76.2)]);
+    }
+
+    #[tokio::test]
+    async fn split_wire_keeps_the_dots_on_the_wire_it_replaces() {
+        let (_dir, path) = t_junction_schematic();
+        let result = handle_split_wire_at_point(
+            &json!({ "schematic": path.display().to_string(), "x": 68.58, "y": 50.8 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        let mut juncs = junctions_in(&path);
+        juncs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(juncs, vec![(25.4, 25.4), (63.5, 50.8), (68.58, 50.8)]);
     }
 }
 

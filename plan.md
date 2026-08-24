@@ -3130,7 +3130,23 @@ None. Each item below is independent of the others except where stated.
         skipped; `add_power_symbol`'s own description now says so. Red before
         at `["#PWR001", "#PWR003", "#PWR003"]` — three symbols added,
         `#PWR002` deleted, and the fourth add duplicated `#PWR003`.
-  - [ ] P.6.7.3 #214 (deleted wires leave orphaned junction dots)
+  - [x] P.6.7.3 #214 — deleted wires leave orphaned junction dots. Done:
+        `prune_orphaned_junctions` drops the dots a removed wire left with
+        nothing to justify them, on both `delete_schematic_wire` and the batch
+        path (which reports `junctions_pruned_count`); `locate_wire_for_delete`
+        and `wires_in_ranges` come with it. `locate_wire_for_delete` is adapted
+        rather than copied — this fork resolves the uuid through
+        `find_schematic_item_by_uuid`, not upstream's standalone block scan.
+        `split_wire_at_point` no longer routes through `handle_delete_wire`:
+        its two halves cover the same segment, so every dot stays justified,
+        and going through the pruning path would drop dots in the gap between
+        the delete and the re-insert. It also becomes a single write.
+        Conservation rule, and it is tested in both directions: a dot needs two
+        wires, or one wire plus a pin landing mid-segment. Red before at
+        `[(63.5, 50.8), (25.4, 25.4)]` against `[(25.4, 25.4)]` — the ghost dot
+        survives the delete; and with the rule dropped the other way, the
+        mid-segment pin's dot is wrongly pruned (`[]` against
+        `[(101.6, 76.2)]`).
   - [ ] P.6.7.4 #274 (pad count and courtyard by substring)
   - [ ] P.6.7.5 #140 (net and track counts by substring)
   - [ ] P.6.7.6 #139 (`export_bom` ignores `exclude_dnp` and `format`, both

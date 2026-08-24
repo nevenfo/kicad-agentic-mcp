@@ -4,7 +4,7 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte (P.6.7.1 et P.6.7.2 closes, P.6.7.3 à P.6.7.8 restent), P.6.8 à P.6.11
+est ouverte (P.6.7.1 à P.6.7.3 closes, P.6.7.4 à P.6.7.8 restent), P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -14,18 +14,26 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.2 — le numéro `#PWR` d'un symbole d'alimentation est le plus petit libre,
-plus le compte plus un. `next_pwr_number` dans `sch_wiring.rs` collecte les
-numéros réellement utilisés et rend le premier trou ; la description du tool
-`add_power_symbol` le dit désormais.
+P.6.7.3 — supprimer un fil emporte les points de jonction qu'il justifiait.
+`prune_orphaned_junctions` dans `sch_wiring.rs`, appelé par
+`handle_delete_wire` et par le chemin batch (qui remonte
+`junctions_pruned_count`), avec `locate_wire_for_delete` et `wires_in_ranges`.
+`handle_split_wire_at_point` ne passe plus par `handle_delete_wire` : ses deux
+moitiés couvrent le même segment, donc aucun dot ne devient orphelin, et
+traverser le chemin d'élagage en supprimerait entre le retrait et la
+ré-insertion ; il devient au passage une écriture unique.
+
+Règle de conservation : un dot a besoin de deux fils, ou d'un fil plus une pin
+posée mid-segment.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- rouge-avant vérifié en restaurant le comptage : trois symboles ajoutés,
-  `#PWR002` supprimé, le quatrième ajout rend
-  `["#PWR001", "#PWR003", "#PWR003"]` ; vert après restauration
+- rouge-avant vérifié dans les deux sens : élagage neutralisé, le dot fantôme
+  survit (`[(63.5, 50.8), (25.4, 25.4)]` au lieu de `[(25.4, 25.4)]`) ; règle de
+  conservation retirée, le dot de la pin mid-segment est élagué à tort (`[]` au
+  lieu de `[(101.6, 76.2)]`). Verts après restauration
 
 ## Décisions actives
 
@@ -114,13 +122,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.3 — `#214` : supprimer un fil laisse derrière lui le point de
-jonction qu'il justifiait, que KiCad relit ensuite comme une connexion entre ce
-qui passe encore là. Upstream (`816dccf`, merge — lire son diff par
-`git diff <parent1> <parent2>`) ajoute `prune_orphaned_junctions`, replie la
-recherche du fil dans `locate_wire_for_delete` et remonte
-`junctions_pruned_count` depuis le chemin batch. Relire l'entrée `#214` de
-`docs/upstream-audit.md` pour l'état exact dans ce fork avant de coder. Le test
-discriminant supprime un fil d'un T et vérifie que le dot part avec lui, tout
-en gardant celui d'un T encore justifié. Valider par `cargo fmt` /
-`clippy -D warnings` / `cargo test --workspace --lib --tests`.
+Implémenter P.6.7.4 — `#274` : `get_footprint_info` déduit ses propriétés du
+texte source (compte de pads par `content.matches("
+  (pad ")`, présence de
+courtyard et de modèle 3D par sous-chaîne), alors que KiCad contrôle
+l'indentation et les fins de ligne. Relire l'entrée `#274` de
+`docs/upstream-audit.md` pour l'état exact dans ce fork, puis lire l'arbre
+plutôt que le texte. Le test discriminant part d'un footprint indenté par
+tabulations. Valider par `cargo fmt` / `clippy -D warnings` /
+`cargo test --workspace --lib --tests`.
