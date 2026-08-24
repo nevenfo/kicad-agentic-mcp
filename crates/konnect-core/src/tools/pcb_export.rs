@@ -696,7 +696,12 @@ async fn handle_get_drc_violations(
             "severity": v.severity,
             "description": v.description,
             "category": v.category,
-            "pos": v.pos.as_ref().map(|p| json!({ "x": p.x, "y": p.y }))
+            "pos": v.pos.as_ref().map(|p| json!({ "x": p.x, "y": p.y })),
+            "items": v.items.iter().map(|item| json!({
+                "description": item.description,
+                "pos": item.pos.as_ref().map(|p| json!({ "x": p.x, "y": p.y })),
+                "uuid": item.uuid,
+            })).collect::<Vec<_>>()
         })).collect::<Vec<_>>()
     });
 

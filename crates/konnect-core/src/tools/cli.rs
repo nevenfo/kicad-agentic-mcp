@@ -27,12 +27,19 @@ pub struct ErcViolation {
     pub severity: String,
     pub description: String,
     pub sheet: Option<String>,
+    /// The first item's position, kept for backward compatibility with
+    /// callers that only ever cared about "where". Derived from `items[0]`.
     pub pos: Option<ErcPos>,
     /// KiCAD's own rule name (`pin_not_connected`, …). Prose is reworded
     /// between versions; the rule name is what a stable finding id can be
     /// built on, so it is kept rather than folded into the description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule: Option<String>,
+    /// Every item KiCAD named for this violation. A `pin_to_pin` conflict
+    /// names both pins that conflict; `items[0]` alone loses the pin that
+    /// explains the finding.
+    #[serde(default)]
+    pub items: Vec<ReportItem>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -41,10 +48,24 @@ pub struct ErcPos {
     pub y: f64,
 }
 
+/// One entry of a violation's `items` array, shared by ERC and DRC reports
+/// (schema `{ description, pos: { x, y }, uuid }`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pos: Option<ErcPos>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uuid: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrcViolation {
     pub severity: String,
     pub description: String,
+    /// The first item's position, kept for backward compatibility with
+    /// callers that only ever cared about "where". Derived from `items[0]`.
     pub pos: Option<ErcPos>,
     /// KiCAD's own rule name (`clearance`, `courtyards_overlap`, …). See
     /// [`ErcViolation::rule`].
@@ -55,6 +76,12 @@ pub struct DrcViolation {
     /// different passes of `kicad-cli`, live under different JSON keys, and a
     /// caller ventilating a report by category needs to tell them apart.
     pub category: DrcCategory,
+    /// Every item KiCAD named for this violation. Two `unconnected_items`
+    /// entries can share rule, description and first position while naming
+    /// different pads on the second item — `items[0]` alone made them
+    /// indistinguishable.
+    #[serde(default)]
+    pub items: Vec<ReportItem>,
 }
 
 /// The three top-level arrays `kicad-cli pcb drc --format json` may emit.
@@ -210,6 +237,31 @@ pub async fn run_erc(cli: &str, schematic: &Path) -> Result<Vec<ErcViolation>> {
     Ok(violations)
 }
 
+/// Decode a violation's `items` array (`[{ description, pos: { x, y }, uuid }]`),
+/// shared by the ERC and DRC parsers — the shape is identical in both
+/// reports, and duplicating this per-parser is how the second item was lost.
+fn parse_report_items(v: &serde_json::Value) -> Vec<ReportItem> {
+    let Some(items) = v.get("items").and_then(|i| i.as_array()) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .map(|item| ReportItem {
+            description: item
+                .get("description")
+                .and_then(|d| d.as_str())
+                .map(String::from),
+            pos: item.get("pos").and_then(|p| {
+                Some(ErcPos {
+                    x: p["x"].as_f64()?,
+                    y: p["y"].as_f64()?,
+                })
+            }),
+            uuid: item.get("uuid").and_then(|u| u.as_str()).map(String::from),
+        })
+        .collect()
+}
+
 fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
     // KiCAD's ERC report (https://schemas.kicad.org/erc.v1.json) nests
     // violations per sheet — { "sheets": [ { "path": …, "violations": […] } ] }
@@ -227,17 +279,12 @@ fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
             continue;
         };
         for v in violations {
-            let first_item = v
-                .get("items")
-                .and_then(|i| i.as_array())
-                .and_then(|i| i.first());
+            let items = parse_report_items(v);
+            let first_item = items.first();
             let mut description = v["description"].as_str().unwrap_or("").to_string();
             // The per-item description names the offender ("Symbol R1 Pin 1…")
             // — without it "Pin not connected" is unactionable.
-            if let Some(detail) = first_item
-                .and_then(|item| item.get("description"))
-                .and_then(|d| d.as_str())
-            {
+            if let Some(detail) = first_item.and_then(|item| item.description.as_deref()) {
                 if !detail.is_empty() {
                     description = format!("{}: {}", description, detail);
                 }
@@ -247,12 +294,8 @@ fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
                 rule: v["type"].as_str().map(str::to_string),
                 description,
                 sheet: sheet_path.clone(),
-                pos: first_item.and_then(|item| item.get("pos")).and_then(|p| {
-                    Some(ErcPos {
-                        x: p["x"].as_f64()?,
-                        y: p["y"].as_f64()?,
-                    })
-                }),
+                pos: first_item.and_then(|item| item.pos.clone()),
+                items,
             });
         }
     }
@@ -300,18 +343,13 @@ fn parse_drc_json(raw: &serde_json::Value) -> DrcReport {
         Some(
             arr.iter()
                 .map(|v| {
-                    let first_item = v
-                        .get("items")
-                        .and_then(|i| i.as_array())
-                        .and_then(|i| i.first());
+                    let items = parse_report_items(v);
+                    let first_item = items.first();
                     let mut description = v["description"].as_str().unwrap_or("").to_string();
                     // The per-item description names the offender ("Pad 1
                     // [VCC] on R1"); without it "Missing connection between
                     // items" is unactionable.
-                    if let Some(detail) = first_item
-                        .and_then(|item| item.get("description"))
-                        .and_then(|d| d.as_str())
-                    {
+                    if let Some(detail) = first_item.and_then(|item| item.description.as_deref()) {
                         if !detail.is_empty() {
                             description = format!("{}: {}", description, detail);
                         }
@@ -320,13 +358,9 @@ fn parse_drc_json(raw: &serde_json::Value) -> DrcReport {
                         severity: v["severity"].as_str().unwrap_or("error").to_string(),
                         rule: v["type"].as_str().map(str::to_string),
                         description,
-                        pos: first_item.and_then(|item| item.get("pos")).and_then(|p| {
-                            Some(ErcPos {
-                                x: p["x"].as_f64()?,
-                                y: p["y"].as_f64()?,
-                            })
-                        }),
+                        pos: first_item.and_then(|item| item.pos.clone()),
                         category,
+                        items,
                     }
                 })
                 .collect(),
@@ -908,6 +942,62 @@ mod erc_parse_tests {
                 .is_empty()
         );
     }
+
+    #[test]
+    fn a_pin_to_pin_conflict_keeps_both_items() {
+        // A `pin_to_pin` conflict names two pins — the one driving and the
+        // one it conflicts with. Reading only items[0] loses the pin that
+        // explains the finding.
+        let report = serde_json::json!({
+            "sheets": [{
+                "path": "/",
+                "violations": [{
+                    "description": "Pin conflict",
+                    "items": [
+                        {
+                            "description": "Symbol U1 Pin 1 [Output]",
+                            "pos": { "x": 1.0, "y": 2.0 },
+                            "uuid": "p1"
+                        },
+                        {
+                            "description": "Symbol U2 Pin 3 [Output]",
+                            "pos": { "x": 3.0, "y": 4.0 },
+                            "uuid": "p2"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "pin_to_pin"
+                }]
+            }]
+        });
+        let violations = parse_erc_json(&report);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].items.len(),
+            2,
+            "must keep every item, not just items[0]"
+        );
+        assert_eq!(
+            violations[0].items[0].description.as_deref(),
+            Some("Symbol U1 Pin 1 [Output]")
+        );
+        assert_eq!(
+            violations[0].items[1].description.as_deref(),
+            Some("Symbol U2 Pin 3 [Output]")
+        );
+        let pos1 = violations[0].items[1]
+            .pos
+            .as_ref()
+            .expect("second item's own position");
+        assert!((pos1.x - 3.0).abs() < 1e-9);
+
+        // `pos` remains the first item's position, unchanged behavior.
+        let pos0 = violations[0]
+            .pos
+            .as_ref()
+            .expect("pos derived from items[0]");
+        assert!((pos0.x - 1.0).abs() < 1e-9);
+    }
 }
 
 #[cfg(test)]
@@ -1025,6 +1115,31 @@ mod drc_parse_tests {
             "the two unconnected nets are the only errors"
         );
         assert!(report.missing_categories().is_empty(), "all three categories were present in the report, even schematic_parity as an empty array");
+    }
+
+    #[test]
+    fn unconnected_items_are_distinguished_by_their_second_item() {
+        // Both `unconnected_items` entries in the fixture share rule
+        // (`unconnected_items`), top-level description ("Missing connection
+        // between items") and — for the purpose of this check — could in
+        // principle share a first position; only the second item names the
+        // other end of the missing connection, so it must survive.
+        let report = parse_drc_json(&real_report());
+        let unconnected = report.unconnected_items.as_ref().unwrap();
+        assert_eq!(unconnected[0].items.len(), 2);
+        assert_eq!(unconnected[1].items.len(), 2);
+        assert_ne!(
+            unconnected[0].items[1].description, unconnected[1].items[1].description,
+            "second items must distinguish the two unconnected-items violations"
+        );
+        let p0 = unconnected[0].items[1].pos.as_ref().unwrap();
+        let p1 = unconnected[1].items[1].pos.as_ref().unwrap();
+        assert!((p0.x - 110.5).abs() < 1e-9);
+        assert!((p1.x - 109.5).abs() < 1e-9);
+
+        // `pos` on the violation stays the first item's position.
+        assert_eq!(unconnected[0].pos, unconnected[0].items[0].pos);
+        assert_eq!(unconnected[1].pos, unconnected[1].items[0].pos);
     }
 
     #[test]

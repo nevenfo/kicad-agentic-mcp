@@ -334,6 +334,20 @@ async fn handle_run_erc(
                 entry["x"] = json!(pos.x);
                 entry["y"] = json!(pos.y);
             }
+            if !v.items.is_empty() {
+                entry["items"] = json!(v
+                    .items
+                    .iter()
+                    .map(|item| {
+                        let mut i = json!({ "description": item.description, "uuid": item.uuid });
+                        if let Some(pos) = &item.pos {
+                            i["x"] = json!(pos.x);
+                            i["y"] = json!(pos.y);
+                        }
+                        i
+                    })
+                    .collect::<Vec<_>>());
+            }
             entry
         })
         .collect();

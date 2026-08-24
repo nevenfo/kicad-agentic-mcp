@@ -3028,8 +3028,17 @@ None. Each item below is independent of the others except where stated.
       instead of 1, and `get_net_connections("GND")` stops reporting zero.
       Anti-regression: the 115-schematic eeschema corpus still parses 115/115.
       `sch_bridge.rs` is untouched, as the audit asks.
-- [ ] P.6.4 #297 + #298 — only `items[0]` of an ERC/DRC violation is kept.
-      Fold the `pos` correction from P.6.1 into the same patch.
+- [x] P.6.4 #297 + #298 — only `items[0]` of an ERC/DRC violation is kept.
+      Done: `ReportItem { description, pos, uuid }` and one shared decoder
+      `parse_report_items` feed both `parse_erc_json` and `parse_drc_json`;
+      `items: Vec<ReportItem>` lands on `ErcViolation` and `DrcViolation`,
+      and the three tool outputs (`sch_export`, `verification`, `pcb_export`)
+      carry it. `pos` stays as the derived `items[0]` convenience, so no
+      consumer breaks, and `rule` stays `Option<String>` as this fork has it.
+      The `pos` correction was already folded in by P.6.1, so nothing was
+      owed here. Discriminating tests: a `pin_to_pin` conflict keeps both
+      pins, and the fixture's two `unconnected_items` — same rule, same
+      description — are now told apart by their second item.
 - [ ] P.6.5 #142 — KiCad 10 pad net read at a fixed index, so every pad
       reports an empty net; net counts and `add_net` ids by substring.
 - [ ] P.6.6 #153 (write half) — `add_layer` locates the block close with a
