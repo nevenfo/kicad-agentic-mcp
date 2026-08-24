@@ -231,9 +231,24 @@ jobs:
           name: konnect-pcm-${{ matrix.platform }}
           path: dist/konnect-pcm-*.zip
 
+  # The critical real-KiCAD verification, reused from e2e-kicad.yml rather than
+  # copied here: one definition of the design loop, one place to bump the
+  # pinned KiCAD version. `gating: true` selects the kicad-cli path only — the
+  # GUI-driven live-ipc job stays on the weekly run (see that file's GATING
+  # note). Because `release` needs this job, a red E2E now has no path to a
+  # published release; before P.5 the two workflows merely ran side by side on
+  # the same tag.
+  e2e-kicad:
+    name: Real-KiCAD E2E (release gate)
+    uses: ./.github/workflows/e2e-kicad.yml
+    permissions:
+      contents: read
+    with:
+      gating: true
+
   release:
     name: Create Release
-    needs: [build, pcm-package]
+    needs: [build, pcm-package, e2e-kicad]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

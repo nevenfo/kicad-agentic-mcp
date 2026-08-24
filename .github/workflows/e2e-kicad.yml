@@ -6,14 +6,23 @@ name: E2E (real KiCAD)
 #   - the conformance suite round-trips every schematic in KiCAD's demo corpus
 #   - the PCM package is assembled and schema-validated
 #
-# Runs weekly, on release tags, and on demand. Not per-PR: installing KiCAD
-# costs several minutes and the per-PR suite already covers everything that
-# doesn't need a real KiCAD.
+# Runs weekly, on demand, and — through `workflow_call` — as the release gate
+# invoked by release.yml. Not per-PR: installing KiCAD costs several minutes
+# and the per-PR suite already covers everything that doesn't need a real
+# KiCAD.
 #
-# NOTE: at tag time this runs IN PARALLEL with release.yml and does not gate
-# it — a red E2E next to a published release is advisory signal, not a
-# contradiction (it happened at v0.2.0). Fold into release.yml as a `needs:`
-# if release gating is ever wanted.
+# GATING (P.5): this file used to carry its own `push: tags` trigger, so at tag
+# time it ran IN PARALLEL with release.yml and could go red beside a published
+# release — advisory signal, not a contradiction (it happened at v0.2.0). It is
+# now called BY release.yml instead, and `release` needs it, so a red critical
+# E2E stops the publication. The tag trigger is gone on purpose: keeping it
+# would run the whole suite twice per tag.
+#
+# `gating: true` (set only by release.yml) drops the `live-ipc` job. That job
+# drives a real pcbnew GUI on a cold runner and its failure mode is "the API
+# pipe never appeared", which is a runner-liveness question, not a statement
+# about the artifact being published. It stays on the weekly and on-demand
+# runs, where a red result is read by a human rather than blocking a release.
 #
 # On demand, name the fork explicitly — `gh` resolves a bare invocation to the
 # `upstream` remote, where a dispatch is a 403:
@@ -24,9 +33,14 @@ on:
   schedule:
     - cron: "17 6 * * 1" # Mondays 06:17 UTC
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      gating:
+        description: >-
+          Set by release.yml. Runs only the critical kicad-cli path, whose
+          result gates publication.
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -77,6 +91,19 @@ jobs:
       - name: Demo-corpus conformance (115+ eeschema-authored schematics)
         run: cargo test -p konnect-core --test conformance_test -- --nocapture
 
+      # The two fidelity regressions whose oracle can only be KiCAD itself:
+      # a `(paper "User" W H)` page this engine wrote must still load (#209),
+      # and an unrelated edit to a `(lib_name …)`-derived sheet must leave
+      # every net exactly as KiCAD derived it (#144). Both files parse and
+      # both assertions are internal-consistency-proof only up to the point
+      # where KiCAD disagrees — which is what happened: on the derived
+      # fixture, dropping `lib_name` loses four of six nets and KiCAD reports
+      # nothing at all. In this job because it gates the release.
+        # Quoted: an unquoted `#` after a space starts a YAML comment, which
+        # silently truncated this name to "… (#144,".
+      - name: "Schematic fidelity against real KiCAD (#144, #209)"
+        run: cargo test -p konnect-core --test schematic_fidelity_live -- --ignored --nocapture
+
       - name: IPC wedge timeout regression
         run: cargo test -p konnect-ipc --test mock_server_test -- --ignored --nocapture
 
@@ -110,6 +137,8 @@ jobs:
   # distinguishable at a glance.
   live-ipc:
     name: Live IPC against a running pcbnew
+    # Advisory, never a release gate — see the GATING note at the top.
+    if: ${{ !inputs.gating }}
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

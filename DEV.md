@@ -164,7 +164,9 @@ Konnect/
 │
 └── .github/workflows/
     ├── ci.yml                        # Check + test + clippy on 3 platforms
-    ├── e2e-kicad.yml                 # End-to-end tests against a real KiCAD install
+    ├── e2e-kicad.yml                 # End-to-end tests against a real KiCAD install;
+    │                                 #   release.yml calls it, so a red critical E2E
+    │                                 #   blocks publication (weekly + on demand too)
     └── release.yml                   # Build binaries + GitHub Release on tag push
 ```
 
