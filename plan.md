@@ -2646,7 +2646,7 @@ copied from the code comments: the crates' own doc comments cite a `D11` and a
 the toolset-not-gateway-verb argument is E.4.4 (D20). No Rust file was touched,
 so N.1's green gate still covers this state.
 
-# Phase O — V1 release and project closure — IN PROGRESS
+# Phase O — V1 release and project closure — DONE
 
 ## Objectif
 Close the project as a publishable **v1.0.0** without adding a feature, moving
@@ -2803,15 +2803,31 @@ documents send a reader to another repository's releases.
 ## O.8 — Tag — DONE
 
 ### Tâches
-- [x] O.8.1 Annotated tag `v1.0.0` on the validated commit, verified to point
-      at it, then pushed. No published tag was moved
+- [x] O.8.1 Annotated tag `v1.0.0` on `58bc62f`, the commit CI run 32719802865
+      passed on (7/7 jobs), verified with `git rev-list -n1 v1.0.0` before and
+      after the push. This repository had published no tag before it, so none
+      was moved
 
 ## O.9 — GitHub Release — DONE
 
 ### Tâches
-- [x] O.9.1 The tag push ran the Release workflow; the release carries the
-      `RELEASE_NOTES.md` body, the known limitations, and a pointer to
-      `docs/benchmark.md` for the detailed figures
+- [x] O.9.1 The tag push ran the Release workflow (run 32720207528) — 8 jobs,
+      all success: four standalone binaries, three PCM packages, and the
+      release itself. `gh release edit` then replaced the auto-generated body
+      with `RELEASE_NOTES.md` and set the title to *KiCad Agentic MCP v1.0.0*.
+      Live at https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.0.0
+      with seven assets; its relative links resolve against the tag
+      (`/blob/v1.0.0/docs/benchmark.md`), so the detailed figures are one click
+      from the body
+- [x] O.9.2 The tag also ran `E2E (real KiCAD)` (run 32720207516), which does
+      not gate the release and passed anyway: *Full design loop* and *Live IPC
+      against a running pcbnew*, both success
+- [x] O.9.3 The published artefact was opened rather than trusted:
+      `konnect-pcm-v1.0.0-windows.zip` carries one `versions[]` entry reading
+      `1.0.0` / `stable` / `kicad_version 10.0` / `platforms ["windows"]` with
+      no `download_*` field invented, the plugin manifest says 202 tools and
+      points at `bin/konnect.exe`, the viewer is bundled, and the binary inside
+      answers `konnect 1.0.0` at 21.8 MB — D99's number, unstripped
 
 ## O.10 — Closure — DONE
 

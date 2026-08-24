@@ -21,21 +21,28 @@ propres mesures, versionné, tagué et publié.
   puis `fix: the schematic-viewer lock kept the old workspace versions` — la CI
   a attrapé ce que le gate local ne peut structurellement pas voir, le viewer
   étant exclu du workspace et portant son propre lock (O.7.3)
-- tag : `v1.0.0`, annoté et poussé. Il désigne la tête d'`agentic/main` à la
-  clôture, c'est-à-dire le dernier commit de cette phase — celui qui porte ce
-  fichier. `git rev-list -n1 v1.0.0` le confirme
+- tag : `v1.0.0`, annoté et poussé sur `58bc62f`, le commit que la CI
+  32719802865 a validé (`git rev-list -n1 v1.0.0`). Les preuves de clôture
+  écrites après la publication — dont cette section — sont postérieures au tag
+  et ne le déplacent pas
 - gate local : `.\gate.ps1` **PASSED** au bump de version (fmt, clippy
   `-D warnings`, 1 123 tests, doctests, build release). Le correctif de lock ne
   touche rien que le gate exécute ; il est vérifié comme la CI le vérifie,
   `cargo metadata --locked` contre le manifeste du viewer
 - CI distante : **verte**, 7 jobs sur 7 (Format, Clippy, Check & Test sur
   windows/ubuntu/macos, Schematic viewer, PCM packaging validation)
-- GitHub Release : produite par `.github/workflows/release.yml`, que le push du
-  tag déclenche ; corps repris de `RELEASE_NOTES.md`
-- artefacts : 4 binaires autonomes (linux-gnu, x86_64/aarch64 darwin,
-  windows-msvc) + 3 paquets PCM validés contre le schéma `packages.v1` de KiCad
-  avant tout upload. L'état réel de ce run est celui que GitHub affiche sur le
-  tag `v1.0.0` — il est postérieur à ce commit, qui le déclenche
+- GitHub Release : **publiée** —
+  https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.0.0, titre
+  *KiCad Agentic MCP v1.0.0*, corps repris de `RELEASE_NOTES.md`. Workflow
+  `Release` (run 32720207528) vert, 8 jobs sur 8
+- artefacts : 7 — 4 binaires autonomes (linux-gnu, x86_64/aarch64 darwin,
+  windows-msvc) et 3 paquets PCM validés contre le schéma `packages.v1` de
+  KiCad avant upload. Le zip Windows a été rouvert après publication :
+  `versions[]` à `1.0.0`/`stable`/`platforms ["windows"]`, aucun champ
+  `download_*` inventé, 202 tools dans le manifeste du plugin, viewer inclus,
+  et le binaire répond `konnect 1.0.0` à 21,8 MB
+- `E2E (real KiCAD)` a tourné sur le tag (run 32720207516) sans le bloquer, et
+  passe : *Full design loop* et *Live IPC against a running pcbnew*
 
 Ce que la phase a corrigé, et rien d'autre : deux compteurs faux hérités de
 N.1.6 (`packaging/metadata.json` et `plugin/plugin.json` disaient 185 tools au
