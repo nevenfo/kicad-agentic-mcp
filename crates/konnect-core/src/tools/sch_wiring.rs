@@ -211,7 +211,7 @@ pub fn tools() -> Vec<ToolDef> {
         tool!(
             "add_power_symbol",
             "Add a power symbol (VCC, GND, etc.) to the schematic. Auto-numbers the \
-             internal #PWR reference.",
+             internal #PWR reference to the lowest number free on the sheet.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1547,6 +1547,22 @@ async fn handle_batch_rotate_labels(
     ))
 }
 
+/// The lowest `#PWR` number no symbol on the sheet is using.
+///
+/// Counting the power symbols instead re-issues a live designator after a
+/// deletion: drop `#PWR028` from a sheet of 29 and the count is 28, so the
+/// next symbol is handed `#PWR029` — still in use, silently duplicated.
+fn next_pwr_number(sch: &cse::Schematic) -> u32 {
+    let used: std::collections::HashSet<u32> = sch
+        .symbols
+        .iter()
+        .filter_map(|s| s.reference())
+        .filter_map(|r| r.strip_prefix("#PWR"))
+        .filter_map(|n| n.parse::<u32>().ok())
+        .collect();
+    (1u32..).find(|n| !used.contains(n)).unwrap_or(1)
+}
+
 async fn handle_add_power_symbol(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -1575,17 +1591,7 @@ async fn handle_add_power_symbol(
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
-    // Auto-number the #PWR reference by counting existing power symbols
-    let pwr_count = sch
-        .symbols
-        .iter()
-        .filter(|s| {
-            s.reference()
-                .map(|r| r.starts_with("#PWR"))
-                .unwrap_or(false)
-        })
-        .count();
-    let pwr_ref = format!("#PWR{:03}", pwr_count + 1);
+    let pwr_ref = format!("#PWR{:03}", next_pwr_number(&sch));
 
     // Embed the power symbol definition in lib_symbols. `power_net` arrives as
     // the caller wrote it — `5V` for `+5V`, `+GND` for `GND` — and the polarity
@@ -3031,6 +3037,50 @@ mod power_symbol_tests {
         assert_eq!(value["y"].as_f64(), Some(80.01));
         assert!(value.get("snapped_to_grid").is_none());
         assert!(value.get("requested").is_none());
+    }
+
+    /// Numbering by count re-issued a designator that was still on the sheet:
+    /// delete `#PWR002` of three and the next add produced a second `#PWR003`.
+    #[tokio::test]
+    async fn add_power_symbol_fills_a_freed_number_instead_of_duplicating() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gnd.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 -6.35 0))\n      (property \"Value\" \"GND\" (at 0 -3.81 0))\n    )\n  )\n)\n",
+        )
+        .unwrap();
+
+        let add = |x: f64| {
+            let args = json!({
+                "schematic": path.display().to_string(),
+                "power_net": "GND",
+                "x": x,
+                "y": 80.0
+            });
+            async move {
+                let result = handle_add_power_symbol(&args, &test_ctx()).await.unwrap();
+                assert!(!result.is_error, "{result:?}");
+            }
+        };
+        add(100.0).await;
+        add(110.0).await;
+        add(120.0).await;
+
+        let mut sch = cse::Schematic::load(&path).unwrap();
+        sch.symbols.retain(|s| s.reference() != Some("#PWR002"));
+        sch.overwrite().unwrap();
+
+        add(130.0).await;
+
+        let sch = cse::Schematic::load(&path).unwrap();
+        let mut refs: Vec<&str> = sch.symbols.iter().filter_map(|s| s.reference()).collect();
+        refs.sort_unstable();
+        assert_eq!(
+            refs,
+            ["#PWR001", "#PWR002", "#PWR003"],
+            "the freed number belongs to the new symbol, and nothing may repeat"
+        );
     }
 }
 

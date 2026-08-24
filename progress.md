@@ -4,7 +4,7 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte (P.6.7.1 close, P.6.7.2 à P.6.7.8 restent), P.6.8 à P.6.11
+est ouverte (P.6.7.1 et P.6.7.2 closes, P.6.7.3 à P.6.7.8 restent), P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -14,23 +14,18 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.1 — un point de jonction par T, pas un par fil. Un helper
-`add_missing_junctions` dans `sch_wiring.rs` teste la présence d'un dot
-coïncident, et les trois boucles non gardées passent par lui :
-`handle_add_wire`, `handle_batch_add_wire`, `handle_connect_to_net`. Chacune
-était déjà suivie d'une boucle correctement gardée pour les pins traversées
-mid-segment, désormais repliée sur le même helper.
+P.6.7.2 — le numéro `#PWR` d'un symbole d'alimentation est le plus petit libre,
+plus le compte plus un. `next_pwr_number` dans `sch_wiring.rs` collecte les
+numéros réellement utilisés et rend le premier trou ; la description du tool
+`add_power_symbol` le dit désormais.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- rouge-avant vérifié en retirant la garde du helper : les deux tests
-  (`repeated_add_wire_leaves_one_junction_per_t`,
-  `batch_add_wire_leaves_one_junction_per_t`) rendent **3 dots empilés sur le
-  premier T** au lieu de 1 ; verts après restauration
-- pas de sonde live : KiCad tolère les dots dupliqués au chargement, il n'est
-  donc pas un oracle discriminant ici — le fichier l'est
+- rouge-avant vérifié en restaurant le comptage : trois symboles ajoutés,
+  `#PWR002` supprimé, le quatrième ajout rend
+  `["#PWR001", "#PWR003", "#PWR003"]` ; vert après restauration
 
 ## Décisions actives
 
@@ -119,12 +114,13 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.2 — `#213` : `crates/konnect-core/src/tools/sch_wiring.rs`
-numérote la référence d'un symbole d'alimentation par
-`format!("#PWR{:03}", count + 1)`, si bien que retirer `#PWR028` d'une feuille
-qui en compte 29 fait ré-émettre `#PWR029`, déjà vivant — deux symboles
-partagent alors une référence et l'annotation KiCad les fusionne. Relire
-l'entrée `#213` de `docs/upstream-audit.md`, puis émettre le plus petit numéro
-qu'aucun symbole de la feuille n'utilise. Le test discriminant part d'une
-feuille à trou dans la numérotation. Valider par `cargo fmt` /
+Implémenter P.6.7.3 — `#214` : supprimer un fil laisse derrière lui le point de
+jonction qu'il justifiait, que KiCad relit ensuite comme une connexion entre ce
+qui passe encore là. Upstream (`816dccf`, merge — lire son diff par
+`git diff <parent1> <parent2>`) ajoute `prune_orphaned_junctions`, replie la
+recherche du fil dans `locate_wire_for_delete` et remonte
+`junctions_pruned_count` depuis le chemin batch. Relire l'entrée `#214` de
+`docs/upstream-audit.md` pour l'état exact dans ce fork avant de coder. Le test
+discriminant supprime un fil d'un T et vérifie que le dot part avec lui, tout
+en gardant celui d'un T encore justifié. Valider par `cargo fmt` /
 `clippy -D warnings` / `cargo test --workspace --lib --tests`.

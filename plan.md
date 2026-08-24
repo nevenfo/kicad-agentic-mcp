@@ -3124,7 +3124,12 @@ None. Each item below is independent of the others except where stated.
         helper. Discriminating tests: a rail with three taps, drawn wire by
         wire and again as one batch — red before at **3 dots stacked on the
         first T**, one dot per T after.
-  - [ ] P.6.7.2 #213 (`#PWR{count+1}` re-issues a live designator)
+  - [x] P.6.7.2 #213 — `#PWR{count+1}` re-issues a live designator. Done:
+        `next_pwr_number` collects the numbers actually in use and hands out
+        the lowest free one, so a deletion's number is refilled rather than
+        skipped; `add_power_symbol`'s own description now says so. Red before
+        at `["#PWR001", "#PWR003", "#PWR003"]` — three symbols added,
+        `#PWR002` deleted, and the fourth add duplicated `#PWR003`.
   - [ ] P.6.7.3 #214 (deleted wires leave orphaned junction dots)
   - [ ] P.6.7.4 #274 (pad count and courtyard by substring)
   - [ ] P.6.7.5 #140 (net and track counts by substring)
