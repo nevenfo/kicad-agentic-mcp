@@ -22,6 +22,28 @@ use sheet::{Sheet, SheetCollection};
 use symbol::{Symbol, SymbolCollection};
 use wire::{Wire, WireCollection};
 
+// ---- raw child preservation -------------------------------------------------
+
+/// Collect the children of `node` that `to_sexp` does *not* reconstruct from
+/// typed fields, so they survive a load/save round-trip verbatim.
+///
+/// This is a deny-list on purpose. It used to be an allow-list naming the two
+/// or three sub-nodes we happened to care about, which silently deleted every
+/// other token KiCAD writes — most damagingly `(lib_name …)`, whose loss
+/// re-points a symbol at the wrong `lib_symbols` entry and rewires the
+/// netlist without any error from KiCAD or from us (#143).
+pub(crate) fn unmodelled_children(node: &SexpNode, modelled: &[&str]) -> Vec<SexpNode> {
+    node.args()
+        .iter()
+        .filter(|n| match n.tag() {
+            Some(tag) => !modelled.contains(&tag),
+            // Bare atoms (e.g. a lone flag token) are unmodelled by definition.
+            None => true,
+        })
+        .cloned()
+        .collect()
+}
+
 // ---- LocatedElement ---------------------------------------------------------
 
 pub enum LocatedElement<'a> {
@@ -76,7 +98,18 @@ pub struct Schematic {
     pub generator: Option<String>,
     pub generator_version: Option<String>,
     pub uuid: Option<String>,
+    /// Page size name only — `A4`, `USLetter`, `User`, …
     pub paper: Option<String>,
+    /// Tokens that follow the page size name inside `(paper …)`, preserved
+    /// verbatim.
+    ///
+    /// KiCAD writes `(paper "User" 292.1 205.105)` for a custom page — the two
+    /// dimensions are REQUIRED there — and `(paper "A4" portrait)` for a
+    /// portrait named page. Both were dropped when only `paper` was
+    /// round-tripped, and a `(paper "User")` with no dimensions makes KiCAD
+    /// refuse to load the schematic at all ("Failed to load schematic", no
+    /// further diagnostic).
+    pub paper_args: Vec<SexpNode>,
 
     pub symbols: SymbolCollection,
     pub wires: WireCollection,
@@ -395,6 +428,7 @@ impl Schematic {
         let mut generator_version = None;
         let mut uuid = None;
         let mut paper = None;
+        let mut paper_args: Vec<SexpNode> = vec![];
 
         let mut symbols: Vec<Symbol> = vec![];
         let mut wires: Vec<Wire> = vec![];
@@ -426,6 +460,9 @@ impl Schematic {
                 }
                 Some("paper") => {
                     paper = child.value().map(str::to_owned);
+                    // Everything after the size name: `292.1 205.105` for a
+                    // custom page, `portrait` for a portrait named page.
+                    paper_args = child.args().iter().skip(1).cloned().collect();
                 }
                 Some("symbol") => match Symbol::from_sexp(child) {
                     Ok(s) => symbols.push(s),
@@ -491,6 +528,7 @@ impl Schematic {
             generator_version,
             uuid,
             paper,
+            paper_args,
             symbols: SymbolCollection::new(symbols),
             wires: WireCollection::new(wires),
             buses,
@@ -526,8 +564,15 @@ impl Schematic {
         if let Some(u) = &self.uuid {
             c.push(tagged("uuid", vec![qstr(u.clone())]));
         }
+        // The page size name alone is not always a complete `(paper …)` node:
+        // `User` requires its width and height, and a portrait named size
+        // carries a `portrait` token. KiCAD rejects the whole file if either is
+        // missing, so re-emit whatever followed the name.
         if let Some(p) = &self.paper {
-            c.push(tagged("paper", vec![qstr(p.clone())]));
+            let mut args = Vec::with_capacity(1 + self.paper_args.len());
+            args.push(qstr(p.clone()));
+            args.extend(self.paper_args.iter().cloned());
+            c.push(tagged("paper", args));
         }
 
         // Preserved nodes — emit in order:

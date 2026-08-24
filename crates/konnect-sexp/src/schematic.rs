@@ -239,6 +239,12 @@ pub struct SymbolInstance {
     pub reference: String,
     pub value: String,
     pub footprint: String,
+    /// Name of the `lib_symbols` entry this instance actually resolves through,
+    /// when KiCAD wrote a `(lib_name …)` because the sheet carries a locally
+    /// edited copy of the library symbol. Resolve with
+    /// [`SymbolInstance::lib_symbol_name`] or [`find_lib_symbol`] — matching on
+    /// `lib_id` alone picks the wrong definition, or none (#143).
+    pub lib_name: Option<String>,
     pub lib_id: String,
     pub x: f64,
     pub y: f64,
@@ -252,6 +258,13 @@ pub struct SymbolInstance {
 }
 
 impl SymbolInstance {
+    /// The `lib_symbols` entry name this instance resolves through: `lib_name`
+    /// when KiCAD wrote one, otherwise `lib_id`. Mirrors eeschema's
+    /// `SCH_SYMBOL::GetSchSymbolLibraryName()`.
+    pub fn lib_symbol_name(&self) -> &str {
+        self.lib_name.as_deref().unwrap_or(&self.lib_id)
+    }
+
     pub fn pin_transform(&self) -> PinTransform {
         PinTransform {
             comp_x: self.x,
@@ -269,6 +282,11 @@ pub fn extract_symbol_instances(tree: &SexpNode) -> Vec<SymbolInstance> {
         .filter_map(|node| {
             // Top-level symbols only have lib_id and at; filter out library definitions
             let lib_id = node.find("lib_id")?.get(1)?.as_str()?.to_string();
+            let lib_name = node
+                .find("lib_name")
+                .and_then(|n| n.get(1))
+                .and_then(|n| n.as_str())
+                .map(String::from);
             let (x, y, rotation) = parse_at(node)?;
 
             let mirror_node = node.find("mirror");
@@ -305,6 +323,7 @@ pub fn extract_symbol_instances(tree: &SexpNode) -> Vec<SymbolInstance> {
                 reference: prop("Reference"),
                 value: prop("Value"),
                 footprint: prop("Footprint"),
+                lib_name,
                 lib_id,
                 x,
                 y,
@@ -316,6 +335,24 @@ pub fn extract_symbol_instances(tree: &SexpNode) -> Vec<SymbolInstance> {
             })
         })
         .collect()
+}
+
+/// Resolve an instance's embedded `lib_symbols` definition the way KiCAD does:
+/// by `lib_name` when the instance carries one, otherwise by `lib_id`.
+///
+/// `lib_syms` is the `find_all("symbol")` list of the sheet's `lib_symbols`
+/// node. Matching on `lib_id` alone silently returns the *base* definition for
+/// a locally edited symbol — whose pins can sit at different coordinates — or
+/// nothing at all when the base was never embedded (#143).
+pub fn find_lib_symbol<'a>(
+    lib_syms: &[&'a SexpNode],
+    inst: &SymbolInstance,
+) -> Option<&'a SexpNode> {
+    let want = inst.lib_symbol_name();
+    lib_syms
+        .iter()
+        .copied()
+        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(want))
 }
 
 // ─── Pin in library symbol ────────────────────────────────────────────────────

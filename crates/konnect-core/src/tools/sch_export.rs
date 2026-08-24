@@ -10,8 +10,8 @@ use crate::tools::{get_path, ToolContext, ToolDef};
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
-        extract_labels, extract_lib_pins, extract_symbol_instances, extract_wires, pin_endpoint,
-        read_schematic,
+        extract_labels, extract_lib_pins, extract_symbol_instances, extract_wires, find_lib_symbol,
+        pin_endpoint, read_schematic,
     },
     writer::{
         apply_edits, find_block_with_leading_whitespace, write_atomic_if_unchanged, SexpEdit,
@@ -263,9 +263,7 @@ async fn handle_export_netlist_summary(
     let components: Vec<serde_json::Value> = instances
         .iter()
         .map(|inst| {
-            let lib_sym = lib_syms
-                .iter()
-                .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+            let lib_sym = find_lib_symbol(&lib_syms, inst);
 
             let pins: Vec<serde_json::Value> = if let Some(sym) = lib_sym {
                 let t = inst.pin_transform();
@@ -382,9 +380,7 @@ async fn handle_fix_connectivity(
     let mut snap_targets: Vec<(f64, f64)> = Vec::new();
 
     for inst in &instances {
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(&lib_syms, inst);
         if let Some(sym) = lib_sym {
             let t = inst.pin_transform();
             for pin in extract_lib_pins(sym) {

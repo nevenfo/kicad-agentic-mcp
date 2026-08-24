@@ -12,7 +12,8 @@ use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
         extract_junction_points, extract_labels, extract_lib_pins_for_unit,
-        extract_symbol_instances, extract_wires, parse_at, pin_endpoint, read_schematic, Wire,
+        extract_symbol_instances, extract_wires, find_lib_symbol, parse_at, pin_endpoint,
+        read_schematic, Wire,
     },
 };
 use serde_json::json;
@@ -439,9 +440,7 @@ async fn handle_get_pin_connections(
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
-    let lib_sym = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+    let lib_sym = find_lib_symbol(&lib_syms, inst);
     let pin_ep = lib_sym.and_then(|sym| {
         konnect_sexp::schematic::extract_lib_pins(sym)
             .iter()
@@ -489,9 +488,7 @@ async fn handle_get_component_nets(
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
-    let lib_sym = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+    let lib_sym = find_lib_symbol(&lib_syms, inst);
     let mut g = build_net_graph(&wires, &labels, &extract_junction_points(&tree));
     let pins: Vec<serde_json::Value> = if let Some(sym) = lib_sym {
         let t = inst.pin_transform();
@@ -529,9 +526,7 @@ async fn handle_get_net_components(
     let result: Vec<serde_json::Value> = instances
         .iter()
         .filter_map(|inst| {
-            let ls = lib_syms
-                .iter()
-                .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))?;
+            let ls = find_lib_symbol(&lib_syms, inst)?;
             let t = inst.pin_transform();
             let connected: Vec<_> = konnect_sexp::schematic::extract_lib_pins(ls)
                 .iter()
@@ -682,10 +677,7 @@ fn find_isolated_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<serde_json::
     let mut isolated = Vec::new();
 
     for instance in extract_symbol_instances(tree) {
-        let Some(lib_sym) = lib_syms
-            .iter()
-            .find(|symbol| symbol.get(1).and_then(|node| node.as_str()) == Some(&instance.lib_id))
-        else {
+        let Some(lib_sym) = find_lib_symbol(&lib_syms, &instance) else {
             continue;
         };
         for pin in extract_lib_pins_for_unit(lib_sym, instance.unit) {
@@ -866,9 +858,7 @@ async fn handle_get_connected_items(
         }
     };
 
-    let lib_sym = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+    let lib_sym = find_lib_symbol(&lib_syms, inst);
     let mut g = build_net_graph(&wires, &labels, &extract_junction_points(&tree));
 
     // Get nets for each pin
@@ -909,7 +899,7 @@ async fn handle_get_connected_items(
     let connected_components: Vec<serde_json::Value> = instances.iter()
         .filter(|i| i.reference != reference)
         .filter_map(|i| {
-            let ls = lib_syms.iter().find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&i.lib_id))?;
+            let ls = find_lib_symbol(&lib_syms, i)?;
             let t = i.pin_transform();
             let matching_pins: Vec<_> = konnect_sexp::schematic::extract_lib_pins(ls).iter()
                 .filter_map(|p| {

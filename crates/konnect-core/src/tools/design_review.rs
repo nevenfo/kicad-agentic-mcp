@@ -11,7 +11,9 @@ use crate::tools::{get_path, ToolContext, ToolDef};
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
     parser::parse_sexp,
-    schematic::{extract_lib_pins, extract_symbol_instances, pin_endpoint, read_schematic},
+    schematic::{
+        extract_lib_pins, extract_symbol_instances, find_lib_symbol, pin_endpoint, read_schematic,
+    },
 };
 use serde_json::json;
 use std::collections::HashSet;
@@ -155,9 +157,7 @@ async fn handle_audit_decoupling(
 
     // For each IC (non-passive, non-connector component), check power pins
     for inst in &instances {
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(&lib_syms, inst);
         let lib_sym = match lib_sym {
             Some(s) => s,
             None => continue,
@@ -255,10 +255,7 @@ async fn handle_audit_connections(
     let mut findings = Vec::new();
 
     for inst in &instances {
-        let lib_sym = match lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        {
+        let lib_sym = match find_lib_symbol(&lib_syms, inst) {
             Some(s) => s,
             None => continue,
         };
@@ -759,9 +756,7 @@ fn collect_capacitor_nets(
         if !inst.reference.starts_with('C') || inst.reference.starts_with("CN") {
             continue; // Only capacitors
         }
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(lib_syms, inst);
         if let Some(sym) = lib_sym {
             let pins = extract_lib_pins(sym);
             for pin in &pins {
@@ -803,9 +798,7 @@ fn collect_bulk_cap_nets(
             continue;
         }
 
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(lib_syms, inst);
         if let Some(sym) = lib_sym {
             let pins = extract_lib_pins(sym);
             for pin in &pins {
@@ -919,9 +912,7 @@ fn has_pull_up_on_net(
         if !inst.reference.starts_with('R') {
             continue;
         }
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(lib_syms, inst);
         if let Some(sym) = lib_sym {
             let pins = extract_lib_pins(sym);
             let pin_nets: Vec<Option<String>> = pins

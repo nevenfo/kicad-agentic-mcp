@@ -513,7 +513,7 @@ pub fn ensure_root_uuid(sch: &mut konnect_schematic_editor::Schematic) -> String
 /// pin where two wires cross would short them.
 pub(crate) fn all_pin_endpoints(tree: &konnect_sexp::SexpNode) -> Vec<(f64, f64)> {
     use konnect_sexp::schematic::{
-        extract_lib_pins_for_unit, extract_symbol_instances, pin_endpoint,
+        extract_lib_pins_for_unit, extract_symbol_instances, find_lib_symbol, pin_endpoint,
     };
     let lib_syms = tree
         .find("lib_symbols")
@@ -521,10 +521,7 @@ pub(crate) fn all_pin_endpoints(tree: &konnect_sexp::SexpNode) -> Vec<(f64, f64)
         .unwrap_or_default();
     let mut pts = Vec::new();
     for inst in extract_symbol_instances(tree) {
-        if let Some(sym) = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        {
+        if let Some(sym) = find_lib_symbol(&lib_syms, &inst) {
             let t = inst.pin_transform();
             for pin in extract_lib_pins_for_unit(sym, inst.unit) {
                 pts.push(pin_endpoint(&pin, t));
@@ -545,7 +542,7 @@ pub(crate) fn add_pin_midwire_junctions(
     use konnect_sexp::geometry::{point_on_segment, points_coincident};
     use konnect_sexp::schematic::{
         extract_junction_points, extract_lib_pins_for_unit, extract_symbol_instances,
-        extract_wires, pin_endpoint, read_schematic,
+        extract_wires, find_lib_symbol, pin_endpoint, read_schematic,
     };
     let tol = 0.01;
     let (_, tree) = read_schematic(sch_path)?;
@@ -563,10 +560,7 @@ pub(crate) fn add_pin_midwire_junctions(
         .iter()
         .filter(|i| i.reference == reference)
     {
-        let Some(sym) = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        else {
+        let Some(sym) = find_lib_symbol(&lib_syms, inst) else {
             continue;
         };
         let t = inst.pin_transform();

@@ -17,7 +17,8 @@ use konnect_sexp::{
     geometry::snap_point,
     parse_sexp,
     schematic::{
-        extract_lib_pins_for_unit, extract_symbol_instances, pin_endpoint, read_schematic,
+        extract_lib_pins_for_unit, extract_symbol_instances, find_lib_symbol, pin_endpoint,
+        read_schematic,
     },
     writer::{
         apply_edits, new_uuid, read_consistent, write_atomic_if_unchanged, write_new_atomic,
@@ -1051,10 +1052,7 @@ fn pin_positions(
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
-    let Some(sym) = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-    else {
+    let Some(sym) = find_lib_symbol(&lib_syms, inst) else {
         return Vec::new();
     };
     let transform = inst.pin_transform();
@@ -1220,9 +1218,7 @@ async fn handle_get_schematic_pin_locations(
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
-    let lib_sym = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+    let lib_sym = find_lib_symbol(&lib_syms, inst);
 
     // A missing embedded definition is an error, not an empty pin list —
     // silently returning [] hid every bad-lib_id component until wiring or
@@ -1243,7 +1239,8 @@ async fn handle_get_schematic_pin_locations(
                  doesn't exist in the installed libraries, so it is invisible to \
                  KiCAD's netlister. Re-add it with a valid lib_id \
                  (delete_schematic_component + add_schematic_component).",
-                reference, inst.lib_id
+                reference,
+                inst.lib_symbol_name()
             ),
         ));
     };
@@ -1272,7 +1269,10 @@ async fn handle_get_schematic_pin_locations(
                  part). Re-add the component (delete_schematic_component + \
                  add_schematic_component) so the definition is embedded in \
                  full, or place the parent symbol '{}' directly.",
-                    reference, inst.lib_id, parent, parent
+                    reference,
+                    inst.lib_symbol_name(),
+                    parent,
+                    parent
                 ),
             ));
         }
@@ -1360,9 +1360,7 @@ async fn handle_batch_get_pin_locations(
                 Some(i) => i,
                 None => return json!({ "reference": reference, "error": "not found" }),
             };
-            let lib_sym = lib_syms
-                .iter()
-                .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+            let lib_sym = find_lib_symbol(&lib_syms, inst);
             // Per-entry error rather than a silent empty pin list (#34).
             let Some(sym) = lib_sym else {
                 return json!({
@@ -1370,7 +1368,7 @@ async fn handle_batch_get_pin_locations(
                     "error": format!(
                         "no embedded definition for '{}' in lib_symbols — \
                          likely added with a nonexistent lib_id",
-                        inst.lib_id
+                        inst.lib_symbol_name()
                     )
                 });
             };
@@ -1385,7 +1383,7 @@ async fn handle_batch_get_pin_locations(
                             "embedded definition for '{}' is an (extends \"{}\") \
                              stub with no pins — re-add the component so it is \
                              embedded in full",
-                            inst.lib_id, parent
+                            inst.lib_symbol_name(), parent
                         )
                     });
                 }
@@ -2156,6 +2154,57 @@ pub(crate) mod tests {
         assert!(
             err.contains("Device:OPAMP_DUAL"),
             "batch entry must carry the stub error: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pin_locations_resolve_through_lib_name_not_lib_id() {
+        // eeschema stores a locally edited library symbol under a derived name
+        // and points the instance at it with (lib_name …). Resolving on lib_id
+        // alone picks the *base* definition, whose pins sit elsewhere — the
+        // wrong answer is returned silently, and every wire placed from it
+        // lands off-pin (#143).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("derived.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n\t(version 20250114)\n\t(generator \"eeschema\")\n\t(uuid \"11111111-2222-3333-4444-555555555555\")\n\t(lib_symbols\n\t\t(symbol \"Device:R\"\n\t\t\t(symbol \"R_1_1\"\n\t\t\t\t(pin passive line (at 0 3.81 270) (length 1.27) (name \"~\") (number \"1\"))\n\t\t\t)\n\t\t)\n\t\t(symbol \"R_1\"\n\t\t\t(symbol \"R_1_1_1\"\n\t\t\t\t(pin passive line (at 0 6.35 270) (length 1.27) (name \"~\") (number \"1\"))\n\t\t\t)\n\t\t)\n\t\t(symbol \"C_1\"\n\t\t\t(symbol \"C_1_1_1\"\n\t\t\t\t(pin passive line (at 0 3.81 270) (length 3.048) (name \"~\") (number \"1\"))\n\t\t\t)\n\t\t)\n\t)\n\t(symbol\n\t\t(lib_name \"R_1\")\n\t\t(lib_id \"Device:R\")\n\t\t(at 88.9 63.5 0)\n\t\t(unit 1)\n\t\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-000000000001\")\n\t\t(property \"Reference\" \"R2\" (at 91.44 62.23 0))\n\t)\n\t(symbol\n\t\t(lib_name \"C_1\")\n\t\t(lib_id \"Device:C\")\n\t\t(at 139.7 63.5 0)\n\t\t(unit 1)\n\t\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-000000000002\")\n\t\t(property \"Reference\" \"C1\" (at 142.24 62.23 0))\n\t)\n)\n",
+        )
+        .unwrap();
+        let ctx = test_ctx();
+
+        let res = handle_get_schematic_pin_locations(
+            &json!({ "schematic": path.display().to_string(), "reference": "R2" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!res.is_error, "{}", content_text(&res));
+        let out: serde_json::Value = serde_json::from_str(&content_text(&res)).unwrap();
+        // R_1's pin sits at local +6.35 => 63.5 - 6.35; Device:R's would be
+        // 63.5 - 3.81 = 59.69.
+        assert_eq!(out["pins"][0]["y"].as_f64().unwrap(), 57.15);
+
+        // Device:C is not embedded at all — only the derived C_1 is. Matching
+        // on lib_id reported "no embedded definition ... nonexistent lib_id",
+        // which is both wrong and dangerous advice.
+        let batch = handle_batch_get_pin_locations(
+            &json!({
+                "schematic": path.display().to_string(),
+                "references": ["C1"]
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let out: serde_json::Value = serde_json::from_str(&content_text(&batch)).unwrap();
+        assert!(
+            out["components"][0]["error"].is_null(),
+            "C1 must resolve through C_1: {out}"
+        );
+        assert_eq!(
+            out["components"][0]["pins"][0]["y"].as_f64().unwrap(),
+            59.69
         );
     }
 

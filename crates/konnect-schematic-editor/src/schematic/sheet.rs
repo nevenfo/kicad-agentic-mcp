@@ -248,13 +248,19 @@ impl Sheet {
             })
             .unwrap_or_default();
 
-        const PRESERVE: &[&str] = &["stroke", "fill"];
-        let raw_sub_nodes = node
-            .args()
-            .iter()
-            .filter(|n| n.tag().map(|t| PRESERVE.contains(&t)).unwrap_or(false))
-            .cloned()
-            .collect();
+        // Deny-list, matching `Symbol::from_sexp`: anything `to_sexp` does not
+        // rebuild from a typed field — `stroke`, `fill`, and unmodelled tokens
+        // such as `exclude_from_sim` — round-trips verbatim (#143).
+        const MODELLED: &[&str] = &[
+            "at",
+            "size",
+            "fields_autoplaced",
+            "uuid",
+            "property",
+            "pin",
+            "instances",
+        ];
+        let raw_sub_nodes = super::unmodelled_children(node, MODELLED);
 
         Ok(Sheet {
             at,

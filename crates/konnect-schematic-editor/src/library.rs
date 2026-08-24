@@ -244,15 +244,17 @@ fn unit_suffix_of<'a>(name: &'a str, base: &str) -> Option<&'a str> {
 /// yields empty pin lists downstream (#34).
 #[must_use]
 pub fn ensure_lib_symbol(schematic: &mut Schematic, lib_id: &str) -> bool {
-    // Check if already present
-    let check_name = format!("\"{}\"", lib_id);
+    // Check if already present. This is a structural match on the direct
+    // children of lib_symbols: it used to substring-search a `{:?}` debug
+    // rendering of the whole node, which matched on any nested occurrence of
+    // the name — a property value, a unit sub-symbol, or an unrelated entry
+    // that merely contains it (#143).
     let already_present = schematic.raw_other.iter().any(|node| {
-        if node.tag() == Some("lib_symbols") {
-            let content = format!("{:?}", node);
-            content.contains(&check_name)
-        } else {
-            false
-        }
+        node.tag() == Some("lib_symbols")
+            && node
+                .find_all("symbol")
+                .iter()
+                .any(|s| s.value() == Some(lib_id))
     });
     if already_present {
         return true;
@@ -1375,6 +1377,73 @@ mod suggestion_tests {
             &mut sch,
             "Definitely_Not_A_Library_xyzzy:Nope"
         ));
+    }
+
+    /// Load a schematic from literal source in a tempdir. The `TempDir` is
+    /// returned so the caller keeps it alive for the schematic's lifetime.
+    fn sch_from(src: &str) -> (tempfile::TempDir, std::path::PathBuf, Schematic) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.kicad_sch");
+        std::fs::write(&path, src).unwrap();
+        let sch = Schematic::load(&path).unwrap();
+        (dir, path, sch)
+    }
+
+    #[test]
+    fn ensure_lib_symbol_presence_check_is_exact_and_structural() {
+        // The presence check used to substring-search a `{:?}` rendering of the
+        // whole lib_symbols node, so any nested occurrence of the name — a
+        // property value, a unit sub-symbol — read as "already embedded" and
+        // the real definition was never written. It is now an exact match on
+        // the direct children (#143). The negative cases below use lib_ids
+        // that resolve nowhere, so a `false` return proves the check declined
+        // to claim presence rather than merely failing to embed.
+
+        // 1. Exact direct child: present, and embedding again must not
+        //    duplicate the entry.
+        let (_d, path, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Device:R\"\n\t\t\t(property \"Reference\" \"R\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(ensure_lib_symbol(&mut sch, "Device:R"));
+        sch.overwrite().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .matches("(symbol \"Device:R\"")
+                .count(),
+            1,
+            "an already-embedded symbol must not be embedded twice"
+        );
+
+        // 2. The name appears only nested, as an unrelated entry's property
+        //    value. That is not an embedded definition.
+        let (_d, _p, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Other:Thing\"\n\t\t\t(property \"Value\" \"Zzz_NoSuchLib:Part\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(
+            !ensure_lib_symbol(&mut sch, "Zzz_NoSuchLib:Part"),
+            "a nested property value must not count as an embedded definition"
+        );
+
+        // 3. Near-miss sibling: a unit sub-symbol name that merely starts with
+        //    the wanted name.
+        let (_d, _p, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Zzz_NoSuchLib:R_1_1\"\n\t\t\t(property \"Reference\" \"R\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(
+            !ensure_lib_symbol(&mut sch, "Zzz_NoSuchLib:R_1"),
+            "a longer sibling name must not satisfy the lookup"
+        );
+
+        // 4. More than one lib_symbols block: the match may be in any of them.
+        //    Both land in `raw_other`, which the check iterates.
+        let (_d, _p, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Other:Thing\"\n\t\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t)\n\t)\n\t(lib_symbols\n\t\t(symbol \"Zzz_NoSuchLib:Part\"\n\t\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(
+            ensure_lib_symbol(&mut sch, "Zzz_NoSuchLib:Part"),
+            "a match in a second lib_symbols block must be found"
+        );
     }
 
     /// Fixture library listing for [`suggest_lib_ids_from`]: `Device` with a

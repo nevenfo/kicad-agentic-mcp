@@ -14,8 +14,8 @@ use konnect_sexp::{
     geometry::snap_point,
     parser::parse_sexp,
     schematic::{
-        extract_symbol_instances, extract_wires, find_t_junctions, format_junction, format_wire,
-        parse_at, pin_endpoint, read_schematic,
+        extract_symbol_instances, extract_wires, find_lib_symbol, find_t_junctions,
+        format_junction, format_wire, parse_at, pin_endpoint, read_schematic,
     },
     writer::{
         apply_edits, find_balanced_block, find_block_starts, find_block_with_leading_whitespace,
@@ -2112,10 +2112,8 @@ pub(crate) fn resolve_pin_endpoint(
         .iter()
         .find(|i| i.reference == reference)
         .ok_or_else(|| anyhow::anyhow!("Component '{}' not found", reference))?;
-    let lib_sym = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        .ok_or_else(|| anyhow::anyhow!("Library symbol '{}' not found", inst.lib_id))?;
+    let lib_sym = find_lib_symbol(lib_syms, inst)
+        .ok_or_else(|| anyhow::anyhow!("Library symbol '{}' not found", inst.lib_symbol_name()))?;
 
     // Unit-aware (#35): only this instance's unit owns the pin — asking unit 1
     // of an LM2904 for pin 7 must fail, not wire to a superimposed phantom.
