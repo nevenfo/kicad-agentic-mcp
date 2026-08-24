@@ -145,7 +145,20 @@ pub async fn run(check: Check, cli: &str, path: &Path) -> anyhow::Result<Finding
             // Zones are not refilled: refilling rewrites the board, and a
             // verification step that mutates the document it is verifying
             // would invalidate the revision its own verdict is cached under.
-            for v in crate::tools::cli::run_drc(cli, path, false).await? {
+            let report = crate::tools::cli::run_drc(cli, path, false).await?;
+            let missing = report.missing_categories();
+            if !missing.is_empty() {
+                // A report missing a category ran an incomplete check, not a
+                // clean one — surfacing it as zero findings for that category
+                // is exactly the false-clean verdict this gate exists to
+                // rule out (see this file's module doc, and progress.md E4).
+                let names: Vec<&str> = missing.iter().map(|c| c.json_key()).collect();
+                anyhow::bail!(
+                    "DRC report is missing {}: kicad-cli did not run the full check",
+                    names.join(", ")
+                );
+            }
+            for v in report.all() {
                 let location = match &v.pos {
                     Some(p) => format!("@{:.3},{:.3}", p.x, p.y),
                     None => String::from("@?"),
@@ -155,7 +168,7 @@ pub async fn run(check: Check, cli: &str, path: &Path) -> anyhow::Result<Finding
                     Severity::parse(&v.severity),
                     v.rule.as_deref().unwrap_or(UNSPECIFIED_RULE),
                     &location,
-                    v.description,
+                    v.description.clone(),
                 );
             }
         }

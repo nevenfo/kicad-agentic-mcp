@@ -189,15 +189,16 @@ async fn handle_run_drc(
     let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
     let refill = args["refill_zones"].as_bool().unwrap_or(false);
-    let violations = cli::run_drc(&ctx.config.kicad_cli, &board, refill).await?;
+    let report = cli::run_drc(&ctx.config.kicad_cli, &board, refill).await?;
+    let all = report.all();
 
     // Optionally write report
     if let Some(out_path) = args["output"].as_str() {
-        let report = serde_json::to_string_pretty(&violations)?;
-        tokio::fs::write(out_path, report).await?;
+        let text = serde_json::to_string_pretty(&all)?;
+        tokio::fs::write(out_path, text).await?;
     }
 
-    let filtered: Vec<_> = violations
+    let filtered: Vec<_> = all
         .iter()
         .filter(|v| severity_rank(&v.severity) >= min_rank)
         .collect();
@@ -207,18 +208,34 @@ async fn handle_run_drc(
     let shown = filtered.len().min(limit);
     let truncated = filtered.len() > limit;
 
+    // A category the JSON did not include a key for is not "zero findings" —
+    // it is a pass kicad-cli did not run, and a caller trusting the counts
+    // above needs to know a category may be undercounted.
+    let missing: Vec<&str> = report
+        .missing_categories()
+        .iter()
+        .map(|c| c.json_key())
+        .collect();
+
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
-            "total_violations": violations.len(),
+            "total_violations": all.len(),
             "filtered_count": filtered.len(),
             "errors": errors,
             "warnings": warnings,
             "severity_filter": severity_filter,
             "shown": shown,
             "truncated": truncated,
+            "by_category": {
+                "violations": report.violations.as_ref().map(Vec::len),
+                "unconnected_items": report.unconnected_items.as_ref().map(Vec::len),
+                "schematic_parity": report.schematic_parity.as_ref().map(Vec::len),
+            },
+            "missing_categories": missing,
             "violations": filtered.iter().take(limit).map(|v| json!({
                 "severity": v.severity,
                 "description": v.description,
+                "category": v.category,
                 "pos": v.pos.as_ref().map(|p| json!({ "x": p.x, "y": p.y }))
             })).collect::<Vec<_>>()
         }))

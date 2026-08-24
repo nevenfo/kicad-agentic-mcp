@@ -35,13 +35,13 @@ pub struct ErcViolation {
     pub rule: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ErcPos {
     pub x: f64,
     pub y: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrcViolation {
     pub severity: String,
     pub description: String,
@@ -50,6 +50,96 @@ pub struct DrcViolation {
     /// [`ErcViolation::rule`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule: Option<String>,
+    /// Which top-level array of the DRC report this came from. A `clearance`
+    /// violation and an unrouted net are both "errors", but they are found by
+    /// different passes of `kicad-cli`, live under different JSON keys, and a
+    /// caller ventilating a report by category needs to tell them apart.
+    pub category: DrcCategory,
+}
+
+/// The three top-level arrays `kicad-cli pcb drc --format json` may emit.
+///
+/// `violations` covers board-geometry rules (clearance, courtyard overlap,
+/// …); `unconnected_items` is unrouted copper — nets with a ratsnest line
+/// still open, always severity `error`; `schematic_parity` is a netlist
+/// mismatch between the PCB and its schematic. All three are siblings in the
+/// report, not nested under `violations` — reading only `violations` made
+/// open copper invisible to every caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrcCategory {
+    Violations,
+    UnconnectedItems,
+    SchematicParity,
+}
+
+impl DrcCategory {
+    /// The report's own key for this category.
+    #[must_use]
+    pub fn json_key(self) -> &'static str {
+        match self {
+            Self::Violations => "violations",
+            Self::UnconnectedItems => "unconnected_items",
+            Self::SchematicParity => "schematic_parity",
+        }
+    }
+
+    const ALL: [Self; 3] = [
+        Self::Violations,
+        Self::UnconnectedItems,
+        Self::SchematicParity,
+    ];
+}
+
+/// The parsed shape of a `kicad-cli pcb drc --format json` report.
+///
+/// Each field is `None` when the key is absent from the JSON — not measured —
+/// and `Some(vec![])` when the key is present but empty — measured, clean.
+/// Collapsing the two would turn "this pass did not run" into "this pass
+/// found nothing", which is exactly the false-clean report this type exists
+/// to rule out.
+#[derive(Debug, Clone, Default)]
+pub struct DrcReport {
+    pub violations: Option<Vec<DrcViolation>>,
+    pub unconnected_items: Option<Vec<DrcViolation>>,
+    pub schematic_parity: Option<Vec<DrcViolation>>,
+}
+
+impl DrcReport {
+    fn category(&self, category: DrcCategory) -> &Option<Vec<DrcViolation>> {
+        match category {
+            DrcCategory::Violations => &self.violations,
+            DrcCategory::UnconnectedItems => &self.unconnected_items,
+            DrcCategory::SchematicParity => &self.schematic_parity,
+        }
+    }
+
+    /// Every finding across all three categories, in report order.
+    #[must_use]
+    pub fn all(&self) -> Vec<&DrcViolation> {
+        DrcCategory::ALL
+            .iter()
+            .filter_map(|c| self.category(*c).as_ref())
+            .flatten()
+            .collect()
+    }
+
+    /// How many findings, across all categories, are severity `error`.
+    #[must_use]
+    pub fn error_count(&self) -> usize {
+        self.all().iter().filter(|v| v.severity == "error").count()
+    }
+
+    /// Categories the report did not include a key for. A validator that
+    /// found this non-empty ran an incomplete check and must say so, rather
+    /// than let the missing category read as "zero findings".
+    #[must_use]
+    pub fn missing_categories(&self) -> Vec<DrcCategory> {
+        DrcCategory::ALL
+            .into_iter()
+            .filter(|c| self.category(*c).is_none())
+            .collect()
+    }
 }
 
 // ─── KiCAD CLI Runner ─────────────────────────────────────────────────────────
@@ -171,9 +261,9 @@ fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
 
 // ─── DRC ─────────────────────────────────────────────────────────────────────
 
-/// Run DRC on a PCB and return parsed violations.
+/// Run DRC on a PCB and return the parsed report.
 /// KiCAD 10: `pcb drc --output <path> --format json [--refill-zones] <input>`
-pub async fn run_drc(cli: &str, pcb: &Path, refill_zones: bool) -> Result<Vec<DrcViolation>> {
+pub async fn run_drc(cli: &str, pcb: &Path, refill_zones: bool) -> Result<DrcReport> {
     let out_path = pcb.with_extension("drc.json");
     let mut args = vec![
         "pcb",
@@ -195,23 +285,59 @@ pub async fn run_drc(cli: &str, pcb: &Path, refill_zones: bool) -> Result<Vec<Dr
     let raw: serde_json::Value = serde_json::from_str(&json_str)?;
     let _ = tokio::fs::remove_file(&out_path).await;
 
-    Ok(raw
-        .get("violations")
-        .and_then(|v| v.as_array())
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|v| DrcViolation {
-            severity: v["severity"].as_str().unwrap_or("error").to_string(),
-            rule: v["type"].as_str().map(str::to_string),
-            description: v["description"].as_str().unwrap_or("").to_string(),
-            pos: v.get("pos").and_then(|p| {
-                Some(ErcPos {
-                    x: p["x"].as_f64()?,
-                    y: p["y"].as_f64()?,
+    Ok(parse_drc_json(&raw))
+}
+
+/// Parse a `kicad-cli pcb drc --format json` report (schema
+/// https://schemas.kicad.org/drc.v1.json). `violations`, `unconnected_items`
+/// and `schematic_parity` are sibling top-level arrays — none nested under
+/// another — each holding entries shaped like `{ description, items: [{
+/// description, pos, uuid }], severity, type }`. Positions live on the item,
+/// never on the violation itself: KiCAD never writes a violation-level `pos`.
+fn parse_drc_json(raw: &serde_json::Value) -> DrcReport {
+    let category = |key: &str, category: DrcCategory| -> Option<Vec<DrcViolation>> {
+        let arr = raw.get(key)?.as_array()?;
+        Some(
+            arr.iter()
+                .map(|v| {
+                    let first_item = v
+                        .get("items")
+                        .and_then(|i| i.as_array())
+                        .and_then(|i| i.first());
+                    let mut description = v["description"].as_str().unwrap_or("").to_string();
+                    // The per-item description names the offender ("Pad 1
+                    // [VCC] on R1"); without it "Missing connection between
+                    // items" is unactionable.
+                    if let Some(detail) = first_item
+                        .and_then(|item| item.get("description"))
+                        .and_then(|d| d.as_str())
+                    {
+                        if !detail.is_empty() {
+                            description = format!("{}: {}", description, detail);
+                        }
+                    }
+                    DrcViolation {
+                        severity: v["severity"].as_str().unwrap_or("error").to_string(),
+                        rule: v["type"].as_str().map(str::to_string),
+                        description,
+                        pos: first_item.and_then(|item| item.get("pos")).and_then(|p| {
+                            Some(ErcPos {
+                                x: p["x"].as_f64()?,
+                                y: p["y"].as_f64()?,
+                            })
+                        }),
+                        category,
+                    }
                 })
-            }),
-        })
-        .collect())
+                .collect(),
+        )
+    };
+
+    DrcReport {
+        violations: category("violations", DrcCategory::Violations),
+        unconnected_items: category("unconnected_items", DrcCategory::UnconnectedItems),
+        schematic_parity: category("schematic_parity", DrcCategory::SchematicParity),
+    }
 }
 
 // ─── Annotation ───────────────────────────────────────────────────────────────
@@ -780,6 +906,139 @@ mod erc_parse_tests {
         assert!(
             parse_erc_json(&serde_json::json!({ "violations": [{ "severity": "error" }] }))
                 .is_empty()
+        );
+    }
+}
+
+#[cfg(test)]
+mod drc_parse_tests {
+    use super::*;
+
+    /// Shape produced by `kicad-cli pcb drc --format json` (KiCAD 10.0.3),
+    /// captured from a real run on a 2-net unrouted board — the
+    /// `unrouted.kicad_pcb` fixture, two SMD resistors on nets VCC/GND with
+    /// no traces. Keys, types, severities and coordinates are that run's;
+    /// only the prose is given in English, since KiCAD writes descriptions in
+    /// the locale it ran under. `violations`, `unconnected_items` and
+    /// `schematic_parity` are siblings, not nested under `violations`, and
+    /// `pos` lives only on each `items[]` entry — never on the violation
+    /// itself.
+    fn real_report() -> serde_json::Value {
+        serde_json::json!({
+            "$schema": "https://schemas.kicad.org/drc.v1.json",
+            "coordinate_units": "mm",
+            "kicad_version": "10.0.3",
+            "violations": [
+                {
+                    "description": "Footprint 'R_0402_1005Metric' does not match copy in library 'Resistor_SMD'",
+                    "items": [
+                        {
+                            "description": "Footprint R1",
+                            "pos": { "x": 100.0, "y": 50.0 },
+                            "uuid": "a1"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_footprint_mismatch"
+                },
+                {
+                    "description": "Footprint 'R_0402_1005Metric' does not match copy in library 'Resistor_SMD'",
+                    "items": [
+                        {
+                            "description": "Footprint R2",
+                            "pos": { "x": 110.0, "y": 50.0 },
+                            "uuid": "a2"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_footprint_mismatch"
+                }
+            ],
+            "unconnected_items": [
+                {
+                    "description": "Missing connection between items",
+                    "items": [
+                        {
+                            "description": "Pad 1 [VCC] of R1 on F.Cu",
+                            "pos": { "x": 99.5, "y": 50.0 },
+                            "uuid": "b1"
+                        },
+                        {
+                            "description": "Pad 2 [VCC] of R2 on F.Cu",
+                            "pos": { "x": 110.5, "y": 50.0 },
+                            "uuid": "b2"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "unconnected_items"
+                },
+                {
+                    "description": "Missing connection between items",
+                    "items": [
+                        {
+                            "description": "Pad 2 [GND] of R1 on F.Cu",
+                            "pos": { "x": 100.5, "y": 50.0 },
+                            "uuid": "c1"
+                        },
+                        {
+                            "description": "Pad 1 [GND] of R2 on F.Cu",
+                            "pos": { "x": 109.5, "y": 50.0 },
+                            "uuid": "c2"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "unconnected_items"
+                }
+            ],
+            "schematic_parity": []
+        })
+    }
+
+    #[test]
+    fn unconnected_items_are_errors_with_a_position() {
+        let report = parse_drc_json(&real_report());
+        let unconnected = report
+            .unconnected_items
+            .as_ref()
+            .expect("unconnected_items was present in the report");
+        assert_eq!(
+            unconnected.len(),
+            2,
+            "must read the top-level 'unconnected_items' array, not just 'violations'"
+        );
+        for v in unconnected {
+            assert_eq!(v.severity, "error");
+            assert_eq!(v.category, DrcCategory::UnconnectedItems);
+            let pos = v
+                .pos
+                .as_ref()
+                .expect("position must come from items[0].pos, not a violation-level 'pos' that KiCAD never writes");
+            assert!(pos.x > 0.0 || pos.y > 0.0);
+            assert!(
+                v.description.contains("Pad"),
+                "description should name the offending item"
+            );
+        }
+        assert_eq!(
+            report.error_count(),
+            2,
+            "the two unconnected nets are the only errors"
+        );
+        assert!(report.missing_categories().is_empty(), "all three categories were present in the report, even schematic_parity as an empty array");
+    }
+
+    #[test]
+    fn a_missing_key_is_not_the_same_as_an_empty_array() {
+        // schematic_parity present-but-empty means "measured, clean".
+        let report = parse_drc_json(&real_report());
+        assert_eq!(report.schematic_parity, Some(Vec::new()));
+
+        // A key genuinely absent from the JSON must be reported as missing,
+        // not silently treated as zero findings.
+        let partial = parse_drc_json(&serde_json::json!({ "violations": [] }));
+        assert_eq!(
+            partial.missing_categories(),
+            vec![DrcCategory::UnconnectedItems, DrcCategory::SchematicParity]
         );
     }
 }

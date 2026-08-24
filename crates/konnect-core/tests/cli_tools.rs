@@ -298,6 +298,41 @@ async fn drc_runs_and_reports_against_a_real_board() {
     );
 }
 
+/// An unrouted net is `unconnected_items`, not `violations` — a sibling array
+/// the old parser never read. A board with open copper must come back with
+/// at least one `error`-severity finding and a real position, not a report
+/// that only saw the (possibly empty) `violations` array and called it clean.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn an_unrouted_board_reports_unconnected_copper_as_an_error() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let board = h.fixture("unrouted.kicad_pcb");
+    let pcb = harness::as_str(&board).to_string();
+
+    let report = h
+        .json("run_drc", json!({ "board": pcb, "severity": "error" }))
+        .await;
+    let violations = report["violations"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no 'violations' array in report: {report}"));
+
+    let unconnected: Vec<_> = violations
+        .iter()
+        .filter(|v| v["category"] == "unconnected_items")
+        .collect();
+    assert!(
+        !unconnected.is_empty(),
+        "an unrouted board must report at least one unconnected_items finding: {report}"
+    );
+    for v in &unconnected {
+        assert_eq!(v["severity"], "error");
+        assert!(
+            v["pos"].is_object(),
+            "unconnected_items entries must carry a position: {v}"
+        );
+    }
+}
+
 /// The manufacturing package is the pipeline end to end: Gerbers, drills and
 /// the assembly files in one directory.
 #[tokio::test]

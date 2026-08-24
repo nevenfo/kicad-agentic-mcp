@@ -2985,13 +2985,22 @@ outrank everything the review named.
 None. Each item below is independent of the others except where stated.
 
 ### Tâches
-- [ ] P.6.1 `e7eeeac` — `run_drc` reads only the `violations` array and drops
+- [x] P.6.1 `e7eeeac` — `run_drc` reads only the `violations` array and drops
       `unconnected_items` (unrouted copper, severity `error`) and
       `schematic_parity`; `pos` is read at the violation level, a field KiCad
       never writes, so every reported position is null. This fork's own
       evidence gate approves boards with unrouted copper.
       `konnect-core/src/tools/cli.rs`, gates in `evidence/validators.rs`,
       `pcb_export.rs`, `verification.rs`. Highest priority of the whole audit.
+      DONE. Measured on the oracle first: `kicad-cli` 10.0.3 on a two-net
+      unrouted board writes both errors under `unconnected_items` and no
+      violation-level `pos` at all, so the old parser saw 0 errors out of 2
+      and every position null. `DrcReport` now carries the three arrays as
+      `Option<Vec<_>>` — an absent key is a pass that did not run, an empty
+      one is a clean measurement — and `validators.rs` refuses a report with
+      a missing category rather than counting it as zero findings.
+      `crates/konnect-core/tests/fixtures/unrouted.kicad_pcb` is the KiCad 10
+      board that produces it; the probe runs in the gating E2E job.
 - [ ] P.6.2 `9a56233` + #220 — `create_netclass` writes a `(netclass …)` node
       into the `.kicad_pcb`; KiCad 10 reads netclasses from `.kicad_pro` only,
       and the insertion point is `rfind(')')` when no `(net_classes` block

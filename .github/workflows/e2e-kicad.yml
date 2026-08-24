@@ -104,6 +104,14 @@ jobs:
       - name: "Schematic fidelity against real KiCAD (#144, #209)"
         run: cargo test -p konnect-core --test schematic_fidelity_live -- --ignored --nocapture
 
+      # A board with open copper is reported by kicad-cli under
+      # `unconnected_items`, a sibling of `violations` this fork read alone
+      # until P.6.1 — so the evidence gate approved unrouted boards and every
+      # reported position was null. Only KiCAD can produce the three-array
+      # report, so the proof belongs here, in the job that gates the release.
+      - name: "DRC reads all three report categories (unrouted copper is an error)"
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture an_unrouted_board_reports_unconnected_copper_as_an_error
+
       - name: IPC wedge timeout regression
         run: cargo test -p konnect-ipc --test mock_server_test -- --ignored --nocapture
 
