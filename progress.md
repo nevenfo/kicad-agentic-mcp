@@ -21,7 +21,9 @@ propres mesures, versionné, tagué et publié.
   puis `fix: the schematic-viewer lock kept the old workspace versions` — la CI
   a attrapé ce que le gate local ne peut structurellement pas voir, le viewer
   étant exclu du workspace et portant son propre lock (O.7.3)
-- tag : `v1.0.0`, annoté, sur ce second commit, poussé
+- tag : `v1.0.0`, annoté et poussé. Il désigne la tête d'`agentic/main` à la
+  clôture, c'est-à-dire le dernier commit de cette phase — celui qui porte ce
+  fichier. `git rev-list -n1 v1.0.0` le confirme
 - gate local : `.\gate.ps1` **PASSED** au bump de version (fmt, clippy
   `-D warnings`, 1 123 tests, doctests, build release). Le correctif de lock ne
   touche rien que le gate exécute ; il est vérifié comme la CI le vérifie,
