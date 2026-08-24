@@ -3113,14 +3113,25 @@ None. Each item below is independent of the others except where stated.
       name under the numbering the board actually uses; the discriminating
       test is `add_layer` against a board whose `B.Cu` is `2`, reloaded by
       `kicad-cli`.
-- [ ] P.6.7 Smaller, independent, each with its own discriminating test:
-      #212 (one junction dot per wire instead of per T — 3 sites here, not
-      upstream's 2), #213 (`#PWR{count+1}` re-issues a live designator),
-      #214 (deleted wires leave orphaned junction dots), #274 (pad count and
-      courtyard by substring), #140 (net and track counts by substring),
-      #139 (`export_bom` ignores `exclude_dnp` and `format`, both advertised
-      in its schema), #266 (`--layers` repeated per layer, no `--mode-single`),
-      #263 (`run_erc` on a sub-sheet reports invocation artefacts).
+- [ ] P.6.7 Smaller, independent, each with its own discriminating test. Split
+      into one id per item so a commit closes exactly one:
+  - [x] P.6.7.1 #212 — one junction dot per wire instead of per T. Done: a
+        single `add_missing_junctions` helper in `sch_wiring.rs` guards on a
+        coincident dot, and the three unguarded loops call it —
+        `handle_add_wire`, `handle_batch_add_wire`, `handle_connect_to_net`
+        (upstream had the same three). Each was already followed by a
+        correctly guarded mid-segment-pin loop, now folded into the same
+        helper. Discriminating tests: a rail with three taps, drawn wire by
+        wire and again as one batch — red before at **3 dots stacked on the
+        first T**, one dot per T after.
+  - [ ] P.6.7.2 #213 (`#PWR{count+1}` re-issues a live designator)
+  - [ ] P.6.7.3 #214 (deleted wires leave orphaned junction dots)
+  - [ ] P.6.7.4 #274 (pad count and courtyard by substring)
+  - [ ] P.6.7.5 #140 (net and track counts by substring)
+  - [ ] P.6.7.6 #139 (`export_bom` ignores `exclude_dnp` and `format`, both
+        advertised in its schema)
+  - [ ] P.6.7.7 #266 (`--layers` repeated per layer, no `--mode-single`)
+  - [ ] P.6.7.8 #263 (`run_erc` on a sub-sheet reports invocation artefacts)
 - [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
       carries its precise next action in `docs/upstream-audit.md`; re-read it
       rather than re-deriving. #271 depends on P.6.3.

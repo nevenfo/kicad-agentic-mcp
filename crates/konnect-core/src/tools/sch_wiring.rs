@@ -432,6 +432,24 @@ fn pins_mid_segment(pins: &[(f64, f64)], x1: f64, y1: f64, x2: f64, y2: f64) -> 
         .collect()
 }
 
+/// Add a junction dot at each position that does not already carry one.
+///
+/// `find_t_junctions` reports every T on the sheet, not only the ones the new
+/// wire made, so an unguarded loop re-emits a dot at every existing T on every
+/// call — quadratic in a batch. `insert_wire_with_junctions` guards the same
+/// way on the string path.
+fn add_missing_junctions(sch: &mut cse::Schematic, positions: &[(f64, f64)]) {
+    for &(x, y) in positions {
+        if !sch
+            .junctions
+            .iter()
+            .any(|j| konnect_sexp::geometry::points_coincident(x, y, j.x, j.y, 0.01))
+        {
+            sch.add_junction(x, y);
+        }
+    }
+}
+
 pub(crate) fn insert_wire_with_junctions(
     content: String,
     x1: f64,
@@ -543,21 +561,11 @@ async fn handle_add_wire(
     let junctions = find_t_junctions(&existing_wires, 0.01);
 
     sch.add_wire(x1, y1, x2, y2);
-    for (jx, jy) in &junctions {
-        sch.add_junction(*jx, *jy);
-    }
+    add_missing_junctions(&mut sch, &junctions);
     // Pins the new wire passes over mid-segment also need junction dots.
     let (_, tree) = read_schematic(&sch_path)?;
     let pins = crate::tools::all_pin_endpoints(&tree);
-    for (px, py) in pins_mid_segment(&pins, x1, y1, x2, y2) {
-        if !sch
-            .junctions
-            .iter()
-            .any(|j| konnect_sexp::geometry::points_coincident(px, py, j.x, j.y, 0.01))
-        {
-            sch.add_junction(px, py);
-        }
-    }
+    add_missing_junctions(&mut sch, &pins_mid_segment(&pins, x1, y1, x2, y2));
     sch.overwrite()?;
 
     Ok(CallToolResult::json(
@@ -600,19 +608,9 @@ async fn handle_batch_add_wire(
         let junctions = find_t_junctions(&existing_wires, 0.01);
 
         sch.add_wire(x1, y1, x2, y2);
-        for (jx, jy) in &junctions {
-            sch.add_junction(*jx, *jy);
-        }
+        add_missing_junctions(&mut sch, &junctions);
         // Pins this wire passes over mid-segment also need junction dots.
-        for (px, py) in pins_mid_segment(&pins, x1, y1, x2, y2) {
-            if !sch
-                .junctions
-                .iter()
-                .any(|j| konnect_sexp::geometry::points_coincident(px, py, j.x, j.y, 0.01))
-            {
-                sch.add_junction(px, py);
-            }
-        }
+        add_missing_junctions(&mut sch, &pins_mid_segment(&pins, x1, y1, x2, y2));
         added += 1;
     }
 
@@ -2004,22 +2002,15 @@ async fn handle_connect_to_net(
 
     // Add wire stub
     sch.add_wire(pin_x, pin_y, label_x, label_y);
-    for (jx, jy) in &junctions {
-        sch.add_junction(*jx, *jy);
-    }
+    add_missing_junctions(&mut sch, &junctions);
     // Pins the stub passes over mid-segment also need junction dots.
     let pins = read_schematic(&sch_path)
         .map(|(_, tree)| crate::tools::all_pin_endpoints(&tree))
         .unwrap_or_default();
-    for (px, py) in pins_mid_segment(&pins, pin_x, pin_y, label_x, label_y) {
-        if !sch
-            .junctions
-            .iter()
-            .any(|j| konnect_sexp::geometry::points_coincident(px, py, j.x, j.y, 0.01))
-        {
-            sch.add_junction(px, py);
-        }
-    }
+    add_missing_junctions(
+        &mut sch,
+        &pins_mid_segment(&pins, pin_x, pin_y, label_x, label_y),
+    );
 
     // Add label
     match label_type {
@@ -2304,6 +2295,80 @@ mod unit_aware_wiring_tests {
                 .any(|&(x, y)| (x - 101.6).abs() < 0.01 && (y - 76.2).abs() < 0.01),
             "junction expected at the mid-wire pin, got {juncs:?}"
         );
+    }
+
+    // ─── One junction per T, however many wires arrive ─────────────────────
+
+    /// An empty sheet: these tests only need somewhere to put wires.
+    fn bare_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bare.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols)\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n",
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    /// A rail plus three taps hanging off it: each tap makes one T, and every
+    /// later wire sees the earlier Ts again.
+    fn rail_and_taps() -> (Vec<serde_json::Value>, Vec<(f64, f64)>) {
+        let rail = json!({ "x1": 101.6, "y1": 101.6, "x2": 127.0, "y2": 101.6 });
+        let taps: Vec<f64> = vec![106.68, 111.76, 116.84];
+        let wires = std::iter::once(rail)
+            .chain(
+                taps.iter()
+                    .map(|&x| json!({ "x1": x, "y1": 101.6, "x2": x, "y2": 106.68 })),
+            )
+            .collect();
+        (wires, taps.into_iter().map(|x| (x, 101.6)).collect())
+    }
+
+    fn junctions_at(path: &std::path::Path, x: f64, y: f64) -> usize {
+        let tree = konnect_sexp::parse_sexp(&std::fs::read_to_string(path).unwrap()).unwrap();
+        konnect_sexp::schematic::extract_junction_points(&tree)
+            .iter()
+            .filter(|&&(jx, jy)| (jx - x).abs() < 0.01 && (jy - y).abs() < 0.01)
+            .count()
+    }
+
+    /// `find_t_junctions` reports every T on the sheet, so each call used to
+    /// re-emit a dot at every T already there — the third tap stacked three
+    /// dots on the first T.
+    #[tokio::test]
+    async fn repeated_add_wire_leaves_one_junction_per_t() {
+        let (_d, path) = bare_schematic();
+        let (wires, tees) = rail_and_taps();
+        for w in &wires {
+            let mut args = json!({ "schematic": path.display().to_string() });
+            for (k, v) in w.as_object().unwrap() {
+                args[k] = v.clone();
+            }
+            let result = handle_add_wire(&args, &test_ctx()).await.unwrap();
+            assert!(!result.is_error, "{:?}", result.content);
+        }
+        for (x, y) in tees {
+            assert_eq!(junctions_at(&path, x, y), 1, "T at ({x}, {y})");
+        }
+    }
+
+    /// The same in one batch, where the duplication was quadratic: n wires
+    /// over a sheet holding m Ts wrote n·m dots.
+    #[tokio::test]
+    async fn batch_add_wire_leaves_one_junction_per_t() {
+        let (_d, path) = bare_schematic();
+        let (wires, tees) = rail_and_taps();
+        let result = handle_batch_add_wire(
+            &json!({ "schematic": path.display().to_string(), "wires": wires }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{:?}", result.content);
+        for (x, y) in tees {
+            assert_eq!(junctions_at(&path, x, y), 1, "T at ({x}, {y})");
+        }
     }
 }
 

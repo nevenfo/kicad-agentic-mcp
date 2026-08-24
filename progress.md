@@ -3,8 +3,9 @@
 ## Phase actuelle
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
-(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 à
-P.6.11 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
+(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
+est ouverte (P.6.7.1 close, P.6.7.2 à P.6.7.8 restent), P.6.8 à P.6.11
+restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
 ## Tâche actuelle
@@ -13,23 +14,23 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.6 — `add_layer` n'écrit plus un board inouvrable. Nouveau
-`crates/konnect-sexp/src/layers.rs` porté d'upstream (`Layer`, `layers`,
-`copper`, `is_canonical_name`) ; le helper local `board_layers` est supprimé et
-`get_layer_list`, l'allocateur d'id et `get_board_info` passent par lui —
-`layer_count` cesse de rendre 0 sur tout board, `copper_layer_count` est ajouté.
-Côté écriture, `close_of_block` (équilibrage de parenthèses ignorant les
-chaînes) et `entry_indent` (indentation réelle du fichier) remplacent la sonde
-littérale `"\n  )"`, et un nom non canonique est refusé avant écriture.
+P.6.7.1 — un point de jonction par T, pas un par fil. Un helper
+`add_missing_junctions` dans `sch_wiring.rs` teste la présence d'un dot
+coïncident, et les trois boucles non gardées passent par lui :
+`handle_add_wire`, `handle_batch_add_wire`, `handle_connect_to_net`. Chacune
+était déjà suivie d'une boucle correctement gardée pour les pins traversées
+mid-segment, désormais repliée sur le même helper.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, 8/8
-- rouge-avant vérifié en restaurant l'ancienne insertion : le test non-live perd
-  `In1.Cu` du stackup reparsé (écrit dans `(0 "F.Cu" signal)`) et la sonde live
-  échoue au chargement `kicad-cli` ; les deux repassent au vert après
+- rouge-avant vérifié en retirant la garde du helper : les deux tests
+  (`repeated_add_wire_leaves_one_junction_per_t`,
+  `batch_add_wire_leaves_one_junction_per_t`) rendent **3 dots empilés sur le
+  premier T** au lieu de 1 ; verts après restauration
+- pas de sonde live : KiCad tolère les dots dupliqués au chargement, il n'est
+  donc pas un oracle discriminant ici — le fichier l'est
 
 ## Décisions actives
 
@@ -118,10 +119,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7 — série d'items indépendants, chacun avec son test
-discriminant. Commencer par `#212` (un point de jonction par fil au lieu d'un
-par T ; **3 sites dans ce fork**, pas 2 comme upstream) : relire son entrée dans
-`docs/upstream-audit.md`, localiser les trois sites, et écrire le test qui
-distingue un T d'un croisement avant de coder. Valider par `cargo fmt` /
-`clippy -D warnings` / `cargo test --workspace --lib --tests`, plus la sonde
-live pertinente si KiCad est le seul oracle honnête.
+Implémenter P.6.7.2 — `#213` : `crates/konnect-core/src/tools/sch_wiring.rs`
+numérote la référence d'un symbole d'alimentation par
+`format!("#PWR{:03}", count + 1)`, si bien que retirer `#PWR028` d'une feuille
+qui en compte 29 fait ré-émettre `#PWR029`, déjà vivant — deux symboles
+partagent alors une référence et l'annotation KiCad les fusionne. Relire
+l'entrée `#213` de `docs/upstream-audit.md`, puis émettre le plus petit numéro
+qu'aucun symbole de la feuille n'utilise. Le test discriminant part d'une
+feuille à trou dans la numérotation. Valider par `cargo fmt` /
+`clippy -D warnings` / `cargo test --workspace --lib --tests`.
