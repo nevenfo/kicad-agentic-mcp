@@ -2791,6 +2791,14 @@ documents send a reader to another repository's releases.
 - [x] O.7.2 Diff reviewed file by file, gate re-run because `Cargo.toml` and
       `Cargo.lock` moved, commit `chore: prepare v1.0.0 release`, working tree
       clean afterwards, `agentic/main` pushed
+- [x] O.7.3 CI caught what the local gate structurally cannot: `gate.ps1` never
+      touches `crates/schematic-viewer`, which is excluded from the workspace
+      and carries its own lock. The version bump left that lock naming
+      `konnect-schematic-editor` and `konnect-sexp` at 0.2.2, so the `Schematic
+      viewer` job failed on `cargo check --locked` — *cannot update the lock
+      file … because --locked was passed*. Both entries corrected and verified
+      the way CI verifies them, `cargo metadata --locked` against that manifest.
+      A regression of this release, fixed as one; nothing else was touched
 
 ## O.8 — Tag — DONE
 
