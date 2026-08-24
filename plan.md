@@ -3201,7 +3201,23 @@ None. Each item below is independent of the others except where stated.
         were left out rather than folded in silently. They are what a fab BOM
         needs for MPN/LCSC columns. Decide whether the tool should expose them
         before implementing.
-  - [ ] P.6.7.7 #266 (`--layers` repeated per layer, no `--mode-single`)
+  - [x] P.6.7.7 #266 — `--layers` repeated per layer, no `--mode-single`.
+        Done: `single_file_pcb_export_args` joins the layers into the one
+        comma-separated value KiCad 10 takes and asks for `--mode-single`, so
+        `--output` is the file the caller named rather than a directory;
+        `export_pdf` and `export_svg_pcb` both go through it. An empty layer
+        list passes no `--layers` at all, since `--layers ""` would ask for
+        nothing. `cli_failure_diagnostics` is the other half and is worth
+        having on its own: kicad-cli writes argument errors to **stdout**, and
+        the error path reported stderr only.
+        Ground truth, measured directly on 10.0.3 before coding: `--layers` is
+        documented `[nargs=0..1]` as "Comma separated list", and repeating it
+        exits 1 with "Duplicate argument --layers" on stdout and **an empty
+        stderr**. Red before, on the live probe: `export_pdf` with two layers
+        failed, and with the old stderr-only diagnostic the whole message read
+        `kicad-cli exited with 1:` — nothing at all. The pre-existing board
+        export probe passed throughout because it asks for a single layer; it
+        takes two to make the duplicate.
   - [ ] P.6.7.8 #263 (`run_erc` on a sub-sheet reports invocation artefacts)
 - [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
       carries its precise next action in `docs/upstream-audit.md`; re-read it

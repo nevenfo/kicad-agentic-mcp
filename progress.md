@@ -4,7 +4,7 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte (P.6.7.1 à P.6.7.6 closes, P.6.7.7 à P.6.7.10 restent), P.6.8 à P.6.11
+est ouverte (P.6.7.1 à P.6.7.7 closes, P.6.7.8 à P.6.7.10 restent), P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -14,24 +14,23 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.6 — `export_bom` honore `exclude_dnp`, et `format` cesse de mentir.
-`BomOptions` + `bom_args` dans `cli.rs` (le flag s'assert sans KiCad), le
-handler de `sch_export.rs` lit `exclude_dnp` (défaut `true` du schéma) et
-passe `--exclude-dnp`. `format` est un ensemble fermé de `"csv"`, déclaré en
-`enum` et refusé sinon — voir D118. `manufacturing.rs` garde son comportement
-par `BomOptions::default()`.
-
-Changement de contrat assumé : `export_bom` sans `exclude_dnp` applique
-désormais le `true` que son schéma annonçait déjà, donc les composants DNP
-cessent d'apparaître par défaut.
+P.6.7.7 — les arguments de tracé PCB que KiCad 10 rejetait.
+`single_file_pcb_export_args` dans `cli.rs` joint les couches en une seule
+valeur séparée par des virgules et passe `--mode-single` ; `export_pdf` et
+`export_svg_pcb` y passent tous deux. Une liste vide ne passe aucun `--layers`.
+`cli_failure_diagnostics` retombe sur **stdout** quand stderr est vide, car
+c'est là que `kicad-cli` écrit ses erreurs d'argument.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, 9/9
-- rouge-avant vérifié sur le seul oracle honnête, le CSV écrit par KiCad : avec
-  `exclude_dnp: true`, le composant DNP **R2 restait dans la BOM**
+- sondes live `cli_tools` avec `KICAD_CLI` : PASS, 10/10
+- rouge-avant vérifié sur la sonde live : `export_pdf` avec deux couches échoue
+  (`Duplicate argument --layers`), et avec l'ancien diagnostic stderr seul le
+  message entier se réduisait à `kicad-cli exited with 1:` — vide. La sonde
+  d'export de board préexistante passait parce qu'elle ne demande qu'une seule
+  couche : il en faut deux pour créer le doublon
 
 ## Décisions actives
 
@@ -126,14 +125,13 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.7 — `#266` : l'export PCB `pdf` et `svg` répète `--layers`
-une fois par couche, alors que KiCad 10 attend une seule valeur séparée par des
-virgules et rejette le doublon ; `--mode-single` n'est jamais passé, donc un
-tracé en fichier unique n'est pas demandé. Upstream factorise
-`single_file_pcb_export_args` et ajoute `cli_failure_diagnostics`, parce que
-`kicad-cli` écrit son message « Duplicate argument » sur **stdout**, que le
-chemin d'erreur jetait. Vérifier d'abord le `--help` réel de
-`kicad-cli pcb export pdf` et `svg` (voir D118), puis relire l'entrée `#266` de
-`docs/upstream-audit.md`. Sonde live attendue : un export multi-couches qui
-produit réellement son fichier. Valider par `cargo fmt` / `clippy -D warnings` /
-`cargo test --workspace --lib --tests` plus `cli_tools -- --ignored`.
+Implémenter P.6.7.8 — `#263` : `run_erc` sur une sous-feuille rapporte des
+artefacts d'invocation plutôt que la conception. `kicad-cli` traite le fichier
+qu'on lui donne comme la racine de la hiérarchie et cherche un `.kicad_pro` à
+côté ; une sous-feuille n'en a pas, donc la `sym-lib-table` du projet n'est
+jamais chargée. Relire l'entrée `#263` de `docs/upstream-audit.md` pour le
+mécanisme complet et l'état exact dans ce fork avant de coder. Vérifier le
+comportement réel contre `kicad-cli` local (voir D118) plutôt que de le déduire
+du diff upstream. Valider par `cargo fmt` / `clippy -D warnings` /
+`cargo test --workspace --lib --tests` plus `cli_tools -- --ignored`, qui doit
+rester à 10/10 en plus de la nouvelle sonde.

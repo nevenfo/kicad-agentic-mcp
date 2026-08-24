@@ -171,6 +171,35 @@ impl DrcReport {
 
 // ─── KiCAD CLI Runner ─────────────────────────────────────────────────────────
 
+/// What to say when `kicad-cli` fails.
+///
+/// Argument errors go to **stdout**, not stderr — `--layers F.Cu --layers B.Cu`
+/// prints "Duplicate argument --layers" there and leaves stderr empty
+/// (measured on 10.0.3). Reporting stderr alone therefore produced a failure
+/// with no message at all, which is the worst kind: the caller cannot tell a
+/// rejected argument from a crash. Stdout is trimmed to its first lines
+/// because kicad-cli follows the message with its whole usage screen.
+fn cli_failure_diagnostics(stdout: &[u8], stderr: &[u8]) -> String {
+    let stderr = String::from_utf8_lossy(stderr);
+    let stderr = stderr.trim();
+    if !stderr.is_empty() {
+        return stderr.to_string();
+    }
+    let stdout = String::from_utf8_lossy(stdout);
+    let message: Vec<&str> = stdout
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .take_while(|line| !line.starts_with("Usage:"))
+        .take(4)
+        .collect();
+    if message.is_empty() {
+        "no diagnostic on stdout or stderr".to_string()
+    } else {
+        message.join("; ")
+    }
+}
+
 /// Run a kicad-cli command with arguments and capture stdout.
 async fn run_cli(cli: &str, args: &[&str], timeout_dur: Duration) -> Result<String> {
     info!("[BETA] kicad-cli {} {}", cli, args.join(" "));
@@ -199,11 +228,10 @@ async fn run_cli(cli: &str, args: &[&str], timeout_dur: Duration) -> Result<Stri
     }
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
             "kicad-cli exited with {}: {}",
             output.status.code().unwrap_or(-1),
-            stderr.trim()
+            cli_failure_diagnostics(&output.stdout, &output.stderr)
         );
     }
 
@@ -520,6 +548,70 @@ pub async fn export_bom(
 }
 
 #[cfg(test)]
+mod pcb_plot_args_tests {
+    use super::*;
+
+    /// KiCad 10 takes one comma-separated `--layers`; repeating the option is
+    /// refused with "Duplicate argument --layers", so every layer-filtered
+    /// export failed.
+    #[test]
+    fn layers_are_one_comma_separated_value_not_a_repeated_option() {
+        let args = single_file_pcb_export_args("pdf", "/out/b.pdf", "F.Cu,B.Cu", "/b.kicad_pcb");
+        assert_eq!(args.iter().filter(|a| **a == "--layers").count(), 1);
+        assert!(args.contains(&"F.Cu,B.Cu"));
+    }
+
+    /// Without `--mode-single`, `--output` is read as a directory and KiCad
+    /// plots one file per layer instead of the file the caller named.
+    #[test]
+    fn a_single_file_plot_is_actually_requested() {
+        for subcommand in ["pdf", "svg"] {
+            let args =
+                single_file_pcb_export_args(subcommand, "/out/b.out", "F.Cu", "/b.kicad_pcb");
+            assert!(
+                args.contains(&"--mode-single"),
+                "{subcommand} did not ask for a single file: {args:?}"
+            );
+        }
+    }
+
+    /// No layers means "use the board's own plot settings"; `--layers ""`
+    /// would ask for nothing at all.
+    #[test]
+    fn an_empty_layer_list_passes_no_layers_option() {
+        let args = single_file_pcb_export_args("svg", "/out/b.svg", "", "/b.kicad_pcb");
+        assert!(!args.contains(&"--layers"), "{args:?}");
+        assert_eq!(args.last(), Some(&"/b.kicad_pcb"));
+    }
+
+    /// kicad-cli prints argument errors on stdout and leaves stderr empty, so
+    /// reporting stderr alone produced a failure with no message at all.
+    #[test]
+    fn an_argument_error_on_stdout_still_reaches_the_caller() {
+        let stdout = b"Duplicate argument --layers\nUsage: export pdf [--help] [--output OUTPUT_DIR]\n  -h, --help  Shows help\n";
+        let diagnostics = cli_failure_diagnostics(stdout, b"");
+        assert_eq!(diagnostics, "Duplicate argument --layers");
+    }
+
+    /// stderr still wins when KiCad does use it.
+    #[test]
+    fn stderr_is_preferred_when_kicad_writes_there() {
+        let diagnostics =
+            cli_failure_diagnostics(b"some progress chatter\n", b"Fatal: bad board\n");
+        assert_eq!(diagnostics, "Fatal: bad board");
+    }
+
+    /// Silence on both streams must not read as success-shaped emptiness.
+    #[test]
+    fn a_silent_failure_says_so_rather_than_returning_nothing() {
+        assert_eq!(
+            cli_failure_diagnostics(b"", b""),
+            "no diagnostic on stdout or stderr"
+        );
+    }
+}
+
+#[cfg(test)]
 mod bom_export_tests {
     use super::*;
 
@@ -711,24 +803,52 @@ fn one_of<'a>(value: &str, valid: &[&'a str], what: &str) -> Result<&'a str> {
 
 /// KiCAD 10: `pcb export pdf --output <path> [--layers <layer>]... <input>`
 pub async fn export_pdf(cli: &str, pcb: &Path, output: &Path, layers: &[&str]) -> Result<()> {
-    let mut args = vec!["pcb", "export", "pdf", "--output", output.to_str().unwrap()];
-    for layer in layers {
-        args.push("--layers");
-        args.push(layer);
-    }
-    args.push(pcb.to_str().unwrap());
+    let joined = layers.join(",");
+    let args = single_file_pcb_export_args(
+        "pdf",
+        output.to_str().unwrap_or(""),
+        &joined,
+        pcb.to_str().unwrap_or(""),
+    );
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
 }
 
+/// Arguments for a `pcb export pdf|svg` that writes **one** file.
+///
+/// Two things were wrong. `--layers` was pushed once per layer, but KiCad 10
+/// takes a single comma-separated value and rejects the repeat outright
+/// ("Duplicate argument --layers"), so every layer-filtered PDF or SVG export
+/// failed. And `--mode-single` was never passed, so KiCad treated `--output`
+/// as a directory and plotted one file per layer instead of the single file
+/// the caller named.
+fn single_file_pcb_export_args<'a>(
+    subcommand: &'a str,
+    output: &'a str,
+    layers: &'a str,
+    pcb: &'a str,
+) -> Vec<&'a str> {
+    let mut args = vec!["pcb", "export", subcommand, "--output", output];
+    // An empty list means "whatever the board's plot settings say"; passing
+    // `--layers ""` would ask for nothing at all.
+    if !layers.is_empty() {
+        args.push("--layers");
+        args.push(layers);
+    }
+    args.push("--mode-single");
+    args.push(pcb);
+    args
+}
+
 /// KiCAD 10: `pcb export svg --output <path> [--layers <layer>]... <input>`
 pub async fn export_svg_pcb(cli: &str, pcb: &Path, output: &Path, layers: &[&str]) -> Result<()> {
-    let mut args = vec!["pcb", "export", "svg", "--output", output.to_str().unwrap()];
-    for layer in layers {
-        args.push("--layers");
-        args.push(layer);
-    }
-    args.push(pcb.to_str().unwrap());
+    let joined = layers.join(",");
+    let args = single_file_pcb_export_args(
+        "svg",
+        output.to_str().unwrap_or(""),
+        &joined,
+        pcb.to_str().unwrap_or(""),
+    );
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
 }

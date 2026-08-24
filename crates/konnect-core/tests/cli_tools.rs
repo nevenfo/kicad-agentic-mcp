@@ -331,6 +331,35 @@ async fn the_board_exports_write_their_files() {
     );
 }
 
+/// The exports above ask for a single layer, which is why they passed while
+/// `--layers` was pushed once per layer: it takes *two* to make the duplicate.
+/// KiCad 10 answers "Duplicate argument --layers" on **stdout**, exits 1, and
+/// says nothing on stderr — so the export failed with an empty message. This
+/// is the case that discriminates.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn a_multi_layer_board_export_is_accepted_by_kicad_cli() {
+    let (h, _schematic, board) = live();
+    let pcb = harness::as_str(&board).to_string();
+
+    for (tool, name) in [
+        ("export_pdf", "two-layer.pdf"),
+        ("export_svg", "two-layer.svg"),
+    ] {
+        let out = h.path(name);
+        h.json(
+            tool,
+            json!({ "board": pcb, "output": harness::as_str(&out), "layers": ["F.Cu", "B.Cu"] }),
+        )
+        .await;
+        assert!(
+            out.is_file(),
+            "'{tool}' produced no file at {} for a two-layer export",
+            out.display()
+        );
+    }
+}
+
 /// DRC runs against a real board and comes back with a report, not an
 /// exception. A validator that could not run is a failure, never zero findings
 /// (INV1) — so what is asserted is that a report exists and says how many.
