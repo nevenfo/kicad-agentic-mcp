@@ -2482,7 +2482,7 @@ H.6, H.7, K.1.
 
 ---
 
-# Phase N — Documentation consolidation — N.1 DONE
+# Phase N — Documentation consolidation — N.1 and N.2 DONE, N.3 open
 
 ## N.1 — The public docs carry the measured numbers
 
@@ -2578,12 +2578,12 @@ evidence store and the local runtime do not exist.
 N.1 (the counts are settled; this is where they live in the tree).
 
 ### Tâches
-- [ ] N.2.1 The tree lists every workspace member, with the one-line role each
+- [x] N.2.1 The tree lists every workspace member, with the one-line role each
       existing entry gets. Source: `Cargo.toml`'s `members`, and each crate's
       own module layout — not this plan's phase narrative
-- [ ] N.2.2 The `tools/` entries cover all 22 toolsets with their real
+- [x] N.2.2 The `tools/` entries cover all 22 toolsets with their real
       `tool_count`, and `meta_tools.rs` says 13
-- [ ] N.2.3 Whatever else in DEV.md asserts an architecture that predates the
+- [x] N.2.3 Whatever else in DEV.md asserts an architecture that predates the
       runtime, found by reading it rather than by grepping counts. Record what
       was found; do not rewrite prose that is merely terse
 
@@ -2591,3 +2591,38 @@ N.1 (the counts are settled; this is where they live in the tree).
 Every `members` entry in `Cargo.toml` appears in the tree and every tree entry
 exists on disk; each `tools/*.rs` line matches `registry.rs::ALL_TOOLSETS`.
 `.\gate.ps1` is untouched by this (no code changes) but must still pass.
+
+Verified: 12/12 `members` present, 102 tree entries all exist on disk, 22/22
+`# N tools` annotations match the registry, `meta_tools.rs` reads 13.
+
+## N.3 — DEV.md has no door into the agent layer — OPEN, needs a scope decision
+
+### Objectif
+N.2 put the `kam-*` crates on the map; it did not explain them. DEV.md has a
+section for each part of the MCP server — structured errors, observability,
+tool routing, addressing an item — and none for the layer phases E, G and H
+built: the local provider and the NO_LLM/LOCAL/ESCALATE gateway, the evidence
+diff and its handles, the graph index, plan compile/execute, and the state
+safety primitives (revisions, ledger, snapshots, task state). Nor for the
+bridge that exposes them to a caller — the `plan`, `task` and `graph` toolsets.
+
+A contributor who wants to change the plan IR has no entry point in the
+document written for exactly that.
+
+### Dépendances
+N.2. **Not started: this is a scope decision, not a gap to close silently.**
+`plan.md`, `decisions.md` and `docs/benchmark.md` already carry this layer in
+depth — but they carry *why it was built and what it measured*, which is not
+what DEV.md is for. The question is how much of the *how it is put together*
+belongs there, and duplicating the other three would be worse than the gap.
+
+### Tâches
+- [ ] N.3.1 Decide the depth: a short "where the agent layer lives" section
+      pointing at crates and their entry points, or a full architecture section
+      per crate with the same detail the server sections get
+- [ ] N.3.2 Write it at the chosen depth, cross-linking rather than restating
+      `decisions.md` and `docs/benchmark.md`
+
+### Validation
+Every crate and toolset named in the new section exists and is reachable from
+the tree; no paragraph restates a decision that `decisions.md` already owns.

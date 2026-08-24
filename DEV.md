@@ -33,6 +33,46 @@ Schematic-viewer build notes (Windows):
 ```
 Konnect/
 ├── crates/
+│   ├── kam-context/           # Token budgets for one local-agent context (clean-room, no konnect-* dep)
+│   │   └── src/
+│   │       └── compaction.rs        # Compactor, CompactedContext, RetrievalBundle, TaskCore
+│   │
+│   ├── kam-evidence/          # Domain-level diffing for design documents (format-agnostic, item-set based)
+│   │   └── src/
+│   │       ├── diff.rs               # ItemSet comparison → human-readable change summary
+│   │       ├── model.rs              # ItemSet, Item, key/attribute types
+│   │       └── store.rs              # Item-by-item detail behind a handle, resolved on demand
+│   │
+│   ├── kam-graph/             # Queryable BTreeMap index over an ItemSet — the agent's "world model"
+│   │   └── src/
+│   │       ├── graph.rs              # Graph construction (indices built once)
+│   │       └── query.rs              # Intersecting queries (net members, neighbors, stats)
+│   │
+│   ├── kam-llm/               # Backend-agnostic local tool-calling chat-completion abstraction
+│   │   └── src/
+│   │       ├── provider.rs           # Provider trait every backend implements
+│   │       ├── openai_compat.rs      # LM Studio / llama.cpp server backend
+│   │       ├── usage.rs              # What a call actually cost
+│   │       └── hardware.rs           # What the machine offers
+│   │
+│   ├── kam-runtime/           # Explicit Agent gateway; router accepts only NO_LLM/LOCAL/ESCALATE decisions
+│   │   └── src/lib.rs                # Gateway + task-state-driven local supervisor
+│   │
+│   ├── kam-plan/              # A change described once, checked, then executed without re-asking
+│   │   └── src/
+│   │       ├── compile.rs            # Intent → the tool calls that implement it
+│   │       ├── execute.rs            # Runs a compiled plan
+│   │       ├── ir.rs                 # Plan intermediate representation
+│   │       ├── program.rs            # Compiled program type
+│   │       └── refs.rs               # A later step naming an earlier step's output
+│   │
+│   ├── kam-state/             # Safety primitives for batched mutations of on-disk documents
+│   │   └── src/
+│   │       ├── revision.rs           # Content-addressed revisions (detect concurrent edits)
+│   │       ├── ledger.rs             # Idempotency keys (retry after timeout returns first result)
+│   │       ├── snapshot.rs           # Before-images, restored when a batch fails partway
+│   │       └── task.rs               # Objective/constraints/facts/attempts held outside model context
+│   │
 │   ├── konnect/              # Main binary + cdylib entry points
 │   │   └── src/
 │   │       ├── main.rs              # CLI: --config, subcommands
@@ -52,7 +92,7 @@ Konnect/
 │   │       ├── router/
 │   │       │   ├── mod.rs           # ToolRouter: load/unload toolsets
 │   │       │   ├── registry.rs      # Static toolset metadata + tools_for() dispatcher
-│   │       │   └── meta_tools.rs    # 6 always-visible meta-tools
+│   │       │   └── meta_tools.rs    # 13 always-visible meta-tools
 │   │       └── tools/
 │   │           ├── mod.rs            # ToolDef, ToolContext, tool! macro, helpers, kicad_config_dir(), resolve_lib_symbol()
 │   │           ├── cli.rs            # kicad-cli v10 subprocess wrapper (verified against actual binary)
@@ -62,7 +102,8 @@ Konnect/
 │   │           ├── sch_wiring.rs     # 19 tools (incl. connect_pins, power symbol embedding)
 │   │           ├── sch_analysis.rs   # 15 tools (union-find net graph, connectivity)
 │   │           ├── sch_batch.rs      # 12 tools (single-read/single-write atomic operations)
-│   │           ├── sch_export.rs     # 6 tools (SVG/PDF/netlist/ERC)
+│   │           ├── sch_export.rs     # 7 tools (SVG/PDF/netlist/ERC)
+│   │           ├── sch_buses.rs      # 5 tools (bus segments, bus entries, bus aliases, reading a bus name as the nets it stands for)
 │   │           ├── sch_hierarchy.rs  # 12 tools (typed Sheet model, sheet CRUD + hierarchy/page queries + pin lifecycle)
 │   │           ├── pcb_board.rs      # 11 tools (S-expr file editing, IPC fallback, SVG logo import)
 │   │           ├── pcb_components.rs # 13 tools (IPC real-time via NNG+protobuf)
@@ -74,7 +115,10 @@ Konnect/
 │   │           ├── config.rs         # 7 tools (user/project config, design rules)
 │   │           ├── design_review.rs  # 6 tools (decoupling/connection/power/DFM audits)
 │   │           ├── templates.rs      # 4 tools (6 built-in reference circuit templates)
-│   │           └── manufacturing.rs  # 3 tools (export package, validate, cost estimate)
+│   │           ├── manufacturing.rs  # 3 tools (export package, validate, cost estimate)
+│   │           ├── plan.rs           # 2 tools (preview_plan compiles+checks, run_plan executes — kam-plan bridge)
+│   │           ├── task.rs           # 4 tools (objective/constraints/facts/attempts held outside model context — kam-state bridge)
+│   │           └── graph.rs          # 3 tools (graph_query, graph_neighbors, graph_stats — kam-graph bridge)
 │   │
 │   ├── konnect-sexp/                  # S-expression engine (no KiCAD dependency)
 │   │   └── src/
@@ -91,6 +135,13 @@ Konnect/
 │   │       ├── client.rs             # NNG req/rep client, all methods implemented
 │   │       ├── builders.rs           # Protobuf message construction helpers (mm→nm conversion)
 │   │       └── types.rs              # Public types (IpcFootprint, IpcTrack, etc.)
+│   │
+│   ├── konnect-schematic-editor/     # Typed schematic model with revision-aware create/replace (`Schematic`)
+│   │   └── src/
+│   │       ├── schematic/                  # Symbol, Sheet, Label, Bus, Wire, Junction/NoConnect/Text typed collections
+│   │       ├── sexp/                        # Parser/writer used to load and persist the typed model
+│   │       ├── library.rs            # Symbol/footprint library lookups for the typed model
+│   │       └── kicad_paths.rs        # KiCAD install/data-dir discovery
 │   │
 │   └── schematic-viewer/            # Tauri desktop app (separate from workspace)
 │       ├── tauri.conf.json
