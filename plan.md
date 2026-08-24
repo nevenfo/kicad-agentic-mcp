@@ -2645,3 +2645,173 @@ copied from the code comments: the crates' own doc comments cite a `D11` and a
 "License impact" section that `plan.md` no longer has — the rule is INV2, and
 the toolset-not-gateway-verb argument is E.4.4 (D20). No Rust file was touched,
 so N.1's green gate still covers this state.
+
+# Phase O — V1 release and project closure — IN PROGRESS
+
+## Objectif
+Close the project as a publishable **v1.0.0** without adding a feature, moving
+a target, or turning a missed criterion into a met one. This phase produces a
+tag, a release and the paperwork that makes both reproducible; it produces no
+capability. Every box below is a proof (INV11), and the two criteria this
+project missed stay missed (INV6).
+
+Out of scope by construction: D.5.3 (conditional by design, waits for a real
+case that saturates the 64-entry evidence store), I.1 (waits for KiCad 11),
+and anything a reader of this plan might think would be "a little better".
+
+## O.1 — Repository audit — DONE
+
+### Tâches
+- [x] O.1.1 Branch, HEAD, remotes, tracked/untracked. `agentic/main` at
+      `fc304db`, even with `origin/agentic/main`, working tree clean, 473
+      tracked files. `origin` = `nevenfo/kicad-agentic-mcp` (public, default
+      branch `agentic/main`); `upstream` = `mixelpixx/Konnect`, push DISABLED.
+      Untracked and ignored: only `target/`, `bench/__pycache__/`, the seven
+      `bench/results/latest-*.json` the gate rewrites on every run, and one
+      `test.kicad_prl` KiCad writes beside the fixtures — every one of them
+      named in `.gitignore` with the reason. Nothing temporary is tracked
+- [x] O.1.2 Leak audit. No key, token, credential or private file: the
+      `sk-`/`ghp_`/`github_pat_`/`xox`/`AKIA`/`AIza`/PEM-header sweep is empty,
+      no `.env`/`.pem`/`.key` is tracked, and no assignment of a
+      key/secret/password/token literal survives filtering. The one personal
+      trace is the Windows home path `C:\Users\FlowUP\...` inside committed
+      benchmark artefacts and `bench/konnect.bench.toml`: a user name, not a
+      secret, already public for months, and rewriting it would break the
+      artefacts M.1 regenerates its tables from. Kept, deliberately (INV6)
+- [x] O.1.3 Licensing. Fork stays `AGPL-3.0-only` workspace-wide with the full
+      licence text in `LICENSE`; the seven `kam-*` crates each carry
+      `license = "MIT OR Apache-2.0"` in their own manifest (INV2); the
+      excluded `schematic-viewer` carries `AGPL-3.0-only` explicitly. No
+      third-party source was absorbed into the tree, so INV2's "travels with
+      its notice" clause has nothing to carry and no NOTICE file is invented.
+      Nothing re-licensed
+
+## O.2 — Final validation — DONE
+
+### Tâches
+- [x] O.2.1 `.\gate.ps1` on the tag candidate: fmt, clippy (`-D warnings`),
+      1 123 tests, doctests, release build — **GATE PASSED**
+- [x] O.2.2 Remote CI on `agentic/main`: run 32716929006 (CI, push, `fc304db`)
+      **success**, 4m12s; the scheduled `E2E (real KiCAD)` run 32701864409 also
+      success. No fix was needed, so no regression was opened
+
+### Validation
+The commit that receives the tag carries a green local gate and a green CI.
+
+## O.3 — Documentation coherence — DONE
+
+### Objectif
+Phase N consolidated the numbers. What O.3 looks for is only what a *release*
+changes: a count N.1 missed, and the fact that this repository's public
+documents send a reader to another repository's releases.
+
+### Tâches
+- [x] O.3.1 `packaging/metadata.json` — N.1.6 fixed `description_full`
+      (18 → 22 toolsets) and left `description` on the line above reading
+      "185 tools". It is what KiCad's Plugin and Content Manager shows. Now
+      202, the registry's number (`m1-surface.json`: 22 toolsets, 215 served,
+      21 / 2 831 at startup)
+- [x] O.3.2 `plugin/plugin.json` — the same "185 tools", never touched by
+      N.1.6, and it ships inside every PCM package. Now 202
+- [x] O.3.3 README identity and links. The document described upstream Konnect
+      and pointed Installation, macOS and Support at
+      `github.com/mixelpixx/Konnect`; v1.0.0 is published from
+      `nevenfo/kicad-agentic-mcp`, so a reader following it would never find
+      the release. Scope decided by the user on 2026-08-24 (D100): **minimal
+      link and identity correction**, not a rewrite — the title says what this
+      repository is and that it forks Konnect v0.2.2 under AGPL, the download
+      and issue links point here, one paragraph links `RELEASE_NOTES.md` and
+      `docs/benchmark.md`. Rejected: a README rebuilt around the agent layer
+      (a phase's worth of prose, duplicating `DEV.md` and `docs/benchmark.md`)
+- [x] O.3.4 Numbers re-checked against the artefacts rather than copied from a
+      prompt: 35/35 against 35/35, 11 → 4 MCP calls, 14 337 → 2 249 external
+      tokens (−84.3 %), 2 MCP round trips per agent attempt, 62.0 % precision
+      @8 / 100 % recall, 72.6 % against 22.6 % coverage on the frozen 186
+      denominator — all present in `docs/benchmark.md` (M.1, M.1.2) and
+      `docs/capability-matrix.md`, none of them changed by this phase. The
+      three missed criteria (`WALL_CLOCK_P50` 86 against 77 ms, external
+      tokens 2 249 against ≤ 2 000, `tools/list` 2 831 against ~1 000) and the
+      unclaimed `LLM_CALLS_PER_SUCCESSFUL_TASK` stay exactly as measured.
+      `DEV.md`, `tool-directory.md`, the bundled `konnect` skill, `plan.md`
+      and `progress.md` needed no correction. The committed artefacts still
+      record `server_info.version = 0.2.2`, which is the version they were
+      measured on and stays that way — a measurement is not re-stamped to match
+      a later tag
+
+## O.4 — Release notes — DONE
+
+### Tâches
+- [x] O.4.1 One file, `RELEASE_NOTES.md` (D101). The repository has never carried a
+      `CHANGELOG.md`, and `release.yml` generates its own commit list, so a
+      retroactive changelog covering upstream's v0.1.0…v0.2.2 would be
+      invented history. The file is the single source and the GitHub Release
+      body is set from it — no second document repeating it
+- [x] O.4.2 Contents: what this is, what changed against base Konnect, the
+      architecture shipped, the measured results, the missed criteria, the
+      known limitations, KiCad 10 status, the KiCad 11 re-evaluation of the
+      schematic IPC path, and how to run it. No claim that is not measured
+
+## O.5 — Version — DONE
+
+### Tâches
+- [x] O.5.1 Version strategy read before touching anything: every workspace
+      member inherits `version.workspace = true`, so `[workspace.package]` is
+      the single place a release version is carried; `schematic-viewer` is
+      excluded from the workspace, pins its own, and ships inside the PCM
+      package, so it moves too. `0.2.2 → 1.0.0` in exactly those two manifests
+      plus the `Cargo.lock` entries `--locked` verifies. Nothing else was
+      version-bumped
+- [x] O.5.2 `v1.0.0` collides with nothing: `git ls-remote --tags origin` is
+      empty — this repository has published no tag. The local `v0.3.0`…`v0.6.1`
+      tags are upstream's, reachable only from `upstream/main`
+
+## O.6 — Packaging — DONE
+
+### Tâches
+- [x] O.6.1 The repository already has an official method and it was used, not
+      replaced: `.github/workflows/release.yml` fires on `v*` and builds four
+      standalone binaries (linux-gnu, x86_64 and aarch64 darwin, windows-msvc)
+      plus three PCM packages via `packaging/build-pcm.{ps1,sh}`, each
+      validated against KiCad's `packages.v1` schema by
+      `packaging/validate-pcm.py` before it is allowed to upload. No
+      installer and no new build system was invented
+- [x] O.6.2 D99 respected: no `[profile.release]` was added. The Windows
+      release binary measures **21.8 MB** unstripped, which is what the README
+      states
+- [x] O.6.3 Licence obligations on the attached artefacts: every binary is
+      AGPL-3.0-only, the PCM zips carry the `metadata.json` KiCad's schema
+      validates, and the release body names the licence and links `LICENSE`
+      and `COMMERCIAL.md`
+
+## O.7 — Final commit — DONE
+
+### Tâches
+- [x] O.7.1 `plan.md` carries this phase and its evidence; `progress.md` is in
+      its closing state
+- [x] O.7.2 Diff reviewed file by file, gate re-run because `Cargo.toml` and
+      `Cargo.lock` moved, commit `chore: prepare v1.0.0 release`, working tree
+      clean afterwards, `agentic/main` pushed
+
+## O.8 — Tag — DONE
+
+### Tâches
+- [x] O.8.1 Annotated tag `v1.0.0` on the validated commit, verified to point
+      at it, then pushed. No published tag was moved
+
+## O.9 — GitHub Release — DONE
+
+### Tâches
+- [x] O.9.1 The tag push ran the Release workflow; the release carries the
+      `RELEASE_NOTES.md` body, the known limitations, and a pointer to
+      `docs/benchmark.md` for the detailed figures
+
+## O.10 — Closure — DONE
+
+### Tâches
+- [x] O.10.1 `progress.md` states the final state: V1 done, final commit, tag,
+      gate and CI status, release status, no actionable task left, D.5.3 still
+      conditional, I.1 still waiting on KiCad 11, and resumption only for
+      KiCad 11 or a V2 the user opens explicitly
+
+### Validation
+There is no Phase P. Nothing in this phase added a capability.

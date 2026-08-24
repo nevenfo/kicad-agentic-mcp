@@ -10,6 +10,28 @@ decision has to survive long after the phase that produced it.
 the history, and this file owns the *why*. A decision is superseded by
 editing its entry, never by deleting it.
 
+- D101 — one release document, `RELEASE_NOTES.md`, and the GitHub Release body
+  is set from it. Decided on 2026-08-24 during Phase O. The alternative was a
+  `CHANGELOG.md`, which this repository has never carried: writing one at v1.0.0
+  means either inventing entries for upstream's v0.1.0…v0.2.2 or starting a log
+  with a single line. `release.yml` already generates its own commit list, so a
+  third place saying the same thing would be the drift N.1 spent a phase
+  closing. Revisit when there is a second release to describe.
+
+- D100 — this repository presents itself as **KiCad Agentic MCP**, a fork, and
+  its download and issue links point here. Until Phase O the README was
+  upstream's verbatim: it called the project "Konnect *BETA Release" and sent
+  Installation, macOS and Support to `github.com/mixelpixx/Konnect`, so a reader
+  of the repository publishing v1.0.0 would never find v1.0.0. Scope arbitrated
+  by the user on 2026-08-24: **minimal correction** — the title, one status
+  paragraph naming the fork and its base, the links, and nothing else. Rejected:
+  a README rebuilt around the agent layer, which is a phase of prose that
+  duplicates `DEV.md` and `docs/benchmark.md`; and leaving it alone, which keeps
+  the release unreachable from the document that introduces it. The PCM
+  identifier stays `com.github.mixelpixx.konnect` — changing it moves the
+  install directory and buys nothing — and the attribution to upstream stays
+  explicit, as AGPL requires.
+
 - D99 — the release binary stays unstripped. N.1.8 measured 21.8 MB and put
   that figure in the README, then asked whether to add a `[profile.release]`
   with `strip`/`lto`. Decided on 2026-08-24: no. Binary size is not one of this

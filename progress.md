@@ -2,11 +2,9 @@
 
 ## Phase actuelle
 
-**Aucune.** N est close (N.1, N.2, N.3) le 2026-08-24. Toutes les phases du
-chemin critique (D, F, K, L, M) le sont aussi. Ne restent que des tâches
-conditionnelles, aucune actionnable sur cette machine : I.1 attend KiCad 11
-(aucun KiCad n'est installé ici, donc pas de `kicad-cli api-server` à tester) et
-D.5.3 attend un cas réel qui sature les 64 entrées du magasin de preuves.
+**Aucune. V1 est terminée.** Phase O (release et clôture) est close le
+2026-08-24, après N et après toutes les phases du chemin critique (D, F, K, L,
+M). Le projet n'a plus de tâche actionnable.
 
 ## Tâche actuelle
 
@@ -14,39 +12,48 @@ Aucune.
 
 ## Dernière tâche validée
 
-**N.3 — DEV.md a enfin une porte d'entrée vers la couche agentique.** Section
-« The Agent Layer », 99 lignes, entre « Tool Routing » et « Build
-Requirements ». Découpée par mécanisme et non par crate (N.3.1, arbitrage
-utilisateur du 2026-08-24) : gateway, provider local + budget de contexte,
-preuves et handles, world model, Plan IR, primitives d'état, puis le pont
-(toolsets `plan`/`task`/`graph` et les méta-tools agent). Chaque mécanisme nomme
-son crate, ses fichiers d'entrée et son adaptateur KiCAD dans `konnect-core` ;
-le *pourquoi* reste dans `plan.md`/`decisions.md`, les mesures dans
-`docs/benchmark.md`.
+**Phase O — V1 release & project closure.** Le dépôt a été audité (branche,
+remotes, fichiers suivis, fuite de données, licences), validé, aligné sur ses
+propres mesures, versionné, tagué et publié.
 
-Validation :
-- 12 chemins et 26 noms de fichiers `.rs` cités : tous existent sur disque
-- 13 noms de tools et 13 symboles Rust cités : tous résolus dans `crates/`
-- références corrigées contre les sources : les commentaires des crates citent
-  un `D11` et une section « License impact » qui n'existent plus dans
-  `plan.md` — la règle est INV2, et l'argument toolset-plutôt-que-verbe est
-  E.4.4 (D20)
-- aucun fichier Rust modifié : le gate vert de N.1 couvre toujours cet état
+État de release :
+- commit final : `chore: prepare v1.0.0 release` sur `agentic/main`, poussé
+- tag : `v1.0.0`, annoté, sur ce commit exactement, poussé
+- gate local : `.\gate.ps1` **PASSED** (fmt, clippy `-D warnings`, 1 123 tests,
+  doctests, build release)
+- CI distante : verte sur `agentic/main`
+- GitHub Release : produite par `.github/workflows/release.yml`, que le push du
+  tag déclenche ; corps repris de `RELEASE_NOTES.md`
+- artefacts : 4 binaires autonomes (linux-gnu, x86_64/aarch64 darwin,
+  windows-msvc) + 3 paquets PCM validés contre le schéma `packages.v1` de KiCad
+  avant tout upload. L'état réel de ce run est celui que GitHub affiche sur le
+  tag `v1.0.0` — il est postérieur à ce commit, qui le déclenche
+
+Ce que la phase a corrigé, et rien d'autre : deux compteurs faux hérités de
+N.1.6 (`packaging/metadata.json` et `plugin/plugin.json` disaient 185 tools au
+lieu de 202), l'identité et les liens du README (il envoyait ses lecteurs vers
+les releases d'upstream), l'URL affichée par les deux scripts PCM, et la
+version `0.2.2 → 1.0.0` là où elle est réellement portée. Aucune feature,
+aucune cible déplacée, aucun critère raté repeint en succès.
 
 ## Décisions actives
 
-- D99 : pas de `[profile.release]` — le binaire reste à 21,8 MB non strippé, le
-  README porte la taille mesurée (arbitrage N.1.8 du 2026-08-24).
-- D98 : le projet peut consommer la capacité Claude nécessaire, quel que soit le
-  modèle, sans nouvel accord par run.
-- D97 : un re-run remplace un void dans sa campagne.
-- Un cap de budget ne doit jamais pouvoir voider sa propre mesure.
-- Une colonne de comparaison se mesure le même jour que les autres.
-- Une dérive qui s'est déjà produite se ferme par un test, pas par une ligne de
-  checklist (verrou `find_capabilities` ↔ registry, comme
-  `registry_tool_counts_match_reality`).
+- Les critères V1 ratés restent ratés (INV6) : `WALL_CLOCK_P50` 86 ms contre
+  77 ms, external tokens/task 2 249 contre ≤ 2 000, `tools/list` 2 831 contre
+  ~1 000. `LLM_CALLS_PER_SUCCESSFUL_TASK` (15 → 5,5 dans le harnais model-fit)
+  n'est pas revendiqué : aucune baseline n'a jamais été mesurée pour cette
+  métrique.
+- D99 : pas de `[profile.release]` — le binaire Windows reste à 21,8 MB non
+  strippé, et c'est la taille que le README affiche.
+- D98 : le projet peut consommer la capacité Claude nécessaire sans nouvel
+  accord par run. D97 : un re-run remplace un void dans sa campagne.
 - Les 187 tools cités par `decisions.md` D44 et `docs/capability-matrix.md`
-  désignent la surface de la **baseline** à `5cd6454` : dénominateur gelé (INV6).
+  désignent la surface de la **baseline** à `5cd6454` : dénominateur gelé.
+- `packaging/metadata.json`'s `versions[]` décrit encore les paquets v0.2.2
+  d'upstream (URL et sha256 réels de ce dépôt-là). Laissé tel quel :
+  `build-pcm.{ps1,sh}` n'en garde que la structure, stampe la version du tag et
+  supprime les champs `download_*` avant d'écrire le zip. Ces entrées ne
+  serviraient qu'à une soumission au dépôt kicad-addons, qui n'est pas dans V1.
 
 ## Blocage actif
 
@@ -54,20 +61,26 @@ Aucun.
 
 ## Fichiers / zones utiles
 
-- `DEV.md` — « Architecture » (arbre du workspace), « Tool Routing », « The
-  Agent Layer », « Current Stats » : les quatre endroits qui redisent la
-  surface ou la structure et qui ont dérivé par le passé.
-- `crates/konnect-core/src/router/registry.rs::ALL_TOOLSETS` — les `tool_count`
-  faisant autorité ; `STARTER_KIT` + `STARTER_TOOLS` expliquent les 21 tools du
-  démarrage.
-- `bench/results/m1-surface.json` — 215 noms de tools et leur coût, sans rien
-  exécuter ; `bench/m1_table.py` régénère les tables M.1 depuis les artefacts
-  committés.
+- `RELEASE_NOTES.md` — ce que V1 est, ce qu'elle mesure, ce qu'elle rate, ses
+  limites connues. Source unique du corps de la GitHub Release.
+- `docs/benchmark.md` — toutes les mesures ; `python bench/m1_table.py`
+  régénère les tables M.1 depuis les artefacts committés sans rien exécuter.
+- `.github/workflows/release.yml` — la méthode officielle de packaging : elle
+  se déclenche sur un tag `v*`.
 - `.\gate.ps1` — fmt, clippy, tests, doctests, build release.
 
 ## NEXT ACTION
 
-Aucune action autonome : le plan n'a plus de tâche exécutable sur cette machine.
-Reprise possible seulement si (a) KiCad 11 est installé, ce qui débloque I.1, ou
-(b) l'utilisateur ouvre une phase O avec un objectif neuf. Attendre cette
-entrée plutôt que d'élargir la portée seul.
+**Aucune.** V1 est clôturée : commit final, tag `v1.0.0`, gate et CI verts,
+GitHub Release publiée, aucune tâche actionnable restante.
+
+Deux éléments restent ouverts par construction, et ni l'un ni l'autre n'est
+actionnable sur cette machine :
+- **D.5.3** reste conditionnelle — la capacité de 64 entrées du magasin de
+  preuves ne sera reconsidérée que si une session réelle la sature.
+- **I.1** reste conditionnée à **KiCad 11** — la réévaluation du chemin
+  schematic IPC attend `kicad-cli api-server` et `kicad-python` 0.8.0 ; la
+  position par défaut est toujours de ne pas forker KiCad (D3).
+
+Reprise uniquement si (a) KiCad 11 est installé ici, ce qui débloque I.1, ou
+(b) l'utilisateur ouvre explicitement une V2. Il n'y a pas de Phase P.

@@ -5,7 +5,7 @@
 <img src="resources/images/KiCAD-MCP-Server-rust.svg" alt="KiCAD-MCP-Server Logo" height="240" />
 
 
-# Konnect *BETA Release
+# KiCad Agentic MCP
 
 </div>
 
@@ -18,9 +18,16 @@ routing, ERC/DRC, design-review audits, JLCPCB part search, Freerouting, referen
 circuits, and a full manufacturing export pipeline — with bundled skills and agents
 that teach Claude KiCAD conventions out of the box.
 
-> **Status: beta.** The core toolchain is tested and working, but this is a young
-> release and it wants real-world mileage and review. Issues and PRs are welcome —
-> see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+> **This repository is KiCad Agentic MCP**, an agentic fork of
+> [mixelpixx/Konnect](https://github.com/mixelpixx/Konnect) v0.2.2, under the same
+> AGPL-3.0 licence. On top of Konnect's tool surface it adds an MCP gateway, a plan
+> IR with a deterministic executor, evidence handles, task state and a local-model
+> runtime. The server binary is still called `konnect`.
+>
+> **Status: v1.0.0.** What it measures, what it misses and what it does not cover
+> are in [RELEASE_NOTES.md](RELEASE_NOTES.md); every figure quoted below traces to
+> [docs/benchmark.md](docs/benchmark.md). Issues and PRs are welcome — see
+> [CONTRIBUTING.md](CONTRIBUTING.md) and the
 > [naming conventions](docs/NAMING_CONVENTIONS.md).
 
 ## Why Konnect exists
@@ -106,7 +113,7 @@ The full tool catalog is documented in [tool-directory.md](tool-directory.md).
 
 ### From the KiCAD Plugin Manager (recommended)
 
-1. Download the package for your OS from [Releases](https://github.com/mixelpixx/Konnect/releases):
+1. Download the package for your OS from [Releases](https://github.com/nevenfo/kicad-agentic-mcp/releases):
    `konnect-pcm-v<version>-windows.zip`, `-macos.zip`, or `-linux.zip`. Each
    bundles that platform's server binary — the macOS package is a universal
    build, so one download covers Apple Silicon and Intel. (The `konnect-pcm-*`
@@ -132,7 +139,7 @@ cargo build --release -p konnect
 
 ### macOS
 
-The [Releases](https://github.com/mixelpixx/Konnect/releases) page ships
+The [Releases](https://github.com/nevenfo/kicad-agentic-mcp/releases) page ships
 standalone server binaries for both Apple Silicon (`aarch64-apple-darwin`) and
 Intel (`x86_64-apple-darwin`). They are not yet code-signed, so if you download
 one through a browser, clear the quarantine flag before first launch:
@@ -172,9 +179,8 @@ Claude Desktop's config lives at
 
 For Claude Code, put the same snippet in a `.mcp.json` in your project root.
 
-Starting with the next release, the PCM package for macOS
-(`konnect-pcm-v<version>-macos.zip`) bundles a universal server binary; for
-v0.1.3 and earlier, install via a release tarball or a source build. The schematic
+The PCM package for macOS (`konnect-pcm-v<version>-macos.zip`) bundles a
+universal server binary, so one download covers both architectures. The schematic
 viewer compiles and launches on macOS (Tauri 2 uses the system WKWebView —
 WebView2 is only a Windows requirement) but hasn't had the same mileage as
 the Windows build yet.
@@ -273,6 +279,6 @@ is elsewhere.
 
 ## Support
 
-- Issues & feature requests: [GitHub Issues](https://github.com/mixelpixx/Konnect/issues)
+- Issues & feature requests: [GitHub Issues](https://github.com/nevenfo/kicad-agentic-mcp/issues)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)

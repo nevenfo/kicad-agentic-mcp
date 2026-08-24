@@ -19,7 +19,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.2.2"
+version = "1.0.0"
 edition = "2021"
 authors = ["Konnect contributors"]
 license = "AGPL-3.0-only"
