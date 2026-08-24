@@ -184,7 +184,10 @@ async fn handle_export_manufacturing_package(
         // BOM
         if let Some(ref sch) = schematic {
             let bom_path = output_dir.join("bom.csv");
-            match cli::export_bom(cli_path, sch, &bom_path, "csv").await {
+            // No exclude_dnp knob is exposed on this tool's schema, so this
+            // reproduces the manufacturing package's prior behaviour: every
+            // symbol, DNP or not.
+            match cli::export_bom(cli_path, sch, &bom_path, &cli::BomOptions::default()).await {
                 Ok(()) => {
                     info!("[BETA] BOM export succeeded");
                     files_generated.push(json!({

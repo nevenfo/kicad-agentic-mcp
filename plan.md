@@ -3178,8 +3178,29 @@ None. Each item below is independent of the others except where stated.
         decides by it (P.6.6). The dead `let _layers = …` binding above it goes
         at the same time. Measure the miscount on a demo board with a plane
         before writing the test.
-  - [ ] P.6.7.6 #139 (`export_bom` ignores `exclude_dnp` and `format`, both
-        advertised in its schema)
+  - [x] P.6.7.6 #139 — `export_bom` ignores `exclude_dnp` and `format`, both
+        advertised in its schema. Done: `BomOptions` and a `bom_args` the flag
+        can be asserted against without KiCad; the handler reads `exclude_dnp`
+        (schema default `true`) and passes `--exclude-dnp`. Ground truth first:
+        `kicad-cli sch export bom --help` on 10.0.3 has **no `--format` flag at
+        all** — it offers `--fields`, `--labels`, `--group-by`, `--sort-field`,
+        `--filter`, `--exclude-dnp` and delimiters. So `format` was not given
+        an invented mapping: it is a closed set of `"csv"`, declared as an
+        `enum` in the schema and refused otherwise, rather than accepted and
+        dropped. `manufacturing.rs`'s package keeps its prior behaviour through
+        `BomOptions::default()` (DNP included), since its own schema exposes no
+        such knob. Note the deliberate contract change: `export_bom` called
+        without `exclude_dnp` now honours the `true` its schema always
+        advertised, so DNP parts stop appearing by default.
+        Red before on the only honest oracle — the CSV KiCad writes: with
+        `exclude_dnp: true` the DNP part **R2 was still in the BOM**.
+  - [ ] P.6.7.10 `export_bom` exposes none of `--fields`, `--labels` or
+        `--group-by`, which `kicad-cli sch export bom --help` does offer
+        (verified on 10.0.3 while closing P.6.7.6). Upstream's #139 carried
+        them; this fork's item named only `exclude_dnp` and `format`, so they
+        were left out rather than folded in silently. They are what a fab BOM
+        needs for MPN/LCSC columns. Decide whether the tool should expose them
+        before implementing.
   - [ ] P.6.7.7 #266 (`--layers` repeated per layer, no `--mode-single`)
   - [ ] P.6.7.8 #263 (`run_erc` on a sub-sheet reports invocation artefacts)
 - [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each

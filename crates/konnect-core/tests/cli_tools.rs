@@ -21,7 +21,7 @@ mod harness;
 
 use std::path::{Path, PathBuf};
 
-use harness::{Harness, TWO_RESISTORS};
+use harness::{Harness, TWO_RESISTORS, TWO_RESISTORS_ONE_DNP};
 use serde_json::json;
 
 fn kicad_cli() -> String {
@@ -119,6 +119,28 @@ async fn the_3d_export_rejects_a_format_kicad_has_no_subcommand_for() {
     );
 }
 
+/// `export_bom`'s schema has advertised a `format` argument since it shipped,
+/// but `kicad-cli sch export bom --help` has no `--format` flag at all —
+/// there is nothing to map a non-"csv" value onto, so it must be refused
+/// rather than silently accepted and ignored.
+#[tokio::test]
+async fn export_bom_rejects_a_format_kicad_cli_has_no_flag_for() {
+    let h = Harness::new();
+    let result = h
+        .call(
+            "export_bom",
+            json!({ "schematic": "x.kicad_sch", "output": "bom.json", "format": "json" }),
+        )
+        .await
+        .expect("the tool call itself does not fail");
+    assert!(result.is_error, "an unsupported format must be refused");
+    let body = harness::body(&result).to_string();
+    assert!(
+        body.contains("json") && body.contains("csv"),
+        "the rejection should name the bad value and the supported one: {body}"
+    );
+}
+
 /// `run_drc` and `get_drc_violations` both take a severity filter, and neither
 /// may treat an unknown one as "everything" — silently widening a filter is how
 /// a caller ends up reading a report they did not ask for.
@@ -192,6 +214,45 @@ async fn the_schematic_exports_write_their_files() {
     assert!(
         text.contains("R1") && text.contains("R2"),
         "the netlist does not list the fixture's parts:\n{text}"
+    );
+}
+
+/// `export_bom`'s `exclude_dnp` argument is only honored if the handler
+/// actually reads it and passes `--exclude-dnp` to `kicad-cli` — the filter
+/// happens inside KiCAD, so the only honest oracle is the CSV it writes.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn export_bom_exclude_dnp_actually_filters_the_dnp_part() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let schematic = h.fixture(TWO_RESISTORS_ONE_DNP);
+    let sch = harness::as_str(&schematic).to_string();
+
+    let with_dnp = h.path("with_dnp.csv");
+    h.json(
+        "export_bom",
+        json!({ "schematic": sch, "output": harness::as_str(&with_dnp), "exclude_dnp": false }),
+    )
+    .await;
+    let with_dnp_text = std::fs::read_to_string(&with_dnp).expect("the BOM is readable");
+    assert!(
+        with_dnp_text.contains("R2"),
+        "exclude_dnp:false should keep the DNP part R2: {with_dnp_text}"
+    );
+
+    let without_dnp = h.path("without_dnp.csv");
+    h.json(
+        "export_bom",
+        json!({ "schematic": sch, "output": harness::as_str(&without_dnp), "exclude_dnp": true }),
+    )
+    .await;
+    let without_dnp_text = std::fs::read_to_string(&without_dnp).expect("the BOM is readable");
+    assert!(
+        !without_dnp_text.contains("R2"),
+        "exclude_dnp:true should drop the DNP part R2: {without_dnp_text}"
+    );
+    assert!(
+        without_dnp_text.contains("R1"),
+        "exclude_dnp:true should not drop the non-DNP part R1: {without_dnp_text}"
     );
 }
 

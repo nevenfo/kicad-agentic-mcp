@@ -200,6 +200,11 @@ pub fn as_str(path: &Path) -> &str {
 /// above its symbol and each pin 2 the same distance below.
 pub const TWO_RESISTORS: &str = "bus_two_resistors.kicad_sch";
 
+/// [`TWO_RESISTORS`] with R2 marked `(dnp yes)` — the only fixture that makes
+/// `export_bom`'s `exclude_dnp` observable: `kicad-cli` is the one doing the
+/// filtering, so the oracle is the CSV it writes, not our own JSON.
+pub const TWO_RESISTORS_ONE_DNP: &str = "bus_two_resistors_dnp.kicad_sch";
+
 /// A board with layers and nothing on them — the same skeleton
 /// `create_project` writes. Use it when the fixture's own `Edge.Cuts` outline
 /// would be measured together with whatever the test draws.

@@ -4,6 +4,7 @@
 //! `export_netlist_summary` and `fix_connectivity` operate directly on
 //! S-expression file content so they work without a running KiCAD instance.
 
+use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, ToolContext, ToolDef};
@@ -136,8 +137,11 @@ pub fn tools() -> Vec<ToolDef> {
                     "output": { "type": "string", "description": "Output CSV file path" },
                     "format": {
                         "type": "string",
-                        "description": "BOM format passed to kicad-cli: 'csv' (default)",
-                        "default": "csv"
+                        "description": "BOM format. 'kicad-cli sch export bom' has no --format flag at all — \
+                                         output is always its fixed CSV-like column set. The only accepted \
+                                         value is 'csv'; anything else is refused rather than silently ignored.",
+                        "default": "csv",
+                        "enum": ["csv"]
                     },
                     "exclude_dnp": {
                         "type": "boolean",
@@ -160,15 +164,41 @@ async fn handle_export_bom(
 ) -> anyhow::Result<CallToolResult> {
     let schematic = get_path(args, "schematic")?;
     let output = get_path(args, "output")?;
+
+    // `kicad-cli sch export bom --help` (KiCAD 10.0.3) has no --format flag —
+    // the BOM is always the fixed Reference,Value,Footprint,QUANTITY,DNP set.
+    // The schema still advertises the argument for backward compatibility, so
+    // it is validated as a closed set rather than accepted and silently
+    // dropped: a caller asking for a format kicad-cli cannot produce should
+    // be told, not handed a CSV they didn't ask for.
     let format = args["format"].as_str().unwrap_or("csv");
+    if format != "csv" {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "format".to_string(),
+                reason: format!("'{format}' is not a supported BOM format"),
+            },
+            format!(
+                "'{format}' is not a supported BOM format. kicad-cli's BOM export has no \
+                 --format flag; the only value 'export_bom' accepts is 'csv'."
+            ),
+        ));
+    }
+
+    // The schema has promised `exclude_dnp` (default true) since this tool
+    // shipped; the handler never read it, so every BOM included DNP parts
+    // regardless of what the caller asked for.
+    let exclude_dnp = args["exclude_dnp"].as_bool().unwrap_or(true);
+    let options = cli::BomOptions { exclude_dnp };
 
     let cli = &ctx.config.kicad_cli;
-    cli::export_bom(cli, &schematic, &output, format).await?;
+    cli::export_bom(cli, &schematic, &output, &options).await?;
 
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
             "success": true,
-            "output": output.to_str().unwrap_or("")
+            "output": output.to_str().unwrap_or(""),
+            "exclude_dnp": exclude_dnp
         }))
         .unwrap(),
     ))

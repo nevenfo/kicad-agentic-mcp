@@ -4,7 +4,7 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte (P.6.7.1 à P.6.7.5 closes, P.6.7.6 à P.6.7.9 restent), P.6.8 à P.6.11
+est ouverte (P.6.7.1 à P.6.7.6 closes, P.6.7.7 à P.6.7.10 restent), P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -14,26 +14,33 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.5 — le compte de nets et de pistes de `validate_for_manufacturing` se lit
-dans l'arbre. `count_nets_and_tracks` dans `manufacturing.rs` : les nets par
-`konnect_sexp::net::count_distinct_nets` (l'accesseur partagé de P.6.5), les
-pistes comme enfants directs `segment`/`via`/`arc` de `(kicad_pcb …)` — pas par
-un parcours, car `(arc …)` apparaît aussi dans le `(pts …)` d'un contour de
-zone, où c'est un coin de polygone et non du cuivre routé.
+P.6.7.6 — `export_bom` honore `exclude_dnp`, et `format` cesse de mentir.
+`BomOptions` + `bom_args` dans `cli.rs` (le flag s'assert sans KiCad), le
+handler de `sch_export.rs` lit `exclude_dnp` (défaut `true` du schéma) et
+passe `--exclude-dnp`. `format` est un ensemble fermé de `"csv"`, déclaré en
+`enum` et refusé sinon — voir D118. `manufacturing.rs` garde son comportement
+par `BomOptions::default()`.
+
+Changement de contrat assumé : `export_bom` sans `exclude_dnp` applique
+désormais le `true` que son schéma annonçait déjà, donc les composants DNP
+cessent d'apparaître par défaut.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- rouge-avant vérifié en restaurant les sondes par sous-chaîne au site
-  d'appel : un board KiCad 10 routé rend `net_count` **0 au lieu de 2** et
-  `track_count` **0 au lieu de 4** ; un board non routé rend 0 net au lieu de
-  4, donc la garde `net_count > 3 && track_count == 0` ne pouvait pas se
-  déclencher
-- `docs/capability-matrix.md` régénérée (`KAM_UPDATE_MATRIX=1`)
+- sondes live `cli_tools` avec `KICAD_CLI` : PASS, 9/9
+- rouge-avant vérifié sur le seul oracle honnête, le CSV écrit par KiCad : avec
+  `exclude_dnp: true`, le composant DNP **R2 restait dans la BOM**
 
 ## Décisions actives
 
+- **D118** — `kicad-cli sch export bom` (10.0.3) n'a **aucune** option
+  `--format` ; il expose `--fields`, `--labels`, `--group-by`, `--sort-field`,
+  `--filter`, `--exclude-dnp` et des délimiteurs. Toute option annoncée par un
+  schéma de tool doit être vérifiée contre le `--help` de la CLI installée
+  avant d'être implémentée : un argument que KiCad refuse fait échouer l'export
+  entier, et un diff upstream n'est pas une autorité sur la CLI locale.
 - **D117** — les boards KiCad récents (≥ `20241229`, mesuré sur `CM5_MINIMA_3`
   et `video`) numérotent le cuivre en **pairs** : `F.Cu`=0, `B.Cu`=2,
   `In1.Cu`=4, `In2.Cu`=6. L'ancien schéma (`B.Cu`=31, internes 1..30) ne vaut
@@ -119,12 +126,14 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.6 — `#139` : `export_bom` ignore `exclude_dnp` et `format`,
-tous deux annoncés dans son schéma, donc le tool promet un contrat qu'il ne
-tient pas. Relire l'entrée `#139` de `docs/upstream-audit.md` pour l'état exact
-dans ce fork et le mécanisme upstream (`git log --format="%P" -1 <merge>` puis
-`git diff $(git merge-base p1 p2) p2` pour lire le diff réel d'une PR). Le test
-discriminant appelle `export_bom` avec `exclude_dnp` à vrai sur un schéma
-portant un composant DNP, et avec chaque `format` annoncé. Valider par
-`cargo fmt` / `clippy -D warnings` / `cargo test --workspace --lib --tests`,
-plus une sonde live si `kicad-cli` est le seul oracle honnête.
+Implémenter P.6.7.7 — `#266` : l'export PCB `pdf` et `svg` répète `--layers`
+une fois par couche, alors que KiCad 10 attend une seule valeur séparée par des
+virgules et rejette le doublon ; `--mode-single` n'est jamais passé, donc un
+tracé en fichier unique n'est pas demandé. Upstream factorise
+`single_file_pcb_export_args` et ajoute `cli_failure_diagnostics`, parce que
+`kicad-cli` écrit son message « Duplicate argument » sur **stdout**, que le
+chemin d'erreur jetait. Vérifier d'abord le `--help` réel de
+`kicad-cli pcb export pdf` et `svg` (voir D118), puis relire l'entrée `#266` de
+`docs/upstream-audit.md`. Sonde live attendue : un export multi-couches qui
+produit réellement son fichier. Valider par `cargo fmt` / `clippy -D warnings` /
+`cargo test --workspace --lib --tests` plus `cli_tools -- --ignored`.

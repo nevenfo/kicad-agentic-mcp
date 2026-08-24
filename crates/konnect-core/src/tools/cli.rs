@@ -479,20 +479,79 @@ pub async fn export_schematic_pdf(cli: &str, schematic: &Path, output: &Path) ->
     Ok(())
 }
 
-/// KiCAD 10: `sch export bom --output <path> <input>`
-/// Note: v10 BOM does NOT use --format. It uses --fields, --labels, --field-delimiter.
-/// Default output is CSV-like with Reference,Value,Footprint,Qty,DNP fields.
-pub async fn export_bom(cli: &str, schematic: &Path, output: &Path, _format: &str) -> Result<()> {
-    let args = [
-        "sch",
-        "export",
-        "bom",
-        "--output",
-        output.to_str().unwrap(),
-        schematic.to_str().unwrap(),
-    ];
+/// Filtering options for `sch export bom`. `exclude_dnp: false` reproduces
+/// kicad-cli's own default (Do-Not-Populate symbols included).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BomOptions {
+    /// Drop Do-Not-Populate symbols via `--exclude-dnp`.
+    pub exclude_dnp: bool,
+}
+
+/// Argument vector for the BOM export, factored out so the `--exclude-dnp`
+/// flag can be asserted without a kicad-cli on the machine.
+fn bom_args<'a>(output: &'a str, schematic: &'a str, options: &BomOptions) -> Vec<&'a str> {
+    let mut args = vec!["sch", "export", "bom", "--output", output];
+    if options.exclude_dnp {
+        args.push("--exclude-dnp");
+    }
+    args.push(schematic);
+    args
+}
+
+/// KiCAD 10: `sch export bom --output <path> [--exclude-dnp] <input>`
+///
+/// Note: v10 BOM does NOT take `--format` — `kicad-cli sch export bom --help`
+/// has no such flag. Output is always the fixed
+/// `Reference,Value,Footprint,QUANTITY,DNP` CSV-like set (customizable via
+/// `--fields`/`--labels`, not exposed here).
+pub async fn export_bom(
+    cli: &str,
+    schematic: &Path,
+    output: &Path,
+    options: &BomOptions,
+) -> Result<()> {
+    let args = bom_args(
+        output.to_str().unwrap_or(""),
+        schematic.to_str().unwrap_or(""),
+        options,
+    );
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod bom_export_tests {
+    use super::*;
+
+    /// `exclude_dnp` has been in the `export_bom` schema (default `true`)
+    /// since the tool shipped, but the handler never read it and the flag
+    /// was never sent to `kicad-cli` — every BOM included DNP parts.
+    #[test]
+    fn exclude_dnp_is_passed_only_when_asked_for() {
+        let on = BomOptions { exclude_dnp: true };
+        assert!(bom_args("/out/bom.csv", "/s.kicad_sch", &on).contains(&"--exclude-dnp"));
+
+        let off = BomOptions::default();
+        assert!(!bom_args("/out/bom.csv", "/s.kicad_sch", &off).contains(&"--exclude-dnp"));
+    }
+
+    /// Defaults must reproduce the previous argv exactly, so a caller that
+    /// wants KiCAD's own BOM keeps getting it.
+    #[test]
+    fn default_options_are_the_bare_kicad_cli_invocation() {
+        let args = bom_args("/out/bom.csv", "/s.kicad_sch", &BomOptions::default());
+        assert_eq!(
+            args,
+            [
+                "sch",
+                "export",
+                "bom",
+                "--output",
+                "/out/bom.csv",
+                "/s.kicad_sch"
+            ]
+        );
+    }
 }
 
 /// KiCAD 10: `sch export netlist --output <path> --format <fmt> <input>`
