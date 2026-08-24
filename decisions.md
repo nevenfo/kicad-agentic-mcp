@@ -10,6 +10,15 @@ decision has to survive long after the phase that produced it.
 the history, and this file owns the *why*. A decision is superseded by
 editing its entry, never by deleting it.
 
+- D99 — the release binary stays unstripped. N.1.8 measured 21.8 MB and put
+  that figure in the README, then asked whether to add a `[profile.release]`
+  with `strip`/`lto`. Decided on 2026-08-24: no. Binary size is not one of this
+  project's success criteria, and a strip/LTO profile changes the code
+  generation behind every artefact the gate and the benchmarks were measured
+  on — a real build change bought for a number nobody is gated on. The README
+  states the measured size instead of a wished-for one, which is what N.1 was
+  about. Revisit only if a distribution channel imposes a size limit.
+
 - D98 — Claude runs no longer require per-run approval. On 2026-08-24 the user
   explicitly authorized the project to consume as much Claude capacity as
   needed, regardless of model. Operational spend caps remain useful safeguards

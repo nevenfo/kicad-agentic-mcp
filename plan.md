@@ -2482,7 +2482,7 @@ H.6, H.7, K.1.
 
 ---
 
-# Phase N — Documentation consolidation — N.1 and N.2 DONE, N.3 open
+# Phase N — Documentation consolidation — DONE
 
 ## N.1 — The public docs carry the measured numbers
 
@@ -2542,7 +2542,10 @@ M.1 (the numbers exist and regenerate without spending anything).
       The release build on this machine is **21.8 MB**: there is no
       `[profile.release]` in `Cargo.toml`, so nothing strips symbols or trims
       debug info. State the measured size. Whether to add a strip/LTO profile
-      is a build decision, not an editorial one — recorded here, not taken
+      is a build decision, not an editorial one — recorded here, not taken.
+      Taken on 2026-08-24 (D99): **no profile is added**; size is not a success
+      criterion and strip/LTO would change the code generation under every
+      artefact the gate and the benchmarks were measured on
 - [x] N.1.9 The drift is structural, not a slip: `CONTRIBUTING.md` already
       warns that these counts "have drifted apart before precisely because only
       one of them got updated", and it happened again — to five places at once,
@@ -2595,7 +2598,7 @@ exists on disk; each `tools/*.rs` line matches `registry.rs::ALL_TOOLSETS`.
 Verified: 12/12 `members` present, 102 tree entries all exist on disk, 22/22
 `# N tools` annotations match the registry, `meta_tools.rs` reads 13.
 
-## N.3 — DEV.md has no door into the agent layer — OPEN, needs a scope decision
+## N.3 — DEV.md has no door into the agent layer — DONE
 
 ### Objectif
 N.2 put the `kam-*` crates on the map; it did not explain them. DEV.md has a
@@ -2610,19 +2613,35 @@ A contributor who wants to change the plan IR has no entry point in the
 document written for exactly that.
 
 ### Dépendances
-N.2. **Not started: this is a scope decision, not a gap to close silently.**
-`plan.md`, `decisions.md` and `docs/benchmark.md` already carry this layer in
-depth — but they carry *why it was built and what it measured*, which is not
-what DEV.md is for. The question is how much of the *how it is put together*
-belongs there, and duplicating the other three would be worse than the gap.
+N.2. The scope decision this lot was waiting on was taken on 2026-08-24: one
+section per *mechanism*, not one per crate. `plan.md`, `decisions.md` and
+`docs/benchmark.md` already carry this layer in depth — but they carry *why it
+was built and what it measured*, which is not what DEV.md is for, and
+duplicating them would be worse than the gap. So the section names the entry
+point of each mechanism and cross-links the other three for the rest.
 
 ### Tâches
-- [ ] N.3.1 Decide the depth: a short "where the agent layer lives" section
-      pointing at crates and their entry points, or a full architecture section
-      per crate with the same detail the server sections get
-- [ ] N.3.2 Write it at the chosen depth, cross-linking rather than restating
-      `decisions.md` and `docs/benchmark.md`
+- [x] N.3.1 Decide the depth. Chosen: **one section, subdivided by mechanism**
+      — gateway, local provider and context budget, evidence and its handles,
+      the world model, plan IR, state safety, and the bridge that exposes them.
+      Rejected: a per-crate architecture section (~200 lines into a 445-line
+      file, and the overlap with `plan.md` this lot exists to avoid) and a bare
+      "where it lives" list (a contributor changing the plan IR would still
+      have to read 155 KB of plan)
+- [x] N.3.2 Written as `DEV.md`'s "The Agent Layer", between "Tool Routing" and
+      "Build Requirements": 99 lines, each mechanism naming its crate, its
+      entry-point files and its KiCAD-side adapter in `konnect-core`
 
 ### Validation
 Every crate and toolset named in the new section exists and is reachable from
 the tree; no paragraph restates a decision that `decisions.md` already owns.
+
+Verified: the 12 paths and 26 `*.rs` filenames the section names all exist on
+disk; the 13 tool names it quotes (`preview_plan`, `apply_plan`, the four
+`task` tools, the three `graph_*`, `kicad_agent`, `kicad_agent_verify`,
+`changes_since`, `kicad_invoke`) and the 13 Rust symbols all resolve in
+`crates/`. The cross-references were corrected against the sources rather than
+copied from the code comments: the crates' own doc comments cite a `D11` and a
+"License impact" section that `plan.md` no longer has — the rule is INV2, and
+the toolset-not-gateway-verb argument is E.4.4 (D20). No Rust file was touched,
+so N.1's green gate still covers this state.

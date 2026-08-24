@@ -380,6 +380,106 @@ The server does NOT expose all 202 tools (215 total with the 13 meta-tools) in `
 
 The router is defined in `crates/konnect-core/src/router/mod.rs`.
 
+## The Agent Layer
+
+The sections above describe the MCP server: a caller asks for a tool, a handler
+runs it. The `kam-*` crates are the other half — what runs when the caller is a
+model rather than a person, and what keeps that safe. They are clean-room by
+construction (no `konnect-*` dependency, `MIT OR Apache-2.0` — `plan.md`'s
+INV2), so each one has a KiCAD-side adapter inside `konnect-core` that supplies
+the domain the crate refuses to know. Read this section for *how the pieces
+fit*; `plan.md` and `decisions.md` own *why each was chosen*, and
+`docs/benchmark.md` owns *what it measured*.
+
+**The gateway** — `crates/kam-runtime/src/lib.rs`. Direct MCP tool calls never
+enter it: a caller reaches it only through the two agent meta-tools,
+`kicad_agent` and `kicad_agent_verify` (`router/meta_tools.rs`). Its router
+accepts exactly three decisions — `NoLlm` (finish deterministically, no model
+call), `Local` (the configured local model only), `Escalate` (refuse and return
+structured evidence to the caller). `LocalModelProfile` pins what `Local` means:
+`gpt-oss-20b`, medium reasoning effort, a 32 768-token window with 5 120 held
+back for completion. A `SupervisorOutcome` always says which decision ran and
+whether a provider was actually called; the model's text comes back as
+`proposal`, never as a fact. `konnect-core/src/agent_loop.rs` is what turns a
+proposal into a change: Plan IR compile, execute, then deterministic
+verification in `verification_agent.rs`, whose only verdict source is
+`kicad-cli` (or its exact-revision cache entry).
+
+**The local provider** — `crates/kam-llm`. `provider.rs` is the trait every
+backend implements; `openai_compat.rs` is the one concrete backend LM Studio and
+`llama.cpp server` share; `usage.rs` is what a call cost and `hardware.rs` what
+the machine offers. The crate chooses nothing — no model, no ranking, no
+routing. `crates/kam-context` sits on top of it and holds the token budget for
+one context: `BudgetLimits` (window, completion reserve) and `Compactor`, which
+evicts by caller-ranked `RetrievalBundle`s while `TaskCore` stays. The backend's
+`Usage` is authoritative, and reasoning tokens are already inside completion
+tokens — kept as a split, never counted twice.
+
+**Evidence and its handles** — `crates/kam-evidence`. `model.rs` defines the
+`ItemSet` vocabulary, `diff.rs` matches items by stable key and reports
+attribute differences (`U4 moved: (84,31) -> (82,29)`), `finding.rs` gives a
+validator's findings stable ids so a fix is an id that disappeared rather than a
+count that fell. `store.rs` is the second half of the same idea: the reply
+carries the one-line summary, the item-by-item detail stays behind a handle. The
+KiCAD side is `konnect-core/src/evidence/` — `schematic.rs` and `pcb.rs` extract
+an `ItemSet` keyed by KiCad's own UUIDs (so a re-serialised file is still the
+same items), `validators.rs` runs the `kicad-cli` checks. A handle is an MCP
+resource: `resources/list` enumerates them and `resources/read` resolves one
+(`mcp/handler.rs`), under the `kicad:` scheme, bounded at 64 entries — and a
+handle that aged out reports differently from one that never existed, because an
+agent deciding whether to re-run a check needs to know which it hit.
+
+**The world model** — `crates/kam-graph`. `graph.rs` builds `BTreeMap` indices
+once over an `ItemSet`; `query.rs` intersects them instead of re-scanning.
+`BTreeMap` and not `HashMap` on purpose: a client caching by request prefix needs
+the same query to answer in the same order every time. Every truncatable query
+reports `total` separately from the `items` it returns, and the cap cannot be
+raised — a caller who wants more asks a narrower question.
+`konnect-core/src/graph.rs` discovers a project's `.kicad_sch` / `.kicad_pcb`
+documents, extracts each with the same `evidence::extract` the diff already uses,
+caches the built index, and serves the `graph` toolset.
+
+**Plan IR** — `crates/kam-plan`. It replaces the call-read-decide loop, where
+every arrow is an inference, with two moves: write the plan, run it. `ir.rs` is
+the plan document, `compile.rs` expands one operation into many tool calls,
+`refs.rs` resolves a later operation's reference to an earlier one's output
+(`${place.reference}`), `program.rs` is the compiled step list and `execute.rs`
+runs it. Both are settled *before* the first mutation: a plan whose reference
+points at an operation that does not exist, or has not run yet, is refused and
+never starts. The crate does not know what an operation means — that is
+`konnect-core/src/plan/` (`ops.rs`), the single `OpLibrary` implementation, which
+also does the arithmetic a model should not be asked to do: every coordinate it
+emits is snapped to `konnect_sexp::geometry::SCHEMATIC_GRID_MM` before it reaches
+a tool — the one grid helper of INV5, never a second literal.
+
+**State safety** — `crates/kam-state`, four questions and nothing else.
+`revision.rs`: is the document still what the plan was written against
+(content-addressed, so an edit in another window is detected, not overwritten)?
+`ledger.rs`: have I already run this (an idempotency key, so a retry after a
+timeout returns the first result)? `snapshot.rs`: can I undo a half-applied batch
+(before-images, written back on partial failure)? `task.rs`: what was I doing —
+objective, constraints, verified facts, failed attempts, held outside any model's
+context so a compaction or a model swap cannot lose them. `journal.rs` outlives
+any one snapshot: an append-only record of run outcomes with bounded
+before/after images. Orthogonal to all of them, `mode.rs` carries the
+process-wide `OperatingMode` (`ReadOnly`, `Write` — the default, `Manufacturing`,
+`Experimental`), enforced by `konnect-core/src/mode_gate.rs` at exactly two call
+sites, always before a handler runs so a refusal has nothing to roll back (INV4).
+
+**The bridge.** Three registry toolsets expose this layer to a caller, and they
+are registry toolsets rather than gateway verbs so they cost nothing until used
+(`plan.md` E.4.4, D20): `plan` (`preview_plan` compiles and returns the exact
+calls, changing nothing; `apply_plan` compiles and runs them inside
+`kicad_invoke`, inheriting its snapshot, rollback, semantic diff and verify
+verdict, with every inner step logged under its own call id), `task`
+(`start_task`, `update_task`, `get_task`, `list_tasks`) and `graph`
+(`graph_query`, `graph_neighbors`, `graph_stats`). Two meta-tools sit outside the
+toolsets and are always present: `kicad_agent` and `kicad_agent_verify`.
+`changes_since` is the third always-present one that belongs here: it compares a
+document's current revision against a token an earlier `kicad_invoke` published
+and reads the journal for what happened in between — and answers with the
+document's own state even when no journal is open, rather than refusing.
+
 ## Build Requirements
 
 - Rust toolchain pinned by [`rust-toolchain.toml`](rust-toolchain.toml) (currently 1.96.0) —
