@@ -742,43 +742,56 @@
       "task_id": "sch_hierarchy",
       "harness": "claude",
       "success": false,
-      "design_success": false,
+      "design_success": true,
       "tools_used": [
         "create_project",
         "find_capabilities",
         "load_tools",
         "kicad_describe",
         "add_hierarchical_sheet",
-        "add_sheet_pin",
-        "duplicate_sheet"
+        "add_schematic_net_label",
+        "import_sheet_pins",
+        "validate_sheet_pins"
       ],
       "tool_call_sequence": [
         "create_project",
         "find_capabilities",
         "load_tools",
         "kicad_describe",
-        "add_hierarchical_sheet",
-        "add_sheet_pin",
-        "add_sheet_pin",
-        "add_sheet_pin",
         "find_capabilities",
+        "kicad_describe",
         "load_tools",
-        "duplicate_sheet"
+        "kicad_describe",
+        "add_hierarchical_sheet",
+        "add_schematic_net_label",
+        "add_schematic_net_label",
+        "add_schematic_net_label",
+        "load_tools",
+        "add_schematic_net_label",
+        "add_schematic_net_label",
+        "add_schematic_net_label",
+        "import_sheet_pins",
+        "add_hierarchical_sheet",
+        "add_schematic_net_label",
+        "add_schematic_net_label",
+        "add_schematic_net_label",
+        "import_sheet_pins",
+        "validate_sheet_pins"
       ],
-      "tool_calls": 11,
+      "tool_calls": 23,
       "off_server_calls": 0,
       "off_server_names": [],
-      "cost_usd": 0.4042683,
-      "duration_ms": 53694.0,
-      "num_turns": 14,
+      "cost_usd": 0.49033399999999994,
+      "duration_ms": 69824.0,
+      "num_turns": 24,
       "usage": {
-        "input_tokens": 18,
-        "cache_creation_input_tokens": 48561,
-        "cache_read_input_tokens": 138771,
-        "output_tokens": 4674
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 92337,
+        "cache_read_input_tokens": 239020,
+        "output_tokens": 7199
       },
-      "harness_error": "quota rejected (five_hour window, resets 2026-08-20 21:00:00)",
-      "aborted": "quota rejected (five_hour window, resets 2026-08-20 21:00:00)",
+      "harness_error": null,
+      "aborted": null,
       "assertions": [
         {
           "kind": "all_steps_ok",
@@ -788,23 +801,27 @@
         {
           "kind": "file_exists",
           "ok": true,
-          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-rkg7zl46\\power.kicad_sch"
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-abim_eyh\\power.kicad_sch"
         },
         {
           "kind": "file_exists",
           "ok": true,
-          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-rkg7zl46\\power2.kicad_sch"
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-abim_eyh\\power2.kicad_sch"
         }
       ],
       "violations": [
         {
           "kind": "missing_expected",
-          "detail": "never called: ['get_sheet_hierarchy', 'validate_sheet_pins', 'renumber_sheet_pages']"
+          "detail": "never called: ['add_sheet_pin', 'duplicate_sheet', 'get_sheet_hierarchy', 'renumber_sheet_pages']"
+        },
+        {
+          "kind": "max_calls",
+          "detail": "23 scored calls > max_calls 16"
         }
       ],
       "safety_violations": 0,
       "unnecessary_calls": 0,
-      "scored_calls": 11,
+      "scored_calls": 23,
       "exposed_tools": [
         "mcp__konnect__changes_since",
         "mcp__konnect__create_project",
@@ -829,7 +846,7 @@
         "mcp__konnect__unload_toolset"
       ],
       "unwrap_warning": null,
-      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-rkg7zl46"
+      "work": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-agent-sch_hierarchy-abim_eyh"
     },
     {
       "task_id": "manufacturing_exports",
