@@ -17,11 +17,17 @@ remotes, fichiers suivis, fuite de données, licences), validé, aligné sur ses
 propres mesures, versionné, tagué et publié.
 
 État de release :
-- commit final : `chore: prepare v1.0.0 release` sur `agentic/main`, poussé
-- tag : `v1.0.0`, annoté, sur ce commit exactement, poussé
-- gate local : `.\gate.ps1` **PASSED** (fmt, clippy `-D warnings`, 1 123 tests,
-  doctests, build release)
-- CI distante : verte sur `agentic/main`
+- commits finaux sur `agentic/main`, poussés : `chore: prepare v1.0.0 release`,
+  puis `fix: the schematic-viewer lock kept the old workspace versions` — la CI
+  a attrapé ce que le gate local ne peut structurellement pas voir, le viewer
+  étant exclu du workspace et portant son propre lock (O.7.3)
+- tag : `v1.0.0`, annoté, sur ce second commit, poussé
+- gate local : `.\gate.ps1` **PASSED** au bump de version (fmt, clippy
+  `-D warnings`, 1 123 tests, doctests, build release). Le correctif de lock ne
+  touche rien que le gate exécute ; il est vérifié comme la CI le vérifie,
+  `cargo metadata --locked` contre le manifeste du viewer
+- CI distante : **verte**, 7 jobs sur 7 (Format, Clippy, Check & Test sur
+  windows/ubuntu/macos, Schematic viewer, PCM packaging validation)
 - GitHub Release : produite par `.github/workflows/release.yml`, que le push du
   tag déclenche ; corps repris de `RELEASE_NOTES.md`
 - artefacts : 4 binaires autonomes (linux-gnu, x86_64/aarch64 darwin,
