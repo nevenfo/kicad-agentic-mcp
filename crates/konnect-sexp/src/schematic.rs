@@ -232,6 +232,60 @@ pub fn extract_labels(tree: &SexpNode) -> Vec<Label> {
     labels
 }
 
+/// Power symbols (`power:GND`, `power:+3V3`, ...) name the net they touch
+/// exactly as a label does: KiCAD takes the name from the placed symbol's
+/// `Value` property. `extract_labels` never sees this — it only walks
+/// `label`/`global_label`/`hierarchical_label` nodes — so a net named solely
+/// by a power symbol came back unnamed and unconnected everywhere the net
+/// graph is built from labels alone (#262, 6d394a4).
+///
+/// Only `power_in` pins name a net. `PWR_FLAG` carries a `power_out` pin —
+/// it *claims* a source exists on the net for ERC's sake, it does not itself
+/// name the net — so treating every power-symbol pin as naming one would
+/// have `PWR_FLAG` renaming the rail it merely flags.
+pub fn extract_power_symbol_labels(tree: &SexpNode) -> Vec<Label> {
+    let instances = extract_symbol_instances(tree);
+    let lib_syms = tree
+        .find("lib_symbols")
+        .map(|n| n.find_all("symbol"))
+        .unwrap_or_default();
+
+    let mut labels = Vec::new();
+    for inst in &instances {
+        let Some(lib_sym) = find_lib_symbol(&lib_syms, inst) else {
+            continue;
+        };
+        for pin in extract_lib_pins_for_unit(lib_sym, inst.unit) {
+            if pin.electrical_type.as_deref() != Some("power_in") {
+                continue;
+            }
+            let (x, y) = pin_endpoint(&pin, inst.pin_transform());
+            labels.push(Label {
+                kind: LabelKind::PowerSymbol,
+                net: inst.value.clone(),
+                x,
+                y,
+                // A power symbol's name has no text orientation of its own —
+                // rotation only matters to callers that render a label.
+                rotation: 0.0,
+                uuid: inst.uuid.clone(),
+            });
+        }
+    }
+    labels
+}
+
+/// Every label that names a net: text labels plus power-symbol pins.
+/// The net-graph consumer to route through instead of `extract_labels` alone
+/// — except `find_orphan_items`, which stays on `extract_labels` deliberately
+/// (a power symbol's own pin is never "orphaned" the way a floating text
+/// label is; see #262).
+pub fn extract_all_net_labels(tree: &SexpNode) -> Vec<Label> {
+    let mut labels = extract_labels(tree);
+    labels.extend(extract_power_symbol_labels(tree));
+    labels
+}
+
 // ─── Symbol instance ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -366,6 +420,12 @@ pub struct LibPin {
     pub local_y: f64,
     pub rotation: f64,
     pub length: f64,
+    /// The electrical type token straight after `pin` in `(pin <type> <graphic> ...)`
+    /// — `power_in`, `passive`, `output`, etc. `None` when the pin node carries
+    /// no leading atom (malformed by hand-editing) or the atom isn't a string;
+    /// callers that key off a specific type (e.g. `power_in`, for #262) treat
+    /// `None` the same as "not that type" rather than failing the parse.
+    pub electrical_type: Option<String>,
 }
 
 /// Parse pins from a library symbol definition node.
@@ -439,6 +499,10 @@ fn parse_lib_pin(node: &SexpNode) -> Option<LibPin> {
         .find("length")
         .and_then(|l| l.get_f64(1))
         .unwrap_or(0.0);
+    // `(pin <electrical_type> <graphic_style> (at ...) ...)` — the type is the
+    // first child after the `pin` head. Missing or unrecognized doesn't fail
+    // parsing an otherwise-valid pin; it just can't be identified as power_in.
+    let electrical_type = node.get(1).and_then(|n| n.as_str()).map(String::from);
     let number = node
         .find("number")
         .and_then(|n| n.get(1))
@@ -458,6 +522,7 @@ fn parse_lib_pin(node: &SexpNode) -> Option<LibPin> {
         local_y: y,
         rotation,
         length,
+        electrical_type,
     })
 }
 
@@ -800,6 +865,7 @@ mod pin_endpoint_tests {
             local_y,
             rotation,
             length: 1.27,
+            electrical_type: Some("passive".to_string()),
         }
     }
 

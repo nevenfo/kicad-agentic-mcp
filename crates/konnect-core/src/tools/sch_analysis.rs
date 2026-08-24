@@ -11,9 +11,9 @@ use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
-        extract_junction_points, extract_labels, extract_lib_pins_for_unit,
-        extract_symbol_instances, extract_wires, find_lib_symbol, parse_at, pin_endpoint,
-        read_schematic, Wire,
+        extract_all_net_labels, extract_junction_points, extract_lib_pins_for_unit,
+        extract_power_symbol_labels, extract_symbol_instances, extract_wires, find_lib_symbol,
+        parse_at, pin_endpoint, read_schematic, Wire,
     },
 };
 use serde_json::json;
@@ -296,6 +296,22 @@ pub(crate) fn build_net_graph(
     g
 }
 
+/// Splice power-symbol net labels into a `cse::Schematic`-derived label list.
+///
+/// `cse::Schematic` (via `sch_bridge`) doesn't parse power symbols yet, so
+/// callers on that path re-read the sexp tree once and extend with
+/// `extract_power_symbol_labels` — the same net-graph fix as the
+/// `extract_all_net_labels` tree-based call sites, applied at the `sch_bridge`
+/// boundary instead of inside `konnect-schematic-editor` (#262).
+fn with_power_symbol_labels(
+    sch_path: &std::path::Path,
+    mut labels: Vec<konnect_sexp::schematic::Label>,
+) -> anyhow::Result<Vec<konnect_sexp::schematic::Label>> {
+    let (_, tree) = read_schematic(sch_path)?;
+    labels.extend(extract_power_symbol_labels(&tree));
+    Ok(labels)
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 async fn handle_list_wires(
@@ -318,12 +334,20 @@ async fn handle_list_nets(
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
     let sch = cse::Schematic::load(&sch_path)?;
+    let (_, tree) = read_schematic(&sch_path)?;
     let mut nets: Vec<String> = sch
         .labels
         .iter()
         .map(|l| l.text.clone())
         .chain(sch.global_labels.iter().map(|l| l.text.clone()))
         .chain(sch.hierarchical_labels.iter().map(|l| l.text.clone()))
+        // Power symbols (power:GND, power:+3V3, ...) name the net they touch
+        // via their placed Value, same as a label does (#262).
+        .chain(
+            extract_power_symbol_labels(&tree)
+                .into_iter()
+                .map(|l| l.net),
+        )
         .collect();
     nets.sort();
     nets.dedup();
@@ -364,7 +388,7 @@ async fn handle_get_net_connections(
     };
     let sch = cse::Schematic::load(&sch_path)?;
     let wires = super::sch_bridge::all_wires_as_sexp(&sch);
-    let labels = super::sch_bridge::all_labels_as_sexp(&sch);
+    let labels = with_power_symbol_labels(&sch_path, super::sch_bridge::all_labels_as_sexp(&sch))?;
     let matching: Vec<_> = labels
         .iter()
         .filter(|l| l.net == net)
@@ -388,7 +412,7 @@ async fn handle_get_net_connectivity(
     };
     let sch = cse::Schematic::load(&sch_path)?;
     let wires = super::sch_bridge::all_wires_as_sexp(&sch);
-    let labels = super::sch_bridge::all_labels_as_sexp(&sch);
+    let labels = with_power_symbol_labels(&sch_path, super::sch_bridge::all_labels_as_sexp(&sch))?;
     let mut g = build_net_graph(&wires, &labels, &super::sch_bridge::all_junctions(&sch));
     let net_pts: HashSet<(i64, i64)> = g.points_on_net(&net).into_iter().collect();
     let net_wires: Vec<_> = wires
@@ -431,7 +455,7 @@ async fn handle_get_pin_connections(
     let (_, tree) = read_schematic(&sch_path)?;
     let instances = extract_symbol_instances(&tree);
     let wires = extract_wires(&tree);
-    let labels = extract_labels(&tree);
+    let labels = extract_all_net_labels(&tree);
     let inst = instances
         .iter()
         .find(|i| i.reference == reference)
@@ -479,7 +503,7 @@ async fn handle_get_component_nets(
     let (_, tree) = read_schematic(&sch_path)?;
     let instances = extract_symbol_instances(&tree);
     let wires = extract_wires(&tree);
-    let labels = extract_labels(&tree);
+    let labels = extract_all_net_labels(&tree);
     let inst = instances
         .iter()
         .find(|i| i.reference == reference)
@@ -516,7 +540,7 @@ async fn handle_get_net_components(
     let (_, tree) = read_schematic(&sch_path)?;
     let instances = extract_symbol_instances(&tree);
     let wires = extract_wires(&tree);
-    let labels = extract_labels(&tree);
+    let labels = extract_all_net_labels(&tree);
     let lib_syms = tree
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
@@ -567,7 +591,7 @@ async fn handle_trace_from_point(
     let tol = opt_f64(args, "tolerance").unwrap_or(0.05);
     let sch = cse::Schematic::load(&sch_path)?;
     let wires = super::sch_bridge::all_wires_as_sexp(&sch);
-    let labels = super::sch_bridge::all_labels_as_sexp(&sch);
+    let labels = with_power_symbol_labels(&sch_path, super::sch_bridge::all_labels_as_sexp(&sch))?;
     let mut g = build_net_graph(&wires, &labels, &super::sch_bridge::all_junctions(&sch));
     let on_wire: Vec<_> = wires
         .iter()
@@ -625,7 +649,7 @@ async fn handle_find_shorted_nets(
     let sch_path = get_path(args, "schematic")?;
     let sch = cse::Schematic::load(&sch_path)?;
     let wires = super::sch_bridge::all_wires_as_sexp(&sch);
-    let labels = super::sch_bridge::all_labels_as_sexp(&sch);
+    let labels = with_power_symbol_labels(&sch_path, super::sch_bridge::all_labels_as_sexp(&sch))?;
     let mut g = build_net_graph(&wires, &labels, &super::sch_bridge::all_junctions(&sch));
     let mut root_nets: HashMap<(i64, i64), Vec<String>> = HashMap::new();
     for l in &labels {
@@ -663,7 +687,7 @@ async fn handle_find_single_pin_nets(
 
 fn find_isolated_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<serde_json::Value> {
     let wires = extract_wires(tree);
-    let labels = extract_labels(tree);
+    let labels = extract_all_net_labels(tree);
     let no_connects: HashSet<(i64, i64)> = tree
         .find_all("no_connect")
         .iter()
@@ -732,6 +756,72 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/three_isolated_resistors.kicad_sch"
     );
+
+    /// `power:GND` on R2 pin 2, `power:+3V3` on R1 pin 1, each backed by a
+    /// `PWR_FLAG`, plus a plain `(label "VOUT" ...)` at the divider midpoint.
+    /// Copied from `bench/fixtures/divider.kicad_sch`, verified ERC-clean
+    /// (`kicad-cli sch erc`: 0 violations) before use (#262, 6d394a4).
+    const POWER_SYMBOL_DIVIDER: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/power_symbol_divider.kicad_sch"
+    );
+
+    async fn tool_json(
+        handler: impl std::future::Future<Output = anyhow::Result<CallToolResult>>,
+    ) -> serde_json::Value {
+        let result = handler.await.unwrap();
+        let ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        serde_json::from_str(text).unwrap()
+    }
+
+    /// Red before the backport: `list_schematic_nets` only reads
+    /// `extract_labels`, so a rail named solely by a `power:GND` / `power:+3V3`
+    /// symbol's `Value` property never appears — only the plain "VOUT" label
+    /// does, and the count is 1 instead of 3.
+    #[tokio::test]
+    async fn list_nets_sees_power_symbol_rails() {
+        let out = tool_json(handle_list_nets(
+            &json!({ "schematic": POWER_SYMBOL_DIVIDER }),
+            &ctx(),
+        ))
+        .await;
+        let nets: Vec<&str> = out["nets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_str().unwrap())
+            .collect();
+        assert!(nets.contains(&"GND"), "GND rail missing from {nets:?}");
+        assert!(nets.contains(&"+3V3"), "+3V3 rail missing from {nets:?}");
+        assert!(nets.contains(&"VOUT"), "plain label must still be seen");
+        // The fixture's two PWR_FLAGs carry a `power_out` pin: they assert a
+        // source exists on the rail for ERC's sake, they do not name it. A
+        // net called "PWR_FLAG" would mean the `power_in` filter is gone and
+        // every flagged rail has been renamed after its flag.
+        assert!(
+            !nets.contains(&"PWR_FLAG"),
+            "PWR_FLAG names no net; it must not appear in {nets:?}"
+        );
+    }
+
+    /// Red before the backport: `get_net_connections` builds its graph from
+    /// `extract_labels` alone, so the "GND" net — named only by the placed
+    /// `power:GND` symbol's `Value` — has zero connected points even though
+    /// it is wired straight to R2 pin 2.
+    #[tokio::test]
+    async fn get_net_connections_sees_the_power_symbol_pin() {
+        let out = tool_json(handle_get_net_connections(
+            &json!({ "schematic": POWER_SYMBOL_DIVIDER, "net": "GND" }),
+            &ctx(),
+        ))
+        .await;
+        assert!(
+            out["connected_points"].as_u64().unwrap() > 0,
+            "GND must resolve to at least the power symbol's own point, got {out}"
+        );
+    }
 
     async fn in_process_single_pin_nets() -> usize {
         let result =
@@ -837,7 +927,7 @@ async fn handle_get_connected_items(
     let (_, tree) = read_schematic(&sch_path)?;
     let instances = extract_symbol_instances(&tree);
     let wires = extract_wires(&tree);
-    let labels = extract_labels(&tree);
+    let labels = extract_all_net_labels(&tree);
     let lib_syms = tree
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))

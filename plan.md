@@ -3014,10 +3014,20 @@ None. Each item below is independent of the others except where stated.
       when no project file exists rather than writing where nothing reads. The
       board is no longer written by either tool, asserted byte for byte. #220
       on top: an update moves only the fields the call named.
-- [ ] P.6.3 #262 — power symbols absent from the schematic net graph: every
+- [x] P.6.3 #262 — power symbols absent from the schematic net graph: every
       `power:` rail reads as unconnected. Needs `extract_power_symbol_labels`
       and `LibPin::electrical_type`; `LabelKind::PowerSymbol` is already a dead
       variant here. Largest of the remaining items.
+      DONE. `LibPin` reads the electrical type — the first atom of
+      `(pin power_in line …)` — and only `power_in` pins name a net, so a
+      `PWR_FLAG`'s `power_out` pin does not rename the rail it flags, which the
+      fixture and its assertion prove. Every net-graph consumer now goes
+      through `extract_all_net_labels`, except `find_orphan_items`, left on
+      `extract_labels` as upstream left it. On
+      `tests/fixtures/power_symbol_divider.kicad_sch` the tools see 3 nets
+      instead of 1, and `get_net_connections("GND")` stops reporting zero.
+      Anti-regression: the 115-schematic eeschema corpus still parses 115/115.
+      `sch_bridge.rs` is untouched, as the audit asks.
 - [ ] P.6.4 #297 + #298 — only `items[0]` of an ERC/DRC violation is kept.
       Fold the `pos` correction from P.6.1 into the same patch.
 - [ ] P.6.5 #142 — KiCad 10 pad net read at a fixed index, so every pad
