@@ -1,0 +1,928 @@
+{
+  "server_info": {
+    "name": "konnect",
+    "version": "0.2.2"
+  },
+  "protocol_version": "2025-06-18",
+  "toolset_count": 22,
+  "toolsets": [
+    "project",
+    "sch_components",
+    "sch_wiring",
+    "sch_analysis",
+    "sch_batch",
+    "sch_export",
+    "sch_buses",
+    "sch_hierarchy",
+    "pcb_board",
+    "pcb_components",
+    "pcb_routing",
+    "pcb_export",
+    "library",
+    "integration",
+    "verification",
+    "config",
+    "design_review",
+    "templates",
+    "plan",
+    "task",
+    "graph",
+    "manufacturing"
+  ],
+  "baseline": {
+    "tool_count": 21,
+    "wire_bytes": 12629,
+    "tokens": 2831,
+    "tool_names": [
+      "changes_since",
+      "create_project",
+      "find_capabilities",
+      "get_active_toolsets",
+      "get_effective_config",
+      "get_project_info",
+      "get_recent_calls",
+      "kicad_agent",
+      "kicad_agent_verify",
+      "kicad_describe",
+      "kicad_invoke",
+      "list_toolboxes",
+      "load_tools",
+      "load_toolset",
+      "load_user_config",
+      "open_project",
+      "open_schematic_viewer",
+      "save_project",
+      "server_stats",
+      "snapshot_project",
+      "unload_toolset"
+    ]
+  },
+  "full_catalog": {
+    "tool_count": 215,
+    "wire_bytes": 139307,
+    "tokens": 33183
+  },
+  "per_tool_tokens": [
+    {
+      "name": "create_symbol",
+      "tokens": 1097
+    },
+    {
+      "name": "apply_plan",
+      "tokens": 991
+    },
+    {
+      "name": "preview_plan",
+      "tokens": 966
+    },
+    {
+      "name": "graph_query",
+      "tokens": 676
+    },
+    {
+      "name": "create_footprint",
+      "tokens": 539
+    },
+    {
+      "name": "kicad_invoke",
+      "tokens": 479
+    },
+    {
+      "name": "export_drill",
+      "tokens": 355
+    },
+    {
+      "name": "update_task",
+      "tokens": 328
+    },
+    {
+      "name": "graph_neighbors",
+      "tokens": 315
+    },
+    {
+      "name": "add_hierarchical_sheet",
+      "tokens": 305
+    },
+    {
+      "name": "apply_template",
+      "tokens": 260
+    },
+    {
+      "name": "add_bus_entry",
+      "tokens": 251
+    },
+    {
+      "name": "duplicate_sheet",
+      "tokens": 245
+    },
+    {
+      "name": "export_manufacturing_package",
+      "tokens": 244
+    },
+    {
+      "name": "kicad_agent",
+      "tokens": 243
+    },
+    {
+      "name": "add_schematic_component",
+      "tokens": 242
+    },
+    {
+      "name": "copy_routing_pattern",
+      "tokens": 240
+    },
+    {
+      "name": "import_svg_logo",
+      "tokens": 240
+    },
+    {
+      "name": "import_sheet_pins",
+      "tokens": 238
+    },
+    {
+      "name": "edit_sheet",
+      "tokens": 237
+    },
+    {
+      "name": "run_drc",
+      "tokens": 230
+    },
+    {
+      "name": "download_jlcpcb_database",
+      "tokens": 227
+    },
+    {
+      "name": "add_bus",
+      "tokens": 219
+    },
+    {
+      "name": "start_task",
+      "tokens": 217
+    },
+    {
+      "name": "edit_footprint_pad",
+      "tokens": 215
+    },
+    {
+      "name": "place_component_array",
+      "tokens": 215
+    },
+    {
+      "name": "graph_stats",
+      "tokens": 210
+    },
+    {
+      "name": "expand_bus",
+      "tokens": 200
+    },
+    {
+      "name": "batch_place_components",
+      "tokens": 198
+    },
+    {
+      "name": "connect_to_net",
+      "tokens": 196
+    },
+    {
+      "name": "get_schematic_layout",
+      "tokens": 195
+    },
+    {
+      "name": "get_drc_violations",
+      "tokens": 194
+    },
+    {
+      "name": "route_differential_pair",
+      "tokens": 193
+    },
+    {
+      "name": "edit_schematic_component",
+      "tokens": 191
+    },
+    {
+      "name": "connect_passthrough",
+      "tokens": 187
+    },
+    {
+      "name": "estimate_cost",
+      "tokens": 186
+    },
+    {
+      "name": "batch_edit_schematic_components",
+      "tokens": 186
+    },
+    {
+      "name": "replace_component",
+      "tokens": 186
+    },
+    {
+      "name": "edit_sheet_pin",
+      "tokens": 182
+    },
+    {
+      "name": "add_zone",
+      "tokens": 181
+    },
+    {
+      "name": "export_ipc2581",
+      "tokens": 181
+    },
+    {
+      "name": "create_netclass",
+      "tokens": 180
+    },
+    {
+      "name": "add_sheet_pin",
+      "tokens": 180
+    },
+    {
+      "name": "get_board_2d_view",
+      "tokens": 180
+    },
+    {
+      "name": "add_schematic_net_label",
+      "tokens": 179
+    },
+    {
+      "name": "route_pad_to_pad",
+      "tokens": 178
+    },
+    {
+      "name": "batch_connect_to_net",
+      "tokens": 178
+    },
+    {
+      "name": "set_design_rules",
+      "tokens": 177
+    },
+    {
+      "name": "export_position_file",
+      "tokens": 176
+    },
+    {
+      "name": "export_odb",
+      "tokens": 175
+    },
+    {
+      "name": "add_bus_alias",
+      "tokens": 175
+    },
+    {
+      "name": "move_region",
+      "tokens": 174
+    },
+    {
+      "name": "find_capabilities",
+      "tokens": 173
+    },
+    {
+      "name": "connect_pins",
+      "tokens": 173
+    },
+    {
+      "name": "validate_component_connections",
+      "tokens": 172
+    },
+    {
+      "name": "add_schematic_text",
+      "tokens": 168
+    },
+    {
+      "name": "bulk_move_schematic_components",
+      "tokens": 168
+    },
+    {
+      "name": "add_design_rule",
+      "tokens": 167
+    },
+    {
+      "name": "add_board_outline",
+      "tokens": 166
+    },
+    {
+      "name": "changes_since",
+      "tokens": 165
+    },
+    {
+      "name": "search_templates",
+      "tokens": 163
+    },
+    {
+      "name": "add_copper_pour",
+      "tokens": 163
+    },
+    {
+      "name": "delete_schematic_wire",
+      "tokens": 162
+    },
+    {
+      "name": "split_wire_at_point",
+      "tokens": 161
+    },
+    {
+      "name": "export_dxf",
+      "tokens": 160
+    },
+    {
+      "name": "export_3d",
+      "tokens": 159
+    },
+    {
+      "name": "export_bom",
+      "tokens": 158
+    },
+    {
+      "name": "renumber_sheet_pages",
+      "tokens": 158
+    },
+    {
+      "name": "route_trace",
+      "tokens": 157
+    },
+    {
+      "name": "search_jlcpcb_parts",
+      "tokens": 157
+    },
+    {
+      "name": "load_toolset",
+      "tokens": 156
+    },
+    {
+      "name": "place_component",
+      "tokens": 156
+    },
+    {
+      "name": "save_user_config",
+      "tokens": 156
+    },
+    {
+      "name": "audit_decoupling",
+      "tokens": 154
+    },
+    {
+      "name": "export_gerber",
+      "tokens": 153
+    },
+    {
+      "name": "autoroute",
+      "tokens": 152
+    },
+    {
+      "name": "set_board_size",
+      "tokens": 152
+    },
+    {
+      "name": "set_layer_constraints",
+      "tokens": 151
+    },
+    {
+      "name": "modify_trace",
+      "tokens": 151
+    },
+    {
+      "name": "batch_connect_pins",
+      "tokens": 150
+    },
+    {
+      "name": "validate_for_manufacturing",
+      "tokens": 150
+    },
+    {
+      "name": "add_component_annotation",
+      "tokens": 149
+    },
+    {
+      "name": "run_design_review",
+      "tokens": 149
+    },
+    {
+      "name": "add_mounting_hole",
+      "tokens": 149
+    },
+    {
+      "name": "fix_connectivity",
+      "tokens": 147
+    },
+    {
+      "name": "add_board_text",
+      "tokens": 147
+    },
+    {
+      "name": "group_components",
+      "tokens": 147
+    },
+    {
+      "name": "export_netlist",
+      "tokens": 146
+    },
+    {
+      "name": "register_symbol_library",
+      "tokens": 144
+    },
+    {
+      "name": "add_via",
+      "tokens": 144
+    },
+    {
+      "name": "snapshot_project",
+      "tokens": 144
+    },
+    {
+      "name": "get_recent_calls",
+      "tokens": 142
+    },
+    {
+      "name": "export_schematic_svg",
+      "tokens": 142
+    },
+    {
+      "name": "export_svg",
+      "tokens": 141
+    },
+    {
+      "name": "batch_delete",
+      "tokens": 141
+    },
+    {
+      "name": "export_pdf",
+      "tokens": 141
+    },
+    {
+      "name": "register_footprint_library",
+      "tokens": 140
+    },
+    {
+      "name": "move_connected",
+      "tokens": 140
+    },
+    {
+      "name": "open_schematic_viewer",
+      "tokens": 139
+    },
+    {
+      "name": "kicad_describe",
+      "tokens": 137
+    },
+    {
+      "name": "generate_netlist",
+      "tokens": 137
+    },
+    {
+      "name": "export_schematic_pdf",
+      "tokens": 137
+    },
+    {
+      "name": "add_power_symbol",
+      "tokens": 137
+    },
+    {
+      "name": "suggest_jlcpcb_alternatives",
+      "tokens": 136
+    },
+    {
+      "name": "run_erc",
+      "tokens": 136
+    },
+    {
+      "name": "batch_rotate_labels",
+      "tokens": 136
+    },
+    {
+      "name": "batch_delete_schematic_components",
+      "tokens": 135
+    },
+    {
+      "name": "validate_wire_connections",
+      "tokens": 135
+    },
+    {
+      "name": "get_connected_items",
+      "tokens": 134
+    },
+    {
+      "name": "get_sheet_hierarchy",
+      "tokens": 133
+    },
+    {
+      "name": "trace_from_point",
+      "tokens": 132
+    },
+    {
+      "name": "batch_add_wire",
+      "tokens": 132
+    },
+    {
+      "name": "rotate_schematic_label",
+      "tokens": 130
+    },
+    {
+      "name": "refill_zones",
+      "tokens": 130
+    },
+    {
+      "name": "add_schematic_connection",
+      "tokens": 128
+    },
+    {
+      "name": "move_schematic_component",
+      "tokens": 128
+    },
+    {
+      "name": "delete_sheet",
+      "tokens": 128
+    },
+    {
+      "name": "create_project",
+      "tokens": 127
+    },
+    {
+      "name": "launch_kicad_ui",
+      "tokens": 124
+    },
+    {
+      "name": "add_wire",
+      "tokens": 124
+    },
+    {
+      "name": "audit_manufacturing",
+      "tokens": 122
+    },
+    {
+      "name": "export_netlist_summary",
+      "tokens": 122
+    },
+    {
+      "name": "assign_net_to_class",
+      "tokens": 122
+    },
+    {
+      "name": "add_layer",
+      "tokens": 122
+    },
+    {
+      "name": "load_tools",
+      "tokens": 121
+    },
+    {
+      "name": "check_clearance",
+      "tokens": 121
+    },
+    {
+      "name": "save_project_config",
+      "tokens": 120
+    },
+    {
+      "name": "batch_delete_no_connect",
+      "tokens": 118
+    },
+    {
+      "name": "align_components",
+      "tokens": 118
+    },
+    {
+      "name": "export_gencad",
+      "tokens": 116
+    },
+    {
+      "name": "rotate_schematic_component",
+      "tokens": 115
+    },
+    {
+      "name": "search_symbols",
+      "tokens": 115
+    },
+    {
+      "name": "batch_get_schematic_pin_locations",
+      "tokens": 114
+    },
+    {
+      "name": "duplicate_component",
+      "tokens": 114
+    },
+    {
+      "name": "get_pin_connections",
+      "tokens": 113
+    },
+    {
+      "name": "validate_sheet_pins",
+      "tokens": 113
+    },
+    {
+      "name": "move_sheet",
+      "tokens": 112
+    },
+    {
+      "name": "delete_schematic_net_label",
+      "tokens": 110
+    },
+    {
+      "name": "add_junction",
+      "tokens": 110
+    },
+    {
+      "name": "get_net_connectivity",
+      "tokens": 109
+    },
+    {
+      "name": "get_schematic_pin_locations",
+      "tokens": 109
+    },
+    {
+      "name": "delete_schematic_component",
+      "tokens": 108
+    },
+    {
+      "name": "add_no_connect",
+      "tokens": 108
+    },
+    {
+      "name": "get_pin_net_name",
+      "tokens": 108
+    },
+    {
+      "name": "delete_sheet_pin",
+      "tokens": 107
+    },
+    {
+      "name": "list_toolboxes",
+      "tokens": 105
+    },
+    {
+      "name": "get_task",
+      "tokens": 104
+    },
+    {
+      "name": "enrich_datasheets",
+      "tokens": 104
+    },
+    {
+      "name": "get_schematic_component",
+      "tokens": 103
+    },
+    {
+      "name": "get_template",
+      "tokens": 103
+    },
+    {
+      "name": "list_footprint_libraries",
+      "tokens": 102
+    },
+    {
+      "name": "get_symbol_info",
+      "tokens": 102
+    },
+    {
+      "name": "get_net_connections",
+      "tokens": 101
+    },
+    {
+      "name": "list_symbol_libraries",
+      "tokens": 100
+    },
+    {
+      "name": "delete_no_connect",
+      "tokens": 100
+    },
+    {
+      "name": "kicad_agent_verify",
+      "tokens": 98
+    },
+    {
+      "name": "batch_add_junction",
+      "tokens": 98
+    },
+    {
+      "name": "delete_symbol",
+      "tokens": 98
+    },
+    {
+      "name": "list_schematic_labels",
+      "tokens": 98
+    },
+    {
+      "name": "get_net_components",
+      "tokens": 97
+    },
+    {
+      "name": "move_labels_by_offset",
+      "tokens": 95
+    },
+    {
+      "name": "list_symbols_in_library",
+      "tokens": 95
+    },
+    {
+      "name": "get_component_nets",
+      "tokens": 95
+    },
+    {
+      "name": "find_orphan_items",
+      "tokens": 95
+    },
+    {
+      "name": "find_shorted_nets",
+      "tokens": 94
+    },
+    {
+      "name": "query_traces",
+      "tokens": 93
+    },
+    {
+      "name": "list_schematic_nets",
+      "tokens": 93
+    },
+    {
+      "name": "move_component",
+      "tokens": 92
+    },
+    {
+      "name": "open_project",
+      "tokens": 92
+    },
+    {
+      "name": "unload_toolset",
+      "tokens": 91
+    },
+    {
+      "name": "find_single_pin_nets",
+      "tokens": 91
+    },
+    {
+      "name": "list_buses",
+      "tokens": 90
+    },
+    {
+      "name": "edit_component",
+      "tokens": 90
+    },
+    {
+      "name": "set_active_layer",
+      "tokens": 89
+    },
+    {
+      "name": "get_datasheet_url",
+      "tokens": 89
+    },
+    {
+      "name": "search_footprints",
+      "tokens": 89
+    },
+    {
+      "name": "audit_connections",
+      "tokens": 88
+    },
+    {
+      "name": "rotate_component",
+      "tokens": 88
+    },
+    {
+      "name": "list_schematic_components",
+      "tokens": 88
+    },
+    {
+      "name": "annotate_schematic",
+      "tokens": 88
+    },
+    {
+      "name": "check_bom_health",
+      "tokens": 87
+    },
+    {
+      "name": "load_project_config",
+      "tokens": 87
+    },
+    {
+      "name": "batch_delete_schematic_wire",
+      "tokens": 85
+    },
+    {
+      "name": "get_footprint_info",
+      "tokens": 85
+    },
+    {
+      "name": "get_project_info",
+      "tokens": 85
+    },
+    {
+      "name": "get_jlcpcb_part",
+      "tokens": 84
+    },
+    {
+      "name": "audit_power_rails",
+      "tokens": 83
+    },
+    {
+      "name": "delete_trace",
+      "tokens": 82
+    },
+    {
+      "name": "add_net",
+      "tokens": 82
+    },
+    {
+      "name": "server_stats",
+      "tokens": 81
+    },
+    {
+      "name": "get_board_extents",
+      "tokens": 81
+    },
+    {
+      "name": "create_schematic",
+      "tokens": 79
+    },
+    {
+      "name": "get_pad_position",
+      "tokens": 79
+    },
+    {
+      "name": "list_library_footprints",
+      "tokens": 78
+    },
+    {
+      "name": "load_user_config",
+      "tokens": 76
+    },
+    {
+      "name": "check_freerouting",
+      "tokens": 76
+    },
+    {
+      "name": "get_effective_config",
+      "tokens": 76
+    },
+    {
+      "name": "get_board_info",
+      "tokens": 75
+    },
+    {
+      "name": "check_schematic_overlaps",
+      "tokens": 74
+    },
+    {
+      "name": "check_kicad_ui",
+      "tokens": 72
+    },
+    {
+      "name": "get_layer_list",
+      "tokens": 70
+    },
+    {
+      "name": "delete_component",
+      "tokens": 70
+    },
+    {
+      "name": "get_design_rules",
+      "tokens": 69
+    },
+    {
+      "name": "find_component",
+      "tokens": 68
+    },
+    {
+      "name": "get_schematic_view",
+      "tokens": 67
+    },
+    {
+      "name": "get_component_pads",
+      "tokens": 66
+    },
+    {
+      "name": "save_project",
+      "tokens": 65
+    },
+    {
+      "name": "list_design_rules",
+      "tokens": 65
+    },
+    {
+      "name": "list_schematic_wires",
+      "tokens": 64
+    },
+    {
+      "name": "list_tasks",
+      "tokens": 64
+    },
+    {
+      "name": "get_jlcpcb_database_stats",
+      "tokens": 61
+    },
+    {
+      "name": "get_component_list",
+      "tokens": 60
+    },
+    {
+      "name": "get_nets_list",
+      "tokens": 58
+    },
+    {
+      "name": "get_active_toolsets",
+      "tokens": 54
+    },
+    {
+      "name": "list_template_categories",
+      "tokens": 51
+    }
+  ],
+  "label": "m1"
+}

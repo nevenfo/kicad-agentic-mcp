@@ -12,6 +12,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -44,6 +45,25 @@ class Session:
         return sum(c.response_bytes for c in self.calls)
 
 
+def _resolve_program(argv: list[str]) -> list[str]:
+    """Make a relative server path absolute before `CreateProcess` sees it.
+
+    Windows resolves an executable named with forward slashes
+    (`target/release/konnect.exe`) against neither the cwd nor `PATH`, so the
+    documented default in `model_fit.py`/`agent_e2e.py` died with
+    `FileNotFoundError: [WinError 2]` before any measurement ran.
+    `harness_runner.py` already resolved its own `--server` for this reason;
+    doing it here covers every caller instead of one. A name that is not an
+    existing file is left untouched, so a bare command still goes to `PATH`.
+    """
+    if not argv:
+        return argv
+    program = Path(argv[0])
+    if program.is_file():
+        return [str(program.resolve()), *argv[1:]]
+    return argv
+
+
 class McpStdioClient:
     """Speaks MCP over a child process' stdin/stdout."""
 
@@ -54,7 +74,7 @@ class McpStdioClient:
         env: dict[str, str] | None = None,
         auto_refresh_tools: bool = True,
     ):
-        self.argv = argv
+        self.argv = _resolve_program(argv)
         self.cwd = cwd
         self.env = env
         # Real MCP clients re-fetch `tools/list` when the server sends

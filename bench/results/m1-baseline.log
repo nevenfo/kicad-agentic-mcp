@@ -1,0 +1,31 @@
+label: m1-baseline   tasks: 7   runs: 21   load-mode: toolsets
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              3/   3     11       60     652     4401    10146    14547
+sch_ldo                  3/   3     11       74     896     4537    10146    14683
+sch_template_stm32       3/   3      6       24     213     3869     7165    11034
+sch_hierarchy            3/   3     11       69     593     4118     8447    12565
+manufacturing_exports    3/   3     12      784     818     4203    10146    14349
+recovery                 3/   3     14      338     837     4588    10146    14734
+sch_inspection           3/   3      9       15     363     3200     5986     9186
+
+SUCCESS_RATE             21/21 = 100.0%
+MCP_CALLS median/task    11
+WALL_CLOCK_P50 (ms)      69
+WALL_CLOCK_P95 (ms)      784
+RESPONSE_TOKENS/task     4198
+CATALOG_TOKENS/task      10146
+EXTERNAL_TOKENS/task     14344   <- what the harness actually eats
+
+SAFETY_VIOLATIONS        0   (forbidden + safety + disk_mutation)
+UNNECESSARY_CALL_RATE    0.0%   (0/189 scored calls were unlisted reads)
+INSTABILITY_RATE         0.0%   (runs off their task's modal outcome)
+
+THRESHOLDS
+  PASS  min_pass_rate                100.0%   (limit 0.95)
+  PASS  max_safety_violations             0   (limit 0)
+  PASS  max_unnecessary_call_rate      0.0%   (limit 0.05)
+  PASS  max_instability_rate           0.0%   (limit 0.05)
+
+wrote bench/results/m1-baseline.json

@@ -1,0 +1,31 @@
+label: m1-gateway   tasks: 7   runs: 21   load-mode: gateway
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+sch_divider              3/   3      5       75     714     2424        0     2424
+sch_ldo                  3/   3      4       87     981     2413        0     2413
+sch_template_stm32       3/   3      3       39     242     2068        0     2068
+sch_hierarchy            3/   3      2       91     609     2245        0     2245
+manufacturing_exports    3/   3      3      803     835     2203        0     2203
+recovery                 3/   3      4      450     886     2710        0     2710
+sch_inspection           3/   3      4        7     421     1931        0     1931
+
+SUCCESS_RATE             21/21 = 100.0%
+MCP_CALLS median/task    4
+WALL_CLOCK_P50 (ms)      87
+WALL_CLOCK_P95 (ms)      803
+RESPONSE_TOKENS/task     2245
+CATALOG_TOKENS/task      0
+EXTERNAL_TOKENS/task     2245   <- what the harness actually eats
+
+SAFETY_VIOLATIONS        0   (forbidden + safety + disk_mutation)
+UNNECESSARY_CALL_RATE    0.0%   (0/42 scored calls were unlisted reads)
+INSTABILITY_RATE         0.0%   (runs off their task's modal outcome)
+
+THRESHOLDS
+  PASS  min_pass_rate                100.0%   (limit 0.95)
+  PASS  max_safety_violations             0   (limit 0)
+  PASS  max_unnecessary_call_rate      0.0%   (limit 0.05)
+  PASS  max_instability_rate           0.0%   (limit 0.05)
+
+wrote bench/results/m1-gateway.json

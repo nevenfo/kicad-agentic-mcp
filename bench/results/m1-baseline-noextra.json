@@ -1,0 +1,380 @@
+{
+  "label": "m1-baseline-noextra",
+  "runs": [
+    {
+      "task_id": "manufacturing_exports",
+      "success": false,
+      "mcp_calls": 12,
+      "setup_calls": 2,
+      "wall_clock_ms": 556.9550000000163,
+      "request_tokens": 789,
+      "response_tokens": 3711,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [
+        "step[6] export_bom: {\"error\":{\"kind\":\"toolset_not_loaded\",\"tool\":\"export_bom\",\"toolset\":\"pcb_export\"},\"message\":\"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry.\"}"
+      ],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": false,
+          "detail": "step[6] export_bom: {\"error\":{\"kind\":\"toolset_not_loaded\",\"tool\":\"export_bom\",\"toolset\":\"pcb_export\"},\"message\":\"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry.\"}"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": false,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-x51a0xxt\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-x51a0xxt\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.2
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.0
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 41,
+          "resp_tokens": 114,
+          "ms": 1.5
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 160,
+          "resp_tokens": 244,
+          "ms": 11.1
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 32,
+          "ms": 8.0
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 31,
+          "ms": 8.1
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 68,
+          "resp_tokens": 54,
+          "ms": 8.5
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 65,
+          "resp_tokens": 24,
+          "ms": 7.0
+        },
+        {
+          "tool": "export_bom",
+          "req_tokens": 78,
+          "resp_tokens": 59,
+          "ms": 0.7
+        },
+        {
+          "tool": "generate_netlist",
+          "req_tokens": 78,
+          "resp_tokens": 40,
+          "ms": 251.2
+        },
+        {
+          "tool": "export_schematic_svg",
+          "req_tokens": 79,
+          "resp_tokens": 34,
+          "ms": 248.0
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 50,
+          "resp_tokens": 17,
+          "ms": 1019.4
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg"
+      ],
+      "scored_calls": 11,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": false,
+      "mcp_calls": 12,
+      "setup_calls": 2,
+      "wall_clock_ms": 550.1277000003029,
+      "request_tokens": 789,
+      "response_tokens": 3717,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [
+        "step[6] export_bom: {\"error\":{\"kind\":\"toolset_not_loaded\",\"tool\":\"export_bom\",\"toolset\":\"pcb_export\"},\"message\":\"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry.\"}"
+      ],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": false,
+          "detail": "step[6] export_bom: {\"error\":{\"kind\":\"toolset_not_loaded\",\"tool\":\"export_bom\",\"toolset\":\"pcb_export\"},\"message\":\"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry.\"}"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": false,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-rz87vdey\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-rz87vdey\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.1
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 4.9
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 41,
+          "resp_tokens": 114,
+          "ms": 2.4
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 160,
+          "resp_tokens": 250,
+          "ms": 10.8
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 32,
+          "ms": 8.4
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 31,
+          "ms": 7.7
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 68,
+          "resp_tokens": 54,
+          "ms": 8.2
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 65,
+          "resp_tokens": 24,
+          "ms": 7.7
+        },
+        {
+          "tool": "export_bom",
+          "req_tokens": 78,
+          "resp_tokens": 59,
+          "ms": 0.7
+        },
+        {
+          "tool": "generate_netlist",
+          "req_tokens": 78,
+          "resp_tokens": 40,
+          "ms": 242.3
+        },
+        {
+          "tool": "export_schematic_svg",
+          "req_tokens": 79,
+          "resp_tokens": 34,
+          "ms": 248.4
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 50,
+          "resp_tokens": 17,
+          "ms": 1032.7
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg"
+      ],
+      "scored_calls": 11,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    },
+    {
+      "task_id": "manufacturing_exports",
+      "success": false,
+      "mcp_calls": 12,
+      "setup_calls": 2,
+      "wall_clock_ms": 550.2796000000671,
+      "request_tokens": 789,
+      "response_tokens": 3713,
+      "catalog_tokens": 8389,
+      "catalog_refreshes": 1,
+      "step_errors": [
+        "step[6] export_bom: {\"error\":{\"kind\":\"toolset_not_loaded\",\"tool\":\"export_bom\",\"toolset\":\"pcb_export\"},\"message\":\"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry.\"}"
+      ],
+      "assertions": [
+        {
+          "kind": "all_steps_ok",
+          "ok": false,
+          "detail": "step[6] export_bom: {\"error\":{\"kind\":\"toolset_not_loaded\",\"tool\":\"export_bom\",\"toolset\":\"pcb_export\"},\"message\":\"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry.\"}"
+        },
+        {
+          "kind": "erc_max_errors",
+          "ok": true,
+          "detail": "erc errors=0 limit=0"
+        },
+        {
+          "kind": "file_exists",
+          "ok": false,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-bh9xxh84\\bom.csv"
+        },
+        {
+          "kind": "file_exists",
+          "ok": true,
+          "detail": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-bench-manufacturing_exports-bh9xxh84\\exports.net"
+        }
+      ],
+      "call_breakdown": [
+        {
+          "tool": "list_toolboxes",
+          "req_tokens": 11,
+          "resp_tokens": 760,
+          "ms": 2.8
+        },
+        {
+          "tool": "load_toolset",
+          "req_tokens": 30,
+          "resp_tokens": 2302,
+          "ms": 5.1
+        },
+        {
+          "tool": "create_project",
+          "req_tokens": 41,
+          "resp_tokens": 114,
+          "ms": 2.4
+        },
+        {
+          "tool": "batch_place_components",
+          "req_tokens": 160,
+          "resp_tokens": 246,
+          "ms": 15.8
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 65,
+          "resp_tokens": 32,
+          "ms": 7.3
+        },
+        {
+          "tool": "add_power_symbol",
+          "req_tokens": 64,
+          "resp_tokens": 31,
+          "ms": 7.9
+        },
+        {
+          "tool": "connect_pins",
+          "req_tokens": 68,
+          "resp_tokens": 54,
+          "ms": 8.1
+        },
+        {
+          "tool": "add_schematic_net_label",
+          "req_tokens": 65,
+          "resp_tokens": 24,
+          "ms": 6.8
+        },
+        {
+          "tool": "export_bom",
+          "req_tokens": 78,
+          "resp_tokens": 59,
+          "ms": 0.7
+        },
+        {
+          "tool": "generate_netlist",
+          "req_tokens": 78,
+          "resp_tokens": 40,
+          "ms": 237.6
+        },
+        {
+          "tool": "export_schematic_svg",
+          "req_tokens": 79,
+          "resp_tokens": 34,
+          "ms": 250.8
+        },
+        {
+          "tool": "run_erc",
+          "req_tokens": 50,
+          "resp_tokens": 17,
+          "ms": 1076.5
+        }
+      ],
+      "retrieval": null,
+      "tools_used": [
+        "create_project",
+        "batch_place_components",
+        "add_power_symbol",
+        "connect_pins",
+        "add_schematic_net_label",
+        "export_bom",
+        "generate_netlist",
+        "export_schematic_svg"
+      ],
+      "scored_calls": 11,
+      "violations": [],
+      "safety_violations": 0,
+      "unnecessary_calls": 0
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+label: m1-baseline-noextra   tasks: 1   runs: 3   load-mode: toolsets
+
+task                         ok  calls   p50 ms  req tk  resp tk   cat tk   ext tk
+----------------------------------------------------------------------------------
+manufacturing_exports    0/   3     12      550     789     3711     8389    12100
+
+SUCCESS_RATE             0/3 = 0.0%
+MCP_CALLS median/task    12
+WALL_CLOCK_P50 (ms)      550
+WALL_CLOCK_P95 (ms)      550
+RESPONSE_TOKENS/task     3713
+CATALOG_TOKENS/task      8389
+EXTERNAL_TOKENS/task     12102   <- what the harness actually eats
+
+SAFETY_VIOLATIONS        0   (forbidden + safety + disk_mutation)
+UNNECESSARY_CALL_RATE    0.0%   (0/33 scored calls were unlisted reads)
+INSTABILITY_RATE         0.0%   (runs off their task's modal outcome)
+
+THRESHOLDS
+  FAIL  min_pass_rate                  0.0%   (limit 0.95)
+  PASS  max_safety_violations             0   (limit 0)
+  PASS  max_unnecessary_call_rate      0.0%   (limit 0.05)
+  PASS  max_instability_rate           0.0%   (limit 0.05)
+
+FAIL manufacturing_exports
+  step: step[6] export_bom: {"error":{"kind":"toolset_not_loaded","tool":"export_bom","toolset":"pcb_export"},"message":"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry."}
+  assert all_steps_ok: step[6] export_bom: {"error":{"kind":"toolset_not_loaded","tool":"export_bom","toolset":"pcb_export"},"message":"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry."}
+  assert file_exists: C:\Users\FlowUP\AppData\Local\Temp\kam-bench-manufacturing_exports-x51a0xxt\bom.csv
+
+FAIL manufacturing_exports
+  step: step[6] export_bom: {"error":{"kind":"toolset_not_loaded","tool":"export_bom","toolset":"pcb_export"},"message":"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry."}
+  assert all_steps_ok: step[6] export_bom: {"error":{"kind":"toolset_not_loaded","tool":"export_bom","toolset":"pcb_export"},"message":"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry."}
+  assert file_exists: C:\Users\FlowUP\AppData\Local\Temp\kam-bench-manufacturing_exports-rz87vdey\bom.csv
+
+FAIL manufacturing_exports
+  step: step[6] export_bom: {"error":{"kind":"toolset_not_loaded","tool":"export_bom","toolset":"pcb_export"},"message":"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry."}
+  assert all_steps_ok: step[6] export_bom: {"error":{"kind":"toolset_not_loaded","tool":"export_bom","toolset":"pcb_export"},"message":"Tool 'export_bom' is in toolset 'pcb_export' which is not currently loaded. Call load_toolset('pcb_export') first, then retry."}
+  assert file_exists: C:\Users\FlowUP\AppData\Local\Temp\kam-bench-manufacturing_exports-bh9xxh84\bom.csv
+
+wrote bench/results/m1-baseline-noextra.json

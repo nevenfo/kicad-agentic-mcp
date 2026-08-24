@@ -127,14 +127,31 @@ crates/kam-bench      benchmark runner + metrics schema                         
 
 Current values: `docs/benchmark.md`. Targets are never moved (INV6).
 
-- [x] `SUCCESS_RATE` ≥ baseline — 18/18 golden, held across every phase
+- [x] `SUCCESS_RATE` ≥ baseline — **35/35 against the baseline's 35/35** (M.1,
+      seven tasks × 5, both servers measured back to back on 2026-08-24). Equal,
+      which is what `≥` asks; a scripted route succeeds by construction on both
+      sides, and the fork's margin is in what the route costs and in what
+      happens when nobody scripts it
 - [x] median `MCP_CALLS` per task ≤ 5 — **4**
-- [x] `WALL_CLOCK_P50` ≤ baseline — 65 ms against 70 ms
+- [ ] `WALL_CLOCK_P50` ≤ baseline — **86 ms against 77 ms, missed by 9 ms**
+      (M.1). The recorded pair was 65 against 70. The mechanism is per-task and
+      visible: the fork loses where it guarantees something — `recovery`
+      +109 ms, the task built to exercise the transaction journal, the snapshot
+      manifest and the evidence store — and wins where there is nothing to
+      guarantee (`sch_inspection`, 14 → 6 ms). The direction is stable and the
+      magnitude is not: an earlier `--repeat 3` pair the same day reads 69
+      against 87, the fork slower by 18 rather than by 9. Recorded as missed
+      (INV6); nothing was tuned to recover it
 - [x] silent corruption / silent stale-state write = **0** — refused by `base_revisions`
 - [x] mutations without an audit record = **0**
-- [ ] external tokens/task ≤ 2 000 — **~2 204**, missed by ~204 in deliberate
+- [ ] external tokens/task ≤ 2 000 — **2 249**, missed by 249 in deliberate
       trades (diff on by default, task filing, verification, and D.5's snapshot
-      handle at +18); recorded as missed, never netted off against a win
+      handle at +18); recorded as missed, never netted off against a win.
+      M.1 re-measured it and found +68 since `k12-gateway.json` (2026-08-17):
+      F.5.7's descriptions and K.2's annotations both ride inside
+      `kicad_describe` results, so both are paid per task and not only on the
+      startup surface. K.2's +342 at startup was measured when it landed; this
+      is its per-task share, measured now
 - [ ] `tools/list` at startup ≤ ~1 000 — **2 831**, missed; only reachable by
       retiring the toolset-loading path, which would break every shipped skill.
       Re-measured at `91b9911` before touching anything: the recorded 2 034 was
@@ -2394,16 +2411,71 @@ under `target/tmp/konnect-state/locks/`.
 
 ---
 
-# Phase M — Final benchmark — TODO
+# Phase M — Final benchmark — DONE
 
-## M.1 — Baseline vs direct mode vs agent mode
+## M.1 — Baseline vs direct mode vs agent mode — DONE
 
 ### Dépendances
 H.6, H.7, K.1.
 
 ### Tâches
-- [ ] M.1.1 Comparison table across the three modes on the same golden suite
-- [ ] M.1.2 Every V1 criterion re-measured, missed ones recorded as missed (INV6)
+- [x] M.1.1 Comparison table across the three modes on the same golden suite.
+      In `docs/benchmark.md` under *M.1 — Baseline vs Direct vs Agent*, and
+      regenerated from committed artefacts by `bench/m1_table.py`, which runs
+      nothing and spends nothing.
+
+      **All three columns were re-measured on 2026-08-24**, Baseline and Direct
+      back to back at `--repeat 5` (35 runs each, seven tasks), because the
+      committed baseline was a fortnight old and a comparison that claims to be
+      about servers must not carry a fortnight of machine state.
+      **14 337 → 2 249 external tokens per task, −84.3 %, at 35/35 on both
+      sides, MCP calls 11 → 4.**
+
+      Three things the measurement had to settle before the table could be
+      honest. **(1)** Run as-is, upstream now fails `manufacturing_exports` 0/3
+      on `toolset_not_loaded: export_bom is in pcb_export` — E8 moved that tool
+      into `sch_export` *in this fork*, and the task file lists this fork's
+      toolsets. That is a taxonomy difference, not a missing capability, so
+      `runner.py` gained `--extra-toolset`: the baseline is measured with
+      `--extra-toolset pcb_export`, loading the toolset upstream files the tool
+      under, and paying for the larger catalogue refresh like any other token.
+      18/21 without it, 35/35 with it; both recorded. **(2)** Agent mode and the
+      oracle suite cannot share a task file — one scripts calls, the other
+      states an objective — so the Agent column covers the two designs that
+      exist on both sides (`model_divider`/`sch_divider`,
+      `model_ldo`/`sch_ldo`), and the coverage line says so. **(3)** The Agent
+      column needed the same three numbers `runner.py` reports, so
+      `agent_e2e.py` now records them with the same encoder and the same
+      formulas.
+
+      What the Agent column actually shows is round trips, not tokens: **two
+      MCP calls per attempt** — `start_task`, then `kicad_agent` — with the
+      compile, apply and verify loop happening server-side and never reaching
+      the caller. Per attempt it eats 2 548 external tokens against Direct's
+      2 414, so an attempt costs about what the scripted route costs; what a
+      caller pays extra for is retries. `model_ldo` needed one attempt,
+      `model_divider` four (it needed one in H.7.3's own run), and **no success
+      rate is claimed from n = 1 per design** — that rate lives in the
+      model-fit section, where the sample is 60 per arm. Both verdicts are
+      `kicad-cli`'s (INV1).
+
+      The K.1 external-agent campaigns are in the same section as a *fourth*
+      table, deliberately not folded into the three modes: they measure what a
+      frontier model chooses to do with the surface, which is not a server
+      property.
+- [x] M.1.2 Every V1 criterion re-measured, missed ones recorded as missed
+      (INV6). Table in `docs/benchmark.md`; the criteria list at the top of
+      this plan carries the same numbers. Two lines moved **against** the
+      project and both stay recorded rather than tuned: `WALL_CLOCK_P50` is
+      **newly missed** (86 ms against the baseline's 77, where 65 against 70
+      was recorded), and `external tokens/task` moved **2 204 → 2 249**, missed
+      by more. Nothing was netted off against them: `SUCCESS_RATE` is equal at
+      35/35, `MCP_CALLS` 4, precision @8 62.0 %, `CAPABILITY_COVERAGE` 72.6 %
+      against 22.6 %, and `LLM_CALLS_PER_SUCCESSFUL_TASK` is still **not
+      claimed**, because no baseline for that metric was ever measured.
 
 ### Validation
 `docs/benchmark.md` final table, reproducible from committed artefacts.
+`python bench/m1_table.py` regenerates every table in the M.1 section from
+`bench/results/m1-baseline-r5.json`, `m1-gateway-r5.json`, the two
+`agent-e2e-*-m1-*.json` files and the K.1 campaigns.

@@ -1088,6 +1088,196 @@ two artefacts instead of one, so the evidence store's 64 entries span half as
 many batches. The byte budget is not the binding constraint — a 400-file
 snapshot is roughly 44 KiB of manifest against 4 MiB.
 
+## M.1 — Baseline vs Direct vs Agent
+
+Three modes, and the difference between them is *who decides which tool to
+call*:
+
+* **Baseline** — upstream Konnect v0.2.2 at `5cd6454`, driven by
+  `bench/runner.py`'s scripted oracle in `toolsets` load mode, which is what
+  upstream's own skills tell an agent to do.
+* **Direct** — this fork through `kicad_describe` / `kicad_invoke`, the same
+  oracle and the same task files. Baseline against Direct therefore isolates
+  the server surface: identical designs, identical scripted route, two servers.
+* **Agent** — this fork's local runtime (H.7). The caller states an objective,
+  `gpt-oss-20b` on loopback writes the Plan IR, the server compiles, applies
+  and verifies it, and `kicad-cli` returns the verdict (INV1). No oracle, and
+  no external model.
+
+Everything below was measured on 2026-08-24 on the machine named at the top of
+this document. Baseline and Direct ran back to back at `--repeat 5` — 35 runs
+each over the same seven tasks — so no machine state separates the two columns;
+Agent ran once per design. The Phase F artefacts stay where they are and still
+back the surface sections above; they are not mixed into this table, because a
+baseline taken two weeks earlier would let a fortnight of machine state into a
+comparison that claims to be about servers.
+
+`python bench/m1_table.py` regenerates every table in this section from the
+committed result files. It runs nothing and spends nothing.
+
+### The three modes, on the designs all three have built
+
+| Metric | Baseline (oracle) | Direct (oracle) | Agent (local model) |
+|---|---|---|---|
+| designs covered | 2 | 2 | 2 |
+| runs / attempts | 10 | 10 | 5 |
+| who writes the calls | task file | task file | local model |
+| success | 10/10 | 10/10 | 2/2 |
+| verdict source | assertions + kicad-cli | assertions + kicad-cli | kicad-cli (INV1) |
+| MCP calls / design | 11 | 4 | 5 |
+| MCP calls / attempt | 11 | 4 | 2 |
+| RESPONSE_TOKENS / design | 4 472 | 2 414 | 5 811 |
+| CATALOG_TOKENS / design | 10 146 | 0 | 0 |
+| **EXTERNAL_TOKENS / design** | 14 618 | 2 414 | 5 811 |
+| EXTERNAL_TOKENS / attempt | 14 618 | 2 414 | 2 548 |
+| wall clock, median | 71 ms | 76 ms | 27 s (local inference) |
+| external model calls | 0 | 0 | 0 |
+| local model calls | 0 | 0 | 5 |
+
+Two designs is what all three modes have actually built — `sch_divider` and
+`sch_ldo`, whose Agent-mode counterparts are `model_divider` and `model_ldo`.
+The two harnesses cannot share a task file (one scripts tool calls, the other
+states an objective), which is the same split K.1.3 made for the external-agent
+harness; the design is the same, the file is not.
+
+**The Agent column's headline is the round trips, not the tokens.** Two calls
+per attempt — `start_task` and `kicad_agent` — and everything between them
+happens server-side: the plan is compiled, previewed, applied and verified
+without the caller seeing a single intermediate round trip. Per attempt it eats
+2 548 external tokens against Direct's 2 414, so an attempt costs what the
+scripted route costs; what a caller pays extra for is *retries*, and it pays
+them in full.
+
+### Agent mode, per design
+
+| Design | attempts | verdict | ERC err/warn | MCP calls | EXTERNAL_TOKENS | local prompt tk | local completion tk | reasoning tk | wall clock |
+|---|---|---|---|---|---|---|---|---|---|
+| `model_divider` | 4 | PASS (kicad-cli) | 0/0 | 8 | 8 701 | 12 784 | 8 740 | 7 783 | 47 s |
+| `model_ldo` | 1 | PASS (kicad-cli) | 0/1 | 2 | 2 921 | 3 580 | 1 274 | 989 | 8 s |
+
+Both designs came out correct and both verdicts are `kicad-cli`'s, not the
+model's. The attempt counts are the honest part: `model_divider` took four
+tries here and took one in H.7.3's own run of the same task
+(`agent-e2e-gpt-oss-20b-medium-h7.3b.json`). **No success rate is claimed from
+n = 1 per design.** The rate for this model lives where it was measured with a
+sample big enough to carry it — the model-fit section, 60 attempts per arm —
+and nothing in this table moves it.
+
+### Baseline vs Direct, whole oracle suite
+
+| Task | Baseline calls | Direct calls | Baseline EXTERNAL_TOKENS | Direct EXTERNAL_TOKENS | Baseline ms | Direct ms |
+|---|---|---|---|---|---|---|
+| `manufacturing_exports` | 12 | 3 | 14 337 | 2 205 | 800 | 798 |
+| `recovery` | 14 | 4 | 14 722 | 2 704 | 341 | 450 |
+| `sch_divider` | 11 | 5 | 14 546 | 2 422 | 67 | 69 |
+| `sch_hierarchy` | 11 | 2 | 12 567 | 2 249 | 79 | 90 |
+| `sch_inspection` | 9 | 4 | 9 186 | 1 931 | 14 | 6 |
+| `sch_ldo` | 11 | 4 | 14 699 | 2 399 | 77 | 87 |
+| `sch_template_stm32` | 6 | 3 | 11 037 | 2 061 | 27 | 36 |
+| **median** | **11** | **4** | **14 337** | **2 249** | **77** | **86** |
+
+**14 337 → 2 249 external tokens per task, −84.3 %, at 35/35 on both sides and
+with MCP calls down from 11 to 4.** That is the Phase F headline re-measured on
+the current build and the current seven-task suite, and it holds.
+
+**The baseline had to be handed one thing, and it is not a moved goalpost.**
+Run as-is, upstream fails `manufacturing_exports` on all three repeats with
+`toolset_not_loaded: export_bom is in pcb_export`. The task file no longer lists
+`pcb_export` because E8 moved `export_bom` into `sch_export` *in this fork* — so
+what fails is a taxonomy difference, not a missing capability. `runner.py`
+gained `--extra-toolset` for exactly this: the baseline column is measured with
+`--extra-toolset pcb_export`, loading the toolset upstream files that tool
+under, and the larger catalogue refresh it costs is counted like any other
+token. Without it that task reads **0/3**
+(`bench/results/m1-baseline-noextra.json`) and the suite reads 18/21; with it,
+35/35. Both numbers are real, and the one in the table is the one that measures
+the server rather than the difference between two registries.
+
+**Direct is slower, and that is recorded rather than smoothed.** 86 ms against
+77 ms at the median — the fork loses on every authoring task and loses badly on
+`recovery` (+109 ms), where the transaction journal, the snapshot manifest and
+the evidence store are precisely what the task exercises. It wins on
+`sch_inspection` (14 → 6 ms), where there is nothing to guarantee, and ties on
+`manufacturing_exports`, which is `kicad-cli` doing real work in both columns.
+The V1 criterion `WALL_CLOCK_P50 ≤ baseline` is therefore **missed** on the
+current suite; see the re-measurement below.
+
+The direction is stable across samples; the magnitude is not. An earlier pair
+the same day at `--repeat 3` (`m1-baseline.json`, `m1-gateway.json`) reads 69 ms
+against 87 — the fork slower by 18 rather than by 9. Two samples, the fork
+slower in both, a gap that moves by a factor of two between them: the miss is
+real, its size is noisy, and neither is worth a third digit.
+
+### External agents driving the same server (K.1)
+
+| Harness | runs | void | DESIGN_PASS | strict SUCCESS | off-server calls | never reached Konnect | safety | median calls | cost |
+|---|---|---|---|---|---|---|---|---|---|
+| codex-cli (codex) | 14 | 0 | 10/14 | 1/14 | 41 | 6/14 | 0 | 8 | not reported |
+| claude-sonnet-5 | 14 | 0 | 13/14 | 1/14 | 0 | 0/14 | 2 | 20 | $7.6070 |
+| claude-opus-5 (anchor, 1 task) | 1 | 0 | 1/1 | 0/1 | 0 | 0/1 | 0 | 8 | $0.3861 |
+
+This is a fourth way to reach the same server and it is kept out of the
+three-mode table on purpose: it answers a different question. Baseline and
+Direct measure what a surface costs when the route is fixed; this measures what
+a frontier model *chooses to do* with that surface, which is not a server
+property. The columns that matter here are `strict SUCCESS` against
+`DESIGN_PASS` — 1/14 against 13/14 for sonnet — and the gap between them is
+entirely runs that built the design correctly by a route the task file did not
+script (K.1.11, K.1.12). `never reached Konnect` is codex's number and codex's
+alone: at `read-only-sandbox` isolation it still has a shell, and on six runs
+the shell was the shorter path.
+
+The opus anchor is one task, and its interest is not the price. It is the only
+run on any harness that used the gateway: three `kicad_invoke` calls carrying
+15 audited tool calls in 8 round trips, against zero gateway calls across both
+full campaigns.
+
+### M.1.2 — the V1 criteria, re-measured
+
+Targets are never moved (INV6). What moved is what is measured, and two lines
+below moved against the project.
+
+| Criterion | Target | Measured 2026-08-24 | Verdict |
+|---|---|---|---|
+| `SUCCESS_RATE` ≥ baseline | ≥ baseline | 35/35, baseline 35/35 | met |
+| median `MCP_CALLS` per task | ≤ 5 | 4 | met |
+| `WALL_CLOCK_P50` ≤ baseline | ≤ 77 ms | **86 ms** | **missed by 9 ms** |
+| silent corruption / stale-state write | 0 | 0 | met |
+| mutations without an audit record | 0 | 0 | met |
+| `EXTERNAL_TOKENS` per task | ≤ 2 000 | **2 249** | **missed by 249** |
+| `tools/list` at startup | ≤ ~1 000 | **2 831** | **missed** |
+| retrieval precision @8 | ≥ 60 % | 62.0 % (F.5, unchanged) | met |
+| `LLM_CALLS_PER_SUCCESSFUL_TASK` | materially below baseline | no baseline for this metric was ever measured | not claimed |
+| `CAPABILITY_COVERAGE` > baseline | > 22.6 % | 72.6 % | met |
+
+Sources, all committed: `bench/results/m1-baseline-r5.json`,
+`bench/results/m1-gateway-r5.json`, `bench/results/m1-surface.json`,
+`docs/capability-matrix.md`.
+
+**`WALL_CLOCK_P50` is newly missed.** The recorded pair was 65 ms against 70 ms;
+this one is 86 against 77, measured back to back on the current suite. The
+mechanism is visible per task rather than inferred: the fork loses where it
+guarantees something — `recovery` +109 ms, the one task built to exercise the
+transaction journal, the snapshot manifest and the evidence store — and wins
+where there is nothing to guarantee (`sch_inspection`, 14 → 6 ms). Nothing was
+tuned to recover the number and nothing is netted off against it.
+
+**`EXTERNAL_TOKENS` per task moved 2 204 → 2 249**, +45, still missed and
+missed by more. The last gateway artefact taken before the two commits that
+changed what a tool *definition* says — `bench/results/k12-gateway.json`,
+2026-08-17 — reads 2 181; today's build reads 2 249. F.5.7 rewrote descriptions
+and K.2 added annotations, and both ride inside `kicad_describe` results, so
+both are paid per task and not only at startup. K.2's startup cost (+342) was
+measured when it landed; its per-task share was not, and it is +68 here.
+
+**Success rate is equal, not ahead**, and the criterion asks for `≥`. Both
+servers complete all 35 runs of the current suite. The fork's margin is not in
+whether the scripted route succeeds — a scripted route succeeds by
+construction on both — it is in what the route costs and in what happens when
+nobody scripts it, which is what the Agent and external-agent tables measure.
+
+---
+
 ## Reproducing
 
 ```powershell
@@ -1102,6 +1292,17 @@ python bench\analyze.py bench\results\latest-tasks.json
 python bench\probe.py   --server .\target\release\konnect.exe --script bench\probes\divider.yaml
 python bench\plan_cost.py --server .\target\release\konnect.exe --repeat 3
 python bench\plan_retrieval.py --server .\target\release\konnect.exe
+python bench\m1_table.py                # M.1 tables, from committed artefacts only
+
+# the M.1 columns themselves — baseline, direct, agent
+python bench\runner.py --server ..\_gate0\konnect\target\release\konnect.exe `
+    --label m1-baseline-r5 --repeat 5 --load-mode toolsets --extra-toolset pcb_export `
+    --out bench\results\m1-baseline-r5.json
+python bench\runner.py --server .\target\release\konnect.exe `
+    --label m1-gateway-r5 --repeat 5 --load-mode gateway `
+    --out bench\results\m1-gateway-r5.json
+python bench\agent_e2e.py --server .\target\release\konnect.exe --task model_ldo `
+    --out bench\results\agent-e2e-gpt-oss-20b-medium-m1-ldo.json
 
 # model fit — needs an OpenAI-compatible backend on loopback
 python bench\model_fit.py --server .\target\release\konnect.exe --selftest

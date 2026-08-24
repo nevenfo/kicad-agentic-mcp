@@ -518,7 +518,13 @@ def required_tools(task: dict) -> list[str]:
 
 
 def run_task(
-    task: dict, server: str, config: str, keep: bool, load_mode: str, search_limit: int | None = None
+    task: dict,
+    server: str,
+    config: str,
+    keep: bool,
+    load_mode: str,
+    search_limit: int | None = None,
+    extra_toolsets: list[str] | None = None,
 ) -> TaskRun:
     work = Path(tempfile.mkdtemp(prefix=f"kam-bench-{task['id']}-"))
     name = task.get("project_name", task["id"])
@@ -592,8 +598,20 @@ def run_task(
             }
         else:
             client.tools_call("list_toolboxes")
-            if task.get("toolsets"):
-                client.tools_call("load_toolset", {"name": task["toolsets"]})
+            # `--extra-toolset` exists for exactly one situation: a *different*
+            # server whose registry files a tool under another toolset. E8 moved
+            # `export_bom` from `pcb_export` to `sch_export` in this fork, so a
+            # task file that lists this fork's toolsets makes upstream fail
+            # `manufacturing_exports` on a taxonomy difference rather than on a
+            # capability it lacks. Handing the baseline its own toolset is not a
+            # moved goalpost — it is the same task, loaded the way that server
+            # files it, and the extra catalogue it costs is counted like any
+            # other token.
+            wanted = list(task.get("toolsets") or []) + [
+                name for name in (extra_toolsets or []) if name not in (task.get("toolsets") or [])
+            ]
+            if wanted:
+                client.tools_call("load_toolset", {"name": wanted})
         setup_calls = len(client.session.calls) - setup_before
 
         fp_before = fingerprint(work)
@@ -741,6 +759,15 @@ def main() -> None:
         "gateway: kicad_describe + a single batched kicad_invoke, catalogue never changes.",
     )
     ap.add_argument("--search-limit", type=int, default=None, help="override per-query result count")
+    ap.add_argument(
+        "--extra-toolset",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="load this toolset on top of the task's own list (--load-mode toolsets only). "
+        "For measuring a server whose registry files a tool under a different toolset "
+        "than the task file names — see E8 and the comment at the load site.",
+    )
     ap.add_argument("--keep", action="store_true", help="keep the generated projects on disk")
     ap.add_argument(
         "--enforce",
@@ -760,7 +787,13 @@ def main() -> None:
         for _ in range(args.repeat):
             runs.append(
                 run_task(
-                    task, args.server, args.config, args.keep, args.load_mode, args.search_limit
+                    task,
+                    args.server,
+                    args.config,
+                    args.keep,
+                    args.load_mode,
+                    args.search_limit,
+                    args.extra_toolset,
                 )
             )
 

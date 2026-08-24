@@ -2,60 +2,66 @@
 
 ## Phase actuelle
 
-**M — comparaison des trois modes.** K.1 est close : les deux campagnes
-(codex 14/14, claude sonnet 14/14, aucun void) et l'ancre `claude-opus-5` sont
-mesurées. Les phases D, F, K et L sont closes. La phase I reste conditionnée au
-matériel : cette machine a KiCad 10.0, pas KiCad 11 / `kicad-cli api-server`.
+**Aucune phase ouverte sur le chemin critique.** K.1 et M.1 sont closes ce
+2026-08-24, comme D, F, K et L avant elles. Ne restent que des tâches
+conditionnelles : I.1 attend KiCad 11 (cette machine a KiCad 10.0, pas de
+`kicad-cli api-server`) et D.5.3 attend un cas réel qui sature les 64 entrées
+du magasin de preuves.
 
 ## Tâche actuelle
 
-**M.1.1 — table de comparaison des trois modes** sur la même suite golden
-(baseline / direct / agent), puis M.1.2 : chaque critère V1 re-mesuré, les
-manqués enregistrés comme manqués (INV6). Sortie attendue :
-`docs/benchmark.md`, reproductible depuis les artefacts committés.
+Aucune. Les prochaines décisions sont éditoriales ou dépendent du matériel :
+soit ouvrir une phase de consolidation (README/DEV à jour avec les chiffres
+M.1), soit attendre KiCad 11 pour I.1.
 
 ## Dernière tâche validée
 
-**K.1.1 — ancre `claude-opus-5`.** `sch_inspection` ×1, cap $5.00, incident 529
-résolu (sonde : `terminal_reason: completed`). Run complet à **$0.3861**,
-11 tours, **8 aller-retours**, `DESIGN_PASS_RATE 1/1`, `SAFETY_VIOLATIONS 0`,
-`OFF_SERVER_CALLS 0`, `VOID_RUNS 0/1` ; seule violation, la route stricte
-(`missing_expected`). `--rescore --enforce` reproduit le score hors ligne.
+**M.1 — les trois modes mesurés côte à côte.** `docs/benchmark.md` porte la
+section *M.1 — Baseline vs Direct vs Agent*, regénérable par
+`bench/m1_table.py` depuis les seuls artefacts committés.
 
-Le résultat porteur n'est pas le prix mais la route : Opus est **le premier
-agent, tous harnais confondus, à passer par la gateway** — 3 `kicad_invoke`
-portant 15 appels audités en 8 aller-retours (sonnet : 0 `kicad_invoke` sur
-toute la campagne ; codex : 0). La branche *unwrap* que K.1.4 déclarait non
-exercée a donc tourné sur sortie réelle. Et le batching a payé le modèle plus
-cher : $0.3861 se place **entre** les deux runs sonnet de la même tâche
-($0.4455 et $0.2448).
+- Baseline et Direct re-mesurés dos à dos le 2026-08-24, `--repeat 5`,
+  35 runs chacun : **14 337 → 2 249 tokens externes par tâche (−84,3 %)**,
+  appels MCP 11 → 4, 35/35 des deux côtés.
+- Agent (H.7, `gpt-oss-20b` en loopback) : **2 aller-retours MCP par
+  tentative**, la boucle compile/apply/verify restant côté serveur ; 2 548
+  tokens externes par tentative contre 2 414 pour Direct. `model_ldo` en 1
+  tentative, `model_divider` en 4. Aucun taux de succès revendiqué à n = 1.
+- Deux critères V1 bougent **contre** le projet et restent enregistrés tels
+  quels (INV6) : `WALL_CLOCK_P50` **86 ms contre 77** (nouveau manqué ; le
+  mécanisme est visible par tâche — `recovery` +109 ms, `sch_inspection`
+  −8 ms), et tokens externes/tâche **2 204 → 2 249**.
 
 ## Décisions actives
 
 - D98 : le projet peut consommer la capacité Claude nécessaire, quel que soit
-  le modèle, sans nouvel accord par run. Les caps opérationnels peuvent être
-  augmentés et les runs relancés automatiquement.
-- D97 : un re-run remplace un void dans sa campagne ; l'ancre Opus reste une
-  campagne distincte.
-- Un cap de budget ne doit jamais pouvoir voider sa propre mesure : $2.00 avait
-  voidé `sch_ldo`, l'ancre est partie à $5.00.
+  le modèle, sans nouvel accord par run.
+- D97 : un re-run remplace un void dans sa campagne.
+- Un cap de budget ne doit jamais pouvoir voider sa propre mesure.
+- Une colonne de comparaison se mesure le même jour que les autres : un
+  artefact vieux de deux semaines fait entrer l'état machine dans un tableau
+  censé parler de serveurs.
+- Donner à la baseline son propre toolset (`--extra-toolset pcb_export`) n'est
+  pas déplacer la cible : E8 a déplacé `export_bom` dans ce fork, et le fichier
+  de tâche liste la taxonomie du fork.
 
 ## Blocage actif
 
-Aucun. L'incident Anthropic du 2026-08-24 07:27 CEST est résolu ; les deux
-essais 529 restent conservés comme preuves de runs void.
+Aucun.
 
 ## Fichiers / zones utiles
 
-- `bench/results/k11-claude-opus5-anchor-r3.{json,log}` et
-  `k11-logs-opus5-anchor-r3/` — l'ancre.
-- `bench/results/k11-claude-sonnet5.json`, `k11-codex.json` — les campagnes.
-- `bench/harness_runner.py` — `--rescore`, `--merge`, classification void.
-- `bench/runner.py` — le chemin oracle, l'autre moitié de la table M.1.
+- `bench/m1_table.py` — toutes les tables M.1, sans rien exécuter.
+- `bench/results/m1-{baseline-r5,gateway-r5,baseline-noextra,surface}.json` et
+  `agent-e2e-gpt-oss-20b-medium-m1-{divider,ldo}.json` — les colonnes.
+- `bench/runner.py --extra-toolset` — la taxonomie de l'autre serveur.
+- `bench/agent_e2e.py` — enregistre désormais `surface` (mêmes formules que
+  `runner.py`) et le temps par tentative.
+- `bench/mcp_client.py::_resolve_program` — un `--server` relatif ne meurt plus
+  dans `CreateProcess`.
 
 ## NEXT ACTION
 
-Ouvrir **M.1.1** : inventorier ce que `bench/runner.py` (baseline / direct) et
-`bench/harness_runner.py` (agent) produisent déjà sur la suite golden, décider
-ce qui manque pour une table à trois colonnes comparable, puis rédiger
-`docs/benchmark.md` à partir des artefacts committés uniquement.
+Rien n'est bloqué et rien n'est en cours. Décider avec l'utilisateur ce qui
+vient : consolidation documentaire (README/DEV/ROADMAP alignés sur les chiffres
+M.1), ou attente de KiCad 11 pour I.1.

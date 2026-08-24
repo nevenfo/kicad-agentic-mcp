@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -74,19 +75,41 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 if not inner.get("ok"):
                     raise RuntimeError(f"start_task failed: {inner}")
                 task_id = inner["result"]["task_id"]
+                t0 = time.perf_counter()
                 call = client.tools_call("kicad_agent", {
                     "task_id": task_id, "decision": "LOCAL", "execute": True, "document": env["SCH"],
                     "task_core_tokens": core_tokens, "fixed_prefix_tokens": prefix_tokens,
                     "retrieval_bundles": [bundle],
                 }, timeout=args.timeout)
+                wall_ms = (time.perf_counter() - t0) * 1000.0
                 body = payload(call) if not call.error else {"status": "TRANSPORT_FAILED", "reason": str(call.error)}
-                attempts.append({"attempt": number, "task_id": task_id, "work": env["WORK"], "status": body.get("status"), "preview": body.get("preview"), "application": body.get("application"), "verification": body.get("verification"), "evidence": (body.get("verification") or {}).get("evidence"), "usage": (body.get("supervisor") or {}).get("usage"), "reason": body.get("reason"), "local_calls": 1, "external_calls": 0})
+                attempts.append({"attempt": number, "task_id": task_id, "work": env["WORK"], "status": body.get("status"), "preview": body.get("preview"), "application": body.get("application"), "verification": body.get("verification"), "evidence": (body.get("verification") or {}).get("evidence"), "usage": (body.get("supervisor") or {}).get("usage"), "reason": body.get("reason"), "local_calls": 1, "external_calls": 0, "wall_clock_ms": wall_ms})
                 if body.get("status") == "SUCCESS":
                     break
             finally:
                 if not args.keep:
                     shutil.rmtree(work, ignore_errors=True)
-    return {"harness": "H.7.3", "task": task["id"], "hint": "full", "model": args.model, "base_url": args.base_url, "loopback": args.base_url.startswith("http://127.0.0.1"), "context_window_tokens": 32768, "reasoning_effort": "medium", "attempt_limit": args.attempts, "attempts": attempts, "local_calls": len(attempts), "external_calls": 0}
+    # The same three numbers `bench/runner.py` reports for the oracle modes,
+    # computed with the same `o200k_base` encoder and the same formulas, so the
+    # Agent column of the M.1 table is not a different measurement wearing the
+    # same names. `catalog_tokens` is expected to be 0: this path exposes no
+    # tool, so no `notifications/tools/list_changed` ever fires.
+    calls = client.session.calls
+    tool_calls = [c for c in calls if c.method == "tools/call"]
+    catalog_calls = [c for c in calls if c.method == "tools/list" and c.result]
+    surface = {
+        "mcp_calls": len(tool_calls),
+        "request_tokens": sum(tokens(json.dumps(c.params, separators=(",", ":"))) for c in tool_calls),
+        "response_tokens": sum(tokens(text_of(c.result)) for c in tool_calls if c.result),
+        "catalog_tokens": sum(tokens(json.dumps(c.result.get("tools", []), separators=(",", ":"))) for c in catalog_calls),
+        "catalog_refreshes": len(catalog_calls),
+        # Paid once per session, not per task: the `kicad_describe(["apply_plan"])`
+        # this harness fetches before the run so the prompt carries the real
+        # schema rather than a retyped one.
+        "setup_tokens": tokens(json.dumps(schema, separators=(",", ":"))),
+    }
+    surface["external_tokens"] = surface["response_tokens"] + surface["catalog_tokens"]
+    return {"harness": "H.7.3", "task": task["id"], "hint": "full", "model": args.model, "base_url": args.base_url, "loopback": args.base_url.startswith("http://127.0.0.1"), "context_window_tokens": 32768, "reasoning_effort": "medium", "attempt_limit": args.attempts, "attempts": attempts, "local_calls": len(attempts), "external_calls": 0, "surface": surface}
 
 
 def selftest() -> None:
