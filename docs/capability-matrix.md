@@ -290,7 +290,7 @@ Not covered by any tool:
 | `create_footprint` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 | `edit_footprint_pad` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `list_library_footprints` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `get_footprint_info` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_footprint_info` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 | `search_footprints` | `library` | `sexpr` | `read` | — | NOT_TESTED | gated | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 
 ### pcb

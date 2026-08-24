@@ -3147,7 +3147,14 @@ None. Each item below is independent of the others except where stated.
         survives the delete; and with the rule dropped the other way, the
         mid-segment pin's dot is wrongly pruned (`[]` against
         `[(101.6, 76.2)]`).
-  - [ ] P.6.7.4 #274 (pad count and courtyard by substring)
+  - [x] P.6.7.4 #274 — pad count and courtyard by substring. Done:
+        `get_footprint_info` reads all three properties off the parsed
+        footprint — `find_all("pad")`, a `layer` of `B.CrtYd`/`F.CrtYd` on a
+        direct child, `find_all("model")` — instead of probing the source text.
+        Red before on a reduced but unrewritten KiCad 10 stock footprint (tabs
+        and CRLF): `pad_count` **0 instead of 6**, and a footprint whose only
+        mention of the courtyard is inside its `descr` reported
+        `has_courtyard: true`.
   - [ ] P.6.7.5 #140 (net and track counts by substring)
   - [ ] P.6.7.6 #139 (`export_bom` ignores `exclude_dnp` and `format`, both
         advertised in its schema)

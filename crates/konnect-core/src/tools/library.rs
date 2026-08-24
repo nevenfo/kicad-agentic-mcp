@@ -2924,12 +2924,19 @@ async fn handle_get_footprint_info(
             .to_string()
     });
 
-    // Count pads
-    let pad_count = content.matches("\n  (pad ").count();
-
-    // Extract courtyard bbox (gr_poly on B.CrtYd or F.CrtYd) — simplified
-    let has_courtyard = content.contains("B.CrtYd") || content.contains("F.CrtYd");
-    let has_3d = content.contains("(model ");
+    // KiCad controls indentation and line endings, so these properties must be
+    // read from the parsed footprint rather than inferred from source text: a
+    // tab-indented or CRLF footprint counted zero pads, and a courtyard was
+    // "found" in any footprint whose description merely named the layer.
+    // Pads and models are direct children of a `(footprint …)` node.
+    let footprint = parse_sexp(&content)?;
+    let pad_count = footprint.find_all("pad").len();
+    let has_courtyard = footprint
+        .children()
+        .unwrap_or(&[])
+        .iter()
+        .any(|node| matches!(node.find_str("layer"), Some("B.CrtYd" | "F.CrtYd")));
+    let has_3d = !footprint.find_all("model").is_empty();
 
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
@@ -3840,6 +3847,144 @@ mod tests {
             konnect_sexp::parser::parse_sexp(&c).is_ok(),
             "generated footprint doesn't parse"
         );
+    }
+
+    /// Reduced from KiCad 10's stock Connector_USB footprint without rewriting
+    /// the retained nodes. CRLF is intentional: together with KiCad's tabs it
+    /// reproduces both formatting assumptions the old substring probes made.
+    const KICAD_STYLE_FOOTPRINT: &str = concat!(
+        "(footprint \"USB_C_Receptacle_HRO_TYPE-C-31-M-12\"\r\n",
+        "\t(version 20260206)\r\n",
+        "\t(generator \"pcbnew\")\r\n",
+        "\t(generator_version \"10.0\")\r\n",
+        "\t(layer \"F.Cu\")\r\n",
+        "\t(descr \"USB Type-C receptacle for USB 2.0 and PD\")\r\n",
+        "\t(tags \"usb usb-c 2.0 pd\")\r\n",
+        "\t(fp_line\r\n",
+        "\t\t(start -5.32 -5.27)\r\n",
+        "\t\t(end -5.32 4.15)\r\n",
+        "\t\t(stroke\r\n",
+        "\t\t\t(width 0.05)\r\n",
+        "\t\t\t(type solid)\r\n",
+        "\t\t)\r\n",
+        "\t\t(layer \"F.CrtYd\")\r\n",
+        "\t\t(uuid \"d939342c-cab3-429e-ad71-738d34173267\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"\" np_thru_hole circle\r\n",
+        "\t\t(at -2.89 -2.6)\r\n",
+        "\t\t(size 0.65 0.65)\r\n",
+        "\t\t(drill 0.65)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(uuid \"e13b4b37-788a-41d5-87ca-c66be43ee32d\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"\" np_thru_hole circle\r\n",
+        "\t\t(at 2.89 -2.6)\r\n",
+        "\t\t(size 0.65 0.65)\r\n",
+        "\t\t(drill 0.65)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(uuid \"4558f1f0-2fa3-46e1-a220-284fa2707bb5\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"A1\" smd roundrect\r\n",
+        "\t\t(at -3.25 -4.045)\r\n",
+        "\t\t(size 0.6 1.45)\r\n",
+        "\t\t(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")\r\n",
+        "\t\t(roundrect_rratio 0.25)\r\n",
+        "\t\t(uuid \"245fae56-8b58-4bd8-bbf1-36624dc3fa3e\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"B12\" smd roundrect\r\n",
+        "\t\t(at -3.25 -4.045)\r\n",
+        "\t\t(size 0.6 1.45)\r\n",
+        "\t\t(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")\r\n",
+        "\t\t(roundrect_rratio 0.25)\r\n",
+        "\t\t(uuid \"eda87c04-3a59-4e2c-a9bd-f59ed31672aa\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"SH\" thru_hole oval\r\n",
+        "\t\t(at -4.32 -3.13)\r\n",
+        "\t\t(size 1 2.1)\r\n",
+        "\t\t(drill oval 0.6 1.7)\r\n",
+        "\t\t(property pad_prop_mechanical)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(remove_unused_layers no)\r\n",
+        "\t\t(uuid \"69c3dc88-a37e-49ef-ae4d-497d3191ad5b\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"SH\" thru_hole oval\r\n",
+        "\t\t(at -4.32 1.05)\r\n",
+        "\t\t(size 1 1.6)\r\n",
+        "\t\t(drill oval 0.6 1.2)\r\n",
+        "\t\t(property pad_prop_mechanical)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(remove_unused_layers no)\r\n",
+        "\t\t(uuid \"5991ca6f-c5c1-4692-8fe9-cf4b7ca50c4b\")\r\n",
+        "\t)\r\n",
+        "\t(embedded_fonts no)\r\n",
+        "\t(model \"${KICAD10_3DMODEL_DIR}/Connector_USB.3dshapes/USB_C.step\"\r\n",
+        "\t\t(offset\r\n",
+        "\t\t\t(xyz 0 0 0)\r\n",
+        "\t\t)\r\n",
+        "\t\t(scale\r\n",
+        "\t\t\t(xyz 1 1 1)\r\n",
+        "\t\t)\r\n",
+        "\t\t(rotate\r\n",
+        "\t\t\t(xyz 0 0 0)\r\n",
+        "\t\t)\r\n",
+        "\t)\r\n",
+        ")\r\n",
+    );
+
+    async fn footprint_info(path: &std::path::Path) -> serde_json::Value {
+        let result = handle_get_footprint_info(
+            &json!({ "footprint_path": path.to_string_lossy() }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text");
+        };
+        serde_json::from_str(text).unwrap()
+    }
+
+    /// The pad count was `content.matches("\n  (pad ")`, so KiCad's own tabs
+    /// and CRLF made every stock footprint report zero pads — the number an
+    /// agent checks a footprint against a symbol with.
+    #[tokio::test]
+    async fn get_footprint_info_reads_kicad_style_layout_structurally() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp
+            .path()
+            .join("USB_C_Receptacle_HRO_TYPE-C-31-M-12.kicad_mod");
+        std::fs::write(&path, KICAD_STYLE_FOOTPRINT).unwrap();
+
+        let info = footprint_info(&path).await;
+        assert_eq!(info["name"], "USB_C_Receptacle_HRO_TYPE-C-31-M-12");
+        assert_eq!(info["pad_count"], 6);
+        assert_eq!(info["has_courtyard"], true);
+        assert_eq!(info["has_3d_model"], true);
+    }
+
+    /// The other half: a courtyard was "found" in any footprint whose
+    /// description merely named the layer.
+    #[tokio::test]
+    async fn get_footprint_info_ignores_metadata_that_looks_like_structure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("metadata-only.kicad_mod");
+        std::fs::write(
+            &path,
+            concat!(
+                "(footprint \"MetadataOnly\"\r\n",
+                "\t(version 20240108)\r\n",
+                "\t(generator \"pcbnew\")\r\n",
+                "\t(layer \"F.Cu\")\r\n",
+                "\t(descr \"mentions (pad fake), F.CrtYd, and (model fake)\")\r\n",
+                ")\r\n",
+            ),
+        )
+        .unwrap();
+
+        let info = footprint_info(&path).await;
+        assert_eq!(info["pad_count"], 0);
+        assert_eq!(info["has_courtyard"], false);
+        assert_eq!(info["has_3d_model"], false);
     }
 
     #[tokio::test]

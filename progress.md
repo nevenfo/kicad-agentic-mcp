@@ -4,7 +4,7 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte (P.6.7.1 à P.6.7.3 closes, P.6.7.4 à P.6.7.8 restent), P.6.8 à P.6.11
+est ouverte (P.6.7.1 à P.6.7.4 closes, P.6.7.5 à P.6.7.8 restent), P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -14,26 +14,22 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.3 — supprimer un fil emporte les points de jonction qu'il justifiait.
-`prune_orphaned_junctions` dans `sch_wiring.rs`, appelé par
-`handle_delete_wire` et par le chemin batch (qui remonte
-`junctions_pruned_count`), avec `locate_wire_for_delete` et `wires_in_ranges`.
-`handle_split_wire_at_point` ne passe plus par `handle_delete_wire` : ses deux
-moitiés couvrent le même segment, donc aucun dot ne devient orphelin, et
-traverser le chemin d'élagage en supprimerait entre le retrait et la
-ré-insertion ; il devient au passage une écriture unique.
-
-Règle de conservation : un dot a besoin de deux fils, ou d'un fil plus une pin
-posée mid-segment.
+P.6.7.4 — les propriétés d'un footprint se lisent dans l'arbre, pas dans le
+texte source. `get_footprint_info` (`crates/konnect-core/src/tools/library.rs`)
+compte les pads par `find_all("pad")`, détecte le courtyard par un `layer`
+`B.CrtYd`/`F.CrtYd` sur un enfant direct, et le modèle 3D par
+`find_all("model")`.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- rouge-avant vérifié dans les deux sens : élagage neutralisé, le dot fantôme
-  survit (`[(63.5, 50.8), (25.4, 25.4)]` au lieu de `[(25.4, 25.4)]`) ; règle de
-  conservation retirée, le dot de la pin mid-segment est élagué à tort (`[]` au
-  lieu de `[(101.6, 76.2)]`). Verts après restauration
+- rouge-avant vérifié en restaurant les sondes par sous-chaîne : sur un
+  footprint KiCad 10 réduit mais non réécrit (tabulations + CRLF),
+  `pad_count` rend **0 au lieu de 6** ; et un footprint dont seule la `descr`
+  mentionne le courtyard rend `has_courtyard: true`
+- `docs/capability-matrix.md` régénérée (`KAM_UPDATE_MATRIX=1`) : la couverture
+  de `get_footprint_info` pointe désormais vers son test in-module
 
 ## Décisions actives
 
@@ -122,12 +118,15 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.4 — `#274` : `get_footprint_info` déduit ses propriétés du
-texte source (compte de pads par `content.matches("
-  (pad ")`, présence de
-courtyard et de modèle 3D par sous-chaîne), alors que KiCad contrôle
-l'indentation et les fins de ligne. Relire l'entrée `#274` de
-`docs/upstream-audit.md` pour l'état exact dans ce fork, puis lire l'arbre
-plutôt que le texte. Le test discriminant part d'un footprint indenté par
-tabulations. Valider par `cargo fmt` / `clippy -D warnings` /
+Implémenter P.6.7.5 — `#140` : `validate_for_manufacturing`
+(`crates/konnect-core/src/tools/manufacturing.rs:325-326`) calcule `net_count`
+par `content.matches("
+  (net ")` et `track_count` par
+`matches("(segment ") + matches("(via ")` — dépendant de l'indentation, aveugle
+à la forme par item de KiCad 10, aveugle aux segments `(arc …)`, et comptant
+deux fois un net KiCad 9 via sa déclaration et ses références. `count_distinct_nets`
+existe déjà dans `crates/konnect-sexp/src/net.rs` depuis P.6.5 ; ne pas le
+réécrire. Relire l'entrée `#140` de `docs/upstream-audit.md`. Le test
+discriminant part d'un board indenté par tabulations portant un `(arc …)`.
+Valider par `cargo fmt` / `clippy -D warnings` /
 `cargo test --workspace --lib --tests`.
