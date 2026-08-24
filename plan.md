@@ -3039,8 +3039,44 @@ None. Each item below is independent of the others except where stated.
       owed here. Discriminating tests: a `pin_to_pin` conflict keeps both
       pins, and the fixture's two `unconnected_items` — same rule, same
       description — are now told apart by their second item.
-- [ ] P.6.5 #142 — KiCad 10 pad net read at a fixed index, so every pad
+- [x] P.6.5 #142 — KiCad 10 pad net read at a fixed index, so every pad
       reports an empty net; net counts and `add_net` ids by substring.
+      Done: new `konnect-sexp/src/net.rs` reads both forms by *shape* rather
+      than by a version threshold — `get(1)` is a `Str` on the id-less form
+      `(net "VCC")` and an `Atom` on `(net 6 "HDMI_+5V")`. It exports
+      `net_name`, `net_id`, `board_uses_net_table`, `count_distinct_nets` and
+      `next_net_id`. The three sites are fixed: the pad read in
+      `pcb_components.rs`, `net_count` in `pcb_board.rs`, and `add_net` in
+      `pcb_routing.rs`, which now derives its id from the parsed table and
+      refuses a board that has none — there a net is created by connecting an
+      item, not by a file-level insert.
+      Oracle, measured over the 18 KiCad 10 demo boards: version **20260206**
+      is the cutover — it drops the net table and writes `(net "<name>")` on
+      each item, every version up to 20250907 keeps `(net <id> "<name>")`.
+      On the 17 old-form boards the new count equals the old formula exactly,
+      so nothing regresses; on `pic_programmer.kicad_pcb` (20260206) the net
+      count goes from 0 to 111 and **236 of its 247 pads stop reporting an
+      empty net**.
+- [ ] P.6.10 `parse_sexp` reports success on a document it could not consume.
+      Found while measuring P.6.5's oracle, not in upstream's audit.
+      `crates/konnect-sexp/src/parser.rs:89-111`: when the first form does not
+      consume the input, the parser wraps whatever fragments it managed into
+      an implicit `List` and returns `Ok`, and its `Err(_) => break` drops the
+      remainder silently. Reproduction, on a board KiCad 10 itself ships —
+      `demos/royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb`, 3.6 MB:
+      the file is genuinely unbalanced (its root closes at byte 14735, and the
+      document ends 349 closing parens ahead), and `parse_sexp` answers `Ok`
+      with a 3-child root whose `head()` is `None` and **3 pads out of ~1000**.
+      Every tool reading that board therefore reports success on a fraction of
+      it — the same false-clean shape as P.6.1 and P.5. A paren-balance scan
+      over `interf_u` and `pic_programmer` returns depth 0 on both, so the
+      measurement is the file's, not the scanner's.
+      Two parts: make `parse_sexp` reject input it cannot consume as one
+      document instead of fabricating a root, and add a board-corpus
+      conformance test over the demo boards that fails loudly rather than
+      skipping in silence — see D113 for why silence is the trap here.
+      Decide deliberately what the implicit-`List` fallback was for before
+      removing it; some caller may rely on it for multi-form fragments.
 - [ ] P.6.6 #153 (write half) — `add_layer` locates the block close with a
       literal newline-plus-two-spaces, so on tab-indented KiCad 10 boards the
       layer is written

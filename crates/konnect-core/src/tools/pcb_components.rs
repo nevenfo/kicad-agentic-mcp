@@ -1395,8 +1395,7 @@ async fn handle_get_component_pads(
                 konnect_sexp::geometry::transform_pad(local_x, local_y, fp_x, fp_y, fp_rot);
             let net = pad
                 .find("net")
-                .and_then(|n| n.get(2))
-                .and_then(|n| n.as_str())
+                .and_then(konnect_sexp::net::net_name)
                 .unwrap_or("")
                 .to_string();
             Some(json!({ "number": number, "x": board_x, "y": board_y, "net": net }))
@@ -2580,6 +2579,39 @@ mod tests {
             board_content,
             "board file must be left untouched"
         );
+    }
+
+    /// KiCAD 20260206 dropped the board's `(net <id> …)` table and writes
+    /// `(net "<name>")` directly on each pad. Reading the name at the old
+    /// fixed child index (2) used to return nothing on this form, so every
+    /// pad on a recent board reported an empty net (upstream #142).
+    #[tokio::test]
+    async fn get_component_pads_reads_net_names_on_the_id_less_form() {
+        let dir = tempfile::tempdir().unwrap();
+        let board = dir.path().join("b.kicad_pcb");
+        std::fs::write(
+            &board,
+            r#"(kicad_pcb
+  (version 20260206)
+  (generator "pcbnew")
+  (footprint "R_0402"
+    (at 10 20)
+    (property "Reference" "R1" (at 0 -1 0))
+    (pad "1" smd roundrect (at -0.5 0) (size 0.5 0.5) (layers "F.Cu") (net "VCC"))
+    (pad "2" smd roundrect (at 0.5 0) (size 0.5 0.5) (layers "F.Cu") (net "GND"))
+  )
+)
+"#,
+        )
+        .unwrap();
+
+        let args = json!({ "board": board.to_str().unwrap(), "reference": "R1" });
+        let res = handle_get_component_pads(&args, &test_ctx()).await.unwrap();
+        assert!(!res.is_error, "{}", result_text(&res));
+        let body: serde_json::Value = serde_json::from_str(&result_text(&res)).unwrap();
+        let pads = body["pads"].as_array().unwrap();
+        assert_eq!(pads[0]["net"], json!("VCC"));
+        assert_eq!(pads[1]["net"], json!("GND"));
     }
 }
 

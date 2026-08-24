@@ -283,8 +283,20 @@ async fn handle_add_net(
     };
 
     let content = std::fs::read_to_string(&board_path)?;
-    // Count existing nets to determine next net ID
-    let net_id = content.matches("(net ").count() as i32;
+    let tree = konnect_sexp::parser::parse_sexp(&content)?;
+    if !konnect_sexp::net::board_uses_net_table(&tree) {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::MalformedDocument {
+                path: board_path.display().to_string(),
+                detail: "this board has no (net <id> …) table (KiCAD 20260206+ writes net \
+                    names directly on items); a net cannot be added by inserting a table \
+                    entry here — create it by connecting an item to that net name instead"
+                    .to_string(),
+            },
+            "Board has no net table; add_net only works on boards with a legacy net table.",
+        ));
+    }
+    let net_id = konnect_sexp::net::next_net_id(&tree);
     let net_sexp = format!("\n  (net {net_id} \"{net_name}\")");
     // Insert before the last closing paren
     let close_pos = content.rfind(')').unwrap_or(content.len());
@@ -1222,5 +1234,48 @@ mod netclass_tests {
         let msg = text_of(&result);
         assert!(msg.contains("HV"), "{msg}");
         assert_eq!(std::fs::read_to_string(&board).unwrap(), BOARD);
+    }
+
+    async fn add_net(board: &std::path::Path, name: &str) -> CallToolResult {
+        handle_add_net(
+            &json!({ "board": board.to_str().unwrap(), "net_name": name }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap()
+    }
+
+    /// A board written in KiCAD 20260206's form has no `(net <id> …)` table
+    /// at all — `add_net` cannot insert a table entry there, and must say why
+    /// rather than silently produce an id nothing reads (upstream #142).
+    #[tokio::test]
+    async fn add_net_refuses_a_board_with_no_net_table() {
+        let (_dir, board) = fixture(false); // BOARD has no (net …) table
+        let result = add_net(&board, "GND").await;
+        assert!(result.is_error);
+        let msg = text_of(&result);
+        assert!(msg.contains("net table"), "{msg}");
+        assert_eq!(std::fs::read_to_string(&board).unwrap(), BOARD);
+    }
+
+    /// On a board that does carry a net table, the new id must not collide
+    /// with an existing one, including across a gap.
+    #[tokio::test]
+    async fn add_net_assigns_a_non_colliding_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let board = dir.path().join("demo.kicad_pcb");
+        std::fs::write(
+            &board,
+            "(kicad_pcb\n\t(version 20250610)\n\t(net 0 \"\")\n\t(net 1 \"GND\")\n\t(net 5 \"VCC\")\n)\n",
+        )
+        .unwrap();
+
+        let result = add_net(&board, "CLK").await;
+        assert!(!result.is_error, "{}", text_of(&result));
+        let body: serde_json::Value = serde_json::from_str(&text_of(&result)).unwrap();
+        assert_eq!(body["net_id"], json!(6));
+
+        let written = std::fs::read_to_string(&board).unwrap();
+        assert!(written.contains("(net 6 \"CLK\")"), "{written}");
     }
 }

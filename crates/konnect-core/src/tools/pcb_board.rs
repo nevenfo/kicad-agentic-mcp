@@ -411,7 +411,10 @@ async fn handle_get_board_info(
         .unwrap_or("A4")
         .to_string();
 
-    let net_count = tree.find_all("net").len().saturating_sub(1); // exclude net 0
+    // Counts distinct named nets across both KiCAD net-table forms (#142):
+    // on the old form this equals the prior `table_entries - 1` (net 0 is the
+    // only unnamed entry), so boards on that form report the same count.
+    let net_count = konnect_sexp::net::count_distinct_nets(&tree);
 
     Ok(CallToolResult::json(&json!({
         "file": board_path.display().to_string(),

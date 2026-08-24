@@ -226,7 +226,7 @@ Not covered by any tool:
 | `validate_wire_connections` | `sch_batch` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `validate_component_connections` | `sch_batch` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/src/tools/sch_batch.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `fix_connectivity` | `sch_export` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `add_net` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `add_net` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_routing.rs` |  |
 | `get_nets_list` | `pcb_routing` | `ipc` | `read` | — | NOT_TESTED | — | — |  |
 
 ### labels
@@ -285,7 +285,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
-| `get_component_pads` | `pcb_components` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_component_pads` | `pcb_components` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
 | `get_pad_position` | `pcb_components` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `create_footprint` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 | `edit_footprint_pad` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |

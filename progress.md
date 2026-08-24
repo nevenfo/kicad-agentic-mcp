@@ -3,8 +3,8 @@
 ## Phase actuelle
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
-(backlog de correctness upstream) est ouverte : P.6.1 à P.6.4 closes, P.6.5 à
-P.6.9 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
+(backlog de correctness upstream) est ouverte : P.6.1 à P.6.5 closes, P.6.6 à
+P.6.10 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
 ## Tâche actuelle
@@ -13,21 +13,36 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.4 — une violation ERC/DRC conserve tous ses items. `ReportItem
-{ description, pos, uuid }` et un décodeur unique `parse_report_items`
-alimentent `parse_erc_json` et `parse_drc_json` ; `items: Vec<ReportItem>` est
-porté par `ErcViolation` et `DrcViolation` et ressort dans les trois sorties
-d'outil. `pos` reste le raccourci dérivé de `items[0]`, donc aucun consommateur
-ne casse, et `rule` reste `Option<String>`.
+P.6.5 — les nets d'un board se lisent dans les deux formes KiCad. Nouveau
+`crates/konnect-sexp/src/net.rs` : `net_name`, `net_id`, `board_uses_net_table`,
+`count_distinct_nets`, `next_net_id`, discriminant **par la forme** et non par
+un seuil de version. Les trois sites sont corrigés : lecture du net d'un pad
+(`pcb_components.rs`), `net_count` (`pcb_board.rs`), et `add_net`
+(`pcb_routing.rs`) qui tire son id de la table parsée et refuse un board qui
+n'en a pas.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites ok, 0 échec
 - sondes live `cli_tools` avec `KICAD_CLI` : PASS, 7/7
+- oracle sur les 18 boards de démo : 17/17 anciens boards rendent exactement le
+  même compte qu'avant ; sur `pic_programmer.kicad_pcb` (20260206) le compte
+  passe de 0 à 111 nets et 236 de ses 247 pads cessent de rapporter un net vide
 
 ## Décisions actives
 
+- **D116** — un board livré par KiCad 10 peut être réellement malformé :
+  `demos/royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb` ferme sa racine
+  à l'octet 14735 sur 3,6 Mo et finit 349 parenthèses fermantes en avance.
+  Vérifié : un scan de balance rend 0 sur `interf_u` et `pic_programmer`, donc
+  la mesure est bien celle du fichier. Toute conformance de board doit traiter
+  ce cas comme un échec attendu, pas comme une régression du parser.
+- **D115** — oracle de forme des nets, mesuré sur les 18 boards de démo :
+  la version **20260206** est la bascule. Elle supprime la table de nets et
+  écrit `(net "<nom>")` sur chaque item ; tout ce qui va jusqu'à 20250907 garde
+  la table et `(net <id> "<nom>")`. Se discrimine par `SexpNode::Str` contre
+  `SexpNode::Atom` en position 1, jamais par un numéro de version.
 - **D114** — `gh` résout par défaut vers le remote **upstream**
   `mixelpixx/Konnect`. Toute commande `gh` visant notre travail doit porter
   `-R nevenfo/kicad-agentic-mcp`, sans quoi on lit les PR d'upstream (leur #10
@@ -84,17 +99,25 @@ Aucun.
   encore dérivé de `pos`.
 - `crates/konnect-sexp/src/schematic.rs` — `extract_power_symbol_labels`,
   `extract_all_net_labels`, `LibPin::electrical_type`.
-- `crates/konnect-core/src/tools/pcb_board.rs` — cible de P.6.5 (`#142`, lecture
-  des nets de pad par index fixe) et de P.6.6 (`#153`, `add_layer`).
+- `crates/konnect-sexp/src/net.rs` — accesseurs de nets des deux formes.
+- `crates/konnect-sexp/src/parser.rs` — `parse_sexp` l.89-111, la retombée
+  « implicit List » que P.6.10 doit traiter.
+- `crates/konnect-core/src/tools/pcb_board.rs` — `add_layer`, cible de P.6.6
+  (`#153`).
 - `crates/konnect-core/tests/cli_tools.rs` + `fixtures/unrouted.kicad_pcb`.
-- `docs/upstream-audit.md` — source des items P.6.5 à P.6.9.
+- `docs/upstream-audit.md` — source des items P.6.6 à P.6.9.
 - `.github/workflows/e2e-kicad.yml` — job gatant, un step par sonde.
 
 ## NEXT ACTION
 
-Implémenter P.6.5 — `#142` : sur une carte KiCad 10, le net d'un pad est lu à un
-index fixe, donc tout pad rapporte un net vide ; les comptages de nets et les
-ids rendus par `add_net` sont dérivés par sous-chaîne. Relire l'entrée `#142` de
-`docs/upstream-audit.md` pour la mécanique exacte avant de coder, puis valider
-par `cargo fmt` / `clippy -D warnings` / `cargo test --workspace --lib --tests`
-plus la sonde live `cli_tools` avec `KICAD_CLI`.
+Implémenter P.6.6 — `#153`, moitié écriture : `add_layer` cherche la fermeture
+du bloc par le littéral `"\n  )"` (retour à la ligne plus deux espaces), qu'un
+board KiCad 10 indenté par tabulations ne contient jamais ; la retombée trouve
+alors la première `)` du bloc, c'est-à-dire la fin de la *première entrée de
+layer*, et le nouveau layer s'écrit à l'intérieur — le board devient
+inouvrable. La moitié lecture est déjà implémentée ici. Relire l'entrée `#153`
+de `docs/upstream-audit.md` avant de coder. Le test discriminant doit partir
+d'un board indenté par tabulations et prouver que le résultat se recharge, de
+préférence via `kicad-cli`. Valider par `cargo fmt` / `clippy -D warnings` /
+`cargo test --workspace --lib --tests` plus la sonde live `cli_tools` avec
+`KICAD_CLI`.
