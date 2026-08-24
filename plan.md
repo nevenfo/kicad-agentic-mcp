@@ -2839,3 +2839,197 @@ documents send a reader to another repository's releases.
 
 ### Validation
 There is no Phase P. Nothing in this phase added a capability.
+
+# Phase P — Schematic round-trip fidelity — P.1–P.5 DONE, P.6 open
+
+Opened 2026-08-24 by an explicit user request after V1 closure. Phase O said
+there is no Phase P; that statement described the V1 scope, and the user has
+opened work beyond it. Nothing in Phase O is reopened or re-marked.
+
+## Objectif
+
+Close the two demonstrated schematic information losses inherited from the
+`5cd6454` baseline, bound the rest of upstream's correctness work to a
+classified list, and make the real-KiCad E2E a condition of publishing a
+release. No new feature, no architecture change, no upstream bulk merge.
+
+## Dépendances
+
+None outside the repository. The KiCad oracle is `kicad-cli` 10.0.3 locally
+(`C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe`) and
+10.0.5 in `e2e-kicad.yml`, which stays the pinned CI baseline.
+
+## Upstream anchors (verified in this repository, not from a description)
+
+- `#144` = merge `8dd54e8`, *fix(schematic): preserve (lib_name …) and resolve
+  lib_symbols like KiCad*, 2026-08-14. Fixes issue `#143`. 15 files.
+- `#209` = merge `1d31ad4`, *fix(schematic): preserve custom paper dimensions
+  and portrait flag*, 2026-08-15. 2 files.
+- Fork baseline = `5cd6454` (2026-08-05), the merge-base with `upstream/main`.
+  Neither fix is present here: `find_lib_symbol`, `lib_name` (as a `Symbol`
+  field), `paper_args` and `unmodelled_children` all return zero hits.
+
+## P.1 — Discriminating regressions, written first — DONE
+
+### Objectif
+Prove the two defects on today's code before touching production, so the fix
+is measured against a red test and not against an argument.
+
+### Tâches
+- [x] P.1.1 `paper` regression: `(paper "User" 292.1 205.105)` and
+      `(paper "A4" portrait)` through ≥3 load/write cycles, in
+      `konnect-schematic-editor/tests/integration.rs`
+- [x] P.1.2 `lib_name` regression: a derived-symbol fixture whose pins resolve
+      differently under `lib_name` and under `lib_id`, asserted at the
+      `konnect-schematic-editor` level and at the `konnect-core` netlist level
+- [x] P.1.3 Both suites run red on `HEAD` with the exact failure recorded
+
+### Validation
+`cargo test` shows the new tests failing, and failing for the modelled reason.
+
+## P.2 — `paper` fidelity (#209) — DONE
+
+### Objectif
+`(paper …)` keeps every argument KiCad wrote after the page-size name.
+
+### Tâches
+- [x] P.2.1 `Schematic.paper_args: Vec<SexpNode>`, filled from
+      `child.args()[1..]` on load and re-emitted after the name on write
+- [x] P.2.2 P.1.1 turns green; a plain `(paper "A4")` gains no token
+- [x] P.2.3 A custom-paper fixture is accepted by a real `kicad-cli`
+
+### Validation
+Targeted tests green; `kicad-cli sch export netlist` accepts the custom-paper
+fixture locally, and the same check runs in `e2e-kicad.yml`.
+
+## P.3 — `lib_name` fidelity and symbol resolution (#144) — DONE
+
+### Objectif
+A symbol resolves through the `lib_symbols` entry KiCad resolves it through,
+and a load/write cycle stops deleting children the model does not know.
+
+### Tâches
+- [x] P.3.1 `Symbol.lib_name`, `Symbol.exclude_from_sim`,
+      `Symbol::lib_symbol_name()`, emitted in eeschema's order
+- [x] P.3.2 Allow-list → deny-list for preserved children of `Symbol` and
+      `Sheet` (`unmodelled_children`)
+- [x] P.3.3 `konnect_sexp::schematic`: `SymbolInstance.lib_name`,
+      `lib_symbol_name()`, `find_lib_symbol()`
+- [x] P.3.4 Every `lib_syms.iter().find(… == inst.lib_id)` call site in
+      `konnect-core` routed through `find_lib_symbol`
+- [x] P.3.5 `ensure_lib_symbol`'s presence check made structural instead of a
+      `{:?}` substring search
+- [x] P.3.6 P.1.2 turns green: netlist identical before/after an unrelated
+      edit, no net merged or lost
+
+### Validation
+Targeted tests green, full workspace test suite green, and the derived fixture
+produces the same `kicad-cli` netlist before and after an unrelated edit.
+
+## P.4 — Bounded upstream differential audit — DONE
+
+### Objectif
+Classify — not synchronise — upstream's correctness and safety fixes since
+`5cd6454`, restricted to data loss, wrong connectivity, wrong symbol/net
+resolution, false success, wrong ERC/DRC, KiCad incompatibility, wrong exports,
+and infidelity with a functional effect.
+
+### Tâches
+- [x] P.4.1 Enumerate candidate upstream fixes in those categories
+- [x] P.4.2 For each: does the faulty mechanism still exist here?
+- [x] P.4.3 Classify `BACKPORT NOW` / `LATER` / `NOT APPLICABLE` with impact,
+      plausible frequency, cost and regression risk
+- [x] P.4.4 Implement only the `BACKPORT NOW` items that stay small,
+      independent and proven, each with its own discriminating test
+- [x] P.4.5 Record the classification in `docs/upstream-audit.md`
+
+### Validation
+Every `BACKPORT NOW` item carries a test that is red before it and green after.
+Anything larger is documented with a precise next action, not started.
+
+## P.5 — Release gate — DONE
+
+### Objectif
+A red mandatory real-KiCad E2E must stop the publication of a release. Today
+`release.yml`'s `release` job needs only `[build, pcm-package]`, and
+`e2e-kicad.yml` runs beside it on the same tag without gating it — confirmed by
+reading both files.
+
+### Tâches
+- [x] P.5.1 Make the critical real-KiCad E2E a prerequisite of publication
+      without duplicating jobs or forking the CI structure
+- [x] P.5.2 KiCad stays pinned at 10.0.5
+- [x] P.5.3 The P.2/P.3 regressions that genuinely need KiCad run inside that
+      gating path
+
+### Validation
+Reading the workflow shows no path from a red mandatory E2E to a published
+release; the workflow files stay valid YAML and the local gate stays green.
+
+## P.6 — Deferred upstream correctness backlog — TODO
+
+### Objectif
+P.4 was scoped as a classification and produced one: 15 `BACKPORT NOW` items,
+roughly 1600 lines of production change across the PCB, export, ERC/DRC and
+connectivity paths. Implementing them inside P.4 would have turned a bounded
+audit into the general upstream synchronisation the phase brief forbids, so
+only #174 was carried out there. This section holds the remainder so the
+classification does not decay into a document nobody acts on.
+
+Full reasoning, mechanism-by-mechanism, in `docs/upstream-audit.md`. Two items
+came from outside the strategic review's candidate list: they landed directly
+on upstream `main`, so a `--merges` enumeration never saw them, and both
+outrank everything the review named.
+
+### Dépendances
+None. Each item below is independent of the others except where stated.
+
+### Tâches
+- [ ] P.6.1 `e7eeeac` — `run_drc` reads only the `violations` array and drops
+      `unconnected_items` (unrouted copper, severity `error`) and
+      `schematic_parity`; `pos` is read at the violation level, a field KiCad
+      never writes, so every reported position is null. This fork's own
+      evidence gate approves boards with unrouted copper.
+      `konnect-core/src/tools/cli.rs`, gates in `evidence/validators.rs`,
+      `pcb_export.rs`, `verification.rs`. Highest priority of the whole audit.
+- [ ] P.6.2 `9a56233` + #220 — `create_netclass` writes a `(netclass …)` node
+      into the `.kicad_pcb`; KiCad 10 reads netclasses from `.kicad_pro` only,
+      and the insertion point is `rfind(')')` when no `(net_classes` block
+      exists — a block KiCad has not written since v6. Produces boards KiCad
+      refuses to open. `pcb_routing.rs`.
+- [ ] P.6.3 #262 — power symbols absent from the schematic net graph: every
+      `power:` rail reads as unconnected. Needs `extract_power_symbol_labels`
+      and `LibPin::electrical_type`; `LabelKind::PowerSymbol` is already a dead
+      variant here. Largest of the remaining items.
+- [ ] P.6.4 #297 + #298 — only `items[0]` of an ERC/DRC violation is kept.
+      Fold the `pos` correction from P.6.1 into the same patch.
+- [ ] P.6.5 #142 — KiCad 10 pad net read at a fixed index, so every pad
+      reports an empty net; net counts and `add_net` ids by substring.
+- [ ] P.6.6 #153 (write half) — `add_layer` locates the block close with a
+      literal newline-plus-two-spaces, so on tab-indented KiCad 10 boards the
+      layer is written
+      inside the first entry, producing an unopenable board. The read half is
+      already implemented here.
+- [ ] P.6.7 Smaller, independent, each with its own discriminating test:
+      #212 (one junction dot per wire instead of per T — 3 sites here, not
+      upstream's 2), #213 (`#PWR{count+1}` re-issues a live designator),
+      #214 (deleted wires leave orphaned junction dots), #274 (pad count and
+      courtyard by substring), #140 (net and track counts by substring),
+      #139 (`export_bom` ignores `exclude_dnp` and `format`, both advertised
+      in its schema), #266 (`--layers` repeated per layer, no `--mode-single`),
+      #263 (`run_erc` on a sub-sheet reports invocation artefacts).
+- [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
+      carries its precise next action in `docs/upstream-audit.md`; re-read it
+      rather than re-deriving. #271 depends on P.6.3.
+- [ ] P.6.9 Appendix A of `docs/upstream-audit.md` lists 16 further
+      direct-to-`main` upstream fix commits that are plainly in-category and
+      were never triaged (`f2372ca` zone nets written as net 0, `e7b0c54`
+      child-sheet instances, `f8a8db0` whole-sheet reformat on write,
+      `de70351` field text lost on `bulk_move`, …). Triage them the way P.4
+      triaged the merges, before implementing anything from the list.
+
+### Validation
+Each implemented item carries a test that is red before it and green after,
+and — where KiCad is the only honest oracle — a probe in
+`schematic_fidelity_live.rs` or its PCB equivalent, inside the gating E2E job.
+No item is closed on "the existing suite still passes".

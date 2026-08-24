@@ -2,73 +2,59 @@
 
 ## Phase actuelle
 
-**Aucune. V1 est terminée.** Phase O (release et clôture) est close le
-2026-08-24, après N et après toutes les phases du chemin critique (D, F, K, L,
-M). Le projet n'a plus de tâche actionnable.
+**P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. Branche
+de travail : `ai/P-schematic-fidelity`, partant de `cdc7273`.
 
 ## Tâche actuelle
 
-Aucune.
+Aucune en cours. P.6 (backlog de correctness upstream différé) est ouverte et
+non commencée.
 
 ## Dernière tâche validée
 
-**Phase O — V1 release & project closure.** Le dépôt a été audité (branche,
-remotes, fichiers suivis, fuite de données, licences), validé, aligné sur ses
-propres mesures, versionné, tagué et publié.
+P.5 — release gate. `e2e-kicad.yml` devient un workflow `workflow_call` appelé
+par `release.yml` avec `gating: true` ; le job `release` a `needs: [build,
+pcm-package, e2e-kicad]`. Le trigger `push: tags` a été retiré d'`e2e-kicad.yml`
+(il provoquait un double run au tag) ; `live-ipc`, piloté par une GUI pcbnew,
+est exclu du gate par `if: ${{ !inputs.gating }}` et reste sur le run
+hebdomadaire.
 
-État de release :
-- commits finaux sur `agentic/main`, poussés : `chore: prepare v1.0.0 release`,
-  puis `fix: the schematic-viewer lock kept the old workspace versions` — la CI
-  a attrapé ce que le gate local ne peut structurellement pas voir, le viewer
-  étant exclu du workspace et portant son propre lock (O.7.3)
-- tag : `v1.0.0`, annoté et poussé sur `58bc62f`, le commit que la CI
-  32719802865 a validé (`git rev-list -n1 v1.0.0`). Les preuves de clôture
-  écrites après la publication — dont cette section — sont postérieures au tag
-  et ne le déplacent pas
-- gate local : `.\gate.ps1` **PASSED** au bump de version (fmt, clippy
-  `-D warnings`, 1 123 tests, doctests, build release). Le correctif de lock ne
-  touche rien que le gate exécute ; il est vérifié comme la CI le vérifie,
-  `cargo metadata --locked` contre le manifeste du viewer
-- CI distante : **verte**, 7 jobs sur 7 (Format, Clippy, Check & Test sur
-  windows/ubuntu/macos, Schematic viewer, PCM packaging validation)
-- GitHub Release : **publiée** —
-  https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.0.0, titre
-  *KiCad Agentic MCP v1.0.0*, corps repris de `RELEASE_NOTES.md`. Workflow
-  `Release` (run 32720207528) vert, 8 jobs sur 8
-- artefacts : 7 — 4 binaires autonomes (linux-gnu, x86_64/aarch64 darwin,
-  windows-msvc) et 3 paquets PCM validés contre le schéma `packages.v1` de
-  KiCad avant upload. Le zip Windows a été rouvert après publication :
-  `versions[]` à `1.0.0`/`stable`/`platforms ["windows"]`, aucun champ
-  `download_*` inventé, 202 tools dans le manifeste du plugin, viewer inclus,
-  et le binaire répond `konnect 1.0.0` à 21,8 MB
-- `E2E (real KiCAD)` a tourné sur le tag (run 32720207516) sans le bloquer, et
-  passe : *Full design loop* et *Live IPC against a running pcbnew*
-
-Ce que la phase a corrigé, et rien d'autre : deux compteurs faux hérités de
-N.1.6 (`packaging/metadata.json` et `plugin/plugin.json` disaient 185 tools au
-lieu de 202), l'identité et les liens du README (il envoyait ses lecteurs vers
-les releases d'upstream), l'URL affichée par les deux scripts PCM, et la
-version `0.2.2 → 1.0.0` là où elle est réellement portée. Aucune feature,
-aucune cible déplacée, aucun critère raté repeint en succès.
+Validation de l'ensemble P.1–P.5 :
+- `cargo fmt --all -- --check` : PASS
+- `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
+- `cargo test --workspace --locked --lib --tests` : PASS, 50 binaires ok, 0 échec
+- `cargo test --workspace --locked --doc` : PASS
+- `cargo build --release -p konnect` : PASS
+- oracle `kicad-cli` 10.0.3, `schematic_fidelity_live -- --ignored` : 2/2 PASS
+- YAML des trois workflows relu et parsé ; graphe de jobs vérifié
 
 ## Décisions actives
 
-- Les critères V1 ratés restent ratés (INV6) : `WALL_CLOCK_P50` 86 ms contre
-  77 ms, external tokens/task 2 249 contre ≤ 2 000, `tools/list` 2 831 contre
-  ~1 000. `LLM_CALLS_PER_SUCCESSFUL_TASK` (15 → 5,5 dans le harnais model-fit)
-  n'est pas revendiqué : aucune baseline n'a jamais été mesurée pour cette
-  métrique.
-- D99 : pas de `[profile.release]` — le binaire Windows reste à 21,8 MB non
-  strippé, et c'est la taille que le README affiche.
-- D98 : le projet peut consommer la capacité Claude nécessaire sans nouvel
-  accord par run. D97 : un re-run remplace un void dans sa campagne.
-- Les 187 tools cités par `decisions.md` D44 et `docs/capability-matrix.md`
-  désignent la surface de la **baseline** à `5cd6454` : dénominateur gelé.
-- `packaging/metadata.json`'s `versions[]` décrit encore les paquets v0.2.2
-  d'upstream (URL et sha256 réels de ce dépôt-là). Laissé tel quel :
-  `build-pcm.{ps1,sh}` n'en garde que la structure, stampe la version du tag et
-  supprime les champs `download_*` avant d'écrire le zip. Ces entrées ne
-  serviraient qu'à une soumission au dépôt kicad-addons, qui n'est pas dans V1.
+- **D102** — ancres upstream vérifiées dans ce dépôt : `#144` = merge `8dd54e8`
+  (corrige l'issue `#143`), `#209` = merge `1d31ad4`. Baseline du fork :
+  `5cd6454`, merge-base avec `upstream/main`.
+- **D104** — oracle KiCad : `kicad-cli` **10.0.3** en local
+  (`%LOCALAPPDATA%\Programs\KiCad\10.0\bin`), **10.0.5** épinglé dans
+  `e2e-kicad.yml` et inchangé.
+- **D106** — la fixture `derived_lib_name.kicad_sch` discrimine au niveau de
+  l'oracle, pas seulement des assertions internes : mesuré avec `kicad-cli`,
+  elle produit 6 nets nommés avec `lib_name` préservé et 2 sans (les 4 nets
+  dérivés disparaissent, remplacés par un `Net-(C1-Pad??)` auto-généré), et
+  KiCad n'émet aucun avertissement dans les deux cas.
+- **D107** — P.4 s'arrête à la classification. L'audit a produit 15 items
+  `BACKPORT NOW` (~1600 lignes) ; les implémenter aurait été la synchronisation
+  générale avec upstream que le brief de phase interdit. Seul **#174** a été
+  backporté dans P.4, parce qu'il tient en une fonction et se prouve par un
+  test trivial. Le reste est P.6.
+- **D108** — deux des correctifs les plus graves de l'audit ne figuraient dans
+  aucune liste de candidats : `e7eeeac` et `9a56233` ont atterri directement sur
+  `upstream/main`, donc une énumération par `--merges` ne pouvait pas les voir.
+  Toute reprise de l'audit doit énumérer aussi les commits directs.
+- **D109** — la heredoc de cet environnement shell ne préserve pas les
+  backslashes, même en `<<'EOF'`. Tout contenu qui en comporte passe par
+  Write/Edit, jamais par heredoc.
+- Les décisions V1 antérieures (INV6, D97…D101) restent actives. D103 et D105
+  sont résolues et retirées.
 
 ## Blocage actif
 
@@ -76,26 +62,22 @@ Aucun.
 
 ## Fichiers / zones utiles
 
-- `RELEASE_NOTES.md` — ce que V1 est, ce qu'elle mesure, ce qu'elle rate, ses
-  limites connues. Source unique du corps de la GitHub Release.
-- `docs/benchmark.md` — toutes les mesures ; `python bench/m1_table.py`
-  régénère les tables M.1 depuis les artefacts committés sans rien exécuter.
-- `.github/workflows/release.yml` — la méthode officielle de packaging : elle
-  se déclenche sur un tag `v*`.
-- `.\gate.ps1` — fmt, clippy, tests, doctests, build release.
+- `crates/konnect-schematic-editor/src/schematic/{mod,symbol,sheet}.rs` —
+  `paper_args`, `Symbol::lib_name`, `exclude_from_sim`, `unmodelled_children`.
+- `crates/konnect-sexp/src/schematic.rs` — `find_lib_symbol`,
+  `SymbolInstance::lib_symbol_name`. `parser.rs` — `unescape` en un passage.
+- `crates/konnect-core/tests/schematic_fidelity_live.rs` — oracle KiCad,
+  `#[ignore]`, câblé dans le job gatant.
+- `crates/konnect-core/tests/fixtures/derived_lib_name.kicad_sch`.
+- `docs/upstream-audit.md` — classification bornée, 553 lignes, sources de P.6.
+- `.github/workflows/{release,e2e-kicad}.yml`.
 
 ## NEXT ACTION
 
-**Aucune.** V1 est clôturée : commit final, tag `v1.0.0`, gate et CI verts,
-GitHub Release publiée, aucune tâche actionnable restante.
-
-Deux éléments restent ouverts par construction, et ni l'un ni l'autre n'est
-actionnable sur cette machine :
-- **D.5.3** reste conditionnelle — la capacité de 64 entrées du magasin de
-  preuves ne sera reconsidérée que si une session réelle la sature.
-- **I.1** reste conditionnée à **KiCad 11** — la réévaluation du chemin
-  schematic IPC attend `kicad-cli api-server` et `kicad-python` 0.8.0 ; la
-  position par défaut est toujours de ne pas forker KiCad (D3).
-
-Reprise uniquement si (a) KiCad 11 est installé ici, ce qui débloque I.1, ou
-(b) l'utilisateur ouvre explicitement une V2. Il n'y a pas de Phase P.
+Implémenter P.6.1 — `e7eeeac` : faire lire à `run_drc` les trois tableaux du
+JSON de `kicad-cli pcb drc` (`violations`, `unconnected_items`,
+`schematic_parity`) et corriger `pos`, lu au niveau de la violation alors que
+KiCad l'écrit sur chaque item impliqué. Écrire d'abord le test rouge sur une
+fixture de board au cuivre non routé, vérifier qu'il passe aujourd'hui le gate
+d'evidence, puis corriger `crates/konnect-core/src/tools/cli.rs` et relancer
+`cargo test -p konnect-core` plus l'oracle `kicad-cli`.
