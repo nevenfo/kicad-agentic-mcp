@@ -86,30 +86,40 @@ impl SexpNode {
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
 /// Parse a full KiCAD S-expression document into a `SexpNode::List`.
+///
+/// Input the parser cannot consume as **one** document is an error. It used to
+/// wrap whatever forms it managed to read into an implicit `List` and return
+/// `Ok`, and the loop that built that list gave up on the first form it could
+/// not read — so a truncated or unbalanced file came back as success holding a
+/// fraction of itself, and every tool above answered confidently about a
+/// document it had mostly not seen. That is the same false-clean shape as a
+/// validator reporting zero findings because it never ran.
+///
+/// Concretely, on `demos/royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb`
+/// — a 3.6 MB board KiCad itself ships, whose root closes at byte 14735 —
+/// `parse_sexp` answered `Ok` with a 3-child root whose `head()` was `None`
+/// and 3 pads out of roughly a thousand.
+///
+/// Removing the fallback was measured, not assumed: no caller in this
+/// workspace relies on it. Every site that parses a fragment rather than a
+/// file wraps it in an explicit root first — `(kicad_sch …)` in
+/// `sch_wiring`, `(kicad_pcb …)` in `layers` — and no KiCad file format has
+/// more than one top-level form. With the fallback made unreachable
+/// altogether, all 50 test suites still pass.
 pub fn parse_sexp(input: &str) -> Result<SexpNode, SexpError> {
     match sexp(input) {
-        Ok(("", node)) => Ok(node),
-        Ok((rest, node)) => {
-            // Some remaining input is acceptable (e.g. trailing whitespace)
-            if rest.trim().is_empty() {
-                Ok(node)
-            } else {
-                // Multiple top-level nodes — wrap in implicit List
-                let rest_str = format!("{}{}", " ", rest.trim());
-                let mut nodes = vec![node];
-                let mut remaining = rest_str.as_str();
-                while !remaining.trim().is_empty() {
-                    match sexp(remaining.trim()) {
-                        Ok((r, n)) => {
-                            nodes.push(n);
-                            remaining = r;
-                        }
-                        Err(_) => break,
-                    }
-                }
-                Ok(SexpNode::List(nodes))
-            }
-        }
+        Ok((rest, node)) if rest.trim().is_empty() => Ok(node),
+        // A document that does not end where its first form ends: a second
+        // top-level form, or the remains of one the parser could not read.
+        // The offset is where reading stopped, which on a large file is the
+        // only practical way to find the damage.
+        Ok((rest, _)) => Err(SexpError::Parse {
+            offset: input.len() - rest.len(),
+            message: format!(
+                "{} bytes left after the first top-level form; a KiCAD document holds exactly one",
+                rest.trim().len()
+            ),
+        }),
         Err(e) => Err(SexpError::Parse {
             offset: 0,
             message: format!("{}", e),
@@ -276,5 +286,54 @@ mod tests {
     fn unknown_escape_is_preserved_verbatim() {
         let n = parse_sexp(r#"(p "a\qb")"#).unwrap();
         assert_eq!(n.get(1).and_then(|c| c.as_str()), Some(r"a\qb"));
+    }
+
+    // ─── One document, or an error ─────────────────────────────────────────
+
+    /// Trailing whitespace is not leftover input; KiCAD ends its files with a
+    /// newline.
+    #[test]
+    fn trailing_whitespace_is_still_one_document() {
+        assert!(parse_sexp(
+            "(kicad_pcb (version 20250610))
+
+"
+        )
+        .is_ok());
+    }
+
+    /// The defect this refusal exists for: a document whose root closes early
+    /// used to come back `Ok`, holding whatever fragments the parser managed
+    /// before it gave up. A caller then reported success about a file it had
+    /// mostly not read.
+    #[test]
+    fn a_document_that_closes_early_is_an_error_not_a_partial_tree() {
+        let truncated = "(kicad_pcb (version 20250610)) (footprint \"R\" (pad \"1\"";
+        let error = parse_sexp(truncated).expect_err("the tail must not be dropped in silence");
+        assert!(
+            format!("{error}").contains("left after the first top-level form"),
+            "the error should say what was left over: {error}"
+        );
+    }
+
+    /// The error carries where reading stopped. On a multi-megabyte board that
+    /// offset is the only practical way to find the damage.
+    #[test]
+    fn the_error_points_at_the_byte_where_the_document_ended() {
+        let root = "(kicad_pcb (version 20250610))";
+        let input = format!("{root} (stray)");
+        match parse_sexp(&input) {
+            Err(SexpError::Parse { offset, .. }) => assert_eq!(offset, root.len()),
+            other => panic!("expected a parse error with an offset, got {other:?}"),
+        }
+    }
+
+    /// Two well-formed top-level forms are refused too. No KiCAD file format
+    /// has more than one, and no caller in this workspace relied on the
+    /// implicit `List` that used to be returned here — every fragment site
+    /// wraps its input in an explicit root first.
+    #[test]
+    fn several_top_level_forms_are_refused_rather_than_wrapped() {
+        assert!(parse_sexp("(net 1 \"GND\") (net 2 \"VCC\")").is_err());
     }
 }

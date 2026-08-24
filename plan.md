@@ -3057,7 +3057,7 @@ None. Each item below is independent of the others except where stated.
       so nothing regresses; on `pic_programmer.kicad_pcb` (20260206) the net
       count goes from 0 to 111 and **236 of its 247 pads stop reporting an
       empty net**.
-- [ ] P.6.10 `parse_sexp` reports success on a document it could not consume.
+- [x] P.6.10 `parse_sexp` reports success on a document it could not consume.
       Found while measuring P.6.5's oracle, not in upstream's audit.
       `crates/konnect-sexp/src/parser.rs:89-111`: when the first form does not
       consume the input, the parser wraps whatever fragments it managed into
@@ -3077,6 +3077,30 @@ None. Each item below is independent of the others except where stated.
       skipping in silence — see D113 for why silence is the trap here.
       Decide deliberately what the implicit-`List` fallback was for before
       removing it; some caller may rely on it for multi-form fragments.
+      DONE, and that decision was measured rather than argued. Both halves of
+      the fallback were made unreachable in turn and the whole suite re-run:
+      **nothing depends on either**. Every site that parses a fragment instead
+      of a file already wraps it in an explicit root — `(kicad_sch …)` in
+      `sch_wiring`, `(kicad_pcb …)` in `layers` — and no KiCad file format has
+      more than one top-level form. So the fallback is gone entirely rather
+      than half-fixed: `parse_sexp` returns `Err` for input it cannot consume
+      as one document, carrying the **byte offset** where reading stopped,
+      which on a multi-megabyte board is the only practical way to find the
+      damage.
+      Second part, the board-corpus conformance: `conformance_test.rs` gains
+      `collect_boards` and a board test, and its demo lookup learns the
+      per-user `%LOCALAPPDATA%` install — the omission behind D113, which is
+      why these tests reported "passed" in 0.00 s on a machine that had KiCad
+      all along. They now find the corpus with no `KICAD_DEMOS` set, an
+      explicit-but-missing `KICAD_DEMOS` asserts instead of skipping, and the
+      counts are printed and asserted so a run seeing zero files fails.
+      Measured: **115/115 schematics, 18/19 boards**, the nineteenth being
+      D116's genuinely malformed `RoyalBlue54L-Feather.kicad_pcb`, named in a
+      `KNOWN_BAD_BOARDS` allow-list with the measurement that justifies it.
+      That entry is two-sided: a known-bad file that starts parsing fails the
+      test too, so neither a fixed KiCad nor a parser that began accepting
+      damage can pass silently. Cross-proof, run both ways: with the old
+      parser restored, that board "parses" and the board test fails saying so.
 - [x] P.6.6 #153 (write half) — `add_layer` locates the block close with a
       literal newline-plus-two-spaces, so on tab-indented KiCad 10 boards the
       layer is written

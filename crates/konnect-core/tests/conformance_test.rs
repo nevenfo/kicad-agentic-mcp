@@ -14,23 +14,40 @@ use konnect_sexp::{parse_sexp, writer};
 use std::path::PathBuf;
 
 fn demo_dirs() -> Option<PathBuf> {
+    // An explicit KICAD_DEMOS that does not exist is a mistake worth shouting
+    // about: the whole point of setting it is to stop these tests skipping,
+    // and a typo would otherwise skip them just as quietly as no KiCAD at all.
     if let Ok(p) = std::env::var("KICAD_DEMOS") {
-        let pb = PathBuf::from(p);
-        if pb.exists() {
-            return Some(pb);
-        }
+        let pb = PathBuf::from(&p);
+        assert!(
+            pb.exists(),
+            "KICAD_DEMOS points at {p}, which does not exist"
+        );
+        return Some(pb);
     }
-    let candidates: &[&str] = if cfg!(target_os = "windows") {
-        &[
-            r"C:\KiCad\10.0\share\kicad\demos",
-            r"C:\Program Files\KiCad\10.0\share\kicad\demos",
-        ]
+    let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
+        // A per-user install lives under %LOCALAPPDATA%, and leaving it out is
+        // why these tests reported "passed" in 0.00 s on a machine that did
+        // have KiCad: the lookup simply never found the corpus.
+        let mut paths = vec![
+            PathBuf::from(r"C:\KiCad\10.0\share\kicad\demos"),
+            PathBuf::from(r"C:\Program Files\KiCad\10.0\share\kicad\demos"),
+        ];
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            paths.push(PathBuf::from(local).join(r"Programs\KiCad\10.0\share\kicad\demos"));
+        }
+        paths
     } else if cfg!(target_os = "macos") {
-        &["/Applications/KiCad/KiCad.app/Contents/SharedSupport/demos"]
+        vec![PathBuf::from(
+            "/Applications/KiCad/KiCad.app/Contents/SharedSupport/demos",
+        )]
     } else {
-        &["/usr/share/kicad/demos", "/usr/local/share/kicad/demos"]
+        vec![
+            PathBuf::from("/usr/share/kicad/demos"),
+            PathBuf::from("/usr/local/share/kicad/demos"),
+        ]
     };
-    candidates.iter().map(PathBuf::from).find(|p| p.exists())
+    candidates.into_iter().find(|p| p.exists())
 }
 
 fn collect_schematics(root: &std::path::Path) -> Vec<PathBuf> {
@@ -89,6 +106,105 @@ fn every_installed_demo_schematic_parses() {
     assert!(
         failures.is_empty(),
         "parser rejected eeschema-authored files:\n  {}",
+        failures.join("\n  ")
+    );
+}
+
+fn collect_boards(root: &std::path::Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "kicad_pcb") {
+                    out.push(p);
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Boards KiCad itself ships that are genuinely malformed, and why.
+///
+/// This is an allow-list of *measured* facts, not a way to quiet a failing
+/// parser: each entry is a file whose own bytes are unbalanced, verified
+/// independently of us. Anything else that fails is our bug.
+const KNOWN_BAD_BOARDS: &[(&str, &str)] = &[(
+    "RoyalBlue54L-Feather.kicad_pcb",
+    "3.6 MB whose root closes at byte 14735, ending 349 closing parens ahead; \
+     a paren-balance scan over interf_u and pic_programmer returns depth 0, so \
+     the imbalance is this file's and not the scanner's",
+)];
+
+/// Every board KiCad ships must parse, or be a named, explained exception.
+///
+/// The board half of the corpus had no conformance test at all, which is how
+/// `parse_sexp` could answer `Ok` on a 3.6 MB board while holding three of its
+/// pads: nothing ever asked. The counts are printed and asserted so that a run
+/// finding zero files fails instead of passing in 0.00 s — the exact trap that
+/// made these tests look green on a machine that had KiCad installed all along.
+#[test]
+fn every_installed_demo_board_parses_or_is_a_known_bad_file() {
+    let Some(root) = demo_dirs() else {
+        eprintln!("SKIP: no KiCAD demos found (set KICAD_DEMOS to enable)");
+        return;
+    };
+    let boards = collect_boards(&root);
+    assert!(
+        !boards.is_empty(),
+        "demo dir exists but contains no .kicad_pcb files: {}",
+        root.display()
+    );
+
+    let mut parsed = 0usize;
+    let mut failures = Vec::new();
+    let mut expected_failures = Vec::new();
+    for board in &boards {
+        let name = board
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let known_bad = KNOWN_BAD_BOARDS.iter().find(|(file, _)| *file == name);
+        let content = std::fs::read_to_string(board).unwrap_or_default();
+        match (parse_sexp(&content), known_bad) {
+            (Ok(node), None) => {
+                assert_eq!(
+                    node.head(),
+                    Some("kicad_pcb"),
+                    "unexpected root in {}",
+                    board.display()
+                );
+                parsed += 1;
+            }
+            (Err(e), None) => failures.push(format!("{}: {}", board.display(), e)),
+            (Err(_), Some((_, why))) => expected_failures.push(format!("{name}: {why}")),
+            // A file we recorded as malformed now parses: either KiCad shipped
+            // a fixed copy or the parser started accepting damage. Both need a
+            // human, so neither may pass silently.
+            (Ok(_), Some((_, why))) => failures.push(format!(
+                "{} parses, but is on the known-bad list ({why}). Re-measure and \
+                 update KNOWN_BAD_BOARDS.",
+                board.display()
+            )),
+        }
+    }
+    eprintln!(
+        "parsed {}/{} demo boards ({} known-bad)",
+        parsed,
+        boards.len(),
+        expected_failures.len()
+    );
+    for note in &expected_failures {
+        eprintln!("  known-bad {note}");
+    }
+    assert!(
+        failures.is_empty(),
+        "parser disagreed with pcbnew-authored files:\n  {}",
         failures.join("\n  ")
     );
 }

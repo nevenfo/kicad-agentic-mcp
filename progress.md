@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
 est ouverte : les huit items d'origine (P.6.7.1 à P.6.7.8) sont clos,
-P.6.7.9 à P.6.7.11 sont des découvertes ouvertes, P.6.8 à P.6.11
+P.6.10 est close, P.6.7.9 à P.6.7.11 sont des découvertes ouvertes, P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -15,27 +15,28 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.8 — `run_erc` refuse une sous-feuille au lieu de rapporter des artefacts
-d'invocation. `owning_project_root` dans `sch_export.rs` reconnaît une feuille
-appartenant à un projet enraciné ailleurs, et le refus est un
-`invalid_argument` structuré sur `schematic` qui **nomme la racine** à
-réessayer. Borne assumée : la détection regarde le répertoire propre du fichier,
-pas ses ancêtres — une feuille déplacée hors du dossier de son projet n'est pas
-attrapée.
+P.6.10 — `parse_sexp` refuse une entrée qu'il n'a pas consommée comme **un**
+document, au lieu de fabriquer une racine implicite et de rendre `Ok`.
+L'erreur porte l'**offset** où la lecture s'est arrêtée. La retombée a été
+retirée entièrement, pas à moitié : ses deux moitiés ont été rendues
+inatteignables tour à tour et la suite relancée — rien n'en dépend, et tout
+site qui parse un fragment l'enveloppe déjà dans une racine explicite.
 
-Défaut reproduit contre `kicad-cli` 10.0.3 avant de coder, sur une copie de
-`demos/complex_hierarchy` : `sch erc` sur la sous-feuille `ampli_ht` rend **67
-violations, dont 46 `lib_symbol_issues`**, contre **0** sur la feuille racine.
+Deuxième partie : `conformance_test.rs` gagne `collect_boards` et un test de
+corpus sur les boards, et son lookup apprend l'install par utilisateur
+`%LOCALAPPDATA%` — l'omission derrière D113. Le corpus se trouve désormais sans
+`KICAD_DEMOS`, un `KICAD_DEMOS` explicite mais introuvable échoue au lieu de se
+sauter, et les comptes sont affichés et assertés.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
 - sondes live `cli_tools` avec `KICAD_CLI` : PASS, 10/10
-- rouge-avant vérifié en neutralisant la détection : la sous-feuille résout à
-  `None` et aucun refus n'est émis. La borne inverse est testée aussi
-  explicitement que le défaut — racine, schéma sans projet, voisin non
-  référencé et répertoire multi-projets restent intacts
+- conformance : **115/115 schémas, 18/19 boards**, le dix-neuvième étant le
+  fichier réellement malformé de D116, nommé dans `KNOWN_BAD_BOARDS`
+- preuve croisée dans les deux sens : avec l'ancien parser restauré, ce board
+  « parse » et le test de corpus échoue en le disant
 
 ## Décisions actives
 
@@ -66,12 +67,13 @@ Validation :
   `mixelpixx/Konnect`. Toute commande `gh` visant notre travail doit porter
   `-R nevenfo/kicad-agentic-mcp`, sans quoi on lit les PR d'upstream (leur #10
   est mergée et sans rapport avec la nôtre).
-- **D113** — `conformance_test` se saute **en silence** (« SKIP: no KiCAD demos
-  found ») quand il ne localise pas les démos : son lookup ne connaît pas
-  l'install `%LOCALAPPDATA%`. Trois tests « passed » en 0.00 s signifient donc
-  zéro schéma vérifié. Toujours lancer avec
-  `KICAD_DEMOS=%LOCALAPPDATA%\Programs\KiCad\10.0\share\kicad\demos`, et
-  vérifier la ligne « parsed 115/115 ».
+- **D113** — *résolue par P.6.10 et conservée pour la leçon* : le lookup de
+  `conformance_test` ignorait l'install `%LOCALAPPDATA%`, si bien que les tests
+  se sautaient **en silence** (« SKIP: no KiCAD demos found ») et que trois
+  tests « passed » en 0.00 s signifiaient zéro fichier vérifié. Le lookup
+  connaît désormais ce chemin, un `KICAD_DEMOS` explicite mais introuvable
+  échoue, et les comptes sont assertés. La leçon reste : un test qui peut se
+  sauter doit rendre son silence visible.
 - **D112** — mesures d'oracle de P.6.2 : le bloc `(netclass …)` inséré dans le
   board fait sortir `kicad-cli` en **code 3** ("Échec du chargement de la
   carte") sans écrire de rapport. Et un vrai `.kicad_pro` KiCad 10 porte
@@ -130,18 +132,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Choisir la prochaine tâche de P.6, le lot P.6.7 d'origine étant clos. Les
-candidates, par valeur décroissante :
-- **P.6.10** — `parse_sexp` répond `Ok` sur un document qu'il n'a pas consommé
-  (`konnect-sexp/src/parser.rs:89-111`) : c'est la même forme de faux-propre
-  que P.6.1 et P.5, et elle touche **tout** lecteur de fichier. Deux parties :
-  refuser une entrée non consommée plutôt que fabriquer une racine implicite,
-  et une conformance de corpus sur les boards de démo qui échoue bruyamment
-  (voir D113 et D116, qui donne le cas d'échec attendu).
-- **P.6.9** — triage des 16 correctifs upstream partis directement sur `main`
-  (annexe A de `docs/upstream-audit.md`), à faire avant d'en implémenter un.
-- **P.6.11**, **P.6.7.9**, **P.6.7.10**, **P.6.8** — plus petites, chacune
-  portant son action précise dans `plan.md`.
-
-Sauf indication contraire, prendre **P.6.10** : c'est la plus large et la seule
-dont dépend la confiance dans tous les autres correctifs de lecture.
+Implémenter P.6.9 — triage des 16 correctifs upstream partis directement sur
+`main` (annexe A de `docs/upstream-audit.md` : `f2372ca` nets de zone écrits en
+net 0, `e7b0c54` instances de feuilles filles, `f8a8db0` réécriture de toute la
+feuille à l'écriture, `de70351` texte de champ perdu au `bulk_move`, …). Les
+trier comme P.4 a trié les merges — état dans ce fork, impact, coût — **avant**
+d'en implémenter un seul ; voir D108 pour pourquoi une énumération par
+`--merges` ne peut pas les voir. Produire le classement dans
+`docs/upstream-audit.md`, puis ouvrir les tâches correspondantes dans `plan.md`.
+Ensuite seulement : P.6.11, P.6.7.9, P.6.7.10, P.6.8.
