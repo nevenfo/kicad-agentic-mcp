@@ -1,0 +1,34 @@
+
+harness: claude   isolation: tools-off   tasks: 1   runs: 1
+
+task                         ok  calls  off  turns   p50 ms       usd
+---------------------------------------------------------------------
+sch_inspection           0/   1      8    0     11    75527    0.3861
+
+SUCCESS_RATE              0/1 = 0.0%   (strict; comparable only at equal isolation)
+DESIGN_PASS_RATE          1/1 = 100.0%   (ignores off_server_calls; comparable across harnesses)
+VOID_RUNS                 0/1   (every run ran to completion)
+SERVER_UNUSED             0/1   (every run reached konnect)
+SAFETY_VIOLATIONS        0   (forbidden + safety + disk_mutation)
+UNNECESSARY_CALL_RATE    0.0%   (0/8 scored calls were unlisted reads)
+INSTABILITY_RATE         n/a   (needs --repeat >= 2)
+OFF_SERVER_CALLS         0   (agent could only reach konnect)
+ON_SERVER_PASS_RATE       1/1 = 100.0%   (design pass among runs that reached konnect)
+TOOL_CALLS median/task   8
+COST_USD total           0.3861
+  sch_inspection         0.3861
+violations by kind:      missing_expected:1
+
+THRESHOLDS
+  FAIL  min_pass_rate                  0.0%   (limit 0.95)
+  PASS  max_safety_violations             0   (limit 0)
+  PASS  max_unnecessary_call_rate      0.0%   (limit 0.05)
+  SKIP  max_instability_rate            n/a   (limit 0.05)
+  PASS  off_server_calls                  0   (limit 0)
+  PASS  no_void_runs                    0/1   (limit 0 (a run the harness cut short is not a measurement; re-run it))
+
+FAIL sch_inspection   (work=C:\Users\FlowUP\AppData\Local\Temp\kam-agent-sch_inspection-5gfkbvlp)
+  violation missing_expected: never called: ['get_schematic_component', 'get_schematic_pin_locations']
+  tools called: ['find_capabilities', 'kicad_describe', 'get_project_info', 'list_schematic_components', 'list_schematic_nets', 'find_single_pin_nets', 'batch_get_schematic_pin_locations', 'find_capabilities', 'list_schematic_wires', 'list_schematic_labels', 'get_component_nets', 'get_component_nets', 'get_net_connections', 'kicad_describe', 'batch_get_schematic_pin_locations']
+
+wrote bench/results/k11-claude-opus5-anchor-r3.json

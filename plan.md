@@ -1566,7 +1566,7 @@ Generated, committed, and equality-tested like the capability matrix.
 
 # Phase K — Multi-harness — TODO
 
-## K.1 — Claude Code and Codex (AGY dropped, D70)
+## K.1 — Claude Code and Codex (AGY dropped, D70) — DONE
 
 ### Objectif
 The handoff must be harness-agnostic: another agent, notably Codex, resumes from
@@ -1576,7 +1576,7 @@ The handoff must be harness-agnostic: another agent, notably Codex, resumes from
 F.3 (the gateway is the whole external surface).
 
 ### Tâches
-- [ ] K.1.1 Run the golden suite through each harness in scope — Claude Code
+- [x] K.1.1 Run the golden suite through each harness in scope — Claude Code
       and Codex (D70). The runner exists and works (K.1.3); what is missing is
       the measurement itself. The two halves are blocked on different things
       and can be settled separately: the claude half on a budget and a model
@@ -1639,6 +1639,53 @@ F.3 (the gateway is the whole external surface).
       recorded strict-route, safety and instability findings above. Only the
       separately authorized `claude-opus-5` one-task anchor remains before
       K.1.1 can close.
+
+      **`claude-opus-5` anchor, 2026-08-24** (`sch_inspection`, `--repeat 1`,
+      cap $5.00 — the $2.00 cap is what voided `sch_ldo`, and an anchor must
+      not be voided by its own budget). The 529 incident that voided the two
+      earlier attempts was over: a one-word probe came back
+      `terminal_reason: completed`, `api_error_status: null`. The run completed
+      at **$0.3861**, 11 turns, **8 round trips**, `DESIGN_PASS_RATE 1/1`,
+      `SAFETY_VIOLATIONS 0`, `OFF_SERVER_CALLS 0`, `VOID_RUNS 0/1`; the only
+      violation is the recorded strict-route one (`missing_expected`:
+      `get_schematic_component`, `get_schematic_pin_locations` — it read the
+      same facts through other tools). `--rescore --enforce` reproduces the
+      scoring offline. Evidence: `bench/results/k11-claude-opus5-anchor-r3.json`
+      and `k11-logs-opus5-anchor-r3/`.
+
+      The anchor is not a cost story — it is a *route* story, and it is the
+      reason it was worth buying. Opus is the **first agent, on either
+      harness, to use the gateway**: three `kicad_invoke` calls carried
+      **15 audited tool calls in 8 round trips**, where sonnet's two runs of
+      the same task took 8 and 15 round trips one call at a time
+      (`kicad_invoke` count across the whole sonnet campaign: 0; across the
+      whole codex campaign: 0). Two consequences. First, the *unwrap* branch
+      that K.1.4 recorded as unexercised has now run against live output, on
+      the claude parser: `gateway_unwrap_warning` returned `None` while
+      `audited_calls` (15) and the scored round trips (8) legitimately
+      disagreed — which is exactly the case the two counters exist to tell
+      apart. Second, on price: at $0.3861 the anchor lands *between* sonnet's
+      two runs of the same task ($0.4455 and $0.2448). Batching bought back
+      what the more expensive model cost, so "opus is an order of magnitude
+      dearer" — the fear that gated this run since 2026-08-20 — is not what
+      the measurement says, on this task.
+
+      Two secondary findings, both recorded rather than acted on. Opus stayed
+      inside `read_only` where sonnet's first run did not: no `run_erc`, no
+      `.kicad_prl`, `SAFETY_VIOLATIONS 0` against sonnet's 2 (K.1.15 is a
+      finding about the sonnet run, and this anchor does not weaken it — it
+      shows the tier is respectable, not that the violation was harmless).
+      And it read the caveat the tool ships: `find_single_pin_nets` returned
+      `single_pin_net_count: 6` on a fixture whose three nets each carry at
+      least two pins, and the report called it a false positive of an analysis
+      that traces wires and labels but not pin-on-pin superposition, citing
+      the geometry — which is the `PARTIAL`/advisory contract this tool is
+      documented under (J.1, E7, `docs/capability-matrix.md`) and the "for a
+      verdict, use `run_erc`" line K.2 put in its description. The description
+      did the work it was written to do; there is no new defect here.
+
+      **K.1.1 is closed.** Codex 14/14, claude sonnet 14/14 with `VOID_RUNS
+      0/14`, and the opus anchor. That closes K.1, and unblocks M.1.
 - [x] K.1.2 Adopt the eval design: `expected_tools`, `allowed_tools`,
       `forbidden_tools`, a `safety` tier checked against the capability registry
       (a `read_only` case rejects *any* write tool), `max_calls`, and an

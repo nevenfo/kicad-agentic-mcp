@@ -2,24 +2,33 @@
 
 ## Phase actuelle
 
-**K — multi-harness.** K.2, K.1.4, K.1.17 et K.1.18 sont closes. K.1 dépend
-encore de l'ancre Opus de K.1.1 ; la phase M dépend de K.1.1. Les phases D, F
-et L sont closes. La phase I reste conditionnée au matériel : cette machine a
-KiCad 10.0, pas KiCad 11 / `kicad-cli api-server`.
+**M — comparaison des trois modes.** K.1 est close : les deux campagnes
+(codex 14/14, claude sonnet 14/14, aucun void) et l'ancre `claude-opus-5` sont
+mesurées. Les phases D, F, K et L sont closes. La phase I reste conditionnée au
+matériel : cette machine a KiCad 10.0, pas KiCad 11 / `kicad-cli api-server`.
 
 ## Tâche actuelle
 
-**K.1.1 — ancre `claude-opus-5`.** Les campagnes principales sont complètes :
-Codex 14/14, Claude Sonnet 14/14, aucun void. Deux essais Opus ont été coupés
-avant tout tour modèle par l'incident upstream HTTP 529.
+**M.1.1 — table de comparaison des trois modes** sur la même suite golden
+(baseline / direct / agent), puis M.1.2 : chaque critère V1 re-mesuré, les
+manqués enregistrés comme manqués (INV6). Sortie attendue :
+`docs/benchmark.md`, reproductible depuis les artefacts committés.
 
 ## Dernière tâche validée
 
-**K.1.18 — erreurs harness classées void.** `harness_runner.py` classe désormais
-`terminal_reason: api_error` comme interruption avec statut et cause compacte.
-Validation : `py_compile` PASS ; les deux transcripts 529 et l'ancien échec
-d'authentification deviennent void ; le transcript Sonnet complet reste
-non-void.
+**K.1.1 — ancre `claude-opus-5`.** `sch_inspection` ×1, cap $5.00, incident 529
+résolu (sonde : `terminal_reason: completed`). Run complet à **$0.3861**,
+11 tours, **8 aller-retours**, `DESIGN_PASS_RATE 1/1`, `SAFETY_VIOLATIONS 0`,
+`OFF_SERVER_CALLS 0`, `VOID_RUNS 0/1` ; seule violation, la route stricte
+(`missing_expected`). `--rescore --enforce` reproduit le score hors ligne.
+
+Le résultat porteur n'est pas le prix mais la route : Opus est **le premier
+agent, tous harnais confondus, à passer par la gateway** — 3 `kicad_invoke`
+portant 15 appels audités en 8 aller-retours (sonnet : 0 `kicad_invoke` sur
+toute la campagne ; codex : 0). La branche *unwrap* que K.1.4 déclarait non
+exercée a donc tourné sur sortie réelle. Et le batching a payé le modèle plus
+cher : $0.3861 se place **entre** les deux runs sonnet de la même tâche
+($0.4455 et $0.2448).
 
 ## Décisions actives
 
@@ -28,26 +37,25 @@ non-void.
   augmentés et les runs relancés automatiquement.
 - D97 : un re-run remplace un void dans sa campagne ; l'ancre Opus reste une
   campagne distincte.
-- Retirer `CLAUDE_CONFIG_DIR` seulement dans le processus du run pour utiliser
-  la connexion Claude Pro normale.
+- Un cap de budget ne doit jamais pouvoir voider sa propre mesure : $2.00 avait
+  voidé `sch_ldo`, l'ancre est partie à $5.00.
 
 ## Blocage actif
 
-Incident officiel Anthropic actif depuis 2026-08-24 07:27 CEST : panne partielle
-API / Claude Code avec erreurs élevées sur Opus 5 et d'autres modèles. Deux
-essais ont chacun épuisé 10 retries internes sur HTTP 529. Ne pas relancer
-agressivement avant résolution officielle.
+Aucun. L'incident Anthropic du 2026-08-24 07:27 CEST est résolu ; les deux
+essais 529 restent conservés comme preuves de runs void.
 
 ## Fichiers / zones utiles
 
-- `bench/results/k11-claude-opus5-anchor{,-r2}.json` et dossiers de logs
-  correspondants — essais 529 à conserver.
-- `bench/harness_runner.py` — classification K.1.18.
-- `bench/results/k11-claude-sonnet5.json` — campagne Sonnet complète.
+- `bench/results/k11-claude-opus5-anchor-r3.{json,log}` et
+  `k11-logs-opus5-anchor-r3/` — l'ancre.
+- `bench/results/k11-claude-sonnet5.json`, `k11-codex.json` — les campagnes.
+- `bench/harness_runner.py` — `--rescore`, `--merge`, classification void.
+- `bench/runner.py` — le chemin oracle, l'autre moitié de la table M.1.
 
 ## NEXT ACTION
 
-Après résolution de l'incident officiel, relancer **K.1.1 `sch_inspection` ×1**
-avec `--model claude-opus-5`, `--repeat 1`, un nouveau `--out` / `--log-dir` et
-`CLAUDE_CONFIG_DIR` retiré ; rescorrer l'ancre, documenter la comparaison puis
-clore K.1.1.
+Ouvrir **M.1.1** : inventorier ce que `bench/runner.py` (baseline / direct) et
+`bench/harness_runner.py` (agent) produisent déjà sur la suite golden, décider
+ce qui manque pour une table à trois colonnes comparable, puis rédiger
+`docs/benchmark.md` à partir des artefacts committés uniquement.
