@@ -157,11 +157,41 @@ fn parse_atom(input: &str) -> IResult<&str, SexpNode> {
     .parse(input)
 }
 
+/// Decode the escape sequences KiCAD writes inside quoted strings.
+///
+/// Must be a single left-to-right pass. Chained `replace` calls collapse
+/// backslashes *last*, so an already-escaped backslash gets re-read as the
+/// introducer of the following escape: `C:\\new` (the literal path `C:\new`)
+/// came back as `C:\` + a newline, and `a\\tb` as `a\` + a tab. KiCAD escapes
+/// backslashes in property values, so any Windows path whose next character was
+/// `n` or `t` decoded wrongly — silently, on the way in, and written back out
+/// that way (#174).
 fn unescape(s: &str) -> String {
-    s.replace("\\\"", "\"")
-        .replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace("\\\\", "\\")
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            // Unknown escape: keep both characters rather than guessing, so
+            // the value round-trips instead of silently losing a backslash.
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+
+    out
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -207,5 +237,44 @@ mod tests {
         let n = parse_sexp(s).unwrap();
         assert_eq!(n.find_str("uuid"), None); // uuid is the head
         assert_eq!(n.get(1).and_then(|n| n.as_str()), Some("abc-123-def"));
+    }
+
+    /// Chained `replace` collapsed backslashes LAST, so an already-escaped
+    /// backslash was re-read as the introducer of the next escape. KiCAD
+    /// escapes backslashes in property values, so any Windows path whose next
+    /// character was `n` or `t` decoded into something else entirely — a
+    /// Datasheet or Footprint field corrupted on the way in and written back
+    /// out corrupted, with nothing anywhere reporting a problem (#174).
+    #[test]
+    fn escaped_backslash_is_not_reread_as_an_escape() {
+        // Serialized `C:\\new\\temp` is the literal path `C:\new\temp`.
+        let n = parse_sexp(r#"(p "C:\\new\\temp")"#).unwrap();
+        assert_eq!(n.get(1).and_then(|c| c.as_str()), Some(r"C:\new\temp"));
+
+        let n = parse_sexp(r#"(p "a\\tb")"#).unwrap();
+        assert_eq!(n.get(1).and_then(|c| c.as_str()), Some(r"a\tb"));
+    }
+
+    /// Genuine control escapes must still decode — the fix must not trade one
+    /// wrong answer for another.
+    #[test]
+    fn control_escapes_still_decode() {
+        let n = parse_sexp(r#"(p "line1\nline2\tend")"#).unwrap();
+        assert_eq!(n.get(1).and_then(|c| c.as_str()), Some("line1\nline2\tend"));
+    }
+
+    /// An escaped quote inside a string stays a quote.
+    #[test]
+    fn escaped_quote_decodes() {
+        let n = parse_sexp(r#"(p "say \"hi\"")"#).unwrap();
+        assert_eq!(n.get(1).and_then(|c| c.as_str()), Some(r#"say "hi""#));
+    }
+
+    /// An unknown escape keeps both characters rather than guessing, so the
+    /// value round-trips instead of silently losing a backslash.
+    #[test]
+    fn unknown_escape_is_preserved_verbatim() {
+        let n = parse_sexp(r#"(p "a\qb")"#).unwrap();
+        assert_eq!(n.get(1).and_then(|c| c.as_str()), Some(r"a\qb"));
     }
 }
