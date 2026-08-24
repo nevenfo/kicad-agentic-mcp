@@ -370,6 +370,38 @@ async fn netclass_tools_leave_the_board_loadable_by_kicad_cli() {
     );
 }
 
+/// `add_layer` used to find the close of `(layers …)` with a literal
+/// `"\n  )"` probe, falling back to the first `)` in the block on a
+/// tab-indented KiCAD 10 file — the close of the *first* layer entry — and
+/// wrote the new layer inside it. The board reported success but no longer
+/// loaded. This is the one proof that a real `kicad-cli` still opens the
+/// board afterward.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn add_layer_leaves_the_board_loadable_by_kicad_cli() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let board = h.fixture("unrouted.kicad_pcb");
+    let pcb = harness::as_str(&board).to_string();
+
+    let added = h
+        .json(
+            "add_layer",
+            json!({ "board": pcb, "layer_name": "In1.Cu", "layer_type": "signal" }),
+        )
+        .await;
+    // Without this, a refused add_layer would leave the board untouched and
+    // the probe below would pass on a file nothing was written to.
+    assert_eq!(added["added_layer"], "In1.Cu", "add_layer refused: {added}");
+
+    // If add_layer had corrupted the board (the pre-fix behaviour), kicad-cli
+    // fails to load it and this call errors instead of answering.
+    let report = h.json("run_drc", json!({ "board": pcb })).await;
+    assert!(
+        report["total_violations"].is_number(),
+        "run_drc did not produce a report after add_layer: {report}"
+    );
+}
+
 /// The manufacturing package is the pipeline end to end: Gerbers, drills and
 /// the assembly files in one directory.
 #[tokio::test]

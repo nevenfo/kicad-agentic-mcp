@@ -3,8 +3,8 @@
 ## Phase actuelle
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
-(backlog de correctness upstream) est ouverte : P.6.1 à P.6.5 closes, P.6.6 à
-P.6.10 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
+(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 à
+P.6.11 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
 ## Tâche actuelle
@@ -13,25 +13,32 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.5 — les nets d'un board se lisent dans les deux formes KiCad. Nouveau
-`crates/konnect-sexp/src/net.rs` : `net_name`, `net_id`, `board_uses_net_table`,
-`count_distinct_nets`, `next_net_id`, discriminant **par la forme** et non par
-un seuil de version. Les trois sites sont corrigés : lecture du net d'un pad
-(`pcb_components.rs`), `net_count` (`pcb_board.rs`), et `add_net`
-(`pcb_routing.rs`) qui tire son id de la table parsée et refuse un board qui
-n'en a pas.
+P.6.6 — `add_layer` n'écrit plus un board inouvrable. Nouveau
+`crates/konnect-sexp/src/layers.rs` porté d'upstream (`Layer`, `layers`,
+`copper`, `is_canonical_name`) ; le helper local `board_layers` est supprimé et
+`get_layer_list`, l'allocateur d'id et `get_board_info` passent par lui —
+`layer_count` cesse de rendre 0 sur tout board, `copper_layer_count` est ajouté.
+Côté écriture, `close_of_block` (équilibrage de parenthèses ignorant les
+chaînes) et `entry_indent` (indentation réelle du fichier) remplacent la sonde
+littérale `"\n  )"`, et un nom non canonique est refusé avant écriture.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, 50 suites ok, 0 échec
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, 7/7
-- oracle sur les 18 boards de démo : 17/17 anciens boards rendent exactement le
-  même compte qu'avant ; sur `pic_programmer.kicad_pcb` (20260206) le compte
-  passe de 0 à 111 nets et 236 de ses 247 pads cessent de rapporter un net vide
+- `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
+- sondes live `cli_tools` avec `KICAD_CLI` : PASS, 8/8
+- rouge-avant vérifié en restaurant l'ancienne insertion : le test non-live perd
+  `In1.Cu` du stackup reparsé (écrit dans `(0 "F.Cu" signal)`) et la sonde live
+  échoue au chargement `kicad-cli` ; les deux repassent au vert après
 
 ## Décisions actives
 
+- **D117** — les boards KiCad récents (≥ `20241229`, mesuré sur `CM5_MINIMA_3`
+  et `video`) numérotent le cuivre en **pairs** : `F.Cu`=0, `B.Cu`=2,
+  `In1.Cu`=4, `In2.Cu`=6. L'ancien schéma (`B.Cu`=31, internes 1..30) ne vaut
+  que pour les fichiers plus vieux, dont notre fixture `unrouted.kicad_pcb`.
+  Tout code qui alloue un id de layer doit le dériver du nom canonique sous la
+  numérotation du board, jamais d'un intervalle fixe — c'est P.6.11.
 - **D116** — un board livré par KiCad 10 peut être réellement malformé :
   `demos/royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb` ferme sa racine
   à l'octet 14735 sur 3,6 Mo et finit 349 parenthèses fermantes en avance.
@@ -68,7 +75,8 @@ Validation :
   `kicad-cli` utilise `unrouted.kicad_pcb` ou `harness::BLANK_BOARD`.
 - **D102** — ancres upstream vérifiées dans ce dépôt : `#144` = merge `8dd54e8`
   (corrige l'issue `#143`), `#209` = merge `1d31ad4`. Baseline du fork :
-  `5cd6454`, merge-base avec `upstream/main`.
+  `5cd6454`, merge-base avec `upstream/main`. Le code d'un item backporté se
+  lit directement ici : pour un merge, `git diff <parent1> <parent2> -- <path>`.
 - **D104** — oracle KiCad : `kicad-cli` **10.0.3** en local
   (`%LOCALAPPDATA%\Programs\KiCad\10.0\bin`), **10.0.5** épinglé dans
   `e2e-kicad.yml` et inchangé.
@@ -90,34 +98,30 @@ Aucun.
 
 ## Fichiers / zones utiles
 
+- `crates/konnect-sexp/src/layers.rs` — stackup lu par forme, noms canoniques.
+- `crates/konnect-sexp/src/net.rs` — accesseurs de nets des deux formes.
+- `crates/konnect-core/src/tools/pcb_board.rs` — `close_of_block`,
+  `entry_indent`, `handle_add_layer`, `handle_get_board_info`, module
+  `layers_block_tests`.
 - `crates/konnect-core/src/tools/cli.rs` — `ReportItem`, `parse_report_items`,
   `ErcViolation`, `DrcViolation`, `DrcCategory`, `DrcReport`, `parse_erc_json`,
   `parse_drc_json`, modules `erc_parse_tests` et `drc_parse_tests`.
-- `crates/konnect-core/src/tools/{verification,pcb_export,sch_export}.rs` —
-  sorties JSON de `run_drc`, `get_drc_violations` et `run_erc`.
 - `crates/konnect-core/src/evidence/validators.rs` — gate d'evidence, `location`
   encore dérivé de `pos`.
 - `crates/konnect-sexp/src/schematic.rs` — `extract_power_symbol_labels`,
   `extract_all_net_labels`, `LibPin::electrical_type`.
-- `crates/konnect-sexp/src/net.rs` — accesseurs de nets des deux formes.
 - `crates/konnect-sexp/src/parser.rs` — `parse_sexp` l.89-111, la retombée
   « implicit List » que P.6.10 doit traiter.
-- `crates/konnect-core/src/tools/pcb_board.rs` — `add_layer`, cible de P.6.6
-  (`#153`).
 - `crates/konnect-core/tests/cli_tools.rs` + `fixtures/unrouted.kicad_pcb`.
-- `docs/upstream-audit.md` — source des items P.6.6 à P.6.9.
+- `docs/upstream-audit.md` — source des items P.6.7 à P.6.9.
 - `.github/workflows/e2e-kicad.yml` — job gatant, un step par sonde.
 
 ## NEXT ACTION
 
-Implémenter P.6.6 — `#153`, moitié écriture : `add_layer` cherche la fermeture
-du bloc par le littéral `"\n  )"` (retour à la ligne plus deux espaces), qu'un
-board KiCad 10 indenté par tabulations ne contient jamais ; la retombée trouve
-alors la première `)` du bloc, c'est-à-dire la fin de la *première entrée de
-layer*, et le nouveau layer s'écrit à l'intérieur — le board devient
-inouvrable. La moitié lecture est déjà implémentée ici. Relire l'entrée `#153`
-de `docs/upstream-audit.md` avant de coder. Le test discriminant doit partir
-d'un board indenté par tabulations et prouver que le résultat se recharge, de
-préférence via `kicad-cli`. Valider par `cargo fmt` / `clippy -D warnings` /
-`cargo test --workspace --lib --tests` plus la sonde live `cli_tools` avec
-`KICAD_CLI`.
+Implémenter P.6.7 — série d'items indépendants, chacun avec son test
+discriminant. Commencer par `#212` (un point de jonction par fil au lieu d'un
+par T ; **3 sites dans ce fork**, pas 2 comme upstream) : relire son entrée dans
+`docs/upstream-audit.md`, localiser les trois sites, et écrire le test qui
+distingue un T d'un croisement avant de coder. Valider par `cargo fmt` /
+`clippy -D warnings` / `cargo test --workspace --lib --tests`, plus la sonde
+live pertinente si KiCad est le seul oracle honnête.

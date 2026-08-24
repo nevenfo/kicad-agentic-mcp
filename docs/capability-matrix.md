@@ -366,7 +366,7 @@ Not covered by any tool:
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
 | `get_layer_list` | `pcb_board` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `add_layer` | `pcb_board` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_layer` | `pcb_board` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
 | `set_active_layer` | `pcb_board` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 Not covered by any tool:

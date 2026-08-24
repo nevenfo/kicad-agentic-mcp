@@ -3077,11 +3077,42 @@ None. Each item below is independent of the others except where stated.
       skipping in silence — see D113 for why silence is the trap here.
       Decide deliberately what the implicit-`List` fallback was for before
       removing it; some caller may rely on it for multi-form fragments.
-- [ ] P.6.6 #153 (write half) — `add_layer` locates the block close with a
+- [x] P.6.6 #153 (write half) — `add_layer` locates the block close with a
       literal newline-plus-two-spaces, so on tab-indented KiCad 10 boards the
       layer is written
       inside the first entry, producing an unopenable board. The read half is
       already implemented here.
+      Done: new `konnect-sexp/src/layers.rs` (ported from upstream) carries
+      `Layer`, `layers`, `copper` and `is_canonical_name`; the local
+      `board_layers` helper is gone and `get_layer_list`, the id allocator and
+      `get_board_info` all read through it — `layer_count` stops being `0` on
+      every board and `copper_layer_count` joins it. The write half uses two
+      new helpers in `pcb_board.rs`: `close_of_block`, which balances parens
+      while skipping quoted strings, and `entry_indent`, which copies the
+      file's own indent instead of hardcoding spaces. `add_layer` also fails
+      closed on a non-canonical name, since KiCad's layer set is closed and a
+      board carrying an unknown name does not open at all.
+      Red-before/green-after, verified by restoring the old insertion: the
+      non-live test loses `In1.Cu` from the reparsed stackup (it was written
+      inside `(0 "F.Cu" signal)`), and the live probe
+      `add_layer_leaves_the_board_loadable_by_kicad_cli` fails at
+      `kicad-cli` load. Both green after.
+      Left alone deliberately: the id allocator still takes the first free id
+      in `1..=30`, which is right on the old numbering but not on KiCad's
+      current one — see P.6.11.
+- [ ] P.6.11 `add_layer` allocates an id that need not match the canonical
+      name it writes. Measured while closing P.6.6, on KiCad's own demos:
+      boards from `20241229` on number copper in **evens** — `CM5_MINIMA_3`
+      and `video` both write `(0 "F.Cu") (4 "In1.Cu") (6 "In2.Cu") (2 "B.Cu")`
+      — while the older scheme this fork's fixtures use puts `B.Cu` at 31 and
+      inner copper at 1..30. The allocator takes the first free id in
+      `1..=30` regardless, so on a modern board it can pair an odd id with an
+      `In<n>.Cu` name, or hand `In1.Cu` a second id on a board that already
+      has one. P.6.6's live probe passes because `unrouted.kicad_pcb` is on
+      the old scheme. The id has to be derived from the requested canonical
+      name under the numbering the board actually uses; the discriminating
+      test is `add_layer` against a board whose `B.Cu` is `2`, reloaded by
+      `kicad-cli`.
 - [ ] P.6.7 Smaller, independent, each with its own discriminating test:
       #212 (one junction dot per wire instead of per T — 3 sites here, not
       upstream's 2), #213 (`#PWR{count+1}` re-issues a live designator),

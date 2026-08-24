@@ -122,6 +122,53 @@ fn find_net_id(content: &str, net_name: &str) -> Option<i32> {
     before[num_start..num_start + num_end].parse().ok()
 }
 
+/// Byte offset of the `)` that closes the block opening at `open_pos`.
+///
+/// Balances parens while skipping quoted strings, so it is independent of how
+/// the file is indented — KiCAD 9 writes two spaces, KiCAD 10 writes tabs, and
+/// a probe for either is wrong on the other.
+fn close_of_block(content: &str, open_pos: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, c) in content[open_pos..].char_indices() {
+        if in_str {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => in_str = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open_pos + i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The leading whitespace of the first entry inside the block at `open_pos`,
+/// so an inserted sibling matches the file it is written into.
+fn entry_indent(content: &str, open_pos: usize) -> Option<String> {
+    let after = &content[open_pos..];
+    let nl = after.find('\n')?;
+    let line = &after[nl + 1..];
+    let indent: String = line
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
+    (!indent.is_empty() && line[indent.len()..].starts_with('(')).then_some(indent)
+}
+
 // ─── Tool definitions ─────────────────────────────────────────────────────────
 
 pub fn tools() -> Vec<ToolDef> {
@@ -400,10 +447,12 @@ async fn handle_get_board_info(
         .unwrap_or("")
         .to_string();
 
-    let layers = tree
-        .find("layers")
-        .map(|n| n.find_all("").len())
-        .unwrap_or(0);
+    // A layer is `(0 "F.Cu" signal)`, keyed by its ordinal rather than by a
+    // tag, so find_all("") — which matches on the head — never matched one
+    // and this was always 0. See konnect_sexp::layers.
+    let stack = konnect_sexp::layers::layers(&tree);
+    let layer_count = stack.len();
+    let copper_layer_count = konnect_sexp::layers::copper(&stack).len();
     let paper = tree
         .find("paper")
         .and_then(|n| n.get(1))
@@ -420,7 +469,8 @@ async fn handle_get_board_info(
         "file": board_path.display().to_string(),
         "title": title, "date": date, "revision": rev, "company": company,
         "paper": paper,
-        "layer_count": layers,
+        "layer_count": layer_count,
+        "copper_layer_count": copper_layer_count,
         "net_count": net_count
     })))
 }
@@ -490,32 +540,6 @@ async fn handle_get_board_extents(
     })))
 }
 
-/// Read a board's `(layers …)` block.
-///
-/// Each entry is `(0 "F.Cu" signal)`: the **id is the head**, so there is no tag
-/// to search for and the fields start at index 0. Both readers here used
-/// `find_all("")` and read from index 1, which matched nothing and made
-/// `get_layer_list` return an empty list on every board (J.2.3.6). `add_layer`
-/// used the same lookup to pick a free id, so it always proposed 1.
-fn board_layers(layers_node: &konnect_sexp::parser::SexpNode) -> Vec<(i32, String, String)> {
-    layers_node
-        .children()
-        .unwrap_or(&[])
-        .iter()
-        .skip(1) // the `layers` head itself
-        .filter_map(|node| {
-            let id = node.get_f64(0).map(|n| n as i32)?;
-            let name = node.get(1)?.as_str()?.to_string();
-            let kind = node
-                .get(2)
-                .and_then(|n| n.as_str())
-                .unwrap_or("user")
-                .to_string();
-            Some((id, name, kind))
-        })
-        .collect()
-}
-
 async fn handle_get_layer_list(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -524,22 +548,30 @@ async fn handle_get_layer_list(
     let content = std::fs::read_to_string(&board_path)?;
     let tree = parse_sexp(&content)?;
 
-    let layers_node = match tree.find("layers") {
-        Some(n) => n,
-        None => {
-            return Ok(CallToolResult::error_kind(
-                ToolErrorKind::MalformedDocument {
-                    path: board_path.display().to_string(),
-                    detail: "no (layers) section".to_string(),
-                },
-                "No (layers) section found in board file",
-            ))
-        }
-    };
+    if tree.find("layers").is_none() {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::MalformedDocument {
+                path: board_path.display().to_string(),
+                detail: "no (layers) section".to_string(),
+            },
+            "No (layers) section found in board file",
+        ));
+    }
 
-    let layers: Vec<serde_json::Value> = board_layers(layers_node)
+    // Each child of layers looks like: (0 "F.Cu" signal). The ordinal is the
+    // head of the list, so the fields sit one place earlier than the old
+    // accessors assumed — and find_all("") never returned any of them anyway.
+    let layers: Vec<serde_json::Value> = konnect_sexp::layers::layers(&tree)
         .into_iter()
-        .map(|(id, name, kind)| json!({ "id": id, "name": name, "type": kind }))
+        .map(|l| {
+            json!({
+                "id": l.id,
+                "name": l.name,
+                "type": l.kind,
+                "user_name": l.user_name,
+                "copper": l.is_copper(),
+            })
+        })
         .collect();
 
     Ok(CallToolResult::json(
@@ -558,6 +590,27 @@ async fn handle_add_layer(
     };
     let layer_type = args["layer_type"].as_str().unwrap_or("signal");
 
+    // Fail closed on a name KiCAD does not define. The layer set is closed,
+    // and a board carrying an unknown name does not open at all — so writing
+    // one used to return success and hand back a file the caller could not
+    // load. Verified against KiCAD 10: `(53 "User.8" user)` loads,
+    // `(53 "TestLayer" user)` is refused with "Failed to load board".
+    if !konnect_sexp::layers::is_canonical_name(&layer_name) {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "layer_name".to_string(),
+                reason: format!("'{layer_name}' is not a KiCAD layer name"),
+            },
+            format!(
+                "'{layer_name}' is not a KiCAD layer name, and a board containing one \
+                 cannot be opened. Names are fixed: F.Cu, B.Cu, In1.Cu..In30.Cu, \
+                 User.1..User.45, and the technical layers (Edge.Cuts, F.Mask, …). \
+                 To give a layer your own label, add the canonical layer and set its \
+                 user name — `(53 \"User.8\" user \"{layer_name}\")`."
+            ),
+        ));
+    }
+
     let content = std::fs::read_to_string(&board_path)?;
 
     // Find the (layers ...) block and insert before its closing paren
@@ -574,23 +627,52 @@ async fn handle_add_layer(
         }
     };
 
-    // Determine the next available inner copper ID (first unused ID in 1-30 range)
+    // Determine the next available inner copper ID (first unused ID in 1-30
+    // range). The ids have to be read by shape — see konnect_sexp::layers.
     let tree = parse_sexp(&content)?;
-    let used_ids: std::collections::HashSet<i32> = tree
-        .find("layers")
-        .map(|n| board_layers(n).into_iter().map(|(id, _, _)| id).collect())
-        .unwrap_or_default();
-    let new_id = (1..=30).find(|id| !used_ids.contains(id)).unwrap_or(1);
+    let used_ids: std::collections::HashSet<i32> = konnect_sexp::layers::layers(&tree)
+        .iter()
+        .map(|l| l.id)
+        .collect();
+    let new_id = match (1..=30).find(|id| !used_ids.contains(id)) {
+        Some(id) => id,
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "layer_name".to_string(),
+                    reason: "no free inner copper layer id: 1-30 are all in use".to_string(),
+                },
+                "No free inner copper layer id: 1-30 are all in use",
+            ))
+        }
+    };
 
-    // Find close of the layers block
-    let layers_block = &content[layers_pos..];
-    let close_rel = layers_block
-        .find("\n  )")
-        .or_else(|| layers_block.find(')'))
-        .unwrap_or(layers_block.len().saturating_sub(1));
-    let insert_pos = layers_pos + close_rel;
+    // Close of the layers block, by paren balance. The previous probe looked
+    // for a literal "\n  )", which a tab-indented KiCAD 10 file never
+    // contains; the fallback then found the first ')' in the block — the
+    // close of the *first layer entry* — and the new layer was written inside
+    // it, producing a board KiCAD refuses to open.
+    let close = match close_of_block(&content, layers_pos) {
+        Some(p) => p,
+        None => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: board_path.display().to_string(),
+                    detail: "unbalanced (layers) block".to_string(),
+                },
+                "Unbalanced (layers) block; refusing to write",
+            ))
+        }
+    };
+    // Insert after the last entry rather than immediately before the close,
+    // so the newline and indent already sitting in front of `)` stay there
+    // and the block keeps KiCAD's own layout.
+    let insert_pos = content[..close].trim_end().len();
 
-    let new_layer = format!("\n    ({new_id} \"{layer_name}\" {layer_type})");
+    // Match whatever the file already indents entries with, rather than
+    // hardcoding spaces into a file that may be tab-indented.
+    let indent = entry_indent(&content, layers_pos).unwrap_or_else(|| "    ".to_string());
+    let new_layer = format!("\n{indent}({new_id} \"{layer_name}\" {layer_type})");
     let new_content = apply_edits(content, vec![SexpEdit::insert(insert_pos, new_layer)]);
     write_atomic(&board_path, &new_content)?;
 
@@ -1024,5 +1106,164 @@ mod svg_logo_tests {
 
         let result = handle_import_svg_logo(&args, &ctx).await.unwrap();
         assert!(result.is_error);
+    }
+}
+
+#[cfg(test)]
+mod layers_block_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            // Deliberately empty ipc_address: add_layer never touches IPC.
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    // Both indent styles, same content: KiCAD 9 writes two spaces, 10 writes tabs.
+    const SPACES: &str =
+        "(kicad_pcb\n  (layers\n    (0 \"F.Cu\" signal)\n    (2 \"B.Cu\" signal)\n  )\n)";
+    const TABS: &str =
+        "(kicad_pcb\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(2 \"B.Cu\" signal)\n\t)\n)";
+
+    fn layers_close(content: &str) -> usize {
+        close_of_block(content, content.find("(layers").unwrap()).unwrap()
+    }
+
+    #[test]
+    fn close_of_block_finds_the_same_close_under_either_indent() {
+        for content in [SPACES, TABS] {
+            let close = layers_close(content);
+            // Everything up to the close balances, and the block ends after the
+            // last entry rather than inside the first one.
+            assert_eq!(&content[close..close + 1], ")");
+            assert!(content[..close].contains("B.Cu"));
+        }
+    }
+
+    #[test]
+    fn close_of_block_is_not_the_first_paren_in_the_block() {
+        // The old probe fell back to the first ')' — the close of entry one —
+        // and wrote the new layer inside it.
+        let content = TABS;
+        let start = content.find("(layers").unwrap();
+        let first = start + content[start..].find(')').unwrap();
+        assert_ne!(layers_close(content), first);
+    }
+
+    #[test]
+    fn close_of_block_ignores_parens_inside_strings() {
+        let content = "(kicad_pcb\n\t(layers\n\t\t(0 \"F.Cu)(\" signal)\n\t)\n)";
+        let close = layers_close(content);
+        assert!(content[..close].contains("F.Cu)("));
+    }
+
+    #[test]
+    fn close_of_block_refuses_an_unbalanced_block() {
+        assert_eq!(close_of_block("(layers\n\t(0 \"F.Cu\" signal)", 0), None);
+    }
+
+    #[test]
+    fn entry_indent_matches_the_file() {
+        assert_eq!(
+            entry_indent(SPACES, SPACES.find("(layers").unwrap()).as_deref(),
+            Some("    ")
+        );
+        assert_eq!(
+            entry_indent(TABS, TABS.find("(layers").unwrap()).as_deref(),
+            Some("\t\t")
+        );
+    }
+
+    #[test]
+    fn entry_indent_declines_an_empty_block_rather_than_guessing() {
+        let empty = "(kicad_pcb\n\t(layers\n\t)\n)";
+        assert_eq!(entry_indent(empty, empty.find("(layers").unwrap()), None);
+    }
+
+    #[test]
+    fn layers_canonical_names_match_kicads_own_enum() {
+        // Guards konnect_sexp::layers::is_canonical_name against drift: the
+        // authority is KiCAD's BoardLayer enum, shipped in the API protos.
+        // Variant name -> file name is `BL_` off, remaining `_` to `.`.
+        use konnect_ipc::gen::kiapi::board::types::BoardLayer;
+        let sentinels = ["BL_UNKNOWN", "BL_UNDEFINED", "BL_UNSELECTED"];
+        let mut checked = 0;
+        for i in 0..=200i32 {
+            let Ok(layer) = BoardLayer::try_from(i) else {
+                continue;
+            };
+            let variant = layer.as_str_name();
+            if sentinels.contains(&variant) {
+                continue;
+            }
+            let name = variant.trim_start_matches("BL_").replacen('_', ".", 1);
+            assert!(
+                konnect_sexp::layers::is_canonical_name(&name),
+                "{variant} maps to '{name}', which is_canonical_name rejects"
+            );
+            checked += 1;
+        }
+        // Cheap guard against the loop silently matching nothing.
+        assert!(checked > 90, "only {checked} layers checked");
+    }
+
+    #[test]
+    fn ids_in_use_are_seen_so_a_new_layer_does_not_collide() {
+        // The regression this module guards: with the ids unreadable, the
+        // free-id search always returned 1 and would have duplicated an
+        // existing In1.Cu.
+        let four_layer = "(kicad_pcb\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(1 \"In1.Cu\" signal)\n\t\t(2 \"B.Cu\" signal)\n\t)\n)";
+        let tree = parse_sexp(four_layer).unwrap();
+        let used: std::collections::HashSet<i32> = konnect_sexp::layers::layers(&tree)
+            .iter()
+            .map(|l| l.id)
+            .collect();
+        assert!(used.contains(&1));
+        let next_free = (1..=30).find(|id| !used.contains(id));
+        assert_eq!(next_free, Some(3));
+    }
+
+    /// `add_layer` on a tab-indented board (KiCAD 10's own style) writes the
+    /// new entry as a sibling of the existing ones, not as a child of the
+    /// first entry — the corruption this item exists to fix.
+    #[tokio::test]
+    async fn add_layer_on_a_tab_indented_board_inserts_a_sibling_not_a_child() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let board_path = dir.path().join("board.kicad_pcb");
+        let content = "(kicad_pcb\n\t(version 20240108)\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(31 \"B.Cu\" signal)\n\t)\n)\n";
+        std::fs::write(&board_path, content).unwrap();
+
+        let ctx = test_ctx();
+        let args = json!({
+            "board": board_path.to_str().unwrap(),
+            "layer_name": "In1.Cu",
+            "layer_type": "signal"
+        });
+        let result = handle_add_layer(&args, &ctx).await.unwrap();
+        assert!(!result.is_error, "add_layer failed: {result:?}");
+
+        let new_content = std::fs::read_to_string(&board_path).unwrap();
+        let tree = parse_sexp(&new_content).unwrap();
+        let stack = konnect_sexp::layers::layers(&tree);
+        // A layer written as a child of F.Cu instead of a sibling of the
+        // `(layers …)` block would not show up here at all.
+        assert!(
+            stack.iter().any(|l| l.name == "In1.Cu"),
+            "In1.Cu missing from the reparsed stackup: {stack:?}"
+        );
+        assert_eq!(stack.len(), 3, "stackup: {stack:?}");
     }
 }
