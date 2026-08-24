@@ -3,8 +3,9 @@
 ## Phase actuelle
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
-(backlog de correctness upstream) est ouverte : P.6.1 close, P.6.2 à P.6.9
-restent. Branche de travail : `ai/P-schematic-fidelity`.
+(backlog de correctness upstream) est ouverte : P.6.1 et P.6.2 closes, P.6.3 à
+P.6.9 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
+`agentic/main`.
 
 ## Tâche actuelle
 
@@ -12,22 +13,27 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.1 — `run_drc` lit les trois tableaux du rapport DRC. `DrcReport` remplace
-`Vec<DrcViolation>` et porte `violations`, `unconnected_items` et
-`schematic_parity` en `Option<Vec<_>>` : clé absente = passe non exécutée, clé
-vide = mesure propre. `pos` et la description enrichie viennent de `items[0]`,
-comme le parsing ERC. `validators.rs` refuse un rapport dont une catégorie
-manque au lieu de le compter zéro finding.
+P.6.2 — `create_netclass` et `assign_net_to_class` écrivent dans le `.kicad_pro`
+frère, plus jamais dans le `.kicad_pcb`. La classe va dans
+`net_settings.classes`, l'appartenance dans `netclass_patterns`. Absence de
+`.kicad_pro` : refus explicite plutôt qu'écriture là où rien ne lit. #220
+appliqué par-dessus : une mise à jour ne déplace que les champs nommés par
+l'appel.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 0 échec
-- sondes live `cli_tools -- --ignored` (kicad-cli 10.0.3) : 6/6 PASS
-- la commande exacte du nouveau step CI : PASS
+- sondes live `cli_tools -- --ignored` (kicad-cli 10.0.3) : 7/7 PASS
+- les deux commandes exactes des steps CI ajoutés : PASS
 
 ## Décisions actives
 
+- **D112** — mesures d'oracle de P.6.2 : le bloc `(netclass …)` inséré dans le
+  board fait sortir `kicad-cli` en **code 3** ("Échec du chargement de la
+  carte") sans écrire de rapport. Et un vrai `.kicad_pro` KiCad 10 porte
+  `net_settings.{classes, meta.version 4, netclass_patterns}` ; le champ de
+  largeur s'y nomme `track_width`, pas `trace_width` comme l'argument MCP.
 - **D110** — mesure d'oracle de P.6.1, réutilisable pour P.6.4 : sur une carte
   non routée, `kicad-cli pcb drc --format json` écrit ses deux erreurs sous
   `unconnected_items` et **aucun** `pos` au niveau violation. L'ancien parsing
@@ -64,18 +70,20 @@ Aucun.
 - `crates/konnect-core/src/evidence/validators.rs` — gate d'evidence.
 - `crates/konnect-core/src/tools/{verification,pcb_export}.rs` — `handle_run_drc`
   et `handle_get_drc_violations`, ventilation `by_category`.
-- `crates/konnect-core/tests/cli_tools.rs` + `fixtures/unrouted.kicad_pcb`.
-- `docs/upstream-audit.md` — source des items P.6.2 à P.6.9.
+- `crates/konnect-core/src/tools/pcb_routing.rs` — `load_project_settings`,
+  `save_project_settings`, `NETCLASS_FIELDS`, module `netclass_tests`.
+- `crates/konnect-core/tests/cli_tools.rs` + `fixtures/unrouted.kicad_pcb`,
+  `crates/konnect-core/tests/config_and_rules.rs`.
+- `docs/upstream-audit.md` — source des items P.6.3 à P.6.9.
 - `.github/workflows/e2e-kicad.yml` — job gatant, un step par sonde.
 
 ## NEXT ACTION
 
-Implémenter P.6.2 — `9a56233` + `#220` : `create_netclass` écrit un nœud
-`(netclass …)` dans le `.kicad_pcb` (`crates/konnect-core/src/tools/pcb_routing.rs:643`,
-insertion à `content.rfind(')')` l.657-678), ce qui produit une carte que KiCad
-refuse d'ouvrir, alors que KiCad 10 ne lit les netclasses que dans le
-`.kicad_pro` (`net_settings`). Écrire d'abord le test rouge qui prouve avec
-`kicad-cli` que la carte écrite ne se charge plus, puis déplacer
-`create_netclass` et `assign_net_to_class` vers le `.kicad_pro` frère avec refus
-explicite s'il est absent, et appliquer par-dessus le correctif `#220` (une mise
-à jour ne doit pas réinjecter les défauts de création).
+Implémenter P.6.3 — `#262` : les symboles d'alimentation sont absents du graphe
+de nets du schéma, donc chaque rail `power:` se lit comme non connecté.
+`build_net_graph` n'est alimenté que par `extract_labels` ; il faut
+`extract_power_symbol_labels` et `LibPin::electrical_type`, sachant que
+`LabelKind::PowerSymbol` existe déjà ici comme variante morte. C'est le plus
+gros des items restants : lire d'abord sa section dans `docs/upstream-audit.md`
+plutôt que de re-dériver le mécanisme, puis écrire le test rouge sur une
+fixture portant un `power:GND`, en prenant `kicad-cli sch erc` comme oracle.

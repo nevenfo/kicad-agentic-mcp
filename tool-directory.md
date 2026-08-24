@@ -265,8 +265,8 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `query_traces` | List trace segments on the board, optionally filtered by net and/or layer. |
 | `get_nets_list` | Return all nets defined on the PCB via KiCAD IPC. |
 | `modify_trace` | Modify a trace segment by deleting and re-adding it with new parameters. |
-| `create_netclass` | Add a netclass definition to the board's design rules (S-expression insert). |
-| `assign_net_to_class` | Assign a net to an existing netclass in the PCB file (S-expression edit). |
+| `create_netclass` | Create or update a netclass in the project's design rules (sibling .kicad_pro net_settings; the board file is never touched). |
+| `assign_net_to_class` | Assign a net to an existing netclass, as a netclass_patterns entry in the sibling .kicad_pro. |
 | `route_differential_pair` | Route a differential pair (two parallel traces with a specified gap). |
 
 ### `pcb_export` · 13 tools

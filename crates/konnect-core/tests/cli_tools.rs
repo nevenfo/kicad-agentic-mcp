@@ -333,6 +333,43 @@ async fn an_unrouted_board_reports_unconnected_copper_as_an_error() {
     }
 }
 
+/// `create_netclass` used to insert a `(netclass …)` node into the board
+/// itself — as a direct child of `(kicad_pcb`, a token pcbnew's parser
+/// rejects, so the board no longer loaded and every later tool against it,
+/// `run_drc` included, failed on the load rather than on anything of its own.
+/// The class now lives in the sibling `.kicad_pro`; this is the one proof
+/// that a real `kicad-cli` still opens the board afterward.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn netclass_tools_leave_the_board_loadable_by_kicad_cli() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let board = h.fixture("unrouted.kicad_pcb");
+    h.write(
+        "unrouted.kicad_pro",
+        "{\n  \"meta\": { \"filename\": \"unrouted.kicad_pro\", \"version\": 3 }\n}\n",
+    );
+    let pcb = harness::as_str(&board).to_string();
+
+    h.json(
+        "create_netclass",
+        json!({ "board": pcb, "name": "HV", "clearance": 0.5, "trace_width": 0.3 }),
+    )
+    .await;
+    h.json(
+        "assign_net_to_class",
+        json!({ "board": pcb, "net_name": "GND", "netclass": "HV" }),
+    )
+    .await;
+
+    // If create_netclass had corrupted the board (the pre-fix behaviour),
+    // kicad-cli fails to load it and this call errors instead of answering.
+    let report = h.json("run_drc", json!({ "board": pcb })).await;
+    assert!(
+        report["total_violations"].is_number(),
+        "run_drc did not produce a report after create_netclass/assign_net_to_class: {report}"
+    );
+}
+
 /// The manufacturing package is the pipeline end to end: Gerbers, drills and
 /// the assembly files in one directory.
 #[tokio::test]

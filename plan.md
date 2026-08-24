@@ -3001,11 +3001,19 @@ None. Each item below is independent of the others except where stated.
       a missing category rather than counting it as zero findings.
       `crates/konnect-core/tests/fixtures/unrouted.kicad_pcb` is the KiCad 10
       board that produces it; the probe runs in the gating E2E job.
-- [ ] P.6.2 `9a56233` + #220 — `create_netclass` writes a `(netclass …)` node
+- [x] P.6.2 `9a56233` + #220 — `create_netclass` writes a `(netclass …)` node
       into the `.kicad_pcb`; KiCad 10 reads netclasses from `.kicad_pro` only,
       and the insertion point is `rfind(')')` when no `(net_classes` block
       exists — a block KiCad has not written since v6. Produces boards KiCad
       refuses to open. `pcb_routing.rs`.
+      DONE. Corruption confirmed on the oracle first: the exact block the
+      handler inserted makes `kicad-cli` exit 3 with "Échec du chargement de
+      la carte" and write no report at all. Both handlers now edit the sibling
+      `.kicad_pro` — `net_settings.classes` for the class, `netclass_patterns`
+      for membership, the shape a real KiCad 10 project file uses — and refuse
+      when no project file exists rather than writing where nothing reads. The
+      board is no longer written by either tool, asserted byte for byte. #220
+      on top: an update moves only the fields the call named.
 - [ ] P.6.3 #262 — power symbols absent from the schematic net graph: every
       `power:` rail reads as unconnected. Needs `extract_power_symbol_labels`
       and `LibPin::electrical_type`; `LabelKind::PowerSymbol` is already a dead

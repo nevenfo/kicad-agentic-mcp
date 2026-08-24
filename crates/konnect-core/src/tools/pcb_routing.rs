@@ -1,13 +1,16 @@
 //! `pcb_routing` toolset — traces, vias, copper pours, nets, netclasses, and diff pairs.
 //!
-//! Routing operations use the KiCAD IPC API; `add_net`, `create_netclass`, and
-//! `add_copper_pour` use S-expression file manipulation.
+//! Routing operations use the KiCAD IPC API; `add_net` and `add_copper_pour`
+//! use S-expression file manipulation. `create_netclass` and
+//! `assign_net_to_class` edit the sibling `.kicad_pro` — KiCAD has kept net
+//! classes in the project's `net_settings` since v7, and the board file has no
+//! container for them at all.
 
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
-use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
+use crate::tools::{get_path, opt_f64, require_f64, require_str, ToolContext, ToolDef};
 use konnect_sexp::writer::{apply_edits, new_uuid, write_atomic, SexpEdit};
 use serde_json::json;
 
@@ -208,11 +211,16 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "create_netclass",
-            "Add a netclass definition to the board's design rules (S-expression file insert).",
+            "Create or update a netclass in the project's design rules. Writes \
+             net_settings.classes in the sibling .kicad_pro (where KiCad has kept \
+             netclasses since v7); the board file is never touched. An existing \
+             class with the same name is updated in place, and only the fields \
+             named here move — a repeat call that names one field leaves the rest \
+             of the class as it was. Requires the project file to exist.",
             json!({
                 "type": "object",
                 "properties": {
-                    "board":        { "type": "string" },
+                    "board":        { "type": "string", "description": "Path to .kicad_pcb file; the sibling .kicad_pro is edited" },
                     "name":         { "type": "string", "description": "Netclass name (e.g. 'Power')" },
                     "clearance":    { "type": "number", "description": "Clearance in mm", "default": 0.2 },
                     "trace_width":  { "type": "number", "description": "Default trace width in mm", "default": 0.25 },
@@ -225,11 +233,14 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "assign_net_to_class",
-            "Assign a net to an existing netclass in the PCB file (S-expression edit).",
+            "Assign a net to an existing netclass, as a netclass_patterns entry in \
+             the sibling .kicad_pro. The class must already exist (create_netclass). \
+             Reassigning a net moves its pattern to the new class rather than adding \
+             a competing one.",
             json!({
                 "type": "object",
                 "properties": {
-                    "board":     { "type": "string", "description": "Path to .kicad_pcb file" },
+                    "board":     { "type": "string", "description": "Path to .kicad_pcb file; the sibling .kicad_pro is edited" },
                     "net_name":  { "type": "string", "description": "Net name to assign" },
                     "netclass":  { "type": "string", "description": "Netclass name to assign the net to" }
                 },
@@ -640,6 +651,67 @@ async fn handle_modify_trace(
     })))
 }
 
+/// The sibling `<project>.kicad_pro`, which is where KiCad ≥ 7 keeps net
+/// classes. The board file has no netclass container at all — the previous
+/// handler inserted `(netclass …)` as a direct child of `(kicad_pcb`, a token
+/// pcbnew's parser rejects, so the board no longer loaded.
+fn project_settings_path(board_path: &std::path::Path) -> std::path::PathBuf {
+    board_path.with_extension("kicad_pro")
+}
+
+/// Load the project JSON, refusing — rather than inventing a file KiCad never
+/// reads — when it is absent. A netclass with nowhere KiCad looks for it
+/// would be the same silent no-op this handler replaces.
+fn load_project_settings(
+    board_path: &std::path::Path,
+) -> anyhow::Result<Result<(std::path::PathBuf, serde_json::Value), CallToolResult>> {
+    let pro = project_settings_path(board_path);
+    if !pro.exists() {
+        return Ok(Err(CallToolResult::error_kind(
+            ToolErrorKind::FileNotFound {
+                path: pro.display().to_string(),
+            },
+            format!(
+                "No project file at {} — net classes live in the .kicad_pro since KiCad 7, \
+                 and a class written anywhere else is never read. Create the project \
+                 (KiCad: File > Save a Copy, or place the board inside a project) and retry.",
+                pro.display()
+            ),
+        )));
+    }
+    let settings: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&pro)?)
+        .map_err(|e| anyhow::anyhow!("{} is not valid JSON: {e}", pro.display()))?;
+    Ok(Ok((pro, settings)))
+}
+
+/// KiCad's own writer emits 2-space-indented JSON; `serde_json`'s pretty
+/// printer matches, so the diff on a round trip stays minimal. Keys not
+/// touched here (`text_variables`, `sheets`, `pcbnew`, …) pass through
+/// unchanged because `settings` is the whole document read back, edited
+/// in place, and re-serialised — nothing is reconstructed from scratch.
+fn save_project_settings(
+    pro: &std::path::Path,
+    settings: &serde_json::Value,
+) -> anyhow::Result<()> {
+    write_atomic(
+        pro,
+        &format!("{}\n", serde_json::to_string_pretty(settings)?),
+    )?;
+    Ok(())
+}
+
+/// KiCad's `net_settings.classes[]` field name, this tool's argument name,
+/// and the value a *new* class takes when the caller says nothing. The
+/// defaults apply to creation only — folding them into an update turned
+/// "widen HV's track" into a silent reset of whatever the caller had already
+/// tuned and did not name this time (upstream #220).
+const NETCLASS_FIELDS: [(&str, &str, f64); 4] = [
+    ("clearance", "clearance", 0.2),
+    ("track_width", "trace_width", 0.25),
+    ("via_drill", "via_drill", 0.4),
+    ("via_diameter", "via_diameter", 0.8),
+];
+
 async fn handle_create_netclass(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -649,38 +721,74 @@ async fn handle_create_netclass(
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
     };
-    let clearance = args["clearance"].as_f64().unwrap_or(0.2);
-    let trace_width = args["trace_width"].as_f64().unwrap_or(0.25);
-    let via_drill = args["via_drill"].as_f64().unwrap_or(0.4);
-    let via_dia = args["via_diameter"].as_f64().unwrap_or(0.8);
 
-    let netclass_sexp = format!(
-        "\n      (netclass \"{name}\"\n        (clearance {clearance})\n        \
-         (trace_width {trace_width})\n        (via_drill {via_drill})\n        \
-         (via_diameter {via_dia})\n      )"
-    );
-
-    let content = std::fs::read_to_string(&board_path)?;
-    // Find (net_classes block or (net_settings block to insert into
-    let insert_pos = if let Some(nc_pos) = content.find("(net_classes") {
-        // Find closing paren of (net_classes ...)
-        let block = &content[nc_pos..];
-        nc_pos
-            + block
-                .find("\n    )")
-                .unwrap_or(block.find(')').unwrap_or(block.len() - 1))
-    } else {
-        // No net_classes block; insert before last )
-        content.rfind(')').unwrap_or(content.len())
+    let (pro, mut settings) = match load_project_settings(&board_path)? {
+        Ok(v) => v,
+        Err(refusal) => return Ok(refusal),
     };
 
-    let new_content = apply_edits(content, vec![SexpEdit::insert(insert_pos, netclass_sexp)]);
-    write_atomic(&board_path, &new_content)?;
+    let top = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("{}: top level is not a JSON object", pro.display()))?;
+    let net_settings = top.entry("net_settings").or_insert_with(
+        || json!({ "classes": [], "meta": { "version": 4 }, "netclass_patterns": [] }),
+    );
+    let classes = net_settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("{}: net_settings is not an object", pro.display()))?
+        .entry("classes")
+        .or_insert_with(|| json!([]));
+    let classes = classes.as_array_mut().ok_or_else(|| {
+        anyhow::anyhow!("{}: net_settings.classes is not an array", pro.display())
+    })?;
+
+    // KiCad keys classes by name; a second entry with the same name is
+    // undefined in its dialog, so an existing class is updated in place, and
+    // only the fields the caller actually named move.
+    let mut changed = true;
+    let updated = if let Some(class) = classes.iter_mut().find(|c| c["name"] == json!(name)) {
+        let before = class.clone();
+        for (key, arg, _) in NETCLASS_FIELDS {
+            if let Some(value) = opt_f64(args, arg) {
+                class[key] = json!(value);
+            }
+        }
+        changed = *class != before;
+        true
+    } else {
+        let mut class = json!({ "name": name, "priority": 0 });
+        for (key, arg, default) in NETCLASS_FIELDS {
+            class[key] = json!(opt_f64(args, arg).unwrap_or(default));
+        }
+        classes.push(class);
+        false
+    };
+
+    // Report the class as it now stands, not the arguments that came in — on
+    // an update most fields were never named by this call, and echoing the
+    // arguments back is what made the #220 reset invisible.
+    let stored = classes
+        .iter()
+        .find(|c| c["name"] == json!(name))
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
+    // Naming no value at all, or the values already held, decides nothing.
+    // `save_project_settings` re-serialises the whole document rather than
+    // patching it, so saving anyway would rewrite the project file for a
+    // call that is, in effect, a read.
+    if changed {
+        save_project_settings(&pro, &settings)?;
+    }
 
     Ok(CallToolResult::json(&json!({
         "created_netclass": name,
-        "clearance": clearance, "trace_width": trace_width,
-        "via_drill": via_drill, "via_diameter": via_dia
+        "updated_existing": updated,
+        "clearance": stored["clearance"], "trace_width": stored["track_width"],
+        "via_drill": stored["via_drill"], "via_diameter": stored["via_diameter"],
+        "file": pro.display().to_string(),
+        "note": "Netclasses live in the project file; assign nets with assign_net_to_class. \
+                 KiCad reads the change on next project open."
     })))
 }
 
@@ -698,62 +806,79 @@ async fn handle_assign_net_to_class(
         Err(e) => return Ok(e),
     };
 
-    let content = std::fs::read_to_string(&board_path)?;
-
-    // Find the netclass block: (netclass "NAME" ...)
-    let nc_pat = format!("(netclass \"{}\"", netclass);
-    let nc_pos = match content.find(&nc_pat) {
-        Some(p) => p,
-        None => {
-            return Ok(CallToolResult::error_kind(
-                ToolErrorKind::NotFound {
-                    document: board_path.display().to_string(),
-                    item_kind: "netclass".to_string(),
-                    key: netclass.to_string(),
-                    candidates: Vec::new(),
-                },
-                format!("Netclass '{}' not found in board file", netclass),
-            ))
-        }
+    let (pro, mut settings) = match load_project_settings(&board_path)? {
+        Ok(v) => v,
+        Err(refusal) => return Ok(refusal),
     };
 
-    // Find the closing paren of the netclass block
-    let mut depth = 0i32;
-    let mut nc_end = nc_pos;
-    for (i, ch) in content[nc_pos..].char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    nc_end = nc_pos + i;
-                    break;
-                }
-            }
-            _ => {}
+    // The class must exist — a pattern naming an unknown class is silently
+    // ignored by KiCad, which is exactly the failure shape this tool must not
+    // reintroduce under a different name.
+    let known: Vec<String> = settings["net_settings"]["classes"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c["name"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    if !known.iter().any(|n| n == &netclass) {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::NotFound {
+                document: pro.display().to_string(),
+                item_kind: "netclass".to_string(),
+                key: netclass.clone(),
+                candidates: known,
+            },
+            format!(
+                "Netclass '{}' not found in {} — create it with create_netclass.",
+                netclass,
+                pro.display()
+            ),
+        ));
+    }
+
+    // Membership is a netclass_patterns entry; the exact net name is a valid
+    // pattern. One pattern maps to one class, so a re-assignment moves the
+    // entry rather than adding a competing one.
+    let patterns = settings["net_settings"]
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("{}: net_settings is not an object", pro.display()))?
+        .entry("netclass_patterns")
+        .or_insert_with(|| json!([]));
+    let patterns = patterns.as_array_mut().ok_or_else(|| {
+        anyhow::anyhow!(
+            "{}: net_settings.netclass_patterns is not an array",
+            pro.display()
+        )
+    })?;
+
+    let mut previous_class: Option<String> = None;
+    if let Some(entry) = patterns
+        .iter_mut()
+        .find(|p| p["pattern"] == json!(net_name))
+    {
+        if entry["netclass"] == json!(netclass) {
+            return Ok(CallToolResult::json(&json!({
+                "already_assigned": true,
+                "net_name": net_name,
+                "netclass": netclass,
+                "file": pro.display().to_string()
+            })));
         }
+        previous_class = entry["netclass"].as_str().map(String::from);
+        entry["netclass"] = json!(netclass);
+    } else {
+        patterns.push(json!({ "netclass": netclass, "pattern": net_name }));
     }
-
-    // Check if net is already assigned
-    let nc_block = &content[nc_pos..nc_end];
-    let net_check = format!("(net \"{}\")", net_name);
-    if nc_block.contains(&net_check) {
-        return Ok(CallToolResult::json(&json!({
-            "already_assigned": true,
-            "net_name": net_name,
-            "netclass": netclass
-        })));
-    }
-
-    // Insert the net assignment before the closing paren of the netclass block
-    let net_entry = format!("\n        (net \"{}\")", net_name);
-    let new_content = apply_edits(content, vec![SexpEdit::insert(nc_end, net_entry)]);
-    write_atomic(&board_path, &new_content)?;
+    save_project_settings(&pro, &settings)?;
 
     Ok(CallToolResult::json(&json!({
         "assigned": true,
         "net_name": net_name,
-        "netclass": netclass
+        "netclass": netclass,
+        "previous_class": previous_class,
+        "file": pro.display().to_string()
     })))
 }
 
@@ -827,4 +952,275 @@ async fn handle_route_diff_pair(
         "net_pos": net_pos, "net_neg": net_neg,
         "layer": layer, "width": width, "gap": gap
     })))
+}
+
+/// Netclasses live in `<project>.kicad_pro` since KiCad 7, not the board. The
+/// previous handler inserted a `(netclass …)` node into the `.kicad_pcb` — as
+/// a direct child of `(kicad_pcb`, a token pcbnew's parser rejects outright,
+/// so a real board no longer loaded.
+#[cfg(test)]
+mod netclass_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    const BOARD: &str = "(kicad_pcb\n\t(version 20250610)\n\t(generator \"pcbnew\")\n)\n";
+
+    /// A board plus, optionally, the sibling `.kicad_pro` KiCad writes.
+    fn fixture(with_project: bool) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let board = dir.path().join("demo.kicad_pcb");
+        std::fs::write(&board, BOARD).unwrap();
+        if with_project {
+            std::fs::write(
+                dir.path().join("demo.kicad_pro"),
+                serde_json::to_string_pretty(&json!({
+                    "board": { "design_settings": {} },
+                    "meta": { "filename": "demo.kicad_pro", "version": 3 }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
+        (dir, board)
+    }
+
+    fn text_of(r: &CallToolResult) -> String {
+        match r.content.first() {
+            Some(crate::mcp::protocol::ToolContent::Text { text }) => text.clone(),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
+    fn project_json(board: &std::path::Path) -> serde_json::Value {
+        let pro = board.with_extension("kicad_pro");
+        serde_json::from_str(&std::fs::read_to_string(pro).unwrap()).unwrap()
+    }
+
+    async fn create(board: &std::path::Path, args: serde_json::Value) -> CallToolResult {
+        let mut args = args;
+        args["board"] = json!(board.to_str().unwrap());
+        handle_create_netclass(&args, &test_ctx()).await.unwrap()
+    }
+
+    async fn assign(board: &std::path::Path, net: &str, class: &str) -> CallToolResult {
+        handle_assign_net_to_class(
+            &json!({ "board": board.to_str().unwrap(), "net_name": net, "netclass": class }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap()
+    }
+
+    /// The board file is data pcbnew refuses if a netclass node lands in it;
+    /// the class must go into the project file instead, and the board must
+    /// not change by a single byte.
+    #[tokio::test]
+    async fn create_netclass_writes_the_project_file_and_leaves_the_board_alone() {
+        let (_dir, board) = fixture(true);
+        let result = create(
+            &board,
+            json!({ "name": "HV", "clearance": 0.5, "trace_width": 0.3 }),
+        )
+        .await;
+        assert!(!result.is_error, "{}", text_of(&result));
+        assert_eq!(std::fs::read_to_string(&board).unwrap(), BOARD);
+
+        let pro = project_json(&board);
+        let classes = pro["net_settings"]["classes"].as_array().unwrap();
+        let hv = classes
+            .iter()
+            .find(|c| c["name"] == "HV")
+            .expect("HV class in net_settings.classes");
+        assert_eq!(hv["clearance"], json!(0.5));
+        assert_eq!(hv["track_width"], json!(0.3));
+        assert_eq!(hv["via_diameter"], json!(0.8));
+        assert_eq!(hv["via_drill"], json!(0.4));
+        // The existing project content survives the edit.
+        assert_eq!(pro["meta"]["filename"], json!("demo.kicad_pro"));
+    }
+
+    /// No project file means nowhere KiCad would ever read the class from;
+    /// inventing one risks orphan settings, so the tool refuses instead of
+    /// writing anything.
+    #[tokio::test]
+    async fn create_netclass_without_a_project_file_refuses_and_writes_nothing() {
+        let (dir, board) = fixture(false);
+        let result = create(&board, json!({ "name": "HV" })).await;
+        assert!(result.is_error, "{}", text_of(&result));
+        assert!(
+            text_of(&result).contains("kicad_pro"),
+            "{}",
+            text_of(&result)
+        );
+        assert_eq!(std::fs::read_to_string(&board).unwrap(), BOARD);
+        assert!(!dir.path().join("demo.kicad_pro").exists());
+    }
+
+    /// Same name twice updates in place — KiCad keys classes by name and two
+    /// entries with one name is undefined behaviour in its dialog.
+    #[tokio::test]
+    async fn create_netclass_updates_an_existing_class_in_place() {
+        let (_dir, board) = fixture(true);
+        create(&board, json!({ "name": "HV", "clearance": 0.3 })).await;
+        let second = create(&board, json!({ "name": "HV", "clearance": 0.6 })).await;
+        assert!(!second.is_error, "{}", text_of(&second));
+
+        let pro = project_json(&board);
+        let classes = pro["net_settings"]["classes"].as_array().unwrap();
+        assert_eq!(
+            classes.iter().filter(|c| c["name"] == "HV").count(),
+            1,
+            "{classes:?}"
+        );
+        assert_eq!(classes[0]["clearance"], json!(0.6));
+    }
+
+    /// Re-running the tool is how a caller adjusts one setting of a class it
+    /// already tuned. Every argument carries a schema default, so applying
+    /// those defaults on an update would silently reset the three settings
+    /// the caller did not name this time — the clearance a board was routed
+    /// to, gone on a call that only meant to widen a track (#220).
+    #[tokio::test]
+    async fn create_netclass_leaves_settings_the_caller_did_not_name_alone() {
+        let (_dir, board) = fixture(true);
+        create(
+            &board,
+            json!({ "name": "HV", "clearance": 1.5, "trace_width": 0.5,
+                    "via_drill": 0.45, "via_diameter": 0.85 }),
+        )
+        .await;
+        let second = create(&board, json!({ "name": "HV", "trace_width": 0.9 })).await;
+        assert!(!second.is_error, "{}", text_of(&second));
+
+        let pro = project_json(&board);
+        let hv = pro["net_settings"]["classes"][0].clone();
+        assert_eq!(hv["track_width"], json!(0.9), "the named value changes");
+        assert_eq!(hv["clearance"], json!(1.5), "{hv}");
+        assert_eq!(hv["via_drill"], json!(0.45), "{hv}");
+        assert_eq!(hv["via_diameter"], json!(0.85), "{hv}");
+
+        // The result echoes the stored class, not the one argument passed.
+        let echoed: serde_json::Value = serde_json::from_str(&text_of(&second)).unwrap();
+        assert_eq!(echoed["clearance"], json!(1.5));
+        assert_eq!(echoed["trace_width"], json!(0.9));
+    }
+
+    /// A new class still gets the documented defaults for whatever the caller
+    /// leaves out — the fix above must not turn creation into a partial class.
+    #[tokio::test]
+    async fn a_new_class_is_still_created_with_the_documented_defaults() {
+        let (_dir, board) = fixture(true);
+        create(&board, json!({ "name": "HV" })).await;
+
+        let hv = project_json(&board)["net_settings"]["classes"][0].clone();
+        assert_eq!(hv["clearance"], json!(0.2), "{hv}");
+        assert_eq!(hv["track_width"], json!(0.25), "{hv}");
+        assert_eq!(hv["via_drill"], json!(0.4), "{hv}");
+        assert_eq!(hv["via_diameter"], json!(0.8), "{hv}");
+    }
+
+    /// Naming no value at all, or the values already held, decides nothing —
+    /// so it must not write. `save_project_settings` re-serialises the whole
+    /// document rather than patching it, so saving anyway rewrites every line
+    /// of the project file for a call that is, in effect, a read.
+    #[tokio::test]
+    async fn a_call_that_changes_nothing_leaves_the_project_file_untouched() {
+        let (_dir, board) = fixture(true);
+        create(&board, json!({ "name": "HV", "clearance": 1.5 })).await;
+
+        // Re-written by hand in a shape the serialiser would not produce, so
+        // any save at all is visible in the bytes.
+        let pro = board.with_extension("kicad_pro");
+        let compact = serde_json::to_string(
+            &serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&pro).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(&pro, &compact).unwrap();
+
+        // Naming no value at all: a read.
+        let result = create(&board, json!({ "name": "HV" })).await;
+        assert!(!result.is_error, "{}", text_of(&result));
+        assert_eq!(std::fs::read_to_string(&pro).unwrap(), compact);
+        let echoed: serde_json::Value = serde_json::from_str(&text_of(&result)).unwrap();
+        assert_eq!(echoed["clearance"], json!(1.5));
+        assert_eq!(echoed["updated_existing"], json!(true));
+
+        // Naming the values it already holds: also nothing to decide.
+        create(&board, json!({ "name": "HV", "clearance": 1.5 })).await;
+        assert_eq!(std::fs::read_to_string(&pro).unwrap(), compact);
+
+        // A real change still writes.
+        create(&board, json!({ "name": "HV", "clearance": 0.9 })).await;
+        assert_ne!(std::fs::read_to_string(&pro).unwrap(), compact);
+    }
+
+    /// Membership is a netclass_patterns entry keyed by the exact net name.
+    #[tokio::test]
+    async fn assign_net_adds_a_pattern_once_and_can_move_it() {
+        let (_dir, board) = fixture(true);
+        create(&board, json!({ "name": "HV" })).await;
+        create(&board, json!({ "name": "LV" })).await;
+
+        let first = assign(&board, "GND", "HV").await;
+        assert!(!first.is_error, "{}", text_of(&first));
+        let pro = project_json(&board);
+        let patterns = pro["net_settings"]["netclass_patterns"].as_array().unwrap();
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0]["netclass"], json!("HV"));
+        assert_eq!(patterns[0]["pattern"], json!("GND"));
+
+        // Idempotent.
+        let again = assign(&board, "GND", "HV").await;
+        let body: serde_json::Value = serde_json::from_str(&text_of(&again)).unwrap();
+        assert_eq!(body["already_assigned"], json!(true));
+        let pro = project_json(&board);
+        assert_eq!(
+            pro["net_settings"]["netclass_patterns"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Reassigning moves the one entry rather than adding a second.
+        let moved = assign(&board, "GND", "LV").await;
+        let body: serde_json::Value = serde_json::from_str(&text_of(&moved)).unwrap();
+        assert_eq!(body["previous_class"], json!("HV"), "{body}");
+        let pro = project_json(&board);
+        let patterns = pro["net_settings"]["netclass_patterns"].as_array().unwrap();
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0]["netclass"], json!("LV"));
+
+        assert_eq!(std::fs::read_to_string(&board).unwrap(), BOARD);
+    }
+
+    /// Assigning to a class that doesn't exist names the ones that do.
+    #[tokio::test]
+    async fn assign_net_to_a_missing_class_errors_naming_the_available_ones() {
+        let (_dir, board) = fixture(true);
+        create(&board, json!({ "name": "HV" })).await;
+        let result = assign(&board, "GND", "NOPE").await;
+        assert!(result.is_error);
+        let msg = text_of(&result);
+        assert!(msg.contains("HV"), "{msg}");
+        assert_eq!(std::fs::read_to_string(&board).unwrap(), BOARD);
+    }
 }

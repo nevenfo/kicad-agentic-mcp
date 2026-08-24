@@ -379,8 +379,8 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
-| `create_netclass` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `assign_net_to_class` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `create_netclass` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_routing.rs` |  |
+| `assign_net_to_class` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_routing.rs` |  |
 | `set_design_rules` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 | `get_design_rules` | `verification` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 | `set_layer_constraints` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
