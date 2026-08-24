@@ -9,19 +9,19 @@ Canonical reference for every MCP tool exposed by Konnect. Generated from the Ru
 
 ## Overview
 
-- **20 toolsets** organized into 12 categories
-- **193 registered tools** + **10 always-visible meta-tools** = **203 total**
+- **22 toolsets** organized into 13 categories
+- **202 registered tools** + **13 always-visible meta-tools** = **215 total**
 - **Four ways to reach a tool**, cheapest last:
   1. **Toolset loading** — `list_toolboxes` → `load_toolset(name)` exposes a whole domain in `tools/list`; `unload_toolset(name)` prunes it. Coarse, and every load makes the client re-fetch the entire catalogue.
   2. **Tool loading** — `find_capabilities(intent)` → `load_tools([names])` exposes exactly the tools named. Same refresh, far less of it.
-  3. **The gateway** — `kicad_describe([names])` → `kicad_invoke([calls])` calls tools *without* exposing them at all. The catalogue never changes, so no refresh happens, and a whole sequence fits in one round trip. Measured on the golden suite: 2 171 external tokens per task and 4 MCP calls, against 3 770 / 10 for path 2 and 10 912 / 11 for path 1.
+  3. **The gateway** — `kicad_describe([names])` → `kicad_invoke([calls])` calls tools *without* exposing them at all. The catalogue never changes, so no refresh happens, and a whole sequence fits in one round trip. Measured on the golden suite at Phase F: 2 171 external tokens per task and 4 MCP calls, against 3 770 / 10 for path 2 and 10 912 / 11 for path 1 — the three routes of this same server, which is what that comparison isolates. The gateway route has since drifted to **2 249** as tool descriptions and MCP annotations grew (M.1, 2026-08-24); `docs/benchmark.md` records where the +78 went.
   4. **A plan** — `kicad_invoke([{tool: "apply_plan", …}])` describes the change once instead of enumerating it, and one operation may expand to many calls. Measured on the same divider: 1 124 external tokens against the batch's 2 180; on a four-capacitor decoupling bank, 882 against 2 265. See `docs/benchmark.md`, "Phase G".
-- **Startup surface**: the server pre-loads only the **starter kit** (`project`) plus two individually admitted config read tools, so baseline `tools/list` costs ~1.7K tokens instead of ~22K. If the LLM calls an unloaded tool by name, the error names the owning toolset so recovery is a single `load_toolset` hop.
+- **Startup surface**: the server pre-loads only the **starter kit** (`project`) plus two individually admitted config read tools, so baseline `tools/list` costs ~2.8K tokens (21 tools) instead of ~33.2K (the full 215-tool catalogue). If the LLM calls an unloaded tool by name, the error names the owning toolset so recovery is a single `load_toolset` hop.
 - **Observability**: every `tools/call` is recorded — ring buffer of the last 100 calls + per-tool counters + JSONL at `<konnect dir>/logs/calls.jsonl`. Calls made inside a `kicad_invoke` batch are recorded individually under their own tool names. The LLM self-diagnoses via `get_recent_calls` and `server_stats`.
 
 ## Meta-tools (always visible)
 
-Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
+Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 
 ### Gateway
 
@@ -29,14 +29,16 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 |------|---------|
 | `kicad_describe` | Return the full input schema of named tools. The schemas arrive as a result the caller asked for instead of a catalogue refresh it cannot decline. |
 | `kicad_invoke` | Run one or more tools by name, in order, loaded or not. Nothing is added to `tools/list`. Stops at the first failure unless `stop_on_error: false`; reports `failed_at` and `not_run` so the caller knows what to retry. |
+| `kicad_agent` | Explicit Agent gateway. Runs one supervisor turn from durable TaskState using the measured decision NO_LLM, LOCAL, or ESCALATE. Direct `kicad_describe`/`kicad_invoke` never enter this gateway or start an LLM. |
+| `kicad_agent_verify` | Explicit Agent verification turn. Its PASS/FAIL verdict and `TaskState.verified_facts` come only from cached or freshly run kicad-cli ERC/DRC; model assertions are never verified facts. |
 
 ### Discovery / routing
 
 | Tool | Purpose |
 |------|---------|
-| `find_capabilities` | Search all 193 tools by plain-language intent; returns name + toolset + one-line summary. |
+| `find_capabilities` | Search all 202 tools by plain-language intent; returns name + toolset + one-line summary. |
 | `load_tools` | Expose specific tools by name without loading their toolset. |
-| `list_toolboxes` | List all 20 toolsets with category, tool count, and whether each is currently loaded. |
+| `list_toolboxes` | List all 22 toolsets with category, tool count, and whether each is currently loaded. |
 | `load_toolset` | Load a toolset by name to expose its tools in `tools/list`. Returns the list of tools added. |
 | `unload_toolset` | Unload a toolset to prune its tools from `tools/list`. Use when switching tasks to keep context small. |
 | `get_active_toolsets` | Return the currently loaded toolsets and how many tools each provides. |
@@ -47,6 +49,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 |------|---------|
 | `get_recent_calls` | Last N tool calls (newest first) — `call_id`, tool, toolset, duration, status (ok/error/not_found), `error_kind`. The LLM's debug log. Default limit 20, max 100. |
 | `server_stats` | Uptime, total/error call counts, per-tool totals + errors, and the JSONL log path. |
+| `changes_since` | Report what happened to a document after the revision `since` (a token `kicad_invoke` already gave in its `revisions` field). Returns the current revision, whether it matches `since`, and the run-journal entries that touched the document. |
 
 ---
 
@@ -174,6 +177,18 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `fix_connectivity` | Scan for near-miss wire endpoints within `snap_tolerance` of a pin/label and snap them into place. Supports `dry_run`. |
 | `export_bom` | Generate a Bill of Materials (BOM) CSV from the schematic's component data. |
 
+### `sch_buses` · 5 tools
+**Purpose:** Buses: bus segments, bus entries, bus aliases, and expanding a bus name into the nets it carries.
+**Source:** [`crates/konnect-core/src/tools/sch_buses.rs`](crates/konnect-core/src/tools/sch_buses.rs)
+
+| Tool | Description |
+|------|-------------|
+| `add_bus` | Draw a bus segment on a schematic. A bus is not a thick wire: a wire connects to it only through a bus entry (`add_bus_entry`), and the bus takes its name from a label placed on it. |
+| `add_bus_entry` | Add a bus entry — the short diagonal stub that taps one member out of a bus. Place it at the point on the bus; `dx`/`dy` are a delta, not a corner. |
+| `add_bus_alias` | Declare a bus alias: one name standing for an explicit list of member nets, so a bus of unrelated signals can be labelled with a single name. |
+| `list_buses` | List the bus segments, bus entries, and bus aliases on a schematic, with the labels that name each bus and the members those names expand to. |
+| `expand_bus` | Expand a bus name into the member nets it stands for, the way KiCAD's connectivity does: `DATA[0..7]` is a vector, `{SDA SCL}` (optionally prefixed) is an explicit list. |
+
 ### `sch_hierarchy` · 12 tools
 **Purpose:** Hierarchical sheets: add/edit/move/delete/duplicate a sheet, hierarchy and page-numbering queries, import/add/edit/delete sheet pins, pin/label sync validation.
 **Source:** [`crates/konnect-core/src/tools/sch_hierarchy.rs`](crates/konnect-core/src/tools/sch_hierarchy.rs)
@@ -254,7 +269,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `assign_net_to_class` | Assign a net to an existing netclass in the PCB file (S-expression edit). |
 | `route_differential_pair` | Route a differential pair (two parallel traces with a specified gap). |
 
-### `pcb_export` · 12 tools
+### `pcb_export` · 13 tools
 **Purpose:** Gerber, PDF, SVG, 3D model, pick-and-place, DRC, DXF/GenCAD/IPC-2581/ODB++.
 **Source:** [`crates/konnect-core/src/tools/pcb_export.rs`](crates/konnect-core/src/tools/pcb_export.rs)
 
@@ -265,6 +280,7 @@ Ten tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `export_svg` | Export the PCB layout to an SVG file using kicad-cli. |
 | `export_3d` | Export the PCB as a 3D model (STEP or VRML) using kicad-cli. |
 | `export_netlist` | Export the PCB netlist in KiCAD or IPC-D-356 format. |
+| `export_drill` | Export drill files on their own, with fabricator options: Excellon or Gerber, units, drill origin, separate plated/non-plated files, and a drill map. `export_gerber` and `export_manufacturing_package` emit drills with KiCAD's defaults; use this for anything else. |
 | `export_position_file` | Generate a component placement (pick-and-place) position file for SMT assembly. |
 | `export_dxf` | Export the PCB to DXF, one file per layer, using kicad-cli. For mechanical CAD interchange. |
 | `export_gencad` | Export the PCB in GenCAD format using kicad-cli. |
@@ -438,13 +454,27 @@ Operations: `call` (any tool, verbatim), `place`, `power`, `label`, `wire`, `con
 
 ---
 
+## Graph
+
+### `graph` · 3 tools
+**Purpose:** Query the indexed world model — filtered item lookups, spatial neighbors, and per-document/per-kind counts — instead of dumping a whole document.
+**Source:** [`crates/konnect-core/src/tools/graph.rs`](crates/konnect-core/src/tools/graph.rs)
+
+| Tool | Description |
+|------|-------------|
+| `graph_query` | Filter indexed items across a project's schematic and PCB documents by kind, label, document, indexed attribute, or spatial region — an intersection of indices instead of a document dump. |
+| `graph_neighbors` | Items whose indexed position is near another item's, nearest first, distance included — never across documents, since two files index unrelated coordinate spaces. |
+| `graph_stats` | Item counts per document and per kind for a project's graph — the cheap orientation query to run before `graph_query` or `graph_neighbors`, no items fetched. |
+
+---
+
 ## Appendix: Structural observations
 
 ### Is the structure intelligent?
 
 **Yes — the split holds up.** A few observations worth tracking as the tool surface grows:
 
-1. **Categories mirror the KiCAD editor boundaries** — Schematic (`sch_*`), PCB (`pcb_*`), plus library/integration/verification/review/templates/manufacturing as cross-cutting concerns. A new tool's home is usually obvious.
+1. **Categories mirror the KiCAD editor boundaries** — Schematic (`sch_*`), PCB (`pcb_*`), plus library/integration/verification/review/templates/manufacturing as cross-cutting concerns. A new tool's home is usually obvious. Three toolsets do **not** mirror an editor boundary and were added later for the agent runtime: `plan` (describe a change once instead of enumerating it), `task` (durable task state across calls) and `graph` (query the indexed project instead of dumping a document). They are organised by what the caller is doing, not by which editor owns the file, and a tool that belongs to one of them will not look obvious under the editor split — check what the caller is holding, not what the tool touches.
 
 2. **Batch tools are split across two places**:
    - `sch_batch` holds top-level batch primitives (`batch_connect_to_net`, `batch_delete`, `bulk_move_schematic_components`, etc.) plus validation

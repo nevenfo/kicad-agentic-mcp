@@ -56,7 +56,13 @@ These are exactly the commands CI runs — if they pass locally, CI should be gr
 - If you added or removed tools: update `tool_count` in `router/registry.rs`,
   regenerate the matching section of `tool-directory.md`, and update the total tool
   counts in DEV.md's "Current Stats" and the README — those three counts have
-  drifted apart before precisely because only one of them got updated
+  drifted apart before precisely because only one of them got updated. Two more
+  places assert the same number and are easy to miss: the bundled skill
+  (`crates/konnect/assets/skills/konnect/SKILL.md`), which ships to users, and
+  `packaging/metadata.json`, which ships to the PCM. The one inside
+  `find_capabilities`'s own description is covered by a test
+  (`router::tests::find_capabilities_description_quotes_the_real_corpus_size`) —
+  it will fail before review does
 
 First PR from a fork? CI workflows may sit at "waiting for approval" until a
 maintainer approves the run — that's a GitHub setting for first-time contributors,

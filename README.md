@@ -13,7 +13,7 @@
 Rust binary — that lets Claude and other AI assistants design schematics and PCBs
 through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 
-**187 tools across 18 on-demand toolsets.** Schematic capture, PCB layout and
+**202 tools across 22 on-demand toolsets.** Schematic capture, PCB layout and
 routing, ERC/DRC, design-review audits, JLCPCB part search, Freerouting, reference
 circuits, and a full manufacturing export pipeline — with bundled skills and agents
 that teach Claude KiCAD conventions out of the box.
@@ -41,8 +41,9 @@ Konnect, a tool call is a function call. One process, one language, no plumbing.
 **The dependency surface was enormous.** Running the original means carrying Node.js
 and its npm tree, Python and its pip packages, wxPython, kicad-skip, and KiCAD's
 SWIG bindings — two package ecosystems plus a binding layer, every one of them a
-moving target that can break an install. Konnect is a single static binary, about
-5 MB. There is nothing to install alongside it and nothing to version-match.
+moving target that can break an install. Konnect is one binary — 22 MB on
+Windows, no interpreter, no package tree. There is nothing to install alongside
+it and nothing to version-match.
 
 **SWIG is a dead end.** The original's PCB backend depends on KiCAD's SWIG Python
 bindings, which KiCAD is deprecating in favor of its IPC API. SWIG also carried
@@ -57,11 +58,15 @@ through its own S-expression engine with atomic writes (write, fsync, rename), U
 preservation, and round-trip tests — no third-party schematic library with known
 gaps, no text-manipulation workarounds.
 
-**Context economy is a feature.** Exposing ~180 tools to an LLM costs roughly 23K
-tokens of context on every listing. Konnect's router loads a starter kit (~2K
-tokens) and lets the model pull in toolsets on demand — plus built-in observability
-(`get_recent_calls`, `server_stats`, JSONL call logs) so the model can diagnose its
-own tool failures.
+**Context economy is a feature.** Serving the whole catalogue — 215 tools once
+every toolset is loaded — costs **33K tokens** of context on every listing.
+Konnect's router opens with a starter kit of **21 tools / 2.8K tokens** and lets
+the model pull in toolsets on demand, or skip the catalogue entirely and call
+tools through the gateway (`kicad_describe` / `kicad_invoke`), which never
+changes `tools/list` at all — plus built-in observability (`get_recent_calls`,
+`server_stats`, JSONL call logs) so the model can diagnose its own tool
+failures. Those figures are measured, not estimated: see
+[docs/benchmark.md](docs/benchmark.md).
 
 The result is smaller, faster to install, aligned with where KiCAD is going, and
 built for production use rather than experimentation. The original project remains
@@ -91,6 +96,7 @@ The full tool catalog is documented in [tool-directory.md](tool-directory.md).
 
 | Layer | Mechanism |
 |-------|-----------|
+| Tool routing | Starter kit at startup (21 tools), toolsets on demand, or the `kicad_describe` / `kicad_invoke` gateway that calls tools without listing them |
 | Schematic editing | Direct `.kicad_sch` S-expression editing with atomic writes (no KiCAD required) |
 | PCB editing | KiCAD 10 IPC API (NNG + protobuf) — real-time, undo-aware, requires KiCAD running |
 | Exports & checks | `kicad-cli` subprocess (Gerber, PDF, ERC, DRC, …) |
@@ -245,11 +251,11 @@ the architecture it proved, rebuilt for production:
 
 | | KiCAD-MCP-Server | Konnect |
 |---|---|---|
-| Runtime | Node.js + Python + SWIG bindings | Single static binary (~5 MB) |
+| Runtime | Node.js + Python + SWIG bindings | One binary (22 MB), no runtime to install |
 | Tool call path | TS → subprocess → Python → SWIG C++ | Direct function call |
 | PCB backend | SWIG (deprecated by KiCAD) + experimental IPC | KiCAD 10 IPC API |
 | Schematic backend | kicad-skip + custom loaders | Native S-expression engine, atomic writes |
-| Context cost | Router pattern | Load/unload toolsets + observability |
+| Context cost | Router pattern | Router + gateway: 2.8K tokens at startup against a 33K catalogue |
 | Skills / agents | — | 6 skills + 2 agents bundled |
 | License | MIT | AGPL-3.0 + commercial |
 

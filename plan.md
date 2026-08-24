@@ -1581,7 +1581,7 @@ Generated, committed, and equality-tested like the capability matrix.
 
 ---
 
-# Phase K — Multi-harness — TODO
+# Phase K — Multi-harness — DONE
 
 ## K.1 — Claude Code and Codex (AGY dropped, D70) — DONE
 
@@ -2479,3 +2479,115 @@ H.6, H.7, K.1.
 `python bench/m1_table.py` regenerates every table in the M.1 section from
 `bench/results/m1-baseline-r5.json`, `m1-gateway-r5.json`, the two
 `agent-e2e-*-m1-*.json` files and the K.1 campaigns.
+
+---
+
+# Phase N — Documentation consolidation — N.1 DONE
+
+## N.1 — The public docs carry the measured numbers
+
+### Objectif
+`docs/benchmark.md` was re-measured on 2026-08-24 and regenerates from
+committed artefacts (M.1). The docs a reader meets first — README, DEV,
+`tool-directory.md` — still quote figures taken mid-project, and every one of
+them is now wrong in the same direction: they under-report the surface. The
+fork registers **202 tools across 22 toolsets** (`router/registry.rs`,
+`ALL_TOOLSETS`) plus **13 meta-tools** (`router/meta_tools.rs`), which is the
+**215** the live catalogue serves and `bench/results/m1-surface.json` measured
+at **33 183 tokens**; startup `tools/list` is **21 tools / 2 831 tokens**, not
+the ~2K three documents claim.
+
+This is an editorial phase, not a measurement one: nothing here re-runs a
+benchmark, and no number is produced that is not already committed.
+
+### Dépendances
+M.1 (the numbers exist and regenerate without spending anything).
+
+### Tâches
+- [x] N.1.1 README — the count line ("187 tools across 18 on-demand toolsets")
+      and the context-economy paragraph ("~180 tools ≈ 23K", "starter kit
+      ~2K") carry the measured 202/22, 215/33 183 and 21/2 831, and point at
+      `docs/benchmark.md` for where those come from
+- [x] N.1.2 DEV.md — "Tool Routing" (187/193, ~19 tools ≈ 2K) and "Current
+      Stats" (18 toolsets, 187 tools, 6 meta-tools, ~25K) re-derived from
+      `registry.rs` and `m1-surface.json`
+- [x] N.1.3 plan.md — Phase K's header still reads TODO while both its lots
+      (K.1, K.2) are DONE. Phase I stays TODO: it is blocked on hardware, not
+      on editing
+- [x] N.1.4 `tool-directory.md` — the doc is generated from the `tool!(...)`
+      invocations and has drifted: 20 toolsets / 193 tools / 10 meta-tools
+      against 22 / 202 / 13. Missing entirely are the `sch_buses` toolset
+      (`add_bus`, `add_bus_alias`, `add_bus_entry`, `expand_bus`, `list_buses`),
+      the `graph` toolset (`graph_query`, `graph_neighbors`, `graph_stats`),
+      `export_drill` in `pcb_export`, and three meta-tools (`kicad_agent`,
+      `kicad_agent_verify`, `changes_since`). Its startup-surface figure
+      (~1.7K) and its gateway comparison predate M.1
+- [x] N.1.5 `router/meta_tools.rs` module comment says "all 21 toolsets";
+      there are 22
+- [x] N.1.6 The same count, wherever else it is asserted outside the two
+      documents above: the bundled skill (`crates/konnect/assets/skills/konnect/SKILL.md`,
+      "187 tools across 18 toolsets" — this one ships to users), DEV.md's tree
+      comment and its "all 187 tools" error-coverage claim, and
+      `packaging/metadata.json`'s PCM description. Left alone deliberately:
+      `decisions.md` D44 and `docs/capability-matrix.md` also say 187, but
+      there it means the *baseline's* surface at `5cd6454`, which is the frozen
+      denominator and must not move (INV6)
+- [x] N.1.7 `find_capabilities`'s own description says "Search all 196 KiCAD
+      tools". Its corpus is `all_tools_with_toolset()` — every toolset tool,
+      meta-tools excluded — which is 202. This one is not documentation: it
+      ships inside `tools/list` and every session pays for it and reads it.
+      Three digits either way, so the startup surface does not move and M.1
+      does not need re-measuring
+- [x] N.1.8 README's comparison table claims a "single static binary (~5 MB)".
+      The release build on this machine is **21.8 MB**: there is no
+      `[profile.release]` in `Cargo.toml`, so nothing strips symbols or trims
+      debug info. State the measured size. Whether to add a strip/LTO profile
+      is a build decision, not an editorial one — recorded here, not taken
+- [x] N.1.9 The drift is structural, not a slip: `CONTRIBUTING.md` already
+      warns that these counts "have drifted apart before precisely because only
+      one of them got updated", and it happened again — to five places at once,
+      two of which it does not list. Close the class rather than the instance:
+      a test asserts `find_capabilities`'s hard-coded corpus size against the
+      registry (the same shape as `registry_tool_counts_match_reality`, which
+      is why that one never drifted), and CONTRIBUTING's checklist names the
+      two shipped assets it was missing
+
+### Validation
+Every figure quoted in README, DEV.md and `tool-directory.md` traces to
+`bench/results/m1-surface.json` or to `router/registry.rs::ALL_TOOLSETS`; each
+toolset table in `tool-directory.md` has exactly its declared `tool_count`
+rows; `.\gate.ps1` stays green (the doc edits touch one Rust comment).
+
+## N.2 — DEV.md's repo tree predates the agent runtime
+
+### Objectif
+DEV.md is what a contributor reads to find where things live, and its tree
+stops at the MCP server: `konnect`, `konnect-core`, `konnect-sexp`,
+`konnect-ipc`, `schematic-viewer`. Everything phases E, G and H built is
+missing from it — eight crates (`kam-context`, `kam-evidence`, `kam-graph`,
+`kam-llm`, `kam-plan`, `kam-runtime`, `kam-state`, and
+`konnect-schematic-editor`, which the typed schematic model migrated to) — and
+so are four toolsets under `tools/`: `sch_buses`, `plan`, `task`, `graph`. The
+per-file tool counts in that tree drifted with the rest: `sch_export` is 7, not
+6, and `meta_tools.rs` serves 13 meta-tools, not 6.
+
+A contributor following this tree today would conclude the plan IR, the
+evidence store and the local runtime do not exist.
+
+### Dépendances
+N.1 (the counts are settled; this is where they live in the tree).
+
+### Tâches
+- [ ] N.2.1 The tree lists every workspace member, with the one-line role each
+      existing entry gets. Source: `Cargo.toml`'s `members`, and each crate's
+      own module layout — not this plan's phase narrative
+- [ ] N.2.2 The `tools/` entries cover all 22 toolsets with their real
+      `tool_count`, and `meta_tools.rs` says 13
+- [ ] N.2.3 Whatever else in DEV.md asserts an architecture that predates the
+      runtime, found by reading it rather than by grepping counts. Record what
+      was found; do not rewrite prose that is merely terse
+
+### Validation
+Every `members` entry in `Cargo.toml` appears in the tree and every tree entry
+exists on disk; each `tools/*.rs` line matches `registry.rs::ALL_TOOLSETS`.
+`.\gate.ps1` is untouched by this (no code changes) but must still pass.

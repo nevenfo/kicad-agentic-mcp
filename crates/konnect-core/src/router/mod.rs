@@ -266,6 +266,29 @@ mod tests {
         }
     }
 
+    /// `find_capabilities` quotes the size of its own corpus inside its
+    /// description, and that description ships in `tools/list`: every session
+    /// reads it and pays for it. It went stale once already — it claimed 196
+    /// while the registry held 202 — and nothing caught it, because the number
+    /// is prose to the compiler. The corpus is `all_tools_with_toolset()`:
+    /// every toolset tool, no meta-tool.
+    #[test]
+    fn find_capabilities_description_quotes_the_real_corpus_size() {
+        let total: usize = registry::ALL_TOOLSETS
+            .iter()
+            .map(|meta| registry::tools_for(meta.name).unwrap().len())
+            .sum();
+        let desc = meta_tools::meta_tool_descriptions()
+            .into_iter()
+            .find(|t| t.name == "find_capabilities")
+            .expect("find_capabilities is a meta-tool")
+            .description;
+        assert!(
+            desc.contains(&format!("all {total} KiCAD tools")),
+            "find_capabilities describes a corpus of a different size than the {total} tools it searches — update the description in router/meta_tools.rs. It reads: {desc:?}",
+        );
+    }
+
     #[test]
     fn no_toolset_has_duplicate_tool_names() {
         for meta in registry::ALL_TOOLSETS {
