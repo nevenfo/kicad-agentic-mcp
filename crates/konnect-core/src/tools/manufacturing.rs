@@ -253,6 +253,28 @@ async fn handle_export_manufacturing_package(
     ))
 }
 
+/// Distinct nets and routed items on the board, read from the parsed tree.
+///
+/// Both counts used to be substring probes — `"\n  (net "`, `"(segment "`,
+/// `"(via "` — which depend on indentation KiCad controls, miss KiCad 10's
+/// per-item net shape entirely, and never saw an `(arc …)` track at all. A
+/// fully routed KiCad 10 board and one never routed both read zero, so the
+/// `net_count > 3 && track_count == 0` guard could not fire: false success on
+/// the last check before fabrication.
+///
+/// Nets go through [`konnect_sexp::net::count_distinct_nets`], which reads
+/// both forms by shape and counts a KiCad 9 net once rather than through its
+/// declaration *and* each reference.
+///
+/// Tracks are counted among the direct children of `(kicad_pcb …)`, where
+/// routed copper always sits: `(arc …)` also appears inside a zone outline's
+/// `(pts …)`, and that is a polygon corner, not copper.
+fn count_nets_and_tracks(tree: &konnect_sexp::SexpNode) -> (usize, usize) {
+    let track_count =
+        tree.find_all("segment").len() + tree.find_all("via").len() + tree.find_all("arc").len();
+    (konnect_sexp::net::count_distinct_nets(tree), track_count)
+}
+
 async fn handle_validate_for_manufacturing(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -322,8 +344,7 @@ async fn handle_validate_for_manufacturing(
     }
 
     // Check for unrouted nets (ratsnest)
-    let net_count = content.matches("\n  (net ").count();
-    let track_count = content.matches("(segment ").count() + content.matches("(via ").count();
+    let (net_count, track_count) = count_nets_and_tracks(&tree);
     if net_count > 3 && track_count == 0 {
         issues.push(json!({
             "severity": "error",
@@ -543,4 +564,114 @@ fn extract_coord(block: &str, keyword: &str, index: usize) -> Option<f64> {
     let rest = &block[pos..];
     let parts: Vec<&str> = rest.split([' ', ')']).collect();
     parts.get(index)?.parse().ok()
+}
+
+#[cfg(test)]
+mod net_track_count_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use konnect_sexp::parser::parse_sexp;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    /// KiCad 10 (file format 20260206) indents with tabs, writes each track on
+    /// its own multi-line form, and has no top-level net table — every item
+    /// names its net instead. The old probes (`"\n  (net "`, `"(segment "`,
+    /// `"(via "`) match none of that.
+    const KICAD_10_BOARD: &str = "(kicad_pcb\n\t(version 20260206)\n\t(generator \"pcbnew\")\n\t(segment\n\t\t(start 110 110)\n\t\t(end 120 110)\n\t\t(width 0.2)\n\t\t(layer \"F.Cu\")\n\t\t(net \"GND\")\n\t)\n\t(segment\n\t\t(start 120 110)\n\t\t(end 130 110)\n\t\t(width 0.2)\n\t\t(layer \"F.Cu\")\n\t\t(net \"VCC\")\n\t)\n\t(arc\n\t\t(start 130 110)\n\t\t(mid 135 115)\n\t\t(end 130 120)\n\t\t(width 0.2)\n\t\t(layer \"F.Cu\")\n\t\t(net \"VCC\")\n\t)\n\t(via\n\t\t(at 130 120)\n\t\t(size 0.6)\n\t\t(drill 0.3)\n\t\t(layers \"F.Cu\" \"B.Cu\")\n\t\t(net \"VCC\")\n\t)\n)\n";
+
+    /// KiCad 9 keeps the table and refers to it by number from each item, so
+    /// counting `(net …)` nodes double-counts every net.
+    const KICAD_9_BOARD: &str = "(kicad_pcb\n\t(version 20250114)\n\t(generator \"pcbnew\")\n\t(net 0 \"\")\n\t(net 1 \"GND\")\n\t(net 2 \"VCC\")\n\t(segment\n\t\t(start 110 110)\n\t\t(end 120 110)\n\t\t(width 0.2)\n\t\t(layer \"F.Cu\")\n\t\t(net 1)\n\t)\n\t(segment\n\t\t(start 120 110)\n\t\t(end 130 110)\n\t\t(width 0.2)\n\t\t(layer \"F.Cu\")\n\t\t(net 2)\n\t)\n\t(arc\n\t\t(start 130 110)\n\t\t(mid 135 115)\n\t\t(end 130 120)\n\t\t(width 0.2)\n\t\t(layer \"F.Cu\")\n\t\t(net 2)\n\t)\n\t(via\n\t\t(at 130 120)\n\t\t(size 0.6)\n\t\t(drill 0.3)\n\t\t(layers \"F.Cu\" \"B.Cu\")\n\t\t(net 2)\n\t)\n)\n";
+
+    #[test]
+    fn counts_a_kicad_10_board_with_no_top_level_net_table() {
+        let tree = parse_sexp(KICAD_10_BOARD).unwrap();
+        assert_eq!(count_nets_and_tracks(&tree), (2, 4));
+    }
+
+    #[test]
+    fn counts_a_kicad_9_board_without_double_counting_declarations() {
+        // Two named nets across three declarations and four references.
+        let tree = parse_sexp(KICAD_9_BOARD).unwrap();
+        assert_eq!(count_nets_and_tracks(&tree), (2, 4));
+    }
+
+    #[test]
+    fn the_unconnected_pseudo_net_does_not_count() {
+        let tree = parse_sexp("(kicad_pcb\n\t(net 0 \"\")\n)\n").unwrap();
+        assert_eq!(count_nets_and_tracks(&tree), (0, 0));
+    }
+
+    /// A zone outline may carry `(arc …)` inside its `(pts …)`; that is a
+    /// polygon corner, not routed copper. Counting arcs anywhere in the tree
+    /// would call an unrouted board routed.
+    #[test]
+    fn zone_outline_arcs_are_not_routed_copper() {
+        let tree = parse_sexp(
+            "(kicad_pcb\n\t(zone\n\t\t(net \"GND\")\n\t\t(polygon\n\t\t\t(pts\n\t\t\t\t(arc (start 0 0) (mid 5 5) (end 10 0))\n\t\t\t)\n\t\t)\n\t)\n)\n",
+        )
+        .unwrap();
+        assert_eq!(count_nets_and_tracks(&tree), (1, 0));
+    }
+
+    async fn validate(board_text: &str) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("board.kicad_pcb");
+        std::fs::write(&path, board_text).unwrap();
+        let result = handle_validate_for_manufacturing(
+            &json!({ "board": path.display().to_string() }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text");
+        };
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_routed_kicad_10_board_reports_its_nets_and_tracks() {
+        let report = validate(KICAD_10_BOARD).await;
+        assert_eq!(report["board_info"]["net_count"], json!(2));
+        assert_eq!(report["board_info"]["track_count"], json!(4));
+    }
+
+    /// The symptom that surfaced this: an unrouted board came back clean on
+    /// the routing check because both counts read zero, so the
+    /// `net_count > 3 && track_count == 0` guard could never fire.
+    #[tokio::test]
+    async fn an_unrouted_kicad_10_board_is_flagged() {
+        let unrouted = "(kicad_pcb\n\t(version 20260206)\n\t(generator \"pcbnew\")\n\t(footprint \"R_0805\"\n\t\t(pad \"1\" smd rect\n\t\t\t(net \"GND\")\n\t\t)\n\t\t(pad \"2\" smd rect\n\t\t\t(net \"VCC\")\n\t\t)\n\t)\n\t(footprint \"C_0805\"\n\t\t(pad \"1\" smd rect\n\t\t\t(net \"SDA\")\n\t\t)\n\t\t(pad \"2\" smd rect\n\t\t\t(net \"SCL\")\n\t\t)\n\t)\n)\n";
+        let report = validate(unrouted).await;
+        assert_eq!(report["board_info"]["net_count"], json!(4));
+        assert_eq!(report["board_info"]["track_count"], json!(0));
+        assert!(
+            report["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|i| i["issue"]
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("no traces routed")),
+            "the unrouted-net issue is missing: {report}"
+        );
+    }
 }

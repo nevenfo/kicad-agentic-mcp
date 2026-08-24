@@ -3155,7 +3155,29 @@ None. Each item below is independent of the others except where stated.
         and CRLF): `pad_count` **0 instead of 6**, and a footprint whose only
         mention of the courtyard is inside its `descr` reported
         `has_courtyard: true`.
-  - [ ] P.6.7.5 #140 (net and track counts by substring)
+  - [x] P.6.7.5 #140 — net and track counts by substring. Done:
+        `count_nets_and_tracks` in `manufacturing.rs` reads the parsed tree —
+        nets through `konnect_sexp::net::count_distinct_nets` (P.6.5's shared
+        accessor, so a KiCad 9 net counts once rather than through its
+        declaration *and* every reference), tracks as the direct
+        `segment`/`via`/`arc` children of `(kicad_pcb …)`. Arcs are counted
+        there and not by walking, since `(arc …)` also appears inside a zone
+        outline's `(pts …)` — a polygon corner, not routed copper, and its own
+        test. Red before, measured end to end: a routed KiCad 10 board reported
+        `net_count` **0 instead of 2** and `track_count` **0 instead of 4**,
+        and an unrouted one reported 0 nets instead of 4 — so the
+        `net_count > 3 && track_count == 0` guard could never fire, and the
+        last check before fabrication passed a board that was never routed.
+  - [ ] P.6.7.9 `validate_for_manufacturing` counts copper layers by substring
+        too: `content.matches("signal)") + content.matches("signal \"")`
+        (`manufacturing.rs`). Found while closing P.6.7.5, not in upstream's
+        audit. KiCad marks copper with four kinds — `signal`, `power`, `mixed`,
+        `jumper` — so a board using `power` for a plane is undercounted, and
+        the probe also matches the word anywhere else in the file. The `.Cu`
+        suffix is the invariant, and `konnect_sexp::layers::copper` already
+        decides by it (P.6.6). The dead `let _layers = …` binding above it goes
+        at the same time. Measure the miscount on a demo board with a plane
+        before writing the test.
   - [ ] P.6.7.6 #139 (`export_bom` ignores `exclude_dnp` and `format`, both
         advertised in its schema)
   - [ ] P.6.7.7 #266 (`--layers` repeated per layer, no `--mode-single`)

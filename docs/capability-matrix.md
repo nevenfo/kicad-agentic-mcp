@@ -436,7 +436,7 @@ Not covered by any tool:
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
 | `export_manufacturing_package` | `manufacturing` | `cli` | `write` | derived | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `validate_for_manufacturing` | `manufacturing` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `validate_for_manufacturing` | `manufacturing` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/src/tools/manufacturing.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
 | `estimate_cost` | `manufacturing` | `internal` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | an order-of-magnitude estimate from stored per-fab-house rates, not a quote |
 
 ### gerber

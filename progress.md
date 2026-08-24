@@ -4,7 +4,7 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte (P.6.7.1 à P.6.7.4 closes, P.6.7.5 à P.6.7.8 restent), P.6.8 à P.6.11
+est ouverte (P.6.7.1 à P.6.7.5 closes, P.6.7.6 à P.6.7.9 restent), P.6.8 à P.6.11
 restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
 `agentic/main`.
 
@@ -14,22 +14,23 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.4 — les propriétés d'un footprint se lisent dans l'arbre, pas dans le
-texte source. `get_footprint_info` (`crates/konnect-core/src/tools/library.rs`)
-compte les pads par `find_all("pad")`, détecte le courtyard par un `layer`
-`B.CrtYd`/`F.CrtYd` sur un enfant direct, et le modèle 3D par
-`find_all("model")`.
+P.6.7.5 — le compte de nets et de pistes de `validate_for_manufacturing` se lit
+dans l'arbre. `count_nets_and_tracks` dans `manufacturing.rs` : les nets par
+`konnect_sexp::net::count_distinct_nets` (l'accesseur partagé de P.6.5), les
+pistes comme enfants directs `segment`/`via`/`arc` de `(kicad_pcb …)` — pas par
+un parcours, car `(arc …)` apparaît aussi dans le `(pts …)` d'un contour de
+zone, où c'est un coin de polygone et non du cuivre routé.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- rouge-avant vérifié en restaurant les sondes par sous-chaîne : sur un
-  footprint KiCad 10 réduit mais non réécrit (tabulations + CRLF),
-  `pad_count` rend **0 au lieu de 6** ; et un footprint dont seule la `descr`
-  mentionne le courtyard rend `has_courtyard: true`
-- `docs/capability-matrix.md` régénérée (`KAM_UPDATE_MATRIX=1`) : la couverture
-  de `get_footprint_info` pointe désormais vers son test in-module
+- rouge-avant vérifié en restaurant les sondes par sous-chaîne au site
+  d'appel : un board KiCad 10 routé rend `net_count` **0 au lieu de 2** et
+  `track_count` **0 au lieu de 4** ; un board non routé rend 0 net au lieu de
+  4, donc la garde `net_count > 3 && track_count == 0` ne pouvait pas se
+  déclencher
+- `docs/capability-matrix.md` régénérée (`KAM_UPDATE_MATRIX=1`)
 
 ## Décisions actives
 
@@ -118,15 +119,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.5 — `#140` : `validate_for_manufacturing`
-(`crates/konnect-core/src/tools/manufacturing.rs:325-326`) calcule `net_count`
-par `content.matches("
-  (net ")` et `track_count` par
-`matches("(segment ") + matches("(via ")` — dépendant de l'indentation, aveugle
-à la forme par item de KiCad 10, aveugle aux segments `(arc …)`, et comptant
-deux fois un net KiCad 9 via sa déclaration et ses références. `count_distinct_nets`
-existe déjà dans `crates/konnect-sexp/src/net.rs` depuis P.6.5 ; ne pas le
-réécrire. Relire l'entrée `#140` de `docs/upstream-audit.md`. Le test
-discriminant part d'un board indenté par tabulations portant un `(arc …)`.
-Valider par `cargo fmt` / `clippy -D warnings` /
-`cargo test --workspace --lib --tests`.
+Implémenter P.6.7.6 — `#139` : `export_bom` ignore `exclude_dnp` et `format`,
+tous deux annoncés dans son schéma, donc le tool promet un contrat qu'il ne
+tient pas. Relire l'entrée `#139` de `docs/upstream-audit.md` pour l'état exact
+dans ce fork et le mécanisme upstream (`git log --format="%P" -1 <merge>` puis
+`git diff $(git merge-base p1 p2) p2` pour lire le diff réel d'une PR). Le test
+discriminant appelle `export_bom` avec `exclude_dnp` à vrai sur un schéma
+portant un composant DNP, et avec chaque `format` annoncé. Valider par
+`cargo fmt` / `clippy -D warnings` / `cargo test --workspace --lib --tests`,
+plus une sonde live si `kicad-cli` est le seul oracle honnête.
