@@ -26,6 +26,18 @@ async fn the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothin
     let h = Harness::new();
 
     let stats = h.json("get_jlcpcb_database_stats", json!({})).await;
+    // P.6.9.20: assert *which* database was looked at before asserting that it
+    // is absent. With `jlcpcb_db_path: None` the handler fell back to
+    // `%APPDATA%\konnect\jlcpcb.db`, so this test measured the machine while
+    // its message claimed to measure the harness — and failed the day a real
+    // database landed there. The path assertion is what keeps the fixture
+    // honest if someone puts the fallback back.
+    assert!(
+        stats["path"]
+            .as_str()
+            .is_some_and(|p| p.contains("no-such-jlcpcb.db")),
+        "the harness must name its own absent database, not the machine's: {stats}"
+    );
     assert_eq!(
         stats["exists"], false,
         "no database is configured in this harness: {stats}"

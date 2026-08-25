@@ -950,9 +950,17 @@ async fn handle_jlcpcb_stats(
 ) -> anyhow::Result<CallToolResult> {
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
+        // P.6.9.20: `path` is reported here too, not only on the `exists: true`
+        // branch. `resolve_db_path` has three sources — an explicit
+        // `output_path`, the configured `jlcpcb_db_path`, and the machine-wide
+        // default — so "no database" without saying *which* one was looked for
+        // leaves the caller no way to tell a misconfigured path from a genuinely
+        // missing download, which is the same distinction this tool exists to
+        // draw between "no database" and "nothing found".
         return Ok(CallToolResult::text(
             serde_json::to_string(&json!({
                 "exists": false,
+                "path": db_path.to_string_lossy(),
                 "note": "Run download_jlcpcb_database to fetch the parts database"
             }))
             .unwrap(),

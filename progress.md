@@ -5,8 +5,8 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.16 closes. Restent, dans l'ordre du triage :
-P.6.9.17 à P.6.9.19, plus P.6.9.20 et P.6.9.21 découvertes pendant P.6.9.16 ;
+P.6.9 (triage), P.6.9.1 à P.6.9.16 et P.6.9.20 closes. Restent, dans l'ordre du
+triage : P.6.9.17 à P.6.9.19, plus P.6.9.21 découverte pendant P.6.9.16 ;
 P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
 PR #10 vers `agentic/main`.
 
@@ -16,36 +16,31 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.16 — `crates/konnect-core/tests/required_schema_honesty.rs` : une passe
-sur tout le registre qui appelle **directement** le handler de chaque tool avec
-`{}`, contournant le gate du dispatch.
+P.6.9.20 — `jlcpcb_db_path: None` ne veut pas dire « pas de base » mais
+« retombe sur le défaut de la machine » (`resolve_db_path`,
+`tools/integration.rs:248`). Le harness de test disait donc « aucune base n'est
+configurée dans ce harness » tout en mesurant `%APPDATA%\konnect\jlcpcb.db` —
+et le test a commencé à échouer le jour où une vraie base y a été téléchargée
+(2026-08-25, 1 581 parts). Le harness nomme désormais un chemin jamais créé
+sous `CARGO_TARGET_TMPDIR`, et le test assère **quelle** base a été regardée
+avant d'asserter qu'elle est absente.
 
-La forme proposée par le plan — appeler `{}` **à travers** le dispatch — a été
-écrite d'abord et mesurée **tautologique** : `missing_required_refusal`
-(`handler.rs:344`) refuse avant le handler et fabrique l'erreur *depuis la liste
-`required` elle-même`. L'assertion ne peut jamais être rouge. L'appel direct
-score la réponse du handler, donc les deux directions en un appel par tool.
-
-Cinq sites sortis de la première passe : quatre schémas faux, un handler faux,
-et un qui n'était pas un mensonge. Détail dans `plan.md`.
+Cette assertion a levé un second défaut, dans le tool : la branche
+`exists: false` de `handle_jlcpcb_stats` ne rendait aucun `path`, seule la
+branche `exists: true` en rendait un. Avec trois sources possibles pour ce
+chemin, « pas de base » sans dire laquelle empêche de distinguer un chemin mal
+configuré d'un téléchargement manquant. `path` est rendu des deux côtés.
 
 Validation :
-- `cargo test -p konnect-core --locked --test required_schema_honesty` : PASS,
-  2 tests, 0,25 s — 215 tools, 191 avec `required` vérifiés, 21 sans, 3 exclus
-- `cargo test --workspace --locked --lib --tests --no-fail-fast` : 55 suites,
-  **1334 passed / 1 failed** ; l'unique échec est `the_jlcpcb_tools_say_the_
-  database_is_missing_rather_than_finding_nothing`, indépendant de ce travail,
-  reproduit sur arbre stashé, et inscrit au plan comme P.6.9.20
+- `cargo test -p konnect-core --locked --test sourcing_and_manufacturing` :
+  PASS, 9 tests
+- `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
+  **55 suites, 1335 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `the_committed_matrix_is_up_to_date` : PASS sans toucher à
-  `docs/capability-matrix.md` (voir D133)
-- rouge d'abord, par mutation : `list_footprint_libraries` `"required": []` →
-  `["bogus_field"]` — `requires ["bogus_field"] but succeeded on an empty
-  argument object`
-- rouge d'abord, sur le vrai défaut : `kicad_invoke` avec une entrée
-  `run_design_review` sans arguments répondait
-  `{"ok":true,"verdict":"LOOKS GOOD — no critical issues found","findings":[]}`
+- rouge d'abord : `the harness must name its own absent database, not the
+  machine's: {"exists":false,"note":"Run download_jlcpcb_database to fetch the
+  parts database"}`
 
 ## Décisions actives
 
@@ -257,8 +252,7 @@ Validation :
 
 ## Blocage actif
 
-Aucun. La suite workspace porte un échec, mais il est indépendant de tout
-travail en cours et inscrit comme P.6.9.20.
+Aucun.
 
 ## Fichiers / zones utiles
 
@@ -291,9 +285,9 @@ travail en cours et inscrit comme P.6.9.20.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.20 — pointer `jlcpcb_db_path` du harness de test vers un
-chemin inexistant de son propre tempdir, pour que
-`the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
-mesure le harness et non la machine, puis relancer
-`cargo test -p konnect-core --locked --test sourcing_and_manufacturing` et la
-suite workspace complète, qui doit revenir à 0 échec.
+Implémenter P.6.9.17 — une entrée de `kicad_invoke` qui échoue par la voie
+`Err(anyhow)` rapporte `error_kind` mais **pas** `error.field`, alors que la
+même panne par la voie `Ok(CallToolResult::error_kind)` rapporte les deux.
+Preuve à reproduire d'abord : une entrée de batch omettant un argument de
+chemin répond `invalid_argument` sans `field`. L'asymétrie est dans
+l'assemblage du résultat de la passerelle, pas dans la classification.

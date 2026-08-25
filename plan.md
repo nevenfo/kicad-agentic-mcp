@@ -4081,20 +4081,34 @@ None. Each item below is independent of the others except where stated.
         exercise it? That number is how much coverage the matrix is currently
         hiding.
 
-  - [ ] P.6.9.20 — `the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
-        (`sourcing_and_manufacturing.rs:25`) asserts `stats["exists"] == false`
+  - [x] P.6.9.20 — `the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
+        (`sourcing_and_manufacturing.rs:25`) asserted `stats["exists"] == false`
         on the grounds that "no database is configured in this harness" — but
-        the harness configures `jlcpcb_db_path: None`, and the handler then
-        falls back to the machine-wide default (`resolve_db_path`,
-        `%APPDATA%\konnect\jlcpcb.db`). On a machine where that file exists the
-        test reads the real database and fails; it passed until one was
-        downloaded here on 2026-08-25 (`downloaded_at_unix 1787658362`,
-        1 581 parts). Nothing about the tool is wrong — the test asserts a fact
-        about the machine while claiming to assert one about the harness, the
-        same family as D113. Point the harness at a path inside its own tempdir
-        that deliberately does not exist, so "absent" is a property of the
-        fixture. Found while validating P.6.9.16, independent of it: reproduced
-        on a stashed tree.
+        the harness set `jlcpcb_db_path: None`, and `resolve_db_path`
+        (`tools/integration.rs:248`) reads that as *fall back to the
+        machine-wide default*, `%APPDATA%\konnect\jlcpcb.db`. The test therefore
+        asserted a fact about the machine while its message claimed one about
+        the fixture, and it started failing the day a real database was
+        downloaded here — 2026-08-25, `downloaded_at_unix 1787658362`, 1 581
+        parts, 1,66 MB. Same family as D113: not a test that skips in silence,
+        but one that measures something other than what it says.
+        The harness now names a path under `CARGO_TARGET_TMPDIR` that is never
+        created (`absent_jlcpcb_db`), so absence is a property of the fixture
+        the way `kicad_cli: ""` already makes "no kicad-cli" one. The test
+        asserts *which* database was looked at before asserting it is absent,
+        which is what stops the fallback from creeping back.
+        That assertion turned up a second defect in the tool itself: the
+        `exists: false` branch of `handle_jlcpcb_stats` reported no `path` at
+        all, only the `exists: true` branch did. With three possible sources for
+        that path — an explicit `output_path`, the configured `jlcpcb_db_path`,
+        the machine-wide default — "no database" without saying which one leaves
+        a caller unable to tell a misconfigured path from a missing download:
+        the very distinction this tool exists to draw. `path` is now reported on
+        both branches.
+        Red before: `the harness must name its own absent database, not the
+        machine's: {"exists":false,"note":"Run download_jlcpcb_database to fetch
+        the parts database"}`. Found while validating P.6.9.16 and independent
+        of it — reproduced on a stashed tree.
   - [ ] P.6.9.21 — `required_schema_honesty.rs` calls each handler with `{}`,
         which is missing *every* required key at once, so it only ever proves
         the **first** key that handler happens to check. A schema listing

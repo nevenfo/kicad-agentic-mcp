@@ -46,6 +46,22 @@ fn ensure_state_dir() {
     });
 }
 
+/// A JLCPCB database path that is guaranteed not to exist, under this test
+/// binary's own temp directory.
+///
+/// P.6.9.20: `jlcpcb_db_path: None` does not mean "no database". It means
+/// "fall back to the machine-wide default" — `resolve_db_path`
+/// (`tools/integration.rs:248`) then returns `default_jlcpcb_db_path()`,
+/// `%APPDATA%\konnect\jlcpcb.db` on Windows. So
+/// `the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
+/// asserted a fact about the machine while its message claimed a fact about
+/// the harness, and started failing the day a real database was downloaded
+/// here. Naming a path that is never created makes absence a property of the
+/// fixture, the way `kicad_cli: ""` already makes "no kicad-cli" one.
+fn absent_jlcpcb_db() -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-such-jlcpcb.db")
+}
+
 /// The `ServerConfig` every `Harness` constructor shares, parameterised only
 /// by the one field a caller has ever needed to vary.
 fn config(kicad_cli: String) -> ServerConfig {
@@ -54,7 +70,7 @@ fn config(kicad_cli: String) -> ServerConfig {
         kicad_binary: String::new(),
         ipc_address: String::new(),
         project_dir: None,
-        jlcpcb_db_path: None,
+        jlcpcb_db_path: Some(absent_jlcpcb_db()),
         auto_load_toolsets: false,
         mode: kam_state::OperatingMode::Write,
     }
