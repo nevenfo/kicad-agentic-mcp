@@ -3394,7 +3394,87 @@ None. Each item below is independent of the others except where stated.
         job to put it in.
 - [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
       carries its precise next action in `docs/upstream-audit.md`; re-read it
-      rather than re-deriving. #271 depends on P.6.3.
+      rather than re-deriving. #271 depends on P.6.3, which is closed, so
+      nothing here is blocked any more. Split into one id per item, ordered by
+      consequence and not by issue number, so a commit closes exactly one — the
+      shape P.6.7 and P.6.9 used:
+  - [x] P.6.8.1 #179 pin half — fifteen call sites still resolve pins with the
+        unit-blind `extract_lib_pins`, and `sch_batch.rs:390-399` finds an
+        instance by `reference` alone. Together they compute unit 2's pin
+        against unit 1's placement transform, so `batch_connect_to_net` on the
+        second half of an op-amp drops its net label at the wrong coordinate.
+        Wrong connectivity, not a wrong report — first for that reason. The
+        unit-aware extractor already exists here
+        (`konnect_sexp::schematic::extract_lib_pins_for_unit`, and
+        `SymbolInstance::unit` carries the number), so this is a sweep plus a
+        candidates loop, not a port. No fixture in this repo has a multi-unit
+        symbol at all: the discriminating test needs one built from a real
+        KiCad library symbol.
+        Done. `batch_connect_to_net` now collects **every** instance carrying
+        the reference and keeps the one whose own unit declares the requested
+        pin, and all fifteen call sites take
+        `extract_lib_pins_for_unit(sym, inst.unit)`. The mixed verdict this
+        task expected did not survive contact: every one of the fifteen already
+        had a `SymbolInstance` in hand, so none was inspecting a library
+        definition outside a placement and none was left blind.
+        `extract_lib_pins` itself is untouched — it has legitimate callers.
+        The fixture is the real `Amplifier_Operational:LM2904` copied out of
+        the installed library, with `U1` placed twice (unit 1 at x=100, unit 2
+        at x=160); `kicad-cli sch erc` accepts it — 12 unconnected-pin
+        violations, exit 0. What makes it discriminating is a coincidence in
+        KiCad's own symbol: unit 1's pin 3 and unit 2's pin 5 sit at the same
+        local point, so the defect did not produce an obviously wrong result,
+        it produced a plausible one.
+        Red before: with the lookup neutered the pin-5 label lands at
+        **x=92.38** — unit 1's pin 3 — instead of **x=152.38**; with the
+        unit-aware extractor reverted, `get_component_nets` reports **8 pins
+        for unit 1 instead of 3**. The mirror is asserted too (pin 3 on unit 1
+        does not move), and a pin on no unit still errors, naming the units
+        tried; the "no library symbol resolved at all" case was split off from
+        that message, since "units tried: []" described the wrong problem.
+        `docs/capability-matrix.md` moved one line, exactly D128's case: the
+        new unit test is a lexicographically smaller evidence source for
+        `get_component_nets` than `tests/nets_and_wires.rs`. Status unchanged
+        (`PARTIAL`, `test`), so it is regenerated rather than fought.
+  - [ ] P.6.8.2 #179 edit half — `find_symbol_instance_block`
+        (`tools/mod.rs:651`) and `sch_batch.rs:321`/`:330` return the first
+        match only. Port `find_all_symbol_instance_blocks` / `field_value_ranges`
+        as a separate change, after P.6.8.1.
+  - [ ] P.6.8.3 #271 — `find_orphan_items` counts wire endpoints and label
+        positions and nothing else, so a wire ending on a pin is reported
+        dangling and an unconnected pin is never reported at all: false
+        positives and false negatives on any sheet with components. ~470 lines
+        plus two `konnect-sexp` extractors; needs `LibPin::electrical_type`,
+        which P.6.3 landed.
+  - [ ] P.6.8.4 #185 — `run_design_review` runs its four audits against the
+        single `schematic` path and derives the verdict from finding counts, so
+        "LOOKS GOOD" is what a caller gets when the audits inspected one sheet
+        of twelve. Decide **first** whether the verdict belongs in
+        `design_review` or in this fork's `evidence/` validators — upstream has
+        no such layer — then port the coverage structs. Same principle as
+        P.6.9.16, different evidence.
+  - [ ] P.6.8.5 #148 — the net-label stub direction defaults to `"right"`
+        (`sch_wiring.rs:1975`), so connecting a left-edge pin drives the stub
+        across the symbol body, over other pins, and the mid-segment-pin loop
+        then plants junction dots on them. The `justify` half is already done
+        here. Port `pin_outward_at`/`stub_direction` as the default, leaving an
+        explicit `direction` authoritative.
+  - [ ] P.6.8.6 #138 residual — the doc comment above `export_drill` claims the
+        directory form of `--output` was verified against KiCAD 10, while
+        upstream appends a trailing separator because kicad-cli otherwise reads
+        the last component as a file name. The two claims contradict each other
+        and only a kicad-cli run settles it. Separately: `separate_th` defaults
+        to `false` here, where upstream always separates because a single
+        `MixedPlating` file distinguishes NPTH by a comment most Excellon
+        readers drop.
+  - [ ] P.6.8.7 #162 — `query_traces` emits no uuid while `delete_trace`
+        requires one, so there is no path from listing a trace to deleting it.
+        Twelve lines across three files; the audit says to bundle it into the
+        next PCB change rather than schedule it alone.
+  - [ ] P.6.8.8 #186 — `Reference` and `Value` are placed at a hard-coded
+        ±3.81 mm at rotation 0, whatever the symbol and whatever the placement
+        rotation. Visual only, no electrical effect and no data loss: last on
+        purpose.
 - [x] P.6.9 The 16 direct-to-`main` upstream fixes of Appendix A are triaged,
       by P.4's method and against this fork's own code: **8 BACKPORT NOW, 4
       LATER, 4 NOT APPLICABLE**, each verdict carrying a `file:line` citation

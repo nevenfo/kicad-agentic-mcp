@@ -16,8 +16,8 @@ use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident, snap_point},
     schematic::{
-        extract_labels, extract_lib_pins, extract_symbol_instances, extract_wires, find_lib_symbol,
-        format_net_label, format_wire, pin_endpoint, read_schematic,
+        extract_labels, extract_lib_pins_for_unit, extract_symbol_instances, extract_wires,
+        find_lib_symbol, format_net_label, format_wire, pin_endpoint, read_schematic,
     },
     writer::{
         apply_edits, find_block_with_leading_whitespace, find_enclosing_direct_child_block,
@@ -374,22 +374,38 @@ async fn handle_batch_connect_to_net(
             }
         };
 
-        let inst = match instances.iter().find(|i| i.reference == reference) {
-            Some(i) => i,
-            None => {
-                errors.push(format!("Component '{}' not found", reference));
+        // A multi-unit symbol places one `SymbolInstance` per unit under the
+        // same `Reference` (e.g. two `U1` entries for an LM2904's two
+        // op-amps). Picking the first match ignored `unit` entirely, so a
+        // pin that only exists on unit 2 resolved through unit 1's placement
+        // — silently landing on whatever pin unit 1 happens to have at the
+        // same local coordinates (P.6.8.1). Try every instance carrying
+        // this reference and keep the one whose own unit actually declares
+        // the requested pin.
+        let candidates: Vec<&konnect_sexp::schematic::SymbolInstance> = instances
+            .iter()
+            .filter(|i| i.reference == reference)
+            .collect();
+        if candidates.is_empty() {
+            errors.push(format!("Component '{}' not found", reference));
+            continue;
+        }
+
+        let mut pin_ep = None;
+        let mut tried_units: Vec<u32> = Vec::new();
+        for inst in &candidates {
+            let Some(sym) = find_lib_symbol(&lib_syms, inst) else {
                 continue;
-            }
-        };
-
-        let lib_sym = find_lib_symbol(&lib_syms, inst);
-
-        let pin_ep = lib_sym.and_then(|sym| {
-            extract_lib_pins(sym)
+            };
+            tried_units.push(inst.unit);
+            if let Some(p) = extract_lib_pins_for_unit(sym, inst.unit)
                 .into_iter()
                 .find(|p| p.number == pin_number)
-                .map(|p| pin_endpoint(&p, inst.pin_transform()))
-        });
+            {
+                pin_ep = Some(pin_endpoint(&p, inst.pin_transform()));
+                break;
+            }
+        }
 
         match pin_ep {
             Some((px, py)) => {
@@ -401,7 +417,18 @@ async fn handle_batch_connect_to_net(
                     "y": py
                 }));
             }
-            None => errors.push(format!("Pin '{}' not found on '{}'", pin_number, reference)),
+            // Two different failures, and telling them apart is the whole
+            // point of naming the units: the pin is on no unit, or no unit's
+            // library symbol resolved at all — in which case saying "units
+            // tried: []" would describe the wrong problem.
+            None if tried_units.is_empty() => errors.push(format!(
+                "No library symbol resolved for '{}', so pin '{}' could not be located",
+                reference, pin_number
+            )),
+            None => errors.push(format!(
+                "Pin '{}' not found on '{}' (units tried: {:?})",
+                pin_number, reference, tried_units
+            )),
         }
     }
 
@@ -1312,7 +1339,7 @@ async fn handle_validate_wire_connections(
         let lib_sym = find_lib_symbol(&lib_syms, inst);
         if let Some(sym) = lib_sym {
             let t = inst.pin_transform();
-            for pin in extract_lib_pins(sym) {
+            for pin in extract_lib_pins_for_unit(sym, inst.unit) {
                 pin_points.push(pin_endpoint(&pin, t));
             }
         }
@@ -1458,7 +1485,7 @@ async fn handle_validate_component_connections(
         let lib_sym = find_lib_symbol(&lib_syms, inst);
         if let Some(sym) = lib_sym {
             let t = inst.pin_transform();
-            for pin in extract_lib_pins(sym) {
+            for pin in extract_lib_pins_for_unit(sym, inst.unit) {
                 let (px, py) = pin_endpoint(&pin, t);
 
                 // Skip intentional no-connects
@@ -2109,5 +2136,157 @@ mod bulk_move_property_tests {
             after, sheet,
             "a standstill move rewrote the sheet instead of leaving it alone"
         );
+    }
+}
+
+#[cfg(test)]
+mod multiunit_connect_tests {
+    //! P.6.8.1: `batch_connect_to_net`'s instance lookup picked the *first*
+    //! `SymbolInstance` matching a reference, ignoring `unit`. On a
+    //! multi-unit symbol (two `U1` entries, one per unit) that always meant
+    //! unit 1's placement, even for a pin unit 1 doesn't have. The
+    //! `Amplifier_Operational:LM2904` fixture makes this measurable: unit 1's
+    //! pin 3 and unit 2's pin 5 sit at the identical local point `(-7.62,
+    //! 2.54)`, so the old code silently mislabeled unit 2's pin 5 at unit 1's
+    //! pin 3 position — a wrong answer that looked plausible.
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::{ServerConfig, ToolContext};
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    const MULTIUNIT_LM2904: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/multiunit_lm2904.kicad_sch"
+    );
+
+    fn temp_copy_of_fixture(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        std::fs::copy(MULTIUNIT_LM2904, &path).unwrap();
+        (dir, path)
+    }
+
+    /// Red before the fix: pin 5 (unit 2, at x=160) resolved through unit 1's
+    /// placement (x=100) because both `U1` instances tied for the first
+    /// `find()` match, and unit 1 happens to declare no pin 5 — except the
+    /// unit-blind `extract_lib_pins` would have reported one anyway by
+    /// superimposing unit 2's pins onto unit 1. The fixed lookup must place
+    /// pin 5's label near x=160 (unit 2's placement), and explicitly not at
+    /// unit 1's pin 3 coordinate.
+    #[tokio::test]
+    async fn pin_5_connects_through_its_own_unit_not_unit_1() {
+        let (_dir, path) = temp_copy_of_fixture("pin5.kicad_sch");
+        let result = handle_batch_connect_to_net(
+            &json!({
+                "schematic": path.display().to_string(),
+                "net_name": "NET5",
+                "pins": [{ "reference": "U1", "pin_number": "5" }]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        let out: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(out["errors"].as_array().unwrap().len(), 0, "{out}");
+        let added = &out["added"][0];
+        let px = added["x"].as_f64().unwrap();
+
+        // Unit 1 sits at x=100, unit 2 at x=160 (see the fixture). Pin 3
+        // (unit 1) and pin 5 (unit 2) share the same *local* point, so a
+        // resolution through unit 1 lands near x=100 - 7.62, not near
+        // x=160 - 7.62.
+        assert!(
+            (px - (160.0 - 7.62)).abs() < 0.01,
+            "pin 5 must resolve through unit 2's placement (x~=152.38), got x={px} \
+             (x~=92.38 would mean it was mislabeled onto unit 1's pin 3, #P.6.8.1)"
+        );
+        assert!(
+            (px - (100.0 - 7.62)).abs() > 1.0,
+            "pin 5's label landed on unit 1's pin 3 position (x={px}) — the exact \
+             regression #P.6.8.1 describes"
+        );
+    }
+
+    /// Mirror of the test above: the fix must not disturb what already
+    /// worked. Pin 3 (unit 1) still resolves through unit 1's own placement.
+    #[tokio::test]
+    async fn pin_3_on_unit_1_is_unaffected() {
+        let (_dir, path) = temp_copy_of_fixture("pin3.kicad_sch");
+        let result = handle_batch_connect_to_net(
+            &json!({
+                "schematic": path.display().to_string(),
+                "net_name": "NET3",
+                "pins": [{ "reference": "U1", "pin_number": "3" }]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        let out: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(out["errors"].as_array().unwrap().len(), 0, "{out}");
+        let added = &out["added"][0];
+        let px = added["x"].as_f64().unwrap();
+
+        assert!(
+            (px - (100.0 - 7.62)).abs() < 0.01,
+            "pin 3 (unit 1) must still resolve through unit 1's placement (x~=92.38), got x={px}"
+        );
+    }
+
+    /// A pin number that exists on neither unit still errors by name, not
+    /// silently — the multi-candidate loop must not swallow a genuine miss.
+    #[tokio::test]
+    async fn a_pin_absent_from_every_unit_still_errors() {
+        let (_dir, path) = temp_copy_of_fixture("missing.kicad_sch");
+        let result = handle_batch_connect_to_net(
+            &json!({
+                "schematic": path.display().to_string(),
+                "net_name": "NETX",
+                "pins": [{ "reference": "U1", "pin_number": "99" }]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        let out: serde_json::Value = serde_json::from_str(text).unwrap();
+        let errors: Vec<&str> = out["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e.as_str().unwrap())
+            .collect();
+        assert_eq!(errors.len(), 1, "{out}");
+        assert!(errors[0].contains("99"), "{errors:?}");
+        assert!(errors[0].contains("U1"), "{errors:?}");
     }
 }

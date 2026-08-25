@@ -466,7 +466,7 @@ async fn handle_get_pin_connections(
         .unwrap_or_default();
     let lib_sym = find_lib_symbol(&lib_syms, inst);
     let pin_ep = lib_sym.and_then(|sym| {
-        konnect_sexp::schematic::extract_lib_pins(sym)
+        konnect_sexp::schematic::extract_lib_pins_for_unit(sym, inst.unit)
             .iter()
             .find(|p| p.number == pin_number)
             .map(|p| konnect_sexp::schematic::pin_endpoint(p, inst.pin_transform()))
@@ -516,7 +516,7 @@ async fn handle_get_component_nets(
     let mut g = build_net_graph(&wires, &labels, &extract_junction_points(&tree));
     let pins: Vec<serde_json::Value> = if let Some(sym) = lib_sym {
         let t = inst.pin_transform();
-        konnect_sexp::schematic::extract_lib_pins(sym).iter().map(|p| {
+        konnect_sexp::schematic::extract_lib_pins_for_unit(sym, inst.unit).iter().map(|p| {
             let (px, py) = konnect_sexp::schematic::pin_endpoint(p, t);
             json!({ "pin": p.number, "name": p.name, "x": px, "y": py, "net": g.net_at(px, py) })
         }).collect()
@@ -552,17 +552,18 @@ async fn handle_get_net_components(
         .filter_map(|inst| {
             let ls = find_lib_symbol(&lib_syms, inst)?;
             let t = inst.pin_transform();
-            let connected: Vec<_> = konnect_sexp::schematic::extract_lib_pins(ls)
-                .iter()
-                .filter_map(|p| {
-                    let (px, py) = konnect_sexp::schematic::pin_endpoint(p, t);
-                    if net_pts.contains(&pt_key(px, py)) {
-                        Some(json!({ "pin": p.number, "name": p.name }))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let connected: Vec<_> =
+                konnect_sexp::schematic::extract_lib_pins_for_unit(ls, inst.unit)
+                    .iter()
+                    .filter_map(|p| {
+                        let (px, py) = konnect_sexp::schematic::pin_endpoint(p, t);
+                        if net_pts.contains(&pt_key(px, py)) {
+                            Some(json!({ "pin": p.number, "name": p.name }))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
             if connected.is_empty() {
                 None
             } else {
@@ -766,6 +767,15 @@ mod tests {
         "/tests/fixtures/power_symbol_divider.kicad_sch"
     );
 
+    /// Two `U1` `SymbolInstance`s (one per unit) over the real
+    /// `Amplifier_Operational:LM2904` definition. Unit 1 declares pins 1-3,
+    /// unit 2 declares pins 5-7 — and unit 1's pin 3 sits at the same local
+    /// point as unit 2's pin 5, the coordinate collision P.6.8.1 exploits.
+    const MULTIUNIT_LM2904: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/multiunit_lm2904.kicad_sch"
+    );
+
     async fn tool_json(
         handler: impl std::future::Future<Output = anyhow::Result<CallToolResult>>,
     ) -> serde_json::Value {
@@ -821,6 +831,43 @@ mod tests {
             out["connected_points"].as_u64().unwrap() > 0,
             "GND must resolve to at least the power symbol's own point, got {out}"
         );
+    }
+
+    /// P.6.8.1: `get_component_nets` used the unit-blind `extract_lib_pins`,
+    /// which superimposes every unit's pins onto whichever instance `find()`
+    /// picked first. The first `U1` instance in the fixture is unit 1 (pins
+    /// 1-3); reporting pin 5, 6, or 7 for it would mean unit 2's pins leaked
+    /// through.
+    #[tokio::test]
+    async fn get_component_nets_does_not_leak_the_other_units_pins() {
+        let out = tool_json(handle_get_component_nets(
+            &json!({ "schematic": MULTIUNIT_LM2904, "reference": "U1" }),
+            &ctx(),
+        ))
+        .await;
+        let pins: Vec<&str> = out["pins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["pin"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            pins.len(),
+            3,
+            "unit 1 of LM2904 declares exactly 3 pins (1,2,3), got {pins:?}"
+        );
+        for leaked in ["5", "6", "7"] {
+            assert!(
+                !pins.contains(&leaked),
+                "unit 1 must not report unit 2's pin '{leaked}': {pins:?}"
+            );
+        }
+        for own in ["1", "2", "3"] {
+            assert!(
+                pins.contains(&own),
+                "unit 1 is missing its own pin '{own}': {pins:?}"
+            );
+        }
     }
 
     async fn in_process_single_pin_nets() -> usize {
@@ -955,7 +1002,7 @@ async fn handle_get_connected_items(
     let mut connected_nets: HashSet<String> = HashSet::new();
     if let Some(sym) = lib_sym {
         let t = inst.pin_transform();
-        for p in konnect_sexp::schematic::extract_lib_pins(sym) {
+        for p in konnect_sexp::schematic::extract_lib_pins_for_unit(sym, inst.unit) {
             let (px, py) = konnect_sexp::schematic::pin_endpoint(&p, t);
             if let Some(net) = g.net_at(px, py) {
                 connected_nets.insert(net);
@@ -991,7 +1038,7 @@ async fn handle_get_connected_items(
         .filter_map(|i| {
             let ls = find_lib_symbol(&lib_syms, i)?;
             let t = i.pin_transform();
-            let matching_pins: Vec<_> = konnect_sexp::schematic::extract_lib_pins(ls).iter()
+            let matching_pins: Vec<_> = konnect_sexp::schematic::extract_lib_pins_for_unit(ls, i.unit).iter()
                 .filter_map(|p| {
                     let (px, py) = konnect_sexp::schematic::pin_endpoint(p, t);
                     if all_net_pts.contains(&pt_key(px, py)) {

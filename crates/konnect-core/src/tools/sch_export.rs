@@ -12,8 +12,8 @@ use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
-        extract_labels, extract_lib_pins, extract_symbol_instances, extract_wires, find_lib_symbol,
-        pin_endpoint, read_schematic,
+        extract_labels, extract_lib_pins_for_unit, extract_symbol_instances, extract_wires,
+        find_lib_symbol, pin_endpoint, read_schematic,
     },
     writer::{
         apply_edits, find_block_with_leading_whitespace, write_atomic_if_unchanged, SexpEdit,
@@ -383,7 +383,7 @@ async fn handle_export_netlist_summary(
 
             let pins: Vec<serde_json::Value> = if let Some(sym) = lib_sym {
                 let t = inst.pin_transform();
-                extract_lib_pins(sym)
+                extract_lib_pins_for_unit(sym, inst.unit)
                     .iter()
                     .map(|p| {
                         let (px, py) = pin_endpoint(p, t);
@@ -537,7 +537,7 @@ async fn handle_fix_connectivity(
         let lib_sym = find_lib_symbol(&lib_syms, inst);
         if let Some(sym) = lib_sym {
             let t = inst.pin_transform();
-            for pin in extract_lib_pins(sym) {
+            for pin in extract_lib_pins_for_unit(sym, inst.unit) {
                 snap_targets.push(pin_endpoint(&pin, t));
             }
         }
