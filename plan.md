@@ -3864,7 +3864,7 @@ None. Each item below is independent of the others except where stated.
         Contract change: the body gains `result`/`uri`, and a nickname
         registered against a different URI is now refused where it used to
         answer success.
-  - [ ] P.6.9.13 — `handle_group_components` (`sch_components.rs:1553-1562`)
+  - [x] P.6.9.13 — `handle_group_components` (`sch_components.rs:1553-1562`)
         has P.6.9.5's defect A verbatim and was outside its scope: it inserts
         `(property "Group" …)` unconditionally, at a hardcoded `(at 0 0 0)` and
         a hardcoded two-space indent, so grouping the same component twice
@@ -3873,6 +3873,20 @@ None. Each item below is independent of the others except where stated.
         helper it needs already exists — route it through `set_symbol_property`
         like the other two. Proof to reproduce first: two `group_components`
         calls naming the same component yield two `Group` properties.
+        Done, and small: the hand-rolled insert — locate `(instances`, splice a
+        `format!`ed property with a hardcoded anchor and indent — is replaced by
+        one `set_symbol_property` call, the helper P.6.9.5 shared out. `reject`
+        is empty because the key is the literal "Group": no caller-supplied
+        name can collide with a reserved one here.
+        One knock-on handled: an entry that now fails is a per-reference error,
+        so `batch.unresolved` became a mutable `batch_errors` the loop can add
+        to, and the response's `errors` reports both kinds instead of only the
+        unresolved references.
+        Red before, two tests:
+        `regrouping_a_component_updates_its_group_rather_than_adding_a_second`
+        (`left: 2 right: 1` — two `(property "Group"` after two calls) and
+        `a_group_property_is_anchored_on_the_symbol_not_the_sheet_origin`
+        (`left: "0 0 0"`).
   - [ ] P.6.9.14 — `batch_edit_schematic_components` carries the same family
         of defect on `fields` that P.6.9.6 just closed on the single-component
         path, and was outside its scope. `sch_batch.rs:950-965` guards with

@@ -6,7 +6,7 @@
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
 P.6.9 (triage) et P.6.9.1 à P.6.9.12 closes (tous les items du triage
-d'origine). P.6.9.13 à P.6.9.17, découverts en route, restent, dans
+d'origine). P.6.9.14 à P.6.9.17, découverts en route, restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -16,43 +16,28 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.12 — une inscription en lib-table dit enfin ce qu'elle a fait.
-`enum LibTableRegistration { Inserted, Unchanged, Updated{previous_uri},
-UriConflict{existing_uri} }` est rendu par `register_in_lib_table` (5e
-paramètre `replace_existing`), et un unique `registration_result(…)` le
-convertit pour les deux handlers, footprint et symbole, à l'identique.
-`UriConflict` sort en `InvalidArgument { field: "replace_existing" }` nommant
-l'URI existante, celle demandée et le remède — un appel qu'il faut
-reparamétrer est exactement ce que veut dire `InvalidArgument`.
+P.6.9.13 — `handle_group_components` portait verbatim le défaut A de P.6.9.5,
+hors de son périmètre à l'époque. L'insertion faite à la main — repérer
+`(instances`, épisser une propriété `format!`ée avec ancre et indentation
+codées en dur — est remplacée par un seul appel à `set_symbol_property`, le
+helper partagé par P.6.9.5. `reject` est vide : la clé est le littéral
+`"Group"`, aucun nom fourni par l'appelant ne peut y heurter une clé réservée.
 
-`replace_existing` vaut **false** par défaut, et le défaut est l'argument :
-l'ancien comportement ne touchait à rien, donc un défaut `true` transformerait
-chaque appel répété en réécriture silencieuse de l'entrée d'autrui.
-
-Le repérage n'est plus un `content.contains("(name \"X\")")` sur tout le
-fichier — un test de sous-chaîne qu'un `descr` citant le nickname suffisait à
-tromper. `find_lib_entry` réutilise `find_block_starts` + `find_balanced_block`
-de `konnect_sexp::writer`, la paire dont `parse_lib_table` se sert déjà sur ces
-tables dans ce même fichier : aucun second parseur. Une mise à jour ne réécrit
-que le sous-bloc `(uri …)` localisé, donc les `options`/`descr` de l'entrée
-survivent ; `unchanged` retourne avant tout `write_atomic`, d'où l'égalité
-octet à octet.
+Un effet induit traité : une entrée qui échoue est désormais une erreur par
+référence, donc `batch.unresolved` devient un `batch_errors` mutable que la
+boucle alimente, et le champ `errors` de la réponse rapporte les deux sortes au
+lieu des seules références non résolues.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1324
-  tests, 0 échec** (1319 + 5 nouveaux ; un test existant a pris le nouvel
-  argument, assertions inchangées)
-- rouge d'abord : cinq tests, chacun bouclant sur les deux tools, dont
-  `a_different_uri_without_replace_existing_is_refused`
-  (`register_footprint_library answered success for a URI it did not write`)
-  et `a_nickname_quoted_inside_a_descr_is_not_a_registration`
-
-Contrat : le corps gagne `result`/`uri`, et un nickname inscrit contre une
-autre URI est désormais refusé là où l'appel répondait succès. Les deux lignes
-de `tool-directory.md` (l.304, l.309) le disent, et les deux schémas portent
-`replace_existing`.
+- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1326
+  tests, 0 échec** (1324 + 2 nouveaux, aucun test existant modifié)
+- rouge d'abord :
+  `regrouping_a_component_updates_its_group_rather_than_adding_a_second`
+  (`left: 2 right: 1`, deux `(property "Group"` après deux appels) et
+  `a_group_property_is_anchored_on_the_symbol_not_the_sheet_origin`
+  (`left: "0 0 0"`)
 
 ## Décisions actives
 
@@ -259,12 +244,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.13 — `handle_group_components` (`sch_components.rs`) porte
-verbatim le défaut A de P.6.9.5, qui était hors de son périmètre : il insère
-`(property "Group" …)` sans condition, à un `(at 0 0 0)` et une indentation
-codés en dur. Grouper deux fois le même composant laisse donc deux propriétés
-`Group`, le texte s'affiche à l'origine de la feuille, et l'indentation est
-fausse sur toute feuille écrite par eeschema. Le helper existe déjà : router
-par `set_symbol_property` (`tools/mod.rs`) comme les deux autres voies.
-Rouge d'abord : deux appels `group_components` nommant le même composant
-donnent deux propriétés `Group`.
+Implémenter P.6.9.14 — `batch_edit_schematic_components` porte la même famille
+de défaut sur `fields` que P.6.9.6 a close sur la voie mono-composant :
+`sch_batch.rs:950-965` garde par `if let Some(new_val) = field_val.as_str()`,
+donc une valeur number ou bool est **silencieusement ignorée** ; il résout par
+`field_value_range` au lieu de `set_symbol_property`, donc une clé absente
+échoue en `Field 'X' not found on 'R1'` au lieu d'être insérée ; et il n'oppose
+aucun rejet à `Reference` (D124). Router par les helpers partagés et la même
+conversion `property_text` que P.6.9.6. Rouge d'abord : un spec de batch avec
+`fields: {"Qty": 2}` répond succès et n'écrit rien.

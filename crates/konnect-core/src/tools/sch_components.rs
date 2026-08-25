@@ -1597,6 +1597,7 @@ async fn handle_group_components(
 
     let mut grouped = Vec::new();
     let mut item_ids = Vec::new();
+    let mut batch_errors = batch.unresolved.clone();
 
     for reference in &refs {
         let (sym_start, sym_end) = match find_symbol_instance_block(&content, reference) {
@@ -1604,17 +1605,20 @@ async fn handle_group_components(
             None => continue,
         };
 
-        let sym_block = &content[sym_start..sym_end];
-        let insert_rel = sym_block
-            .find("(instances")
-            .unwrap_or(sym_block.rfind(')').unwrap_or(sym_block.len() - 1));
-        let insert_abs = sym_start + insert_rel;
-
-        let prop_sexp = format!(
-            "    (property \"Group\" \"{group_name}\"\n      (at 0 0 0)\n      (effects (font (size 1.27 1.27)) (hide yes))\n    )\n    "
-        );
-
-        content = apply_edits(content, vec![SexpEdit::insert(insert_abs, prop_sexp)]);
+        // The same shared helper the other two text paths use (P.6.9.5): it
+        // updates an existing `Group` instead of stacking a second one,
+        // anchors a new property on the symbol's own position rather than the
+        // sheet origin, and reads its indentation off a sibling. `reject` is
+        // empty because the key is the literal "Group" — there is no
+        // caller-supplied name here that could collide with a reserved one.
+        content = match set_symbol_property(&content, sym_start, sym_end, "Group", &group_name, &[])
+        {
+            Ok((updated, _)) => updated,
+            Err(why) => {
+                batch_errors.push(format!("{reference}: {why}"));
+                continue;
+            }
+        };
         item_ids.push(symbol_item_id(&expected, reference)?);
         grouped.push(reference.clone());
     }
@@ -1633,7 +1637,7 @@ async fn handle_group_components(
         "group_name": group_name,
         "grouped_count": grouped.len(),
         "grouped": grouped,
-        "errors": batch.unresolved
+        "errors": batch_errors
     })))
 }
 

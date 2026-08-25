@@ -532,6 +532,74 @@ async fn grouping_tags_every_member_with_the_group_name() {
     );
 }
 
+/// Grouping the same component twice must not leave it carrying two `Group`
+/// properties. `add_component_annotation` and `edit_schematic_component` were
+/// taught to update-or-insert in P.6.9.5; this path was outside that item's
+/// scope and kept appending unconditionally.
+#[tokio::test]
+async fn regrouping_a_component_updates_its_group_rather_than_adding_a_second() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+
+    for name in ["INPUT_DIVIDER", "OUTPUT_DIVIDER"] {
+        h.json(
+            "group_components",
+            json!({
+                "schematic": sch,
+                "references": ["R1"],
+                "group_name": name
+            }),
+        )
+        .await;
+    }
+
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert_eq!(
+        text.matches(r#"(property "Group""#).count(),
+        1,
+        "a second grouping must replace the first, not stack on it:
+{text}"
+    );
+    assert_eq!(
+        text.matches("INPUT_DIVIDER").count(),
+        0,
+        "the superseded group name must be gone:
+{text}"
+    );
+}
+
+/// A grouped component's `Group` text belongs on the component, not at the
+/// sheet origin: the property is written at a hardcoded `(at 0 0 0)` unless it
+/// is anchored on the symbol's own position.
+#[tokio::test]
+async fn a_group_property_is_anchored_on_the_symbol_not_the_sheet_origin() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+
+    h.json(
+        "group_components",
+        json!({
+            "schematic": sch,
+            "references": ["R1"],
+            "group_name": "INPUT_DIVIDER"
+        }),
+    )
+    .await;
+
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    let group_at = text
+        .split_once(r#"(property "Group""#)
+        .and_then(|(_, rest)| rest.split_once("(at "))
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(at, _)| at.trim().to_string())
+        .expect("the Group property carries an (at ...)");
+    assert_ne!(
+        group_at, "0 0 0",
+        "the group text was written at the sheet origin:
+{text}"
+    );
+}
+
 /// `add_schematic_text` is an annotation on the sheet, not on a component.
 #[tokio::test]
 async fn sheet_text_is_written_where_it_was_placed() {
