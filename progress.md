@@ -60,6 +60,23 @@ avec deux boards ouverts, et `e2e-kicad.yml` n'a aucune sonde de routage.
 
 ## Décisions actives
 
+- **D136** — une garde dupliquée diverge, et le fait en silence. `pcb_routing.rs`
+  et `pcb_components.rs` portaient chacun un `ipc!` ; l'un vérifiait que KiCAD
+  tient bien le board nommé, l'autre non, et rien ne pouvait le signaler
+  puisque les deux compilaient et portaient le même nom au site d'appel. La
+  règle : une garde de sécurité a **une** définition, et un test lexical
+  interdit le chemin qui la contourne (`no_ipc_call_bypasses_the_guarded_macro`).
+  Le doc de `ipc_boundary.rs` énonçait déjà ce principe pour `with_ipc` — la
+  garde de board avait simplement été écrite ailleurs.
+
+- **D135** — un scan statique prouve qu'une clé est **lue**, jamais qu'elle est
+  **honorée**. `route_pad_to_pad` lit `board` par `get_path` pour trouver ses
+  pads dans le fichier, donc `required_schema_static_honesty` le blanchit — et
+  il routait ensuite par IPC sans vérifier que KiCAD tient ce board : lire les
+  pads de A, graver sur B. Corollaire de méthode : pour une clé qui désigne une
+  **cible**, la lecture ne prouve rien ; seul un test qui interdit le chemin
+  non gardé ferme la classe.
+
 - **D134** — `required` ne peut pas dire « l'un ou l'autre », et deux tools en
   ont besoin : `get_datasheet_url` (`mpn` ou `lcsc_id`) et `run_design_review`
   (`schematic` ou `board`). La forme retenue est `"required": []` plus
