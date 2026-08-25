@@ -2,10 +2,9 @@
 
 ## Phase actuelle
 
-**P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6 :
-tout est clos sauf P.6.8, ouverte et découpée en huit sous-items ordonnés par
-conséquence. **P.6.8.1 et P.6.8.6 closes ; restent P.6.8.2, .3, .4, .5, .7,
-.8.**
+**P — Schematic round-trip fidelity.** P.6 : tout est clos sauf P.6.8, découpée
+en huit sous-items ordonnés par conséquence. **P.6.8.1, .2, .6 et .7 closes ;
+restent P.6.8.3, .4, .5 et .8.**
 Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -14,49 +13,45 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-Deux items de P.6.8, un commit chacun.
+Quatre items de P.6.8, un commit chacun (`9ff70e2`, `01fc0c5`, `dfe0d69`,
+`a0e9ee3`).
 
-**P.6.8.1 (#179, moitié pins)** — un symbole multi-unités place une
-`SymbolInstance` par unité sous la **même** `Reference`.
-`batch_connect_to_net` prenait le premier match (donc toujours l'unité 1) et
-tous les lookups de pin passaient par `extract_lib_pins`, aveugle à l'unité :
-demander une pin de l'unité 2 la calculait avec la transformation de l'unité 1
-et posait l'étiquette de net à la mauvaise coordonnée. Le lookup collecte
-désormais toutes les instances portant la référence et retient celle dont
-l'unité déclare vraiment la pin ; les quinze sites d'appel passent à
-`extract_lib_pins_for_unit(sym, inst.unit)`. Le verdict mixte attendu par
-l'audit n'a pas survécu : les quinze tenaient déjà une instance en main.
+**P.6.8.1 / P.6.8.2 (#179)** — un symbole multi-unités s'écrit en un bloc
+`(symbol …)` par unité sous la **même** `Reference`. Les pins se résolvent
+désormais par `extract_lib_pins_for_unit(sym, inst.unit)` aux quinze sites, et
+`batch_connect_to_net` retient l'instance dont l'unité déclare la pin. Côté
+édition, les quatre familles d'opérations ont chacune leur sémantique :
+propriétés et suppressions par référence portent sur **toutes** les unités ;
+la géométrie par référence est **refusée** sur un multi-unités (INV8, première
+clause : une entrée à deux sens reste refusée) en nommant les uuids ; les
+lectures disent quelle unité elles ont résolue.
 
-**P.6.8.6 (#138 résiduel)** — les deux moitiés tranchées par la mesure. Le
-séparateur final de `--output` est inutile sur 10.0.3 (les quatre cas écrivent
-`<board>.drl` **dans** le dossier nommé, créé s'il manque) : le doc de ce fork
-avait raison, aucun changement de code. `separate_plated` passe à `true`, mais
-**pas** dans `DrillOptions::default()`, qui doit continuer à refléter
-kicad-cli ; la politique vit une seule fois dans `cli::SEPARATE_PLATED_HOLES` /
-`cli::fab_drill_options()`, partagée par les trois chemins qui livrent un
-fabricant (D136).
+**P.6.8.6 (#138)** — séparateur final de `--output` inutile (mesuré, doc du
+fork correcte, aucun code changé) ; `separate_plated` passe à `true` via
+`cli::SEPARATE_PLATED_HOLES` / `cli::fab_drill_options()`, partagés par les
+trois chemins qui livrent un fabricant.
+
+**P.6.8.7 (#162)** — `IpcTrack` porte enfin `uuid: Option<String>`, décodé du
+`Track` que KiCAD envoyait depuis toujours ; `query_traces` le rend, donc
+`delete_trace`/`modify_trace` sont atteignables depuis une liste.
 
 Validation :
-- fixture P.6.8.1 : le vrai `Amplifier_Operational:LM2904`, `U1` placé deux
-  fois ; `kicad-cli sch erc` l'accepte (12 violations, exit 0). Discriminante
-  par une coïncidence du symbole KiCad : pin 3 de l'unité 1 et pin 5 de
-  l'unité 2 au **même point local**, donc le défaut rendait un résultat
-  plausible
-- rouge d'abord : lookup neutralisé → étiquette à **x=92.38** (pin 3) au lieu
-  de **x=152.38** ; extracteur reverti → `get_component_nets` rend **8 pins
-  pour l'unité 1 au lieu de 3**
-- mesure P.6.8.6 : dans un fichier unique, plaqué et non plaqué ne se
-  distinguent que par un commentaire `; #@! TA.AperFunction,NonPlated,NPTH` ;
-  le corps est de l'Excellon nu. Mesuré aussi, contre l'attente : KiCad écrit
-  **les deux** fichiers même sans trou non plaqué
+- mesure qui a décidé la conception de P.6.8.2 : `Value` désynchronisée entre
+  unités → le netlist prend la valeur du **premier** bloc. Éditer le premier
+  seul donnait donc un netlist correct **par accident**, sur un fichier qui se
+  contredit
+- rouges d'abord : écriture multi-blocs tronquée à un bloc →
+  `editing_value_by_reference_updates_every_unit` tombe ; lookup neutralisé →
+  étiquette à x=92.38 au lieu de x=152.38 ; `IpcTrack.uuid` forcé à `None` →
+  la sonde mock tombe
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **56 suites, 1361 tests, 0 échec**
-- sondes `#[ignore]` de `drill_export_live` : PASS, 5/5
-- `cargo fmt --all -- --check` et `cargo clippy --workspace --locked
+  **57 suites, 1368 tests, 0 échec**
+- `cargo fmt --all -- --check` / `cargo clippy --workspace --locked
   --all-targets -- -D warnings` : PASS, 0
-- `docs/capability-matrix.md` : une ligne déplacée, cas exact de D128 (source
-  de preuve lexicographiquement plus petite pour `get_component_nets`), statut
-  inchangé `PARTIAL/test` → régénérée
+- sondes `#[ignore]` `drill_export_live` : PASS, 5/5 ; `kicad-cli sch erc` sur
+  la fixture multi-unités éditée par le tool : 12 violations, comme avant
+  édition
+- `docs/capability-matrix.md` régénérée une fois (cas D128, statut inchangé)
 
 ## Décisions actives
 
@@ -338,10 +333,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.8.2 — la moitié « édition » de #179 : `find_symbol_instance_block`
-(`crates/konnect-core/src/tools/mod.rs:651`) et `sch_batch.rs:321`/`:330` ne
-rendent que le **premier** bloc d'instance, donc une édition visant l'unité 2
-écrit dans l'unité 1. Même classe de défaut que P.6.8.1, dont la fixture
-`crates/konnect-core/tests/fixtures/multiunit_lm2904.kicad_sch` sert
-directement de test discriminant. Relire la section dans `plan.md`
-(`rg -n "P.6.8.2" plan.md`) et la fiche #179 de `docs/upstream-audit.md`.
+Implémenter P.6.8.3 (#271) — `find_orphan_items`
+(`crates/konnect-core/src/tools/sch_analysis.rs:596-624`) ne compte que des
+extrémités de fil et des positions d'étiquette : un fil qui aboutit sur une pin
+est rapporté pendant, et une pin non connectée n'est **jamais** rapportée,
+alors que la description du tool la promet. Faux positifs **et** faux négatifs
+sur toute feuille avec des composants. Dépendait de `LibPin::electrical_type`,
+que P.6.3 a livrée. Relire la section (`rg -n "P.6.8.3" plan.md`) et la fiche
+#271 de `docs/upstream-audit.md` avant de choisir entre porter les index
+amont et écrire l'équivalent ici.
