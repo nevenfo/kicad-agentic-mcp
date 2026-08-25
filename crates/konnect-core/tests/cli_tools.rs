@@ -22,6 +22,7 @@ mod harness;
 use std::path::{Path, PathBuf};
 
 use harness::{Harness, TWO_RESISTORS, TWO_RESISTORS_ONE_DNP};
+use konnect_core::tools::cli::{self, ErcViolation};
 use serde_json::json;
 
 fn kicad_cli() -> String {
@@ -664,6 +665,121 @@ fn kicad_demos() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
+/// KiCad's `complex_hierarchy` demo, copied file by file into `h`'s own
+/// directory — the shipped demo is never written to — and returning the
+/// directory of the copy. `None` when no demos are installed, so each probe
+/// prints its own skip line (D113: a test that can skip must make its silence
+/// visible).
+///
+/// Files only: the `complex_hierarchy.pretty` footprint library beside them is
+/// a directory, and nothing here loads the board that would want it. Two
+/// probes need this copy, and a second hand-written loop is a second thing to
+/// diverge (D136).
+fn copied_complex_hierarchy(h: &Harness) -> Option<PathBuf> {
+    let src = kicad_demos()?.join("complex_hierarchy");
+    assert!(
+        src.join("ampli_ht.kicad_sch").is_file(),
+        "{} is not the complex_hierarchy demo",
+        src.display()
+    );
+    let dir = h.path("");
+    for entry in std::fs::read_dir(&src)
+        .expect("the demo is readable")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.is_file() {
+            let name = path.file_name().expect("a file name");
+            std::fs::copy(&path, dir.join(name)).expect("the copy succeeds");
+        }
+    }
+    Some(dir)
+}
+
+/// The measurement P.6.7.8's refusal rests on, run rather than quoted
+/// (P.6.7.11).
+///
+/// `run_erc` refuses a sheet that belongs to a project rooted elsewhere,
+/// because kicad-cli treats the file it is handed as the root, never reads the
+/// project's `sym-lib-table`, and reports every symbol from a project library
+/// as an unknown library. That refusal is decided before kicad-cli is reached,
+/// so the unit tests prove the server's own logic and no live probe was owed —
+/// but if a future KiCad stopped producing those artefacts, the refusal would
+/// go on blocking a call that works, and nothing in the suite would say so.
+/// D113's shape exactly: the evidence lived only in a comment.
+///
+/// So this goes around the server's refusal on purpose and asks kicad-cli
+/// directly, on both sheets of a copied `complex_hierarchy`. It asserts the
+/// **asymmetry**, not the counts: the root reports no `lib_symbol_issues` and
+/// the sub-sheet reports some. Measured on 10.0.3 while writing this — 0
+/// violations on the root, 67 on `ampli_ht`, 46 of them `lib_symbol_issues` —
+/// but the totals move with the demo's own cleanliness and with KiCad's rule
+/// set, and only the asymmetry is what the refusal claims.
+///
+/// The second half closes the loop the first half opens: the artefacts are
+/// still there, and the server still refuses that sheet rather than reporting
+/// them as findings about the design.
+#[tokio::test]
+#[ignore = "requires kicad-cli and KiCad demos; run with --ignored"]
+async fn erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let Some(dir) = copied_complex_hierarchy(&h) else {
+        eprintln!("SKIP: no KiCad demos found (set KICAD_DEMOS to enable)");
+        return;
+    };
+    let root = dir.join("complex_hierarchy.kicad_sch");
+    let child = dir.join("ampli_ht.kicad_sch");
+
+    let cli_path = kicad_cli();
+    let on_root = cli::run_erc(&cli_path, &root)
+        .await
+        .expect("kicad-cli runs ERC on the project root");
+    let on_child = cli::run_erc(&cli_path, &child)
+        .await
+        .expect("kicad-cli runs ERC on the sub-sheet too — it does not refuse it, which is why the server must");
+
+    let lib_issues = |violations: &[ErcViolation]| {
+        violations
+            .iter()
+            .filter(|v| v.rule.as_deref() == Some("lib_symbol_issues"))
+            .count()
+    };
+    let (root_issues, child_issues) = (lib_issues(&on_root), lib_issues(&on_child));
+    eprintln!(
+        "ERC on the root: {} violations, {root_issues} lib_symbol_issues; \
+         on the sub-sheet: {} violations, {child_issues} lib_symbol_issues",
+        on_root.len(),
+        on_child.len()
+    );
+
+    assert_eq!(
+        root_issues, 0,
+        "the project's own root reports library artefacts, so they no longer distinguish \
+         a sub-sheet invocation: {on_root:?}"
+    );
+    assert!(
+        child_issues > 0,
+        "kicad-cli no longer reports unknown-library violations for a sub-sheet, so the \
+         refusal run_erc raises for one is no longer justified and now blocks a call that \
+         would have worked: {on_child:?}"
+    );
+
+    let refused = h
+        .call("run_erc", json!({ "schematic": harness::as_str(&child) }))
+        .await
+        .expect("the tool call itself does not fail");
+    assert!(
+        refused.is_error,
+        "the sub-sheet still produces {child_issues} library artefacts, and the server let \
+         the call through"
+    );
+    let body = harness::body(&refused).to_string();
+    assert!(
+        body.contains("complex_hierarchy.kicad_sch"),
+        "the refusal should name the root to retry against: {body}"
+    );
+}
+
 /// A symbol placed on a CHILD sheet is now written with a `(path ...)` per
 /// placement of that sheet, starting at the ROOT's uuid and under the
 /// project's name. `complex_hierarchy` instantiates `ampli_ht.kicad_sch`
@@ -682,29 +798,11 @@ fn kicad_demos() -> Option<PathBuf> {
 #[tokio::test]
 #[ignore = "requires kicad-cli and KiCad demos; run with --ignored"]
 async fn a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable() {
-    let Some(demos) = kicad_demos() else {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let Some(dir) = copied_complex_hierarchy(&h) else {
         eprintln!("SKIP: no KiCad demos found (set KICAD_DEMOS to enable)");
         return;
     };
-    let src = demos.join("complex_hierarchy");
-    assert!(
-        src.join("ampli_ht.kicad_sch").is_file(),
-        "{} is not the complex_hierarchy demo",
-        src.display()
-    );
-
-    let h = Harness::with_kicad_cli(kicad_cli());
-    let dir = h.path("");
-    for entry in std::fs::read_dir(&src)
-        .expect("the demo is readable")
-        .flatten()
-    {
-        let path = entry.path();
-        if path.is_file() {
-            let name = path.file_name().expect("a file name");
-            std::fs::copy(&path, dir.join(name)).expect("the copy succeeds");
-        }
-    }
     let root = dir.join("complex_hierarchy.kicad_sch");
     let child = dir.join("ampli_ht.kicad_sch");
 

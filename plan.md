@@ -3316,7 +3316,7 @@ None. Each item below is independent of the others except where stated.
         unreferenced neighbour and a directory holding several projects are all
         left alone. Red before: the sub-sheet resolved to `None`, so no refusal
         was raised at all.
-  - [ ] P.6.7.11 The measurement P.6.7.8 rests on lives only in a comment.
+  - [x] P.6.7.11 The measurement P.6.7.8 rests on lives only in a comment.
         The refusal is decided before `kicad-cli` is reached, so the unit tests
         prove the server's own logic and no live probe was owed — but nothing
         in the suite would notice if a future KiCad stopped producing those
@@ -3324,6 +3324,30 @@ None. Each item below is independent of the others except where stated.
         invisible. Same shape as D113. A probe over a copied demo hierarchy,
         asserting the sub-sheet/root asymmetry rather than an absolute count,
         would anchor it. Decide whether it belongs in the gating E2E job.
+        Done: `erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not`
+        (`tests/cli_tools.rs`) goes around the server's own refusal on purpose
+        — it calls `cli::run_erc` directly on both sheets of a copied
+        `complex_hierarchy` — and asserts the asymmetry: zero
+        `lib_symbol_issues` on the root, at least one on `ampli_ht`. Re-measured
+        here on 10.0.3 before writing it, and reproduced by the probe itself:
+        **0 violations on the root, 67 on the sub-sheet, 46 of them
+        `lib_symbol_issues`** — P.6.7.8's numbers exactly. The counts are
+        printed, not asserted (D113: a probe must show what it measured), since
+        the totals move with the demo's cleanliness and with KiCad's rule set
+        while the asymmetry is all the refusal claims. Second half closes the
+        loop the first opens: the artefacts are still produced, *and* the
+        server still refuses that sheet naming the root to retry against —
+        which is what turns "KiCad changed" into "we now block a call that
+        works". Red before, by pointing the sub-sheet call at the root: the
+        `child_issues > 0` assertion fires with its own message.
+        The demo copy is now one helper, `copied_complex_hierarchy`, shared
+        with P.6.9.3's probe rather than a second hand-written loop (D136).
+        Decision on the gating job: **yes, in `e2e`**. A red here is a
+        statement about the artifact's own behaviour — it refuses a legitimate
+        call — not about runner liveness, which is the criterion that keeps
+        `live-ipc` advisory. The other candidate homes do not fit: `live-ipc`
+        is the IPC path and this is kicad-cli, and there is no non-gating CLI
+        job to put it in.
 - [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
       carries its precise next action in `docs/upstream-audit.md`; re-read it
       rather than re-deriving. #271 depends on P.6.3.

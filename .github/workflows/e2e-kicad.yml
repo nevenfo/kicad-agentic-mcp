@@ -122,6 +122,18 @@ jobs:
       - name: "A symbol on a child sheet keeps the hierarchy loadable (e7b0c54)"
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable
 
+      # run_erc refuses a sheet that belongs to a project rooted elsewhere,
+      # because kicad-cli never reads that project's sym-lib-table and reports
+      # every project-library symbol as an unknown library (P.6.7.8). That
+      # refusal is decided before kicad-cli is reached, so nothing else in the
+      # suite would notice a KiCad that stopped producing those artefacts — the
+      # refusal would go on blocking a call that works. In THIS job, gating,
+      # because red here means the shipped artifact refuses a legitimate call:
+      # it is a statement about our behaviour, not about runner liveness. The
+      # probe asserts the root/sub-sheet asymmetry, not a violation count.
+      - name: "ERC on a sub-sheet reports library artefacts its root does not (P.6.7.11)"
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not
+
       # A board with open copper is reported by kicad-cli under
       # `unconnected_items`, a sibling of `violations` this fork read alone
       # until P.6.1 — so the evidence gate approved unrouted boards and every

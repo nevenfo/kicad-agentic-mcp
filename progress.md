@@ -3,11 +3,10 @@
 ## Phase actuelle
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
-(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
-ouverte (les huit items d'origine, P.6.7.9 et P.6.7.10 clos, P.6.7.11
-ouverte), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.23 closes — **tout le triage d'origine et
-toutes ses découvertes**. Restent P.6.7.11, P.6.8 et P.6.11.
+(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6, P.6.10, P.6.9
+(triage) et P.6.9.1 à P.6.9.23 closes — **tout le triage d'origine et toutes
+ses découvertes** ; **P.6.7 est close en entier** (les huit items d'origine
+plus P.6.7.9, P.6.7.10 et P.6.7.11). Restent **P.6.8 et P.6.11**.
 Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -16,43 +15,38 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.10 — `export_bom` n'exposait ni `--fields`, ni `--labels`, ni
-`--group-by`. Décision prise avant d'implémenter : **exposer les trois**. Sans
-`--fields`, le BOM sort avec le défaut de KiCad
-`Reference,Value,Footprint,QUANTITY,DNP` — ni colonne MPN ni colonne LCSC, donc
-un BOM qu'on ne peut pas commander, sur un serveur qui porte tout un toolset de
-sourcing. Forme reprise de `--layers` (P.6.7.7) : tableaux de chaînes côté
-schéma, joints en une valeur séparée par virgules ; un champ omis ne pousse
-aucun flag, donc la CLI applique **ses** défauts.
+P.6.7.11 — la mesure sur laquelle repose le refus de P.6.7.8 (`run_erc` sur une
+sous-feuille) ne vivait que dans un commentaire. Elle est maintenant lancée :
+`erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not`
+(`crates/konnect-core/tests/cli_tools.rs`) contourne volontairement le refus du
+serveur — il appelle `cli::run_erc` directement sur les deux feuilles d'une
+copie de `complex_hierarchy` — et asserte l'**asymétrie** : zéro
+`lib_symbol_issues` sur la racine, au moins un sur `ampli_ht`. Les totaux sont
+**affichés, pas assertés** (D113) : ils bougent avec la propreté de la démo et
+le jeu de règles de KiCad, l'asymétrie est tout ce que le refus prétend. La
+seconde moitié ferme la boucle : les artefacts sont toujours produits **et** le
+serveur refuse toujours cette feuille en nommant la racine — c'est ce qui
+transforme « KiCad a changé » en « on bloque désormais un appel qui marche ».
+La copie de la démo est un helper unique, `copied_complex_hierarchy`, partagé
+avec la sonde de P.6.9.3 plutôt qu'une seconde boucle écrite à la main (D136).
 
-Trois comportements mesurés sur 10.0.3 avant tout code, chacun décidant si une
-garde était due — et la réponse est asymétrique :
-- `--fields` plus long que `--labels` **ne décale pas** les colonnes (l'en-tête
-  reprend le nom du champ) et l'inverse ignore le surplus → **aucune garde** ;
-- `--labels` sans `--fields` s'applique aux premiers champs par défaut →
-  **aucune garde** ;
-- `--group-by` nommant un champ absent des champs exportés est accepté, sort 0
-  et **ne groupe rien** en silence → **garde**, refusée avant tout spawn de
-  kicad-cli, en `invalid_argument` sur `group_by`, avec normalisation des
-  délimiteurs `${}`.
-
-Garder les deux premiers aurait été poser une garde qui ne garde rien (D126).
+Décision prise et inscrite au plan : la sonde va dans le job **gatant** `e2e`.
+Un rouge y est une affirmation sur le comportement de l'artefact — il refuse un
+appel légitime — pas sur la vivacité du runner, critère qui garde `live-ipc`
+consultatif ; et il n'existe aucun autre job CLI où la mettre.
 
 Validation :
-- rouge d'abord : moitié unitaire par `BomOptions` refusant de compiler contre
-  le nouveau vecteur d'arguments, moitié garde en la désactivant
-- oracle honnête (`#[ignore]`, comme P.6.7.6) : copie temporaire de la fixture
-  avec un champ `MPN` sur R1, exportée avec une étiquette personnalisée, la
-  colonne vérifiée dans le CSV réellement écrit par KiCad. **Lancé ici contre
-  10.0.3 : PASS**
+- mesure directe sur 10.0.3 avant tout code : **0 violation sur la racine, 67
+  sur `ampli_ht` dont 46 `lib_symbol_issues`** — les chiffres exacts de P.6.7.8
+- sonde lancée ici contre 10.0.3 : **PASS**, mêmes comptes reproduits
+- rouge d'abord : la moitié mesure neutralisée (appel sous-feuille pointé sur
+  la racine) fait tomber `child_issues > 0` avec son propre message
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **56 suites, 1345 tests, 0 échec**
+  **56 suites, 1345 tests, 0 échec** (la sonde est `#[ignore]`)
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `the_committed_matrix_is_up_to_date` : PASS, matrice intacte
-
-`BomOptions` perd `Copy` (il porte des `Vec<String>`), sans appelant concerné ;
-`manufacturing.rs` garde son comportement par `default()`.
+- `the_committed_matrix_is_up_to_date` : PASS, matrice intacte (la preuve de
+  `run_erc` reste dans le même fichier, D128 sans effet)
 
 ## Décisions actives
 
@@ -313,13 +307,16 @@ Aucun.
   `instance_targets` (P.6.9.3), `zone_net_ref` (P.6.9.2),
   `require_str`/`require_f64`/`get_path` l.414-447 (cibles de P.6.9.7).
 - `crates/konnect-core/src/tools/cli.rs` — `DrcReport`, base de P.6.9.8.
+- `crates/konnect-core/tests/cli_tools.rs` — `copied_complex_hierarchy`, la
+  copie de démo partagée par les deux sondes de hiérarchie (P.6.9.3, P.6.7.11).
 - `.github/workflows/e2e-kicad.yml` — job gatant, un step par sonde.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.11 — la mesure sur laquelle P.6.7.8 repose ne vit que dans un
-commentaire. Relire la section dans `plan.md` (`rg -n "P.6.7.11" plan.md`) pour
-ce qu'elle demande exactement et ses critères de validation. Contexte utile
-déjà établi : D122 borne ce qu'une sonde live peut observer sur ce sujet, et
-P.6.7.8 a mesuré 67 violations dont 46 `lib_symbol_issues` sur la sous-feuille
-`ampli_ht` de `demos/complex_hierarchy`, contre 0 sur la feuille racine.
+Implémenter P.6.11 — `add_layer` alloue un id pris dans `1..=30` sans rapport
+avec le nom canonique qu'il écrit, alors qu'un board récent numérote le cuivre
+en pairs (D117). Relire la section dans `plan.md` (`rg -n "P.6.11" plan.md`)
+pour ce qu'elle demande et son test discriminant : `add_layer` contre un board
+dont `B.Cu` vaut `2`, rechargé par `kicad-cli`. Voisin nommé par D117 et laissé
+en place : `konnect-ipc/src/client.rs:1314` développe `*.Cu` en `3..=34`, même
+hypothèse d'intervalle fixe.
