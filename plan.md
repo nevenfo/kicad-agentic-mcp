@@ -3414,7 +3414,7 @@ None. Each item below is independent of the others except where stated.
         comment records the measurement so nobody re-derives it.
         Red before: `sheet_instance_context` neutered to `None` fails three
         of the four tests in `tests/sheet_instances.rs`.
-  - [ ] P.6.9.4 `f8a8db0` — every typed write reformats the whole sheet. The
+  - [x] P.6.9.4 `f8a8db0` — every typed write reformats the whole sheet. The
         writer indents two spaces where KiCad writes tabs
         (`konnect-schematic-editor/src/sexp/writer.rs:109-113`), collapses each
         closing paren onto the last child (`:104`), and inserts blank lines
@@ -3428,6 +3428,42 @@ None. Each item below is independent of the others except where stated.
         demo-corpus reduction as the acceptance number. KiCad's width-based
         packing of `(xy …)` inside `(pts …)` stays out of scope, and the task
         must say so rather than leave it looking forgotten.
+        Done. `WriteStyle { indent, crlf }` is sniffed from `original_source`
+        in `Schematic::from_sexp` and carried on `Schematic`; `save` and
+        `to_source` go through `write_styled`, while `write` keeps the
+        default (tab, LF) for the six sites that serialize a bare fragment
+        outside any file. `BLANK_BEFORE` is gone and the multi-line branch
+        closes on its own line at the parent's depth.
+        A **fourth** cause, not in this task's own statement and found by
+        measuring rather than by reading the commit: every KiCAD 10 demo
+        sheet shipped by the Windows installer is **CRLF**. Writing LF into
+        one reproduces this task's exact symptom — the whole document in the
+        diff — by a different axis, and would also have flattered the
+        acceptance measurement, since `str::lines()` drops a trailing `\r`.
+        It is therefore its own field on `WriteStyle`, and its own tests: the
+        demo-corpus measurement cannot see it. See D123.
+        Measured on eight demo sheets, one per demo project, `add_junction`
+        then `to_source`, counted as insertions+deletions over an LCS: before
+        170.71%–175.97% of lines (over 100% because near-every indented line
+        differs in content *and* position, so each counts twice); after
+        3.18%–17.22%. Bound asserted at 25%, set from the measured range and
+        not from upstream's 3151→360 on a corpus we do not have.
+        Residual, characterised rather than assumed: a no-op round-trip of
+        `ecc83-pp.kicad_sch` differs on 315 of 3545 lines, and every one of
+        them is either an unpacked `(xy …)` — the out-of-scope divergence,
+        documented in the writer — or the two lines of `(embedded_fonts no)`
+        moving, which is `to_sexp`'s child order, not the writer. Nothing is
+        lost or duplicated.
+        Red before: the demo measurement fails on the first sampled file
+        (`CM5.kicad_sch`, 175.97%); neutering `sniff_write_style` to the
+        default fails the CRLF and indent-unit tests while the paren and
+        blank-line tests stay green, which is the split those tests exist to
+        make.
+        Live probe added to the gating job: a sheet re-laid in eeschema's own
+        formatting, round-tripped through the typed model with a one-element
+        edit, is still a sheet KiCAD loads and builds a netlist from. The
+        conformance suite measures how little the new shape disturbs; only
+        KiCAD can say the shape is legal.
   - [ ] P.6.9.5 `de70351` — two text-path handlers never got the fix their
         typed sibling has. `add_component_annotation`
         (`sch_components.rs:1432`) appends a `(property …)` unconditionally, at

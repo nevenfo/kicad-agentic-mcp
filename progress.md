@@ -5,9 +5,9 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.3 closes. P.6.9.4 à P.6.9.12 restent, dans l'ordre du
-triage ; P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
-PR #10 vers `agentic/main`.
+P.6.9 (triage) et P.6.9.1 à P.6.9.4 closes. P.6.9.5 à P.6.9.12 restent, dans
+l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
+`ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
 
@@ -15,39 +15,44 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.3 — le bloc `(instances …)` d'un symbole est désormais clé sur la
-**racine** du projet, pas sur le fichier où l'on écrit.
-`sheet_instance_context` (`tools/mod.rs`) résout la place réelle de la
-feuille — `.kicad_pro` le plus proche pour le nom, sa racine `.kicad_sch`
-sœur pour l'uuid de tête, puis une descente bornée avec retour arrière qui
-enregistre l'uuid de chaque `(sheet …)` traversé — et `instance_targets` est
-le point unique où les trois sites d'écriture (`sch_components`, `sch_batch`,
-`sch_wiring`) demandent la réponse, avec repli sur la dérivation actuelle
-quand rien ne se résout.
+P.6.9.4 — le writer typé ne reformate plus la feuille.
+`WriteStyle { indent, crlf }` est reniflé depuis `original_source` dans
+`Schematic::from_sexp` et porté sur `Schematic` ; `save`/`to_source` passent
+par `write_styled`, `write` garde le défaut (tabulation, LF) pour les six
+sites qui sérialisent un fragment hors fichier. `BLANK_BEFORE` supprimé,
+fermante seule sur sa ligne à l'indentation du parent.
 
-Au-delà du correctif amont, tiré de la démo et non du commit :
-`complex_hierarchy` place `ampli_ht.kicad_sch` **deux fois**, et ses symboles
-portent un `(path …)` par placement. Un symbole écrit avec un seul des deux
-est annoté dans une instance et invisible dans l'autre : on émet donc une
-entrée par placement, triées pour que deux appels identiques produisent des
-fichiers identiques.
+Quatrième cause trouvée par la mesure et absente de l'énoncé : les feuilles de
+démo KiCad 10 livrées par l'installeur Windows sont en **CRLF** (voir D123).
 
-La borne de `owning_project_root` (répertoire du fichier seulement, P.6.7.8)
-n'a **pas** été élargie : même `project_root_schematic` réutilisé, donc une
-feuille déplacée hors du répertoire de son projet garde le comportement
-autonome — borne énoncée, pas trou silencieux.
+Mesure sur huit feuilles de démo, une par projet, `add_junction` puis
+`to_source`, comptée en insertions+suppressions sur LCS : avant
+170,71 %–175,97 % ; après 3,18 %–17,22 %. Borne du test à 25 %.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1244
+- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1249
   tests, 0 échec**
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **12/12**
-- rouge d'abord : `sheet_instance_context` neutralisé à `None` fait échouer
-  trois des quatre tests de `tests/sheet_instances.rs`
-- borne mesurée, qui corrige l'énoncé d'impact du triage : voir D122
+- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **13/13** (une de plus)
+- rouge d'abord : la mesure échoue dès `CM5.kicad_sch` (175,97 %) ; le sniff
+  neutralisé fait échouer les tests CRLF et unité d'indentation, pas ceux de
+  la fermante ni des lignes blanches
+- résidu caractérisé, pas supposé : round-trip à vide de `ecc83-pp.kicad_sch`
+  = 315 lignes sur 3545, toutes soit un `(xy …)` non empaqueté (hors
+  périmètre, documenté dans le writer), soit les deux lignes de
+  `(embedded_fonts no)` qui se déplacent — ordre des enfants de `to_sexp`, pas
+  le writer. Rien de perdu ni dupliqué.
+
 ## Décisions actives
 
+- **D123** — les feuilles de démo KiCad 10 livrées par l'installeur Windows
+  sont toutes en **CRLF**. Un writer qui émet du LF y reproduit exactement le
+  symptôme que P.6.9.4 corrige — tout le document dans le diff — par un autre
+  axe. La fin de ligne est donc un champ propre de `WriteStyle`, pas un détail
+  de l'indentation. Corollaire de méthode : toute mesure de fidélité octet
+  comparant avec `str::lines()` est **aveugle** à cet axe, puisque `lines()`
+  retire le `\r` final ; l'axe EOL exige ses propres tests.
 - **D122** — mesuré sur `complex_hierarchy` : avec l'ancienne dérivation
   d'instances (feuille clé sur elle-même), `kicad-cli sch erc` rapporte
   **zéro** violation — il n'exécute pas la vérification d'annotation — et le
@@ -159,37 +164,40 @@ Aucun.
 
 - `docs/upstream-audit.md` — annexe A : le triage P.6.9, avec pour chaque item
   mécanisme amont, état dans ce fork (`file:line`), impact et coût.
+- `crates/konnect-schematic-editor/src/sexp/writer.rs` — `WriteStyle`,
+  `IndentStyle`, `write` (fragment, défaut) et `write_styled` (document) ;
+  `schematic/mod.rs::sniff_write_style` est le seul point de reniflage.
+- `crates/konnect-core/tests/conformance_test.rs` —
+  `typed_writer_edit_stays_localized_against_kicad_demo_sheets`, la mesure de
+  fidélité ; aveugle aux fins de ligne par construction (D123), que couvrent
+  les quatre tests de format en fin de
+  `crates/konnect-schematic-editor/tests/integration.rs`.
 - `crates/konnect-sexp/src/net.rs` — lecture **et** écriture des nets par forme
   (`NetRef`, `net_ref_for_write`, `zone_tokens`) ; `tools/mod.rs::zone_net_ref`
   est le point d'entrée des deux handlers de zone.
-- `crates/konnect-core/tests/fixtures/kicad10_no_net_table.kicad_pcb` — board
-  20260206 sans table de nets, chargeable par kicad-cli.
 - `crates/konnect-ipc/src/builders.rs` — `try_layer_from_name` / `layer_from_name` ;
   `crates/konnect-ipc/src/client.rs` — `check_layer`, `build_footprint_item`,
   `build_graphic_child`.
 - `crates/konnect-core/src/tools/mod.rs` — `sheet_instance_context` et
   `instance_targets` (P.6.9.3), `zone_net_ref` (P.6.9.2),
   `require_str`/`require_f64`/`get_path` l.414-447 (cibles de P.6.9.7).
-- `crates/konnect-schematic-editor/src/sexp/writer.rs` — les trois causes du
-  reformatage (P.6.9.4).
 - `crates/konnect-core/src/tools/cli.rs` — `DrcReport`, base de P.6.9.8.
 - `.github/workflows/e2e-kicad.yml` — job gatant, un step par sonde.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.4 — `f8a8db0` : chaque écriture par le modèle typé
-reformate la feuille entière. Trois causes, toutes dans
-`crates/konnect-schematic-editor/src/sexp/writer.rs` : indentation de deux
-espaces là où KiCad écrit des tabulations (l.109-113), parenthèse fermante
-collée au dernier enfant (l.104) là où KiCad la met seule sur sa ligne, et
-lignes blanches insérées devant 22 tags (l.3-24) là où une feuille KiCad n'en
-a qu'une, à la fin. `Schematic::overwrite` (`schematic/mod.rs:163-165`) passe
-tout le document par ce writer et ~20 sites de production l'atteignent, donc
-une modification d'une ligne arrive en diff de plusieurs milliers de lignes.
-Renifler l'unité d'indentation au chargement et la porter sur `Schematic` ;
-corriger la parenthèse et les lignes blanches. C'est le plus gros des huit et
-le seul dont le rayon d'action touche toutes les assertions octet du
-workspace : à faire seul, avec la mesure sur le corpus de démos comme
-critère d'acceptation (amont : `add_junction` passait de 3151 lignes
-modifiées sur 3712 à 360). L'empaquetage des `(xy …)` par largeur reste hors
-périmètre et la tâche doit le dire.
+Implémenter P.6.9.5 — `de70351` : deux handlers du chemin texte n'ont jamais
+reçu le correctif que leur frère typé a. `add_component_annotation`
+(`sch_components.rs:1432`) ajoute une `(property …)` sans condition, à un
+`(at 0 0 0)` et une indentation codés en dur (`:1477`) — donc une clé répétée
+laisse deux champs de même nom et le texte s'affiche à l'origine de la feuille
+— et il ne refuse pas les clés réservées, si bien qu'un `Reference` posé par
+cette voie saute la réécriture des instances. `bulk_move` (`sch_batch.rs:706`)
+ne réécrit que le `(at …)` du symbole (`:747-757`) alors que les coordonnées
+de propriété sont absolues, donc le texte des champs reste où la pièce était.
+Sortir la branche in-place d'`edit_schematic_component` (`update_field` `:795`,
+`insert_property` `:825`) dans un helper partagé ; déplacer chaque ancre de
+propriété du delta réellement appliqué au symbole — celui après snap — en
+laissant sa rotation, et localiser les blocs de propriété par un scan
+conscient des chaînes. Rester sur la voie `SexpEdit` : le modèle typé
+importerait la resérialisation de P.6.9.4.

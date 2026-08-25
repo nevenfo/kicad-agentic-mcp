@@ -748,3 +748,108 @@ fn raw_and_typed_symbol_children_survive_interleaving() {
     assert_eq!(r2.unit, 1);
     assert_eq!(r2.value_str(), Some("22k"));
 }
+
+// ---- P.6.9.4: the writer reproduces the sheet's own formatting -------------
+//
+// The demo-corpus measurement in `konnect-core`'s conformance suite compares
+// with `str::lines()`, which strips a trailing `\r`. It therefore proves the
+// indent/paren/blank-line half of P.6.9.4 and says nothing at all about line
+// endings — these tests cover the axes that measurement cannot see.
+
+fn load_source(src: &str) -> Schematic {
+    let tmp = tempfile::Builder::new()
+        .suffix(".kicad_sch")
+        .tempfile()
+        .expect("create tempfile");
+    std::fs::write(tmp.path(), src).unwrap();
+    Schematic::load(tmp.path()).unwrap()
+}
+
+/// A KiCAD 10 sheet as eeschema writes it: one tab per level, closing paren
+/// alone on its own line, no blank lines.
+fn kicad_shaped_sch(newline: &str) -> String {
+    let lines = [
+        "(kicad_sch",
+        "\t(version 20250114)",
+        "\t(generator \"eeschema\")",
+        "\t(generator_version \"10.0\")",
+        "\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")",
+        "\t(paper \"A4\")",
+        "\t(lib_symbols",
+        "\t)",
+        "\t(junction",
+        "\t\t(at 50.8 50.8)",
+        "\t\t(diameter 0)",
+        "\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")",
+        "\t)",
+        "\t(embedded_fonts no)",
+        ")",
+    ];
+    let mut out = lines.join(newline);
+    out.push_str(newline);
+    out
+}
+
+#[test]
+fn a_crlf_sheet_is_written_back_as_crlf() {
+    // Every KiCAD 10 demo sheet shipped by the Windows installer is CRLF.
+    // Writing plain LF into one reproduces the exact symptom P.6.9.4 fixes —
+    // the whole document in the diff — just via line endings instead of
+    // indentation.
+    let sch = load_source(&kicad_shaped_sch("\r\n"));
+    let out = sch.to_source();
+    assert!(out.contains("\r\n"), "CRLF source lost its CRLF:\n{out:?}");
+    assert_eq!(
+        out.matches('\n').count(),
+        out.matches("\r\n").count(),
+        "a bare LF leaked into a CRLF document:\n{out:?}"
+    );
+}
+
+#[test]
+fn an_lf_sheet_is_written_back_as_lf() {
+    let sch = load_source(&kicad_shaped_sch("\n"));
+    let out = sch.to_source();
+    assert!(!out.contains('\r'), "LF source gained a CR:\n{out:?}");
+}
+
+#[test]
+fn the_indent_unit_is_taken_from_the_source() {
+    let tabbed = load_source(&kicad_shaped_sch("\n")).to_source();
+    assert!(
+        tabbed.contains("\n\t(paper \"A4\")"),
+        "tab-indented source did not stay tab-indented:\n{tabbed}"
+    );
+    assert!(
+        !tabbed.contains("\n  (paper"),
+        "tab-indented source picked up space indentation:\n{tabbed}"
+    );
+
+    let spaced_src = kicad_shaped_sch("\n").replace('\t', "    ");
+    let spaced = load_source(&spaced_src).to_source();
+    assert!(
+        spaced.contains("\n    (paper \"A4\")"),
+        "four-space source did not stay four-space:\n{spaced}"
+    );
+    assert!(
+        !spaced.contains('\t'),
+        "space-indented source picked up a tab:\n{spaced}"
+    );
+}
+
+#[test]
+fn a_multi_line_node_closes_on_its_own_line_and_no_blank_lines_appear() {
+    let out = load_source(&kicad_shaped_sch("\n")).to_source();
+    assert!(
+        out.contains("\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")\n\t)"),
+        "closing paren did not land alone at the parent's depth:\n{out}"
+    );
+    assert!(
+        !out.contains("\n\n"),
+        "a blank line was inserted where KiCAD writes none:\n{out}"
+    );
+    assert!(
+        out.ends_with(")\n") && !out.ends_with(")\n\n"),
+        "document does not end with a single newline after the root:\n{out:?}"
+    );
+}

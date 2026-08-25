@@ -696,3 +696,65 @@ async fn the_manufacturing_package_fills_its_output_directory() {
         );
     }
 }
+
+/// P.6.9.4 changed the shape of every byte the typed writer emits — tab
+/// indent, closing paren alone on its own line, no blank lines, and the
+/// source's own line ending. The conformance suite measures how *little* of
+/// the file that shape disturbs; only KiCAD can say the shape is still legal.
+///
+/// So: hand the writer a sheet in eeschema's own formatting (tabs, CRLF),
+/// round-trip it through the typed model with a one-element edit, and make
+/// KiCAD read the result back. A netlist that still lists both parts is the
+/// proof — an unparseable sheet fails the export outright.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn a_sheet_rewritten_by_the_typed_writer_is_still_loadable_by_kicad() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let schematic = h.fixture(TWO_RESISTORS);
+
+    // Re-lay the fixture the way eeschema writes: one tab per level, CRLF.
+    // This is what the sniffed style has to carry back out; a fixture in the
+    // writer's own default style would exercise neither axis.
+    let source = std::fs::read_to_string(&schematic).unwrap();
+    let kicad_shaped: String = source
+        .lines()
+        .map(|line| {
+            let body = line.trim_start_matches(' ');
+            let depth = (line.len() - body.len()) / 2;
+            format!("{}{body}\r\n", "\t".repeat(depth))
+        })
+        .collect();
+    std::fs::write(&schematic, &kicad_shaped).unwrap();
+
+    let mut sch = konnect_schematic_editor::Schematic::load(&schematic).unwrap();
+    sch.add_junction(50.8, 50.8);
+    sch.overwrite().unwrap();
+
+    let written = std::fs::read_to_string(&schematic).unwrap();
+    assert!(
+        written.contains("\r\n")
+            && written.matches('\n').count() == written.matches("\r\n").count(),
+        "the rewrite did not keep the sheet's CRLF endings"
+    );
+    assert!(
+        written.contains("\n\t(junction"),
+        "the rewrite did not keep the sheet's tab indentation:\n{written}"
+    );
+
+    let netlist = h.path("rewritten.net");
+    h.json(
+        "export_netlist",
+        json!({
+            "board": harness::as_str(&schematic),
+            "output": harness::as_str(&netlist),
+            "format": "kicad"
+        }),
+    )
+    .await;
+    let text = std::fs::read_to_string(&netlist)
+        .expect("KiCAD produced a netlist from the rewritten sheet");
+    assert!(
+        text.contains("R1") && text.contains("R2"),
+        "KiCAD read the rewritten sheet but lost its parts:\n{text}"
+    );
+}

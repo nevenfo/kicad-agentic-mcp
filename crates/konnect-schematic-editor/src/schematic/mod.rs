@@ -93,6 +93,10 @@ impl<'a> LocatedElement<'a> {
 pub struct Schematic {
     filepath: PathBuf,
     original_source: Mutex<String>,
+    /// Indentation and line-ending style sniffed from `original_source`, so
+    /// `save`/`to_source` round-trip the file's own formatting instead of
+    /// reformatting the whole document. See `sniff_write_style`.
+    write_style: writer::WriteStyle,
 
     pub version: Option<u32>,
     pub generator: Option<String>,
@@ -144,7 +148,7 @@ impl Schematic {
     /// Saving to the loaded path instead performs a revision-checked commit.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        let text = writer::write(&self.to_sexp());
+        let text = writer::write_styled(&self.to_sexp(), self.write_style);
         if path == self.filepath {
             let mut original_source = self.original_source.lock().map_err(|_| {
                 crate::error::Error::Io(std::io::Error::other(
@@ -170,7 +174,7 @@ impl Schematic {
     /// commands from an edited candidate and commit through `konnect-sexp`.
     #[must_use]
     pub fn to_source(&self) -> String {
-        writer::write(&self.to_sexp())
+        writer::write_styled(&self.to_sexp(), self.write_style)
     }
 
     pub fn filepath(&self) -> &Path {
@@ -423,6 +427,7 @@ impl Schematic {
     // ---- internal -----------------------------------------------------------
 
     fn from_sexp(root: SexpNode, filepath: PathBuf, original_source: String) -> Result<Self> {
+        let write_style = sniff_write_style(&original_source);
         let mut version = None;
         let mut generator = None;
         let mut generator_version = None;
@@ -523,6 +528,7 @@ impl Schematic {
         Ok(Schematic {
             filepath,
             original_source: Mutex::new(original_source),
+            write_style,
             version,
             generator,
             generator_version,
@@ -660,6 +666,34 @@ impl std::fmt::Debug for Schematic {
             self.wires.len()
         )
     }
+}
+
+/// Sniff the indent unit and line ending a `.kicad_sch` source uses, so a
+/// round-tripped save reproduces the file's own formatting instead of
+/// reformatting the whole document (see `writer::WriteStyle`).
+///
+/// Indent: the first indented line decides — leading tab means tabs;
+/// otherwise its leading space count is the unit. No indented line at all
+/// (e.g. an empty or single-line document) falls back to the default (tab).
+/// EOL: any `\r\n` anywhere in the source means CRLF, matching every KiCAD
+/// 10 demo sheet on Windows.
+fn sniff_write_style(source: &str) -> writer::WriteStyle {
+    let crlf = source.contains("\r\n");
+    let indent = source
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim_start_matches([' ', '\t']);
+            let indent_str = &line[..line.len() - trimmed.len()];
+            if indent_str.is_empty() {
+                None
+            } else if indent_str.starts_with('\t') {
+                Some(writer::IndentStyle::Tab)
+            } else {
+                Some(writer::IndentStyle::Spaces(indent_str.len()))
+            }
+        })
+        .unwrap_or(writer::IndentStyle::Tab);
+    writer::WriteStyle { indent, crlf }
 }
 
 fn dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {

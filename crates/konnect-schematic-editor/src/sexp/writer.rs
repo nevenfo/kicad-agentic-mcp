@@ -1,37 +1,65 @@
 use super::SexpNode;
 
-/// Tags that get a blank line before them when emitted at depth 1.
-const BLANK_BEFORE: &[&str] = &[
-    "lib_symbols",
-    "symbol",
-    "wire",
-    "bus",
-    "bus_entry",
-    "label",
-    "global_label",
-    "hierarchical_label",
-    "junction",
-    "no_connect",
-    "net_tie",
-    "polyline",
-    "rectangle",
-    "arc",
-    "circle",
-    "text",
-    "text_box",
-    "sheet",
-    "sheet_instances",
-    "symbol_instances",
-];
+/// Indentation unit used when serializing a document.
+///
+/// KiCAD 10 writes one tab per depth level; this is also our default for
+/// callers that serialize a bare fragment (`write`) rather than a full file
+/// (`write_styled`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndentStyle {
+    Tab,
+    Spaces(usize),
+}
 
+/// Serialization style for a whole document: indentation unit and line
+/// ending. Sniffed from the source a `Schematic` was loaded from so a
+/// round-tripped file diffs cleanly against what KiCAD itself would write,
+/// instead of reformatting the whole document on every save.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WriteStyle {
+    pub indent: IndentStyle,
+    /// `true` writes `\r\n`, matching every KiCAD 10 demo sheet on Windows.
+    /// Writing plain `\n` into a CRLF file reproduces the "whole document in
+    /// the diff" symptom this style exists to avoid, just via line endings
+    /// instead of indentation — so this is tracked as its own axis, not
+    /// folded into `indent`.
+    pub crlf: bool,
+}
+
+impl Default for WriteStyle {
+    fn default() -> Self {
+        WriteStyle {
+            indent: IndentStyle::Tab,
+            crlf: false,
+        }
+    }
+}
+
+/// Serialize `node` using the default style (tab indent, `\n`). Intended for
+/// callers that serialize a standalone fragment outside the context of a
+/// specific file — a full document should go through `write_styled` with the
+/// style sniffed from its source so round-trips don't reformat it.
 pub fn write(node: &SexpNode) -> String {
+    write_styled(node, WriteStyle::default())
+}
+
+/// Serialize `node` as a full document using `style`.
+pub fn write_styled(node: &SexpNode, style: WriteStyle) -> String {
     let mut buf = String::with_capacity(16384);
-    write_node(node, &mut buf, 0);
-    buf.push('\n');
+    write_node(node, &mut buf, 0, &style);
+    buf.push_str(newline(&style));
     buf
 }
 
-fn write_node(node: &SexpNode, buf: &mut String, depth: usize) {
+fn newline(style: &WriteStyle) -> &'static str {
+    if style.crlf {
+        "\r\n"
+    } else {
+        "\n"
+    }
+}
+
+fn write_node(node: &SexpNode, buf: &mut String, depth: usize, style: &WriteStyle) {
     match node {
         SexpNode::Atom(s) => buf.push_str(s),
         SexpNode::Str(s) => {
@@ -62,42 +90,43 @@ fn write_node(node: &SexpNode, buf: &mut String, depth: usize) {
                 // Root: tag on same line, each child on its own indented line.
                 for (i, child) in children.iter().enumerate() {
                     if i == 0 {
-                        write_node(child, buf, 1);
+                        write_node(child, buf, 1, style);
                     } else {
-                        let blank = child
-                            .tag()
-                            .map(|t| BLANK_BEFORE.contains(&t))
-                            .unwrap_or(false);
-                        if blank {
-                            buf.push('\n');
-                        }
-                        buf.push('\n');
-                        write_indent(buf, 1);
-                        write_node(child, buf, 1);
+                        buf.push_str(newline(style));
+                        write_indent(buf, 1, style);
+                        write_node(child, buf, 1, style);
                     }
                 }
-                buf.push('\n');
+                buf.push_str(newline(style));
             } else if has_list_child {
-                // Multi-line: scalars inline after tag, sub-lists on new lines.
+                // Multi-line: scalars inline after tag, sub-lists on new lines,
+                // closing paren alone on its own line at the parent's depth.
+                //
+                // KiCAD also packs several `(xy …)` per line inside a `(pts …)`
+                // up to a target width; we always emit one `(xy …)` per line.
+                // That's a known, deliberate residual divergence — not
+                // implemented here.
                 for (i, child) in children.iter().enumerate() {
                     if i == 0 {
-                        write_node(child, buf, depth + 1);
+                        write_node(child, buf, depth + 1, style);
                     } else if child.is_list() {
-                        buf.push('\n');
-                        write_indent(buf, depth + 1);
-                        write_node(child, buf, depth + 1);
+                        buf.push_str(newline(style));
+                        write_indent(buf, depth + 1, style);
+                        write_node(child, buf, depth + 1, style);
                     } else {
                         buf.push(' ');
-                        write_node(child, buf, depth + 1);
+                        write_node(child, buf, depth + 1, style);
                     }
                 }
+                buf.push_str(newline(style));
+                write_indent(buf, depth, style);
             } else {
                 // All scalars: single line.
                 for (i, child) in children.iter().enumerate() {
                     if i > 0 {
                         buf.push(' ');
                     }
-                    write_node(child, buf, depth + 1);
+                    write_node(child, buf, depth + 1, style);
                 }
             }
 
@@ -106,8 +135,19 @@ fn write_node(node: &SexpNode, buf: &mut String, depth: usize) {
     }
 }
 
-fn write_indent(buf: &mut String, depth: usize) {
-    for _ in 0..depth {
-        buf.push_str("  ");
+fn write_indent(buf: &mut String, depth: usize, style: &WriteStyle) {
+    match style.indent {
+        IndentStyle::Tab => {
+            for _ in 0..depth {
+                buf.push('\t');
+            }
+        }
+        IndentStyle::Spaces(n) => {
+            for _ in 0..depth {
+                for _ in 0..n {
+                    buf.push(' ');
+                }
+            }
+        }
     }
 }

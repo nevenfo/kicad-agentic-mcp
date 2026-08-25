@@ -143,6 +143,14 @@ jobs:
       - name: "Netclass tools leave the board loadable by kicad-cli (9a56233)"
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture netclass_tools_leave_the_board_loadable_by_kicad_cli
 
+      # P.6.9.4 changed the shape of every byte the typed writer emits — tab
+      # indent, closing paren on its own line, no blank lines, the source's own
+      # line ending. The conformance job measures how little of the file that
+      # disturbs; this one is the other half, and only KiCAD can answer it: the
+      # new shape must still be a sheet KiCAD will load (f8a8db0).
+      - name: "A sheet rewritten by the typed writer still loads in KiCAD (f8a8db0)"
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_sheet_rewritten_by_the_typed_writer_is_still_loadable_by_kicad
+
       - name: IPC wedge timeout regression
         run: cargo test -p konnect-ipc --test mock_server_test -- --ignored --nocapture
 
