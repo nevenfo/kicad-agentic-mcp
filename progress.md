@@ -72,13 +72,16 @@ Validation :
   nom de tool cité dans un test qui ne l'appelle pas doit être cassé
   lexicalement, avec le commentaire qui dit pourquoi.
 
-- **D132** — le scanner de couverture reconnaît un tool par `"<tool>"` ou
-  `handle_<tool>` (`capability/coverage.rs:210`), et **24 des 198 tools
-  enregistrés ont un handler dont le nom ne correspond pas au leur**. Un test
-  unitaire appelant le handler directement — la façon ordinaire d'en tester un —
-  est donc invisible au scan pour ceux-là. Conséquence de méthode immédiate :
-  tant que P.6.9.19 n'est pas faite, un `NOT_TESTED` dans la matrice ne prouve
-  pas l'absence de test ; le vérifier avant de conclure à un trou de couverture.
+- **D132** — *corrigée par la mesure de P.6.9.19.* Le scanner reconnaît un tool
+  par `"<tool>"` **ou** `handle_<tool>` (`capability/coverage.rs:210`), et 24
+  des 198 tools ont un handler dont le nom ne correspond pas au leur. D132
+  concluait qu'un `NOT_TESTED` ne prouvait donc rien pour ceux-là : c'est faux,
+  mesuré. Le **premier** critère suffit, et la convention de test du dépôt le
+  déclenche toujours — `tests/harness/mod.rs` passe par `ToolRouter` par nom
+  plutôt que d'appeler un handler privé. Couverture cachée mesurée : **zéro**.
+  Ce qui reste vrai, en plus étroit : un tool prouvé *uniquement* par un test
+  unitaire appelant son handler directement serait invisible. Tant que la
+  convention `ToolRouter` tient, un `NOT_TESTED` se lit littéralement.
 
 - **D131** — la validation `required` du dispatch (P.6.9.10) ne couvre pas les
   entrées de `kicad_invoke` : la passerelle est vérifiée en enveloppe seule et
