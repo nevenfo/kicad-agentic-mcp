@@ -669,38 +669,176 @@ fn every_required_key_is_read_by_its_handler() {
     );
 }
 
-/// P.6.9.22: closes the blind spot the module docs' "What this cannot see"
-/// names — `route_pad_to_pad` read `board` directly, so this pass's own key
-/// scan never flagged it, yet it routed over IPC through this file's old,
-/// unguarded `ipc!` without that value ever reaching KiCAD. That macro is now
-/// one shared, board-guarded definition (`ipc_boundary::guarded_ipc`, aliased
-/// `ipc!` here) rather than a file-local one, so nothing in `pcb_routing.rs`
-/// needs to call `with_ipc` — the raw crossing point `guarded_ipc` itself
-/// wraps — directly any more. Checked as plain text presence, the same way
-/// the rest of this file reads source rather than calling it: a handler
-/// written next to the guarded path instead of through it would reintroduce
-/// exactly this string.
-///
-/// Measured before the fix (P.6.9.22, git history of this file's target):
-/// `pcb_routing.rs` defined `with_ipc(` once, inside its own local `ipc!`
-/// macro body — one occurrence, which is what this test would have reported
-/// as `pcb_routing.rs calls \`with_ipc(\` directly 1 time(s) — …` had it
-/// existed then. After the fix the file names `with_ipc` nowhere at all.
-#[test]
-fn no_ipc_call_bypasses_the_guarded_macro_in_pcb_routing() {
-    let root = workspace_root();
-    let path = root.join("crates/konnect-core/src/tools/pcb_routing.rs");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{} is readable: {e}", path.display()));
+/// Balanced-paren span starting at the `(` this pass has already located at
+/// or after `open`, string/char/comment-aware like [`brace_body`] (parens
+/// inside a string or a `//`/`/* */` comment cannot desync the count).
+/// Returns the text strictly between the outer parens — the full argument
+/// list of a call, including any closure passed as one of its arguments.
+fn paren_body(text: &str, open: usize) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut i = open;
+    while i < bytes.len() && bytes[i] != b'(' {
+        i += 1;
+    }
+    if i >= bytes.len() {
+        return None;
+    }
+    let start = i + 1;
+    let mut depth = 1i32;
+    let mut j = start;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'"' => {
+                j += 1;
+                while j < bytes.len() && bytes[j] != b'"' {
+                    if bytes[j] == b'\\' {
+                        j += 1;
+                    }
+                    j += 1;
+                }
+            }
+            b'\'' => {
+                if j + 2 < bytes.len() && bytes[j + 1] == b'\\' {
+                    j += 3;
+                } else if j + 2 < bytes.len() && bytes[j + 2] == b'\'' {
+                    j += 2;
+                }
+            }
+            b'/' if j + 1 < bytes.len() && bytes[j + 1] == b'/' => {
+                while j < bytes.len() && bytes[j] != b'\n' {
+                    j += 1;
+                }
+                continue;
+            }
+            b'/' if j + 1 < bytes.len() && bytes[j + 1] == b'*' => {
+                j += 2;
+                while j + 1 < bytes.len() && !(bytes[j] == b'*' && bytes[j + 1] == b'/') {
+                    j += 1;
+                }
+                j += 1;
+            }
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return std::str::from_utf8(&bytes[start..j]).ok();
+                }
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    None
+}
 
-    let count = text.matches("with_ipc(").count();
+/// P.6.9.22 closed the blind spot the module docs' "What this cannot see"
+/// names — `route_pad_to_pad` (`pcb_routing.rs`) read `board` directly, so
+/// this pass's own key scan never flagged it, yet it routed over IPC through
+/// that file's old, unguarded `ipc!` without that value ever reaching KiCAD.
+/// `pcb_routing.rs` now shares `pcb_components.rs`'s board-guarded `ipc!`
+/// (`ipc_boundary::guarded_ipc`), so nothing in it needs to call `with_ipc`
+/// — the raw crossing point `guarded_ipc` itself wraps — directly any more.
+///
+/// P.6.9.23 measured that `pcb_routing.rs` was not the only file naming
+/// `with_ipc(` outside `guarded_ipc`'s own definition: `pcb_board.rs` (five
+/// sites), `pcb_export.rs` (one), and `pcb_components.rs` (three) all did.
+/// Eight of those nine wrote to the board; `pcb_board.rs`'s
+/// `handle_get_board_extents` only reads it. Six — five in `pcb_board.rs`,
+/// one in `pcb_export.rs` (`handle_refill_zones`, whose own
+/// `KiCadIpcClient::refill_zones` resolves the board via
+/// `get_board_document`, KiCAD's *first* open document, exactly the P.6.9.22
+/// shape) — had never checked the board at all: fixed by either an inline
+/// `c.ensure_board_is_active(&requested_board)?` as the first statement of
+/// the closure passed to `with_ipc` (`pcb_board.rs`, which also has a file
+/// fallback `guarded_ipc` cannot preserve — it returns unconditionally on
+/// any IPC failure, where these handlers must keep falling back to a file
+/// edit when the failure is a transport that never reached KiCAD) or by
+/// routing through `guarded_ipc` itself where there is no fallback to
+/// preserve (`pcb_export.rs`). The other three, in `pcb_components.rs`
+/// (`handle_place_array`, `handle_align_components`), already called
+/// `ensure_board_is_active` inline before this pass existed; a third
+/// (`handle_place_component`) never calls it at all, but its one IPC call is
+/// `KiCadIpcClient::place_footprint`, which resolves the board itself via
+/// `find_open_board` before writing — a different, already-adequate
+/// mechanism this pass credits as its own named exception rather than by
+/// weakening what it demands of every other call site.
+///
+/// So a bare `with_ipc(` count is not enough on its own (P.6.9.22's
+/// `pcb_routing.rs` check demanded zero, which is still checked below as a
+/// specific case of this rule): for every other `with_ipc(` in a tools
+/// module, the balanced-paren argument list of that specific call —
+/// [`paren_body`], covering the closure passed to it — must itself contain
+/// either `ensure_board_is_active(` or, in `pcb_components.rs` only,
+/// `place_footprint(`. `ipc_boundary.rs` is excluded outright: it is where
+/// `with_ipc` and `guarded_ipc` are defined, the one legitimate site.
+///
+/// Measured before the P.6.9.23 fix: six violations, one each at
+/// `pcb_board.rs:364,475,735,823,961` and `pcb_export.rs:629` (line numbers
+/// as of that commit) — `pcb_board.rs calls \`with_ipc(\` without a board
+/// check in its own argument list 5 time(s) …` and `pcb_export.rs … 1
+/// time(s) …`. After the fix, zero.
+#[test]
+fn no_ipc_call_bypasses_the_guarded_macro_or_an_inline_board_check() {
+    let root = workspace_root();
+    let tools_dir = root.join("crates/konnect-core/src/tools");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&tools_dir)
+        .unwrap_or_else(|e| panic!("{} is readable: {e}", tools_dir.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
+        // The one legitimate site: `with_ipc` and `guarded_ipc` are defined
+        // here, so this file necessarily names `with_ipc(` in its own macro
+        // body.
+        .filter(|path| path.file_name().and_then(|n| n.to_str()) != Some("ipc_boundary.rs"))
+        .collect();
+    files.sort();
+
+    let mut report = String::new();
+    let mut total_violations = 0usize;
+    for file in &files {
+        let text = std::fs::read_to_string(file)
+            .unwrap_or_else(|e| panic!("{} is readable: {e}", file.display()));
+        let is_components = file.file_name().and_then(|n| n.to_str()) == Some("pcb_components.rs");
+
+        let mut violations = Vec::new();
+        let mut idx = 0;
+        while let Some(p) = text[idx..].find("with_ipc(") {
+            let match_start = idx + p;
+            let open = match_start + "with_ipc".len();
+            let span = paren_body(&text, open).unwrap_or_else(|| {
+                panic!(
+                    "{}: `with_ipc(` at byte {match_start} has no balanced closing paren",
+                    file.display()
+                )
+            });
+            let guarded = span.contains("ensure_board_is_active(")
+                || (is_components && span.contains("place_footprint("));
+            if !guarded {
+                let line = text[..match_start].matches('\n').count() + 1;
+                violations.push(line);
+            }
+            idx = open;
+        }
+        if !violations.is_empty() {
+            total_violations += violations.len();
+            report.push_str(&format!(
+                "  {} calls `with_ipc(` without a board check in its own argument list {} \
+                 time(s) — at line(s) {:?}\n",
+                file.display(),
+                violations.len(),
+                violations
+            ));
+        }
+    }
+
     assert_eq!(
-        count,
-        0,
-        "{} calls `with_ipc(` directly {count} time(s) — every IPC crossing in this file must \
-         go through the board-guarded `ipc!` (`ipc_boundary::guarded_ipc`), not `with_ipc` \
-         itself, or a handler can silently skip the board check the way this file's own local \
-         `ipc!` used to before P.6.9.22",
-        path.display()
+        total_violations, 0,
+        "every IPC crossing in a tools module must go through the board-guarded `ipc!` \
+         (`ipc_boundary::guarded_ipc`), or — where that macro's unconditional error return would \
+         break a deliberate file fallback, or a client method already resolves the board itself \
+         (`KiCadIpcClient::place_footprint`, `pcb_components.rs` only) — call \
+         `ensure_board_is_active` (or an equivalent board-resolving client method) inline before \
+         any write, or a handler can silently land on whichever board KiCAD happens to have open \
+         first (P.6.9.22, P.6.9.23):\n{report}"
     );
 }

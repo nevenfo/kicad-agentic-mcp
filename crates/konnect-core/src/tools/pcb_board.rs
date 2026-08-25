@@ -361,7 +361,15 @@ async fn handle_set_board_size(
     // ponytail: 4 segments over a single BoardRectangle keeps one builder path;
     // switch to board_rectangle if a native rect proves less flaky.
     let items = rect_outline_items(ox, oy, x2, y2, w);
+    let requested_board = board_path.clone();
     if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
+        // P.6.9.23: confirms the live session actually holds `board` before
+        // writing — `create_items` has no board argument of its own to check
+        // against, so without this it would silently land on whichever board
+        // KiCAD happened to have open first. A `BoardMismatch` here still
+        // disallows the file fallback below (`allows_file_fallback`), same as
+        // any other proof KiCAD answered.
+        c.ensure_board_is_active(&requested_board)?;
         c.create_items(items)
     })
     .await?
@@ -471,8 +479,19 @@ async fn handle_get_board_extents(
 
     // Try IPC first; fall through to file-based computation on *any* failure.
     // Unconditional here, unlike the write paths: reading the file cannot
-    // overwrite anything a live KiCAD holds.
-    if let Ok(ext) = with_ipc(ctx.config.ipc_address.clone(), |c| c.get_board_extents()).await? {
+    // overwrite anything a live KiCAD holds. `ensure_board_is_active` still
+    // runs first (P.6.9.23): without it, a KiCAD holding some *other* board
+    // open would answer with that board's extents, reported as "source":
+    // "ipc" as if they were `board`'s — a `BoardMismatch` here instead falls
+    // through to the file-based computation below, which reads the right
+    // file.
+    let requested_board = board_path.clone();
+    if let Ok(ext) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
+        c.ensure_board_is_active(&requested_board)?;
+        c.get_board_extents()
+    })
+    .await?
+    {
         return Ok(CallToolResult::json(&json!({
             "x_min": ext.min.x, "y_min": ext.min.y,
             "x_max": ext.max.x, "y_max": ext.max.y,
@@ -732,7 +751,10 @@ async fn handle_add_board_outline(
 
     // Try IPC first; fall through to file edit if KiCAD is not reachable.
     let items = rect_outline_items(x1, y1, x2, y2, w);
+    let requested_board = board_path.clone();
     if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
+        // P.6.9.23: see handle_set_board_size's identical guard above.
+        c.ensure_board_is_active(&requested_board)?;
         c.create_items(items)
     })
     .await?
@@ -820,7 +842,10 @@ async fn handle_add_board_text(
     // Try IPC first; fall through to file edit if KiCAD isn't reachable.
     let text_ipc = text.clone();
     let layer_ipc = layer.clone();
+    let requested_board = board_path.clone();
     if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
+        // P.6.9.23: see handle_set_board_size's identical guard above.
+        c.ensure_board_is_active(&requested_board)?;
         let bt = builders::board_text(&layer_ipc, &text_ipc, x, y, size, rotation, false);
         let any = builders::pack_any(&bt, "kiapi.board.types.BoardText");
         c.create_items(vec![any])
@@ -958,7 +983,10 @@ async fn handle_import_svg_logo(
     // Try IPC first; fall through to a direct file edit if KiCAD isn't reachable.
     let layer_ipc = layer.clone();
     let placed_ipc = placed.clone();
+    let requested_board = board_path.clone();
     if let Err(failure) = with_ipc(ctx.config.ipc_address.clone(), move |c| {
+        // P.6.9.23: see handle_set_board_size's identical guard above.
+        c.ensure_board_is_active(&requested_board)?;
         let shape = builders::board_polygon(&layer_ipc, 0.0, true, &placed_ipc);
         let any = builders::pack_any(&shape, "kiapi.board.types.BoardGraphicShape");
         c.create_items(vec![any])

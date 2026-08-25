@@ -4247,21 +4247,50 @@ None. Each item below is independent of the others except where stated.
         Proof is structural throughout: the behaviour needs a live KiCAD with
         two boards open, and `e2e-kicad.yml` has no routing probe to hang one
         on.
-  - [ ] P.6.9.23 — the same unguarded shape survives outside `pcb_routing.rs`:
-        nine direct `with_ipc(` calls that no macro guards, in
-        `pcb_board.rs` (`set_board_size`, `get_board_extents`,
-        `add_board_outline`, `add_board_text`, `import_svg_logo`),
-        `pcb_export.rs` (`refill_zones`) and `pcb_components.rs`
-        (`place_component`, `place_array`, `align_components`). Eight of the
-        nine write. Whether each is a real instance of P.6.9.22 has to be
-        measured one at a time rather than assumed: some of the
-        `pcb_components.rs` calls are the deliberate file-fallback path, which
-        reads `board` for its own reasons and may or may not check that KiCAD
-        holds it. Measure first — for each, is `board` resolved, and is
-        `ensure_board_is_active` reached before anything is written? Then
-        extend the `no_ipc_call_bypasses_the_guarded_macro` guard to every file
-        that survives the pass, so the class stays closed rather than closed
-        once.
+  - [x] P.6.9.23 — the same unguarded shape survived outside `pcb_routing.rs`:
+        nine direct `with_ipc(` calls no macro guarded, in `pcb_board.rs`,
+        `pcb_export.rs` and `pcb_components.rs`, eight of them writing.
+        Measured one at a time rather than guarded in bulk, and the nine split
+        three ways.
+        Six were real instances of P.6.9.22. Five in `pcb_board.rs`
+        (`set_board_size`, `get_board_extents`, `add_board_outline`,
+        `add_board_text`, `import_svg_logo`) and one in `pcb_export.rs`
+        (`refill_zones`, whose `KiCadIpcClient::refill_zones` calls
+        `get_board_document()` internally — the first open document again).
+        Three in `pcb_components.rs` were already correct, and by two different
+        mechanisms worth distinguishing: `place_array` and `align_components`
+        already carried the inline check, while `place_component` is guarded a
+        level down, `place_footprint` calling `find_open_board` itself. No
+        schema was missing `board`; no schema defect in the nine.
+        Two shapes of guard, because one of them does not fit everywhere.
+        `guarded_ipc` answers `ipc_error_result` and returns, which is right
+        where there is nothing else to try — that is `refill_zones`, routed
+        through it. But `pcb_board.rs` has a deliberate file fallback, and
+        returning would make it unreachable, so those five take the check
+        inline inside the closure and let the failure travel as a value.
+        `IpcFailure::allows_file_fallback()` then does exactly the right thing
+        without being asked twice: `BoardMismatch` returns `false` alongside
+        `Rejected`, because both prove KiCAD answered and editing the file
+        underneath a live editor would race it.
+        `get_board_extents` is the one read among the six, and it inverts:
+        its fallback is unconditional, so a `BoardMismatch` now falls through
+        to computing extents from the file the caller actually named. Before
+        the guard, a KiCAD holding some *other* board answered with that
+        board's extents, reported as `"source": "ipc"` as though they were the
+        requested board's.
+        The guard is generalised rather than copied — the lesson of P.6.9.22
+        was that two copies diverge. `no_ipc_call_bypasses_the_guarded_macro_or_an_inline_board_check`
+        scans every file in `src/tools` except the definition site, and fails
+        any `with_ipc(` whose paren-balanced argument span contains neither
+        `ensure_board_is_active(` nor — as one named, justified exception —
+        `place_footprint(`. Red before at `total_violations left: 6, right: 0`,
+        naming `pcb_board.rs` lines 364, 475, 735, 823, 961 and
+        `pcb_export.rs` line 629; green after.
+        Structural proof again: the behaviour needs a live KiCAD holding two
+        boards, which no probe here provides. The guard is textual, so a future
+        handler that embeds one of those substrings without actually guarding
+        would pass — the same accepted limit as this file's other pass, and
+        written in its docs.
 ### Validation
 Each implemented item carries a test that is red before it and green after,
 and — where KiCad is the only honest oracle — a probe in

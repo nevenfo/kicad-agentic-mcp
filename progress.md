@@ -5,10 +5,9 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.22 closes — tout le triage d'origine et
-toutes ses découvertes sauf une. Reste P.6.9.23, découverte pendant P.6.9.22 ;
-puis P.6.8 et P.6.11. Branche de travail : `ai/P-schematic-fidelity`,
-PR #10 vers `agentic/main`.
+P.6.9 (triage) et P.6.9.1 à P.6.9.23 closes — **tout le triage d'origine et
+toutes ses découvertes**. Restent P.6.7.9 à P.6.7.11, P.6.8 et P.6.11.
+Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
 
@@ -16,47 +15,50 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.21 puis P.6.9.22, dans le même commit — l'instrument et le défaut qu'il a
-trouvé.
+P.6.9.23 — les neuf `with_ipc(` non gardés hors de `pcb_routing.rs`, mesurés un
+par un plutôt que gardés en bloc. Ils se répartissent en trois :
 
-**P.6.9.21** : la forme proposée par le plan (omettre chaque clé requise à tour
-de rôle, valeurs bidons pour les autres) a été écartée **sur mesure** et non
-essayée : un chemin plausible mais inexistant fait répondre `file_not_found` à
-un handler correct avant qu'il regarde la clé omise, donc « ne l'exige pas » et
-« l'exige après une autre vérification » sont indiscernables. Fait autrement :
-`required_schema_static_honesty.rs` compare la liste `required` au **corps du
-handler**, sans rien exécuter. 193 tools, 416 clés, 19 par indirection, 5
-menteurs. Sa limite, écrite dans ses docs : il prouve qu'une clé est **lue**,
-pas qu'elle est **honorée**.
+- **six vraies instances de P.6.9.22** : cinq dans `pcb_board.rs`
+  (`set_board_size`, `get_board_extents`, `add_board_outline`,
+  `add_board_text`, `import_svg_logo`) et une dans `pcb_export.rs`
+  (`refill_zones`, dont `KiCadIpcClient::refill_zones` appelle
+  `get_board_document()` en interne) ;
+- **trois déjà corrects** dans `pcb_components.rs`, par deux mécanismes
+  distincts : `place_array` et `align_components` portaient déjà la
+  vérification inline, `place_component` est gardé un niveau plus bas par
+  `place_footprint` qui appelle `find_open_board` lui-même.
 
-**P.6.9.22** : les 5 menteurs n'étaient pas 5 schémas négligents mais **une
-garde manquante**. `pcb_components.rs` définissait un `ipc!` qui résout `board`
-et appelle `ensure_board_is_active` ; `pcb_routing.rs` en définissait un
-**second**, sans garde, retombant sur `get_board_document()` — le **premier**
-document ouvert. Six des huit handlers concernés gravent du cuivre. Le code le
-documentait déjà : `find_open_board` existe pour ça, sur constat live, « would
-mutate the wrong board ». Une seule définition désormais,
-`ipc_boundary::guarded_ipc`, dans le module dont c'est la raison d'être.
+Aucun schéma ne manquait `board`.
 
-Revirement assumé sur P.6.9.16 : j'avais retiré `board` de `query_traces` et
-`get_nets_list` en concluant qu'ils lisaient la session ouverte — je décrivais
-le défaut comme une intention. `board` est restauré dans les deux, `required`
-compris, et honoré.
+**Deux formes de garde, parce qu'une seule ne convient pas partout.**
+`guarded_ipc` répond `ipc_error_result` et `return` — juste là où il n'y a rien
+d'autre à tenter (`refill_zones`). Mais `pcb_board.rs` a un repli fichier
+délibéré, que ce `return` rendrait inatteignable : ces cinq portent donc la
+vérification **inline** dans la closure et laissent l'échec voyager comme
+valeur. `IpcFailure::allows_file_fallback()` fait alors exactement ce qu'il
+faut sans qu'on lui redemande : `BoardMismatch` rend `false` comme `Rejected`,
+les deux prouvant que KiCAD a répondu — éditer le fichier sous un éditeur
+vivant courrait contre lui.
+
+`get_board_extents` est la seule lecture des six et s'inverse : son repli est
+inconditionnel, donc un `BoardMismatch` retombe sur le calcul depuis le fichier
+réellement nommé. Avant, un KiCAD tenant un **autre** board répondait avec les
+extents de celui-là, annoncés `"source": "ipc"`.
+
+La garde est **généralisée**, pas copiée (leçon de D136) :
+`no_ipc_call_bypasses_the_guarded_macro_or_an_inline_board_check` balaie tout
+`src/tools` sauf le site de définition, avec une exception nommée et justifiée
+(`place_footprint(`).
 
 Validation :
-- `required_schema_static_honesty` : PASS — 193 tools, 416 clés required,
-  19 par indirection, **0 menteur**
-- `no_ipc_call_bypasses_the_guarded_macro_in_pcb_routing` : rouge d'abord
-  (`left: 1, right: 0`), vert après
+- garde généralisée : rouge d'abord, `total_violations left: 6, right: 0`,
+  nommant `pcb_board.rs` l.364, 475, 735, 823, 961 et `pcb_export.rs` l.629 ;
+  vert après
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
   **56 suites, 1340 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `the_committed_matrix_is_up_to_date` : PASS, `docs/capability-matrix.md`
-  intact
-
-Preuve structurelle de bout en bout : le comportement demande un KiCAD vivant
-avec deux boards ouverts, et `e2e-kicad.yml` n'a aucune sonde de routage.
+- `the_committed_matrix_is_up_to_date` : PASS, matrice intacte
 
 ## Décisions actives
 
@@ -321,14 +323,10 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.23 — la même forme non gardée survit hors de
-`pcb_routing.rs` : neuf `with_ipc(` directs qu'aucun macro ne garde, dans
-`pcb_board.rs` (`set_board_size`, `get_board_extents`, `add_board_outline`,
-`add_board_text`, `import_svg_logo`), `pcb_export.rs` (`refill_zones`) et
-`pcb_components.rs` (`place_component`, `place_array`, `align_components`).
-Huit des neuf écrivent. Mesurer un par un avant de conclure : certains appels
-de `pcb_components.rs` sont la voie de repli fichier délibérée, qui lit `board`
-pour ses propres raisons et vérifie peut-être déjà. Pour chacun : `board`
-est-il résolu, et `ensure_board_is_active` est-il atteint avant toute
-écriture ? Puis étendre la garde `no_ipc_call_bypasses_the_guarded_macro` à
-chaque fichier qui passe la mesure, pour que la classe reste fermée.
+P.6.9 est close en entier. Reprendre la première tâche ouverte de P.6.7 —
+P.6.7.9 — en relisant sa section dans `plan.md` (`rg -n "P\.6\.7\.9" plan.md`)
+pour sa preuve à reproduire d'abord et ses critères de validation, puis
+enchaîner P.6.7.10 et P.6.7.11. P.6.8 et P.6.11 suivent. P.6.11 a déjà son
+ancre : D117 — tout code qui alloue un id de layer doit le dériver du nom
+canonique sous la numérotation du board, jamais d'un intervalle fixe, et
+`konnect-ipc/src/client.rs:1314` développe encore `*.Cu` en `3..=34`.

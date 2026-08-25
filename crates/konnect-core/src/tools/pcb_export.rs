@@ -6,7 +6,7 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
+use crate::tools::ipc_boundary::guarded_ipc as ipc;
 use crate::tools::{get_path, require_array, ToolContext, ToolDef};
 use crate::try_arg;
 use serde_json::json;
@@ -623,30 +623,22 @@ async fn handle_refill_zones(
 
     // kicad-cli pcb export gerber triggers zone fills as a side-effect,
     // but the proper command is kicad-cli pcb --refill-zones (not in all versions).
-    // Use IPC refill_zones when available, otherwise fall back to file-level
-    // zone fill marker update.
-    let addr = ctx.config.ipc_address.clone();
-    let result = with_ipc(addr, move |client| {
-        client.refill_zones()?;
-        Ok(())
-    })
-    .await?;
+    // Refilling zones has no file-level equivalent — the fill geometry is
+    // computed by KiCAD — so this always goes over IPC, board-guarded (`ipc!`
+    // = `ipc_boundary::guarded_ipc`) so it cannot silently refill whichever
+    // board KiCAD happens to have open first: `KiCadIpcClient::refill_zones`
+    // itself resolves the board via `get_board_document` (its first open
+    // document), not the one this call named (P.6.9.23).
+    ipc!(ctx, args, |client| client.refill_zones());
 
-    match result {
-        Ok(()) => Ok(CallToolResult::text(
-            serde_json::to_string(&json!({
-                "success": true,
-                "method": "ipc",
-                "board": board.to_str().unwrap_or("")
-            }))
-            .unwrap(),
-        )),
-        // Refilling zones has no file-level equivalent — the fill geometry is
-        // computed by KiCAD — so there is nothing to fall back to, and the
-        // failure is reported as itself rather than as a success carrying a
-        // note nobody branches on.
-        Err(failure) => Ok(ipc_error_result(&failure)),
-    }
+    Ok(CallToolResult::text(
+        serde_json::to_string(&json!({
+            "success": true,
+            "method": "ipc",
+            "board": board.to_str().unwrap_or("")
+        }))
+        .unwrap(),
+    ))
 }
 
 async fn handle_get_drc_violations(
