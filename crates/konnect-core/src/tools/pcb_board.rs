@@ -634,25 +634,77 @@ async fn handle_add_layer(
         }
     };
 
-    // Determine the next available inner copper ID (first unused ID in 1-30
-    // range). The ids have to be read by shape — see konnect_sexp::layers.
+    // The ids have to be read by shape — see konnect_sexp::layers.
     let tree = parse_sexp(&content)?;
-    let used_ids: std::collections::HashSet<i32> = konnect_sexp::layers::layers(&tree)
-        .iter()
-        .map(|l| l.id)
-        .collect();
-    let new_id = match (1..=30).find(|id| !used_ids.contains(id)) {
+    let stack = konnect_sexp::layers::layers(&tree);
+
+    // A name already in the table is not a fresh layer to add; the old
+    // unconditional insert would declare it a second time, and
+    // konnect_sexp::layers::copper() counts by name, so the board's own
+    // reported copper-layer count would go wrong.
+    if let Some(existing) = stack.iter().find(|l| l.name == layer_name) {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "layer_name".to_string(),
+                reason: format!(
+                    "'{layer_name}' is already layer id {} in this board",
+                    existing.id
+                ),
+            },
+            format!(
+                "'{layer_name}' is already present as id {} in this board's (layers) table. \
+                 add_layer only adds a layer that is not there yet; it does not rename or \
+                 move an existing entry.",
+                existing.id
+            ),
+        ));
+    }
+
+    // KiCAD has shipped two id schemes for this table (see
+    // konnect_sexp::layers::Numbering); which one this board uses is decided
+    // by what it already contains, not by version.
+    let numbering = konnect_sexp::layers::numbering(&stack);
+    let new_id = match konnect_sexp::layers::canonical_id(&layer_name, numbering) {
         Some(id) => id,
         None => {
             return Ok(CallToolResult::error_kind(
                 ToolErrorKind::InvalidArgument {
                     field: "layer_name".to_string(),
-                    reason: "no free inner copper layer id: 1-30 are all in use".to_string(),
+                    reason: format!(
+                        "no measured ordinal for '{layer_name}' under {numbering:?} numbering"
+                    ),
                 },
-                "No free inner copper layer id: 1-30 are all in use",
+                format!(
+                    "'{layer_name}' has no measured KiCAD ordinal under this board's \
+                     {numbering:?} layer numbering (detected from its own (layers) table), \
+                     so add_layer cannot write an id it has not verified. This is known to \
+                     affect 'Rescue' under Modern numbering."
+                ),
             ))
         }
     };
+
+    // If that canonical id is already occupied by a *different* name, the
+    // table is internally contradictory; writing a duplicate id would only
+    // add to the damage rather than fix it.
+    if let Some(other) = stack.iter().find(|l| l.id == new_id) {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "layer_name".to_string(),
+                reason: format!(
+                    "canonical id {new_id} for '{layer_name}' is already used by '{}'",
+                    other.name
+                ),
+            },
+            format!(
+                "'{layer_name}'s canonical id ({new_id}) under this board's {numbering:?} \
+                 numbering is already occupied by '{}' in its (layers) table. That table is \
+                 internally inconsistent; add_layer refuses to write a second entry with the \
+                 same id rather than make it worse.",
+                other.name
+            ),
+        ));
+    }
 
     // Close of the layers block, by paren balance. The previous probe looked
     // for a literal "\n  )", which a tab-indented KiCAD 10 file never
@@ -1246,6 +1298,13 @@ mod layers_block_tests {
                 konnect_sexp::layers::is_canonical_name(&name),
                 "{variant} maps to '{name}', which is_canonical_name rejects"
             );
+            // The proto enum *is* the LEGACY numbering, offset by the 3
+            // sentinels ahead of BL_F_Cu — measured variant by variant.
+            assert_eq!(
+                konnect_sexp::layers::canonical_id(&name, konnect_sexp::layers::Numbering::Legacy),
+                Some(i - 3),
+                "{variant} ({i}) disagrees with canonical_id(Legacy) for '{name}'"
+            );
             checked += 1;
         }
         // Cheap guard against the loop silently matching nothing.
@@ -1254,18 +1313,23 @@ mod layers_block_tests {
 
     #[test]
     fn ids_in_use_are_seen_so_a_new_layer_does_not_collide() {
-        // The regression this module guards: with the ids unreadable, the
-        // free-id search always returned 1 and would have duplicated an
-        // existing In1.Cu.
-        let four_layer = "(kicad_pcb\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(1 \"In1.Cu\" signal)\n\t\t(2 \"B.Cu\" signal)\n\t)\n)";
-        let tree = parse_sexp(four_layer).unwrap();
-        let used: std::collections::HashSet<i32> = konnect_sexp::layers::layers(&tree)
-            .iter()
-            .map(|l| l.id)
-            .collect();
-        assert!(used.contains(&1));
-        let next_free = (1..=30).find(|id| !used.contains(id));
-        assert_eq!(next_free, Some(3));
+        // The regression this module guards: with the ids unreadable, every
+        // board looked empty and a new layer collided with an existing one.
+        // What reads them is no longer a free-id search — P.6.11 replaced it
+        // with the canonical id of the requested name — so the assertion is on
+        // what that derivation now depends on: the ids come back as written,
+        // and they are what says which of KiCAD's two schemes this table is in.
+        let legacy = "(kicad_pcb\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(1 \"In1.Cu\" signal)\n\t\t(31 \"B.Cu\" signal)\n\t)\n)";
+        let tree = parse_sexp(legacy).unwrap();
+        let stack = konnect_sexp::layers::layers(&tree);
+        assert_eq!(
+            stack.iter().map(|l| l.id).collect::<Vec<_>>(),
+            vec![0, 1, 31]
+        );
+        assert_eq!(
+            konnect_sexp::layers::numbering(&stack),
+            konnect_sexp::layers::Numbering::Legacy
+        );
     }
 
     /// `add_layer` on a tab-indented board (KiCAD 10's own style) writes the
@@ -1297,5 +1361,167 @@ mod layers_block_tests {
             "In1.Cu missing from the reparsed stackup: {stack:?}"
         );
         assert_eq!(stack.len(), 3, "stackup: {stack:?}");
+    }
+
+    fn result_json(result: &CallToolResult) -> serde_json::Value {
+        let text = match &result.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            _ => panic!("expected text content"),
+        };
+        serde_json::from_str(&text).unwrap()
+    }
+
+    fn modern_board() -> &'static str {
+        // F.Cu=0, B.Cu=2 — the MODERN scheme KiCAD >= 20241030 writes.
+        "(kicad_pcb\n\t(version 20241229)\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(2 \"B.Cu\" signal)\n\t)\n)\n"
+    }
+
+    fn legacy_board() -> &'static str {
+        // F.Cu=0, B.Cu=31 — the LEGACY scheme `unrouted.kicad_pcb` carries.
+        "(kicad_pcb\n\t(version 20221022)\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(31 \"B.Cu\" signal)\n\t)\n)\n"
+    }
+
+    #[tokio::test]
+    async fn add_layer_writes_the_modern_canonical_id() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let board_path = dir.path().join("board.kicad_pcb");
+        std::fs::write(&board_path, modern_board()).unwrap();
+
+        let ctx = test_ctx();
+        let args = json!({
+            "board": board_path.to_str().unwrap(),
+            "layer_name": "In1.Cu",
+            "layer_type": "signal"
+        });
+        let result = handle_add_layer(&args, &ctx).await.unwrap();
+        assert!(!result.is_error, "add_layer failed: {result:?}");
+        let body = result_json(&result);
+        assert_eq!(body["id"], 4, "In1.Cu on a MODERN board: {body}");
+    }
+
+    #[tokio::test]
+    async fn add_layer_writes_the_modern_id_for_a_user_layer() {
+        // Before this item, User.8 collided with In1.Cu's legacy slot (4)
+        // because add_layer just took the first free id in 1..=30.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let board_path = dir.path().join("board.kicad_pcb");
+        std::fs::write(&board_path, modern_board()).unwrap();
+
+        let ctx = test_ctx();
+        let args = json!({
+            "board": board_path.to_str().unwrap(),
+            "layer_name": "User.8",
+            "layer_type": "user"
+        });
+        let result = handle_add_layer(&args, &ctx).await.unwrap();
+        assert!(!result.is_error, "add_layer failed: {result:?}");
+        let body = result_json(&result);
+        assert_eq!(body["id"], 53, "User.8 on a MODERN board: {body}");
+    }
+
+    #[tokio::test]
+    async fn add_layer_writes_the_legacy_canonical_id() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let board_path = dir.path().join("board.kicad_pcb");
+        std::fs::write(&board_path, legacy_board()).unwrap();
+
+        let ctx = test_ctx();
+        let args = json!({
+            "board": board_path.to_str().unwrap(),
+            "layer_name": "In1.Cu",
+            "layer_type": "signal"
+        });
+        let result = handle_add_layer(&args, &ctx).await.unwrap();
+        assert!(!result.is_error, "add_layer failed: {result:?}");
+        let body = result_json(&result);
+        assert_eq!(body["id"], 1, "In1.Cu on a LEGACY board: {body}");
+    }
+
+    #[tokio::test]
+    async fn add_layer_refuses_a_name_already_in_the_table() {
+        // The name sits at a NON-canonical id on purpose — `(9 "In1.Cu" …)` is
+        // exactly the file the old first-free-id allocator produced. Asking for
+        // a name already at its canonical id would be refused by the id guard
+        // below instead, so that board would prove nothing about this one.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let board_path = dir.path().join("board.kicad_pcb");
+        let content = "(kicad_pcb\n\t(version 20241229)\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(2 \"B.Cu\" signal)\n\t\t(9 \"In1.Cu\" signal)\n\t)\n)\n";
+        std::fs::write(&board_path, content).unwrap();
+
+        let ctx = test_ctx();
+        let args = json!({
+            "board": board_path.to_str().unwrap(),
+            "layer_name": "In1.Cu",
+            "layer_type": "signal"
+        });
+        let result = handle_add_layer(&args, &ctx).await.unwrap();
+        assert!(
+            result.is_error,
+            "a name already in the table must be refused, not declared twice: {result:?}"
+        );
+
+        let content = std::fs::read_to_string(&board_path).unwrap();
+        let tree = parse_sexp(&content).unwrap();
+        let stack = konnect_sexp::layers::layers(&tree);
+        assert_eq!(stack.len(), 3, "a refused add must not touch the file");
+        // The consequence a second entry would have: copper() counts by name,
+        // so the board would report three copper layers instead of two.
+        assert_eq!(konnect_sexp::layers::copper(&stack).len(), 3);
+    }
+
+    /// The other half of the same refusal: the requested name is absent, but
+    /// its canonical id is already spoken for by a different layer. The table
+    /// is contradictory either way, and writing a second entry at that id
+    /// would only add to it.
+    #[tokio::test]
+    async fn add_layer_refuses_an_id_already_held_by_another_layer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let board_path = dir.path().join("board.kicad_pcb");
+        // 4 is In1.Cu's canonical id under MODERN, and User.3 is sitting on it.
+        let content = "(kicad_pcb\n\t(version 20241229)\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(2 \"B.Cu\" signal)\n\t\t(4 \"User.3\" user)\n\t)\n)\n";
+        std::fs::write(&board_path, content).unwrap();
+
+        let ctx = test_ctx();
+        let args = json!({
+            "board": board_path.to_str().unwrap(),
+            "layer_name": "In1.Cu",
+            "layer_type": "signal"
+        });
+        let result = handle_add_layer(&args, &ctx).await.unwrap();
+        assert!(result.is_error, "a taken id must be refused: {result:?}");
+        let body = result_json(&result).to_string();
+        assert!(
+            body.contains("User.3") && body.contains('4'),
+            "the refusal should name the layer holding the id: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn add_layer_fills_an_inner_copper_gap_on_a_modern_board() {
+        // A board already carrying In1..In14 (ids 4..30 under MODERN) used to
+        // refuse In15.Cu with "1-30 are all in use" — a false refusal, since
+        // In15.Cu's own canonical id (32) was never in that range.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let board_path = dir.path().join("board.kicad_pcb");
+        let mut inner = String::new();
+        for n in 1..=14 {
+            let id = 2 * n + 2;
+            inner.push_str(&format!("\n\t\t({id} \"In{n}.Cu\" signal)"));
+        }
+        let content = format!(
+            "(kicad_pcb\n\t(version 20241229)\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t\t(2 \"B.Cu\" signal){inner}\n\t)\n)\n"
+        );
+        std::fs::write(&board_path, content).unwrap();
+
+        let ctx = test_ctx();
+        let args = json!({
+            "board": board_path.to_str().unwrap(),
+            "layer_name": "In15.Cu",
+            "layer_type": "signal"
+        });
+        let result = handle_add_layer(&args, &ctx).await.unwrap();
+        assert!(!result.is_error, "add_layer failed: {result:?}");
+        let body = result_json(&result);
+        assert_eq!(body["id"], 32, "In15.Cu: {body}");
     }
 }

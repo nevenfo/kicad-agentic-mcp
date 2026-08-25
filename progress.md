@@ -3,10 +3,9 @@
 ## Phase actuelle
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
-(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6, P.6.10, P.6.9
-(triage) et P.6.9.1 à P.6.9.23 closes — **tout le triage d'origine et toutes
-ses découvertes** ; **P.6.7 est close en entier** (les huit items d'origine
-plus P.6.7.9, P.6.7.10 et P.6.7.11). Restent **P.6.8 et P.6.11**.
+(backlog de correctness upstream) est ouverte : P.6.1 à P.6.7 closes (les huit
+items d'origine plus P.6.7.9 à P.6.7.11), P.6.9 (triage) et P.6.9.1 à P.6.9.23,
+P.6.10 et P.6.11 closes. **Reste P.6.8 seul.**
 Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -15,40 +14,50 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.11 — la mesure sur laquelle repose le refus de P.6.7.8 (`run_erc` sur une
-sous-feuille) ne vivait que dans un commentaire. Elle est maintenant lancée :
-`erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not`
-(`crates/konnect-core/tests/cli_tools.rs`) contourne volontairement le refus du
-serveur — il appelle `cli::run_erc` directement sur les deux feuilles d'une
-copie de `complex_hierarchy` — et asserte l'**asymétrie** : zéro
-`lib_symbol_issues` sur la racine, au moins un sur `ampli_ht`. Les totaux sont
-**affichés, pas assertés** (D113) : ils bougent avec la propreté de la démo et
-le jeu de règles de KiCad, l'asymétrie est tout ce que le refus prétend. La
-seconde moitié ferme la boucle : les artefacts sont toujours produits **et** le
-serveur refuse toujours cette feuille en nommant la racine — c'est ce qui
-transforme « KiCad a changé » en « on bloque désormais un appel qui marche ».
-La copie de la démo est un helper unique, `copied_complex_hierarchy`, partagé
-avec la sonde de P.6.9.3 plutôt qu'une seconde boucle écrite à la main (D136).
-
-Décision prise et inscrite au plan : la sonde va dans le job **gatant** `e2e`.
-Un rouge y est une affirmation sur le comportement de l'artefact — il refuse un
-appel légitime — pas sur la vivacité du runner, critère qui garde `live-ipc`
-consultatif ; et il n'existe aucun autre job CLI où la mettre.
+P.6.11 — `add_layer` prenait le premier id libre dans `1..=30`, sans rapport
+avec le nom demandé. Les deux numérotations de la table `(layers …)` sont
+désormais **dérivées** dans `konnect_sexp::layers` (`Numbering{Modern,Legacy}`,
+`canonical_id`, `numbering`), et le handler écrit l'id canonique du nom sous le
+schéma que le board lui-même déclare, refuse un nom déjà présent, refuse un id
+canonique déjà occupé par un autre nom, et perd la branche « 1-30 all in use »
+devenue inatteignable. `Rescue` reste sans ordinal moderne : aucun board de
+démo ne le déclare, donc refus plutôt que valeur inventée.
 
 Validation :
-- mesure directe sur 10.0.3 avant tout code : **0 violation sur la racine, 67
-  sur `ampli_ht` dont 46 `lib_symbol_issues`** — les chiffres exacts de P.6.7.8
-- sonde lancée ici contre 10.0.3 : **PASS**, mêmes comptes reproduits
-- rouge d'abord : la moitié mesure neutralisée (appel sous-feuille pointé sur
-  la racine) fait tomber `child_issues > 0` avec son propre message
+- mesure préalable qui corrige le texte de la tâche : `kicad-cli` 10.0.3 charge
+  un id non canonique, un id dupliqué **et** un nom déclaré deux fois ; `drc`
+  passe et les gerbers de `In1.Cu` en 4 et en 24 sont identiques. Son loader
+  clé par nom — c'est aussi pourquoi `unrouted.kicad_pcb`, numéroté legacy,
+  s'ouvre dans KiCad 10. La conséquence réelle est interne (comptes de cuivre)
+  plus un refus faux (`In15.Cu`)
+- rouge d'abord, chaque garde neutralisée à son tour : la dérivation (3 tests,
+  tous à l'id 1), la garde de nom, la garde d'id. Les deux dernières ont exigé
+  une réécriture de leurs tests pour discriminer — demander `B.Cu` sur un board
+  où `B.Cu` est à son id canonique tombe sur l'**autre** garde
+- corpus : la numérotation détectée explique **toutes** les entrées de tous les
+  boards de démo — **18 boards, 496 entrées**, comptes affichés (D113)
+- sonde `#[ignore]` `add_layer_leaves_the_board_loadable_by_kicad_cli` : PASS,
+  et elle asserte maintenant l'id canonique écrit
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **56 suites, 1345 tests, 0 échec** (la sonde est `#[ignore]`)
+  **56 suites, 1356 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `the_committed_matrix_is_up_to_date` : PASS, matrice intacte (la preuve de
-  `run_erc` reste dans le même fichier, D128 sans effet)
+- `the_committed_matrix_is_up_to_date` : PASS, matrice intacte
 
 ## Décisions actives
+
+- **D137** — `kicad-cli` n'est **pas** un oracle de la table `(layers …)`.
+  Mesuré sur 10.0.3 : id non canonique, id dupliqué et même nom déclaré deux
+  fois se chargent tous, `pcb drc` réussit et les gerbers sont identiques ; le
+  loader clé par **nom**. Corollaire immédiat : la validation « rechargé par
+  kicad-cli » ne prouve rien sur les ids, et la conséquence d'un id faux vit
+  dans ce serveur (`layers::copper()` compte par nom, donc un doublon fausse le
+  nombre de couches annoncé à un fabricant). Les deux numérotations sont
+  dérivées et non listées : la **legacy** vaut exactement la valeur de l'enum
+  `BoardLayer` du proto **moins 3** (les trois sentinelles avant `BL_F_Cu`), la
+  **moderne** est mesurée sur les 18 boards de démo — `In<n>.Cu` = `2n+2`,
+  `User.<n>` = `37+2n`, fixes sur les impairs 1..35. `Rescue` n'a pas
+  d'ordinal moderne mesuré et est refusé, pas inféré.
 
 - **D136** — une garde dupliquée diverge, et le fait en silence. `pcb_routing.rs`
   et `pcb_components.rs` portaient chacun un `ipc!` ; l'un vérifiait que KiCAD
@@ -213,10 +222,12 @@ Validation :
   `In1.Cu`=4, `In2.Cu`=6. L'ancien schéma (`B.Cu`=31, internes 1..30) ne vaut
   que pour les fichiers plus vieux, dont notre fixture `unrouted.kicad_pcb`.
   Tout code qui alloue un id de layer doit le dériver du nom canonique sous la
-  numérotation du board, jamais d'un intervalle fixe — c'est P.6.11. Voisin
-  laissé en place par P.6.9.1 : `konnect-ipc/src/client.rs:1314` développe
-  `*.Cu` en `3..=34`, même hypothèse d'intervalle fixe, dans la fonction que
-  P.6.9.1 vient de toucher.
+  numérotation du board, jamais d'un intervalle fixe — fait par P.6.11, voir
+  D137 pour les deux tables. Le voisin que cette décision soupçonnait est
+  **blanchi par la mesure** : `konnect-ipc/src/client.rs:1314` développe `*.Cu`
+  en `3..=34`, ce qui est exactement le bloc cuivre de l'enum proto
+  (`BL_F_Cu`=3, `In1..In30`=4..33, `BL_B_Cu`=34) — la numérotation IPC, pas une
+  hypothèse sur un fichier.
 - **D116** — un board livré par KiCad 10 peut être réellement malformé :
   `demos/royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb` ferme sa racine
   à l'octet 14735 sur 3,6 Mo et finit 349 parenthèses fermantes en avance.
@@ -313,10 +324,7 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.11 — `add_layer` alloue un id pris dans `1..=30` sans rapport
-avec le nom canonique qu'il écrit, alors qu'un board récent numérote le cuivre
-en pairs (D117). Relire la section dans `plan.md` (`rg -n "P.6.11" plan.md`)
-pour ce qu'elle demande et son test discriminant : `add_layer` contre un board
-dont `B.Cu` vaut `2`, rechargé par `kicad-cli`. Voisin nommé par D117 et laissé
-en place : `konnect-ipc/src/client.rs:1314` développe `*.Cu` en `3..=34`, même
-hypothèse d'intervalle fixe.
+Attaquer P.6.8 — les sept items `LATER` (#271, #179, #185, #148, #186, #138,
+#162). Chacun porte son action suivante précise dans `docs/upstream-audit.md` :
+la relire plutôt que la re-dériver. #271 dépend de P.6.3, qui est close, donc
+plus rien ne le bloque. Traiter un item par commit, comme P.6.7 et P.6.9.

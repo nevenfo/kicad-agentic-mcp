@@ -3124,7 +3124,7 @@ None. Each item below is independent of the others except where stated.
       Left alone deliberately: the id allocator still takes the first free id
       in `1..=30`, which is right on the old numbering but not on KiCad's
       current one — see P.6.11.
-- [ ] P.6.11 `add_layer` allocates an id that need not match the canonical
+- [x] P.6.11 `add_layer` allocates an id that need not match the canonical
       name it writes. Measured while closing P.6.6, on KiCad's own demos:
       boards from `20241229` on number copper in **evens** — `CM5_MINIMA_3`
       and `video` both write `(0 "F.Cu") (4 "In1.Cu") (6 "In2.Cu") (2 "B.Cu")`
@@ -3137,6 +3137,50 @@ None. Each item below is independent of the others except where stated.
       name under the numbering the board actually uses; the discriminating
       test is `add_layer` against a board whose `B.Cu` is `2`, reloaded by
       `kicad-cli`.
+      Done, with one correction to this task's own text, measured before
+      writing anything: **`kicad-cli` is not a discriminating oracle here.**
+      10.0.3 loads a board with a non-canonical id, with a duplicated id, and
+      even with the same layer name declared twice — `pcb drc` succeeds and
+      `export gerbers` produces byte-identical output for `In1.Cu` at 4 and at
+      24. Its loader keys the stackup by name, which is also why this fork's
+      legacy-numbered `unrouted.kicad_pcb` opens in KiCad 10 at all. So the
+      "reloaded by kicad-cli" test proposed above cannot fail, and the real
+      consequences are the ones this server can see: a name declared twice
+      makes `konnect_sexp::layers::copper()` — the copper count this toolset
+      reports to a fab — count it twice, and a board already carrying
+      `In1.Cu`..`In14.Cu` had `In15.Cu` **refused** with "1-30 are all in use"
+      although its own id is 32.
+      Both numberings are now derived rather than assumed.
+      `konnect_sexp::layers` gains `Numbering{Modern,Legacy}`,
+      `canonical_id(name, numbering)` and `numbering(stack)`, which decides
+      from what the table already contains — best score, ties to `Modern` —
+      rather than from a version. The legacy table is exactly the `BoardLayer`
+      proto value minus the three sentinels ahead of `BL_F_Cu`, asserted
+      variant by variant inside the existing
+      `layers_canonical_names_match_kicads_own_enum`. The modern one is
+      measured across the 18 demo boards of the 10.0.3 install: `In<n>.Cu` =
+      `2n+2`, `User.<n>` = `37+2n`, and the fixed layers on the odd slots
+      1..35. **`Rescue` is left without a modern ordinal on purpose**: no demo
+      declares it, and the proto's ordering (between `User.9` and `User.10`)
+      names no slot the `User.<n>` formula leaves free, so `canonical_id`
+      returns `None` and `add_layer` refuses rather than guessing a value no
+      caller could tell from a measured one.
+      `add_layer` now refuses a name already in the table (naming its id),
+      refuses a canonical id already held by another layer, and drops the
+      "1-30 all in use" branch, which is unreachable once the id comes from
+      the name. Red before, each half neutered in turn: the derivation (three
+      tests, all writing id 1), the duplicate-name guard, the taken-id guard.
+      The last two needed their tests rewritten to discriminate — asking for
+      `B.Cu` on a board whose `B.Cu` sits at its canonical id is caught by the
+      *other* guard, so the duplicate test now uses `(9 "In1.Cu" …)`, the very
+      file the old allocator produced.
+      New corpus check in `conformance_test.rs`: the detected numbering must
+      explain **every** entry of every demo board's table, not a majority —
+      18 boards, 496 entries, counts printed (D113), `RoyalBlue54L-Feather`
+      excluded as the known-malformed file (D116).
+      Stated bound: no live probe proves the id is right, because KiCAD
+      offers no way to observe it from the CLI. The assertions are on what
+      this server writes and on what KiCAD's own files contain.
 - [ ] P.6.7 Smaller, independent, each with its own discriminating test. Split
       into one id per item so a commit closes exactly one:
   - [x] P.6.7.1 #212 — one junction dot per wire instead of per T. Done: a

@@ -577,6 +577,9 @@ async fn add_layer_leaves_the_board_loadable_by_kicad_cli() {
     // Without this, a refused add_layer would leave the board untouched and
     // the probe below would pass on a file nothing was written to.
     assert_eq!(added["added_layer"], "In1.Cu", "add_layer refused: {added}");
+    // unrouted.kicad_pcb is LEGACY-numbered (F.Cu=0, B.Cu=31), so In1.Cu's
+    // canonical id is 1 — not the first free slot in 1..=30.
+    assert_eq!(added["id"], 1, "wrote a non-canonical id: {added}");
 
     // If add_layer had corrupted the board (the pre-fix behaviour), kicad-cli
     // fails to load it and this call errors instead of answering.

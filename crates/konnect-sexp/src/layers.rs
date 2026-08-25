@@ -120,6 +120,148 @@ pub fn is_canonical_name(name: &str) -> bool {
     false
 }
 
+/// Which of the two `(layers …)` id schemes KiCAD has shipped a board with.
+///
+/// `LEGACY` is the scheme `BoardLayer` (the API proto) still enumerates, and
+/// what `crates/konnect-core/tests/fixtures/unrouted.kicad_pcb` carries
+/// (`F.Cu`=0, `B.Cu`=31). `MODERN` is what KiCAD >= 20241030 actually writes
+/// to disk, measured across the 18 demo boards shipped with the 10.0.3
+/// install (`F.Cu`=0, `B.Cu`=2, `In1.Cu`=4 … `In30.Cu`=62). `kicad-cli`
+/// itself does not care which one a file uses — its loader remaps the table
+/// by *name*, not by id, and happily opens a board mixing legacy ids, a
+/// duplicated id, or the same name declared twice. That tolerance is why the
+/// bug this enum fixes was invisible to `kicad-cli`: the wrong id only shows
+/// up in this server's own layer counts and in a file this server itself
+/// re-reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Numbering {
+    Modern,
+    Legacy,
+}
+
+/// Fixed (non-`In<n>.Cu`, non-`User.<n>`) ids under `LEGACY`.
+///
+/// Equal to the corresponding `BoardLayer` proto value minus 3 — verified
+/// variant-by-variant by `layers_canonical_names_match_kicads_own_enum` in
+/// `pcb_board.rs`. `Rescue` sits at 59, between `User.9` (58) and `User.10`
+/// (60), which is why the `User.<n>` formula below is piecewise.
+const LEGACY_FIXED_IDS: &[(&str, i32)] = &[
+    ("F.Cu", 0),
+    ("B.Cu", 31),
+    ("B.Adhes", 32),
+    ("F.Adhes", 33),
+    ("B.Paste", 34),
+    ("F.Paste", 35),
+    ("B.SilkS", 36),
+    ("F.SilkS", 37),
+    ("B.Mask", 38),
+    ("F.Mask", 39),
+    ("Dwgs.User", 40),
+    ("Cmts.User", 41),
+    ("Eco1.User", 42),
+    ("Eco2.User", 43),
+    ("Edge.Cuts", 44),
+    ("Margin", 45),
+    ("B.CrtYd", 46),
+    ("F.CrtYd", 47),
+    ("B.Fab", 48),
+    ("F.Fab", 49),
+    ("Rescue", 59),
+];
+
+/// Fixed ids under `MODERN`, measured across the 18 demo boards of the
+/// KiCAD 10.0.3 install (e.g. `CM5_MINIMA_3` for the `In<n>.Cu` progression).
+///
+/// `Rescue` is deliberately absent: no demo board declares it under this
+/// scheme, and the proto enum's ordering (between `User.9` and `User.10`)
+/// does not name a slot the `37+2n` `User.<n>` formula leaves free. Guessing
+/// a value here would be indistinguishable from a measured one to every
+/// caller, so `canonical_id` returns `None` for `Rescue` under `MODERN`
+/// instead.
+const MODERN_FIXED_IDS: &[(&str, i32)] = &[
+    ("F.Cu", 0),
+    ("F.Mask", 1),
+    ("B.Cu", 2),
+    ("B.Mask", 3),
+    ("F.SilkS", 5),
+    ("B.SilkS", 7),
+    ("F.Adhes", 9),
+    ("B.Adhes", 11),
+    ("F.Paste", 13),
+    ("B.Paste", 15),
+    ("Dwgs.User", 17),
+    ("Cmts.User", 19),
+    ("Eco1.User", 21),
+    ("Eco2.User", 23),
+    ("Edge.Cuts", 25),
+    ("Margin", 27),
+    ("B.CrtYd", 29),
+    ("F.CrtYd", 31),
+    ("B.Fab", 33),
+    ("F.Fab", 35),
+];
+
+/// The ordinal KiCAD itself assigns `name` under `numbering`.
+///
+/// `None` for a name `is_canonical_name` already rejects, and for `Rescue`
+/// under `MODERN` (see [`MODERN_FIXED_IDS`]). This is the id a caller must
+/// write for a layer to load as the name it asked for — writing any other
+/// free id, as `add_layer` used to, produces a file `kicad-cli` still opens
+/// (its loader keys off the name) but whose id no longer means what this
+/// server's own layer-counting code assumes.
+pub fn canonical_id(name: &str, numbering: Numbering) -> Option<i32> {
+    if !is_canonical_name(name) {
+        return None;
+    }
+    let fixed = match numbering {
+        Numbering::Legacy => LEGACY_FIXED_IDS,
+        Numbering::Modern => MODERN_FIXED_IDS,
+    };
+    if let Some((_, id)) = fixed.iter().find(|(n, _)| *n == name) {
+        return Some(*id);
+    }
+    if let Some(n) = name.strip_prefix("In").and_then(|s| s.strip_suffix(".Cu")) {
+        let n: i32 = n.parse().ok()?;
+        return Some(match numbering {
+            Numbering::Legacy => n,
+            Numbering::Modern => 2 * n + 2,
+        });
+    }
+    if let Some(n) = name.strip_prefix("User.") {
+        let n: i32 = n.parse().ok()?;
+        return Some(match numbering {
+            Numbering::Legacy if n <= 9 => 49 + n,
+            Numbering::Legacy => 50 + n,
+            Numbering::Modern => 37 + 2 * n,
+        });
+    }
+    None
+}
+
+/// Which numbering a board's own `(layers …)` table is written in.
+///
+/// Decided by evidence, not by version: count, under each scheme, how many
+/// `(id, name)` entries the table already carries agree with
+/// [`canonical_id`], and take the scheme with the higher score. A tie
+/// (including the empty stack, 0-0) resolves to `MODERN` — that is what
+/// KiCAD 10 itself writes for a fresh board, and what a KiCAD 10 install
+/// will re-save the file as if it ever reopens it.
+pub fn numbering(stack: &[Layer]) -> Numbering {
+    let score = |n: Numbering| {
+        stack
+            .iter()
+            .filter(|l| canonical_id(&l.name, n) == Some(l.id))
+            .count()
+    };
+    let legacy = score(Numbering::Legacy);
+    let modern = score(Numbering::Modern);
+    if legacy > modern {
+        Numbering::Legacy
+    } else {
+        Numbering::Modern
+    }
+}
+
 fn layer_from(node: &SexpNode) -> Option<Layer> {
     // `(0 "F.Cu" signal "Top Layer")` — the ordinal is child 0, being the head
     // of the list, so every field sits one place earlier than a tagged node.
@@ -257,6 +399,52 @@ mod tests {
         for name in ["In31.Cu", "User.46", "In01.Cu", "User.01", "In.Cu", "User."] {
             assert!(!is_canonical_name(name), "{name} should not be canonical");
         }
+    }
+
+    #[test]
+    fn canonical_id_matches_both_measured_schemes() {
+        assert_eq!(canonical_id("In1.Cu", Numbering::Modern), Some(4));
+        assert_eq!(canonical_id("In30.Cu", Numbering::Modern), Some(62));
+        assert_eq!(canonical_id("User.1", Numbering::Modern), Some(39));
+        assert_eq!(canonical_id("User.45", Numbering::Modern), Some(127));
+        assert_eq!(canonical_id("B.Cu", Numbering::Modern), Some(2));
+        assert_eq!(canonical_id("F.Mask", Numbering::Modern), Some(1));
+        assert_eq!(canonical_id("Edge.Cuts", Numbering::Modern), Some(25));
+
+        assert_eq!(canonical_id("In1.Cu", Numbering::Legacy), Some(1));
+        assert_eq!(canonical_id("In30.Cu", Numbering::Legacy), Some(30));
+        assert_eq!(canonical_id("User.1", Numbering::Legacy), Some(50));
+        assert_eq!(canonical_id("User.45", Numbering::Legacy), Some(95));
+        assert_eq!(canonical_id("B.Cu", Numbering::Legacy), Some(31));
+        assert_eq!(canonical_id("F.Mask", Numbering::Legacy), Some(39));
+        assert_eq!(canonical_id("Edge.Cuts", Numbering::Legacy), Some(44));
+    }
+
+    #[test]
+    fn rescue_is_measured_only_under_legacy() {
+        assert_eq!(canonical_id("Rescue", Numbering::Legacy), Some(59));
+        assert_eq!(canonical_id("Rescue", Numbering::Modern), None);
+    }
+
+    #[test]
+    fn an_unknown_name_has_no_ordinal_under_either_scheme() {
+        assert_eq!(canonical_id("TestLayer", Numbering::Modern), None);
+        assert_eq!(canonical_id("TestLayer", Numbering::Legacy), None);
+    }
+
+    #[test]
+    fn numbering_is_read_from_the_table_itself() {
+        let modern = layers(&board(
+            r#"(0 "F.Cu" signal) (2 "B.Cu" signal) (4 "In1.Cu" signal)"#,
+        ));
+        assert_eq!(numbering(&modern), Numbering::Modern);
+
+        let legacy = layers(&board(
+            r#"(0 "F.Cu" signal) (1 "In1.Cu" signal) (31 "B.Cu" signal)"#,
+        ));
+        assert_eq!(numbering(&legacy), Numbering::Legacy);
+
+        assert_eq!(numbering(&[]), Numbering::Modern);
     }
 
     #[test]

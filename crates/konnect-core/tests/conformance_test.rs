@@ -209,6 +209,75 @@ fn every_installed_demo_board_parses_or_is_a_known_bad_file() {
     );
 }
 
+/// `konnect_sexp::layers::numbering()` must correctly identify which id
+/// scheme a real board uses: for every demo board that parses, the detected
+/// scheme has to explain every `(id, name)` pair the board's own
+/// `(layers …)` table carries, not just a majority of them.
+///
+/// `RoyalBlue54L-Feather.kicad_pcb` is excluded: its root closes 349 parens
+/// early (see `KNOWN_BAD_BOARDS`), so it never reaches this check.
+#[test]
+fn numbering_detection_explains_every_layer_entry_in_the_demo_corpus() {
+    use konnect_sexp::layers;
+
+    let Some(root) = demo_dirs() else {
+        eprintln!("SKIP: no KiCAD demos found (set KICAD_DEMOS to enable)");
+        return;
+    };
+    let boards = collect_boards(&root);
+    assert!(
+        !boards.is_empty(),
+        "demo dir exists but contains no .kicad_pcb files: {}",
+        root.display()
+    );
+
+    let mut scanned = 0usize;
+    let mut entries_checked = 0usize;
+    let mut mismatches = Vec::new();
+    for board in &boards {
+        let name = board
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if KNOWN_BAD_BOARDS.iter().any(|(file, _)| *file == name) {
+            continue;
+        }
+        let content = std::fs::read_to_string(board).unwrap_or_default();
+        // A board that fails to parse without being on the known-bad list is
+        // `every_installed_demo_board_parses_or_is_a_known_bad_file`'s finding,
+        // not this test's; asserting it here too would be a second copy of the
+        // same guard, free to drift from the first.
+        let Ok(tree) = parse_sexp(&content) else {
+            continue;
+        };
+        let stack = layers::layers(&tree);
+        if stack.is_empty() {
+            continue;
+        }
+        scanned += 1;
+        let detected = layers::numbering(&stack);
+        for l in &stack {
+            entries_checked += 1;
+            if layers::canonical_id(&l.name, detected) != Some(l.id) {
+                mismatches.push(format!(
+                    "{}: ({}, \"{}\") not explained by {detected:?}",
+                    board.display(),
+                    l.id,
+                    l.name
+                ));
+            }
+        }
+    }
+    eprintln!("scanned {scanned} demo boards, checked {entries_checked} layer entries");
+    assert!(scanned > 0, "no demo board had a non-empty (layers) table");
+    assert!(entries_checked > 0, "no layer entries were checked");
+    assert!(
+        mismatches.is_empty(),
+        "numbering() picked a scheme that does not explain every entry:\n  {}",
+        mismatches.join("\n  ")
+    );
+}
+
 /// Structural extraction must work on real designs: symbols, wires, and
 /// labels come back non-empty for the demo corpus as a whole, and pin
 /// transforms compute without panicking for every instance.
