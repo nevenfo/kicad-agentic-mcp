@@ -272,3 +272,56 @@ async fn the_severity_filter_drops_everything_below_it() {
         "'info' should return more than 'error': {everything}"
     );
 }
+
+// ─── DRC evidence in the verdict ─────────────────────────────────────────────
+
+/// A schematic-only review never had a board to run DRC on, and must come
+/// back exactly as it did before DRC entered the verdict: the three original
+/// verdicts, and no `drc` key claiming anything either way.
+#[tokio::test]
+async fn a_schematic_only_review_is_untouched_by_the_drc_gate() {
+    let h = Harness::new();
+    let sch = sheet_with_net(&h, "VCC").await;
+    let review = h
+        .json("run_design_review", json!({ "schematic": sch }))
+        .await;
+    let review = &review["design_review"];
+    assert!(
+        review.get("drc").is_none(),
+        "no board was reviewed, so there is nothing to say about DRC: {review}"
+    );
+    let verdict = review["verdict"].as_str().unwrap_or("");
+    assert!(
+        verdict.starts_with("NOT READY")
+            || verdict.starts_with("NEEDS ATTENTION")
+            || verdict.starts_with("LOOKS GOOD"),
+        "the schematic-only vocabulary changed: {verdict}"
+    );
+    assert!(
+        review["findings"]
+            .as_array()
+            .expect("findings is a list")
+            .iter()
+            .all(|f| f["audit"] != "drc"),
+        "a schematic review invented a DRC audit: {review}"
+    );
+}
+
+/// With a board in play and no `kicad-cli` behind the harness, the review has
+/// not checked the board against a single design rule. Saying "LOOKS GOOD" is
+/// the false clearance this item exists to remove.
+#[tokio::test]
+async fn a_board_review_without_drc_evidence_cannot_look_good() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("test.kicad_pcb")).to_string();
+    let review = h.json("run_design_review", json!({ "board": board })).await;
+    let review = &review["design_review"];
+    assert!(
+        review["drc"].is_null(),
+        "an unmeasured DRC is null, not an object of zeroes: {review}"
+    );
+    assert_eq!(
+        review["verdict"], "INCOMPLETE — DRC did not run, so the board is unverified",
+        "{review}"
+    );
+}

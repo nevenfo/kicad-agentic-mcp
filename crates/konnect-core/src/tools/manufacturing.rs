@@ -10,7 +10,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 
-use super::cli;
+use super::{cli, drc_gate};
 
 // ─── Tool definitions ─────────────────────────────────────────────────────────
 
@@ -280,7 +280,21 @@ fn count_nets_and_tracks(tree: &konnect_sexp::SexpNode) -> (usize, usize) {
 
 async fn handle_validate_for_manufacturing(
     args: &serde_json::Value,
-    _ctx: &ToolContext,
+    ctx: &ToolContext,
+) -> anyhow::Result<CallToolResult> {
+    let board = get_path(args, "board")?;
+    let evidence = drc_gate::gather(&ctx.config.kicad_cli, &board, false).await;
+    validate_for_manufacturing_with(args, &evidence).await
+}
+
+/// The fab check itself, against a DRC report someone else gathered.
+///
+/// Split from the handler so the verdict can be exercised over a report
+/// KiCAD never had to produce, and so a caller that already ran DRC does not
+/// run it twice.
+async fn validate_for_manufacturing_with(
+    args: &serde_json::Value,
+    evidence: &drc_gate::DrcEvidence,
 ) -> anyhow::Result<CallToolResult> {
     let board = get_path(args, "board")?;
     let fab_house = args["fab_house"].as_str().unwrap_or("jlcpcb");
@@ -346,9 +360,28 @@ async fn handle_validate_for_manufacturing(
         }
     }
 
-    // Check for unrouted nets (ratsnest)
+    // DRC is what actually answers "is this board ready": its
+    // `unconnected_items` pass names every net still on the ratsnest, one by
+    // one, on a board that is otherwise fully routed.
+    let gate = drc_gate::assess(evidence);
+    for finding in &gate.findings {
+        issues.push(json!({
+            "severity": finding.severity,
+            "issue": finding.issue,
+            "fix": finding.fix,
+        }));
+    }
+
+    // Check for unrouted nets (ratsnest).
+    //
+    // Kept only for the case where DRC could not measure connectivity: it is
+    // the crudest possible proxy — nets exist, no copper anywhere — and once
+    // `unconnected_items` is in hand it is strictly subsumed by it (a board
+    // with nets and no tracks cannot have an empty unconnected list). Running
+    // it anyway would let a heuristic contradict a measurement, which is the
+    // opposite of what this item is for.
     let (net_count, track_count) = count_nets_and_tracks(&tree);
-    if net_count > 3 && track_count == 0 {
+    if !gate.connectivity_measured && net_count > 3 && track_count == 0 {
         issues.push(json!({
             "severity": "error",
             "issue": format!("{} nets defined but no traces routed", net_count),
@@ -358,6 +391,11 @@ async fn handle_validate_for_manufacturing(
 
     let verdict = if issues.iter().any(|i| i["severity"] == "error") {
         "NOT READY"
+    } else if gate.incomplete {
+        // No error found — but nobody looked with the full set of eyes, so
+        // this is not a pass. Reporting READY here is the false clean the
+        // whole check exists to prevent.
+        "INCOMPLETE"
     } else if !issues.is_empty() {
         "NEEDS REVIEW"
     } else {
@@ -380,6 +418,9 @@ async fn handle_validate_for_manufacturing(
                 "net_count": net_count,
                 "track_count": track_count
             },
+            // `null` when DRC did not run: a counters object reading zero
+            // would be indistinguishable from a board that passed.
+            "drc": gate.summary,
             "issues": issues,
             "summary": format!(
                 "{}: {} issues found. {} footprints, {} copper layers.",
@@ -676,5 +717,200 @@ mod net_track_count_tests {
                     .contains("no traces routed")),
             "the unrouted-net issue is missing: {report}"
         );
+    }
+}
+
+#[cfg(test)]
+mod drc_gate_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::drc_gate::{DrcEvidence, DrcFinding};
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    /// Everything a fab check looks at without DRC is satisfied: an outline,
+    /// two footprints, four nets, and copper on three of them. Only the
+    /// fourth net, `SCL`, is unrouted — the case
+    /// `net_count > 3 && track_count == 0` cannot see, because there *are*
+    /// tracks.
+    const ROUTED_EXCEPT_ONE_NET: &str = "(kicad_pcb
+	(version 20260206)
+	(generator \"pcbnew\")
+	(layers
+		(0 \"F.Cu\" signal)
+		(44 \"Edge.Cuts\" user)
+	)
+	(footprint \"R_0805\"
+		(pad \"1\" smd rect (net \"GND\"))
+		(pad \"2\" smd rect (net \"VCC\"))
+	)
+	(footprint \"C_0805\"
+		(pad \"1\" smd rect (net \"SDA\"))
+		(pad \"2\" smd rect (net \"SCL\"))
+	)
+	(segment (start 110 110) (end 120 110) (width 0.2) (layer \"F.Cu\") (net \"GND\"))
+	(segment (start 110 120) (end 120 120) (width 0.2) (layer \"F.Cu\") (net \"VCC\"))
+	(segment (start 110 130) (end 120 130) (width 0.2) (layer \"F.Cu\") (net \"SDA\"))
+)
+";
+
+    async fn validate_with(board_text: &str, drc: DrcEvidence) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("board.kicad_pcb");
+        std::fs::write(&path, board_text).unwrap();
+        let result =
+            validate_for_manufacturing_with(&json!({ "board": path.display().to_string() }), &drc)
+                .await
+                .unwrap();
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text");
+        };
+        serde_json::from_str(text).unwrap()
+    }
+
+    fn unconnected(description: &str) -> crate::tools::cli::DrcViolation {
+        crate::tools::cli::DrcViolation {
+            severity: "error".to_string(),
+            description: description.to_string(),
+            pos: None,
+            rule: Some("unconnected_items".to_string()),
+            category: crate::tools::cli::DrcCategory::UnconnectedItems,
+            items: Vec::new(),
+        }
+    }
+
+    /// The heart of the item: 99% routed is not routed, and the old guard
+    /// could only fire on a board with no copper at all.
+    #[tokio::test]
+    async fn a_board_routed_except_one_net_is_not_ready() {
+        let report = crate::tools::cli::DrcReport {
+            violations: Some(vec![]),
+            unconnected_items: Some(vec![unconnected(
+                "Missing connection between items: Pad 2 [SCL] on C1",
+            )]),
+            schematic_parity: Some(vec![]),
+        };
+        let out = validate_with(ROUTED_EXCEPT_ONE_NET, DrcEvidence::Measured(report)).await;
+        assert_eq!(
+            out["verdict"], "NOT READY",
+            "an unrouted net is a fab blocker, not a detail: {out}"
+        );
+        assert_eq!(out["drc"]["unconnected_items"], json!(1), "{out}");
+    }
+
+    /// A DRC that could not run is not a DRC that found nothing.
+    #[tokio::test]
+    async fn drc_that_could_not_run_is_incomplete_and_summarised_as_null() {
+        let out = validate_with(
+            ROUTED_EXCEPT_ONE_NET,
+            DrcEvidence::Unavailable("Failed to spawn kicad-cli".to_string()),
+        )
+        .await;
+        assert_eq!(
+            out["verdict"], "INCOMPLETE",
+            "a board nobody checked is not READY: {out}"
+        );
+        assert!(
+            out["drc"].is_null(),
+            "an unmeasured DRC must be null, never a counters object reading zero: {out}"
+        );
+        assert!(
+            out["issues"].as_array().unwrap().iter().any(|i| i["issue"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Failed to spawn kicad-cli")),
+            "the missing evidence has to be named: {out}"
+        );
+    }
+
+    /// `missing_categories()` non-empty: the report is short a whole pass.
+    #[tokio::test]
+    async fn a_missing_category_does_not_read_as_zero_findings() {
+        let report = crate::tools::cli::DrcReport {
+            violations: Some(vec![]),
+            unconnected_items: None,
+            schematic_parity: Some(vec![]),
+        };
+        let out = validate_with(ROUTED_EXCEPT_ONE_NET, DrcEvidence::Measured(report)).await;
+        assert_eq!(out["verdict"], "INCOMPLETE", "{out}");
+        assert!(out["drc"]["unconnected_items"].is_null(), "{out}");
+        assert!(
+            out["drc"]["missing_categories"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("unconnected_items")),
+            "{out}"
+        );
+    }
+
+    /// With connectivity measured, the track-count heuristic must not add a
+    /// second, cruder voice: DRC already answers "is this routed".
+    #[tokio::test]
+    async fn the_track_count_heuristic_yields_to_a_measured_drc() {
+        let unrouted = "(kicad_pcb
+	(version 20260206)
+	(footprint \"R\" (pad \"1\" smd rect (net \"GND\")) (pad \"2\" smd rect (net \"VCC\")))
+	(footprint \"C\" (pad \"1\" smd rect (net \"SDA\")) (pad \"2\" smd rect (net \"SCL\")))
+)
+";
+        let report = crate::tools::cli::DrcReport {
+            violations: Some(vec![]),
+            unconnected_items: Some(vec![]),
+            schematic_parity: Some(vec![]),
+        };
+        let out = validate_with(unrouted, DrcEvidence::Measured(report)).await;
+        assert!(
+            !out["issues"].as_array().unwrap().iter().any(|i| i["issue"]
+                .as_str()
+                .unwrap_or("")
+                .contains("no traces routed")),
+            "the heuristic contradicted a DRC that measured connectivity: {out}"
+        );
+    }
+
+    /// The handler still reaches for kicad-cli itself when nobody hands it a
+    /// report: an empty `kicad_cli` is missing evidence, not a clean board.
+    #[tokio::test]
+    async fn the_handler_gathers_its_own_evidence_and_says_when_it_cannot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("board.kicad_pcb");
+        std::fs::write(&path, ROUTED_EXCEPT_ONE_NET).unwrap();
+        let result = handle_validate_for_manufacturing(
+            &json!({ "board": path.display().to_string() }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text");
+        };
+        let out: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(out["verdict"], "INCOMPLETE", "{out}");
+        assert!(out["drc"].is_null(), "{out}");
+    }
+
+    #[test]
+    fn an_unavailable_drc_produces_one_named_finding() {
+        let gate = crate::tools::drc_gate::assess(&DrcEvidence::Unavailable("no binary".into()));
+        assert!(gate.incomplete);
+        assert!(gate.summary.is_null());
+        assert!(!gate.connectivity_measured);
+        let DrcFinding { issue, .. } = &gate.findings[0];
+        assert!(issue.contains("no binary"), "{issue}");
     }
 }

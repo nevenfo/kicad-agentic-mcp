@@ -7,7 +7,7 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{get_path, ToolContext, ToolDef};
+use crate::tools::{drc_gate, get_path, ToolContext, ToolDef};
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
     parser::parse_sexp,
@@ -523,6 +523,24 @@ async fn handle_run_design_review(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
+    // A review with no board in it never had anything to run DRC on, and must
+    // come back exactly as it did before DRC entered the verdict.
+    let drc = match get_path(args, "board") {
+        Ok(board) if args["board"].is_string() => {
+            Some(drc_gate::gather(&ctx.config.kicad_cli, &board, false).await)
+        }
+        _ => None,
+    };
+    run_design_review_with(args, ctx, drc.as_ref()).await
+}
+
+/// The review itself, against a DRC report someone else gathered — split from
+/// the handler for the same reason as `validate_for_manufacturing_with`.
+async fn run_design_review_with(
+    args: &serde_json::Value,
+    ctx: &ToolContext,
+    drc: Option<&drc_gate::DrcEvidence>,
+) -> anyhow::Result<CallToolResult> {
     info!("[BETA] Running full design review");
     let severity_filter = args["severity_filter"].as_str().unwrap_or("warning");
     let min_rank = match severity_filter {
@@ -553,6 +571,32 @@ async fn handle_run_design_review(
     if args["board"].is_string() {
         let dfm = handle_audit_manufacturing(args, ctx).await?;
         audit_results.push(("manufacturing", extract_findings(&dfm)));
+    }
+
+    // DRC — the one audit that reads the board the way the fab will, and the
+    // only one that can tell a board routed all but one net from a finished
+    // one.
+    let mut drc_summary = serde_json::Value::Null;
+    let mut drc_incomplete = false;
+    if let Some(evidence) = drc {
+        let gate = drc_gate::assess(evidence);
+        drc_summary = gate.summary;
+        drc_incomplete = gate.incomplete;
+        audit_results.push((
+            "drc",
+            gate.findings
+                .iter()
+                .map(|f| {
+                    json!({
+                        "severity": f.severity,
+                        "category": "drc",
+                        "component": serde_json::Value::Null,
+                        "issue": f.issue,
+                        "recommendation": f.fix,
+                    })
+                })
+                .collect(),
+        ));
     }
 
     // Collect and filter findings
@@ -602,24 +646,32 @@ async fn handle_run_design_review(
 
     let verdict = if error_count > 0 {
         "NOT READY — critical issues must be fixed before manufacturing"
+    } else if drc_incomplete {
+        // Nothing found — but a pass of DRC never ran, so this review has not
+        // seen the board the fab will see. "LOOKS GOOD" here would be a
+        // clearance nobody earned.
+        "INCOMPLETE — DRC did not run, so the board is unverified"
     } else if warning_count > 0 {
         "NEEDS ATTENTION — review warnings before manufacturing"
     } else {
         "LOOKS GOOD — no critical issues found"
     };
 
+    let mut review = json!({
+        "verdict": verdict,
+        "errors": error_count,
+        "warnings": warning_count,
+        "info": info_count,
+        "severity_filter": severity_filter,
+        "findings": all_findings
+    });
+    if drc.is_some() {
+        // `null` when DRC could not run — never zeroed counters.
+        review["drc"] = drc_summary;
+    }
+
     Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "design_review": {
-                "verdict": verdict,
-                "errors": error_count,
-                "warnings": warning_count,
-                "info": info_count,
-                "severity_filter": severity_filter,
-                "findings": all_findings
-            }
-        }))
-        .unwrap(),
+        serde_json::to_string(&json!({ "design_review": review })).unwrap(),
     ))
 }
 
@@ -1059,4 +1111,101 @@ fn extract_findings(result: &CallToolResult) -> Vec<serde_json::Value> {
         }
     }
     Vec::new()
+}
+
+#[cfg(test)]
+mod drc_in_the_review_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::cli::{DrcCategory, DrcReport, DrcViolation};
+    use crate::tools::drc_gate::DrcEvidence;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    async fn review(drc: DrcEvidence) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("board.kicad_pcb");
+        std::fs::write(
+            &path,
+            "(kicad_pcb (version 20260206) (layers (44 \"Edge.Cuts\" user)))\n",
+        )
+        .unwrap();
+        let result = run_design_review_with(
+            &json!({ "board": path.display().to_string() }),
+            &test_ctx(),
+            Some(&drc),
+        )
+        .await
+        .unwrap();
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text");
+        };
+        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        parsed["design_review"].clone()
+    }
+
+    /// One net left on the ratsnest is one DRC error, and one DRC error is a
+    /// review that does not say the design is fine.
+    #[tokio::test]
+    async fn an_unconnected_net_lands_in_the_review_as_an_error() {
+        let out = review(DrcEvidence::Measured(DrcReport {
+            violations: Some(vec![]),
+            unconnected_items: Some(vec![DrcViolation {
+                severity: "error".to_string(),
+                description: "Missing connection between items: Pad 2 [SCL] on C1".to_string(),
+                pos: None,
+                rule: Some("unconnected_items".to_string()),
+                category: DrcCategory::UnconnectedItems,
+                items: Vec::new(),
+            }]),
+            schematic_parity: Some(vec![]),
+        }))
+        .await;
+        assert_eq!(out["errors"], json!(1), "{out}");
+        assert!(
+            out["verdict"].as_str().unwrap().starts_with("NOT READY"),
+            "{out}"
+        );
+        assert_eq!(out["drc"]["unconnected_items"], json!(1), "{out}");
+        assert!(
+            out["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["audit"] == "drc"),
+            "{out}"
+        );
+    }
+
+    /// A DRC that ran every pass and found nothing is the one case where the
+    /// review may still say so.
+    #[tokio::test]
+    async fn a_complete_and_clean_drc_leaves_the_verdict_alone() {
+        let out = review(DrcEvidence::Measured(DrcReport {
+            violations: Some(vec![]),
+            unconnected_items: Some(vec![]),
+            schematic_parity: Some(vec![]),
+        }))
+        .await;
+        assert!(
+            out["verdict"].as_str().unwrap().starts_with("LOOKS GOOD"),
+            "{out}"
+        );
+        assert_eq!(out["drc"]["errors"], json!(0), "{out}");
+    }
 }

@@ -3608,7 +3608,7 @@ None. Each item below is independent of the others except where stated.
         Known contract change: a caller that omitted `pads`, `layers`,
         `dest_x`/`dest_y`, `count_x`, `name` or `reference_prefix` now gets
         `invalid_argument` instead of a silent write. That is the item.
-  - [ ] P.6.9.8 `977f0c5` — `run_design_review` (`design_review.rs:522-625`)
+  - [x] P.6.9.8 `977f0c5` — `run_design_review` (`design_review.rs:522-625`)
         and `validate_for_manufacturing` (`manufacturing.rs:281-390`) both
         answer "is my board ready?" and neither has ever run DRC; the second's
         only routing test is still `net_count > 3 && track_count == 0`
@@ -3622,6 +3622,49 @@ None. Each item below is independent of the others except where stated.
         `missing_categories()` already exist from P.6.1, which is the hard
         half. Schematic-only reviews stay unchanged. Sequence against P.6.8's
         #185 so neither undoes the other.
+        Done. A new `tools/drc_gate.rs` is the single place that turns a DRC
+        report into words, so both verdicts say the same thing:
+        `DrcEvidence::{Measured(DrcReport), Unavailable(String)}`,
+        `gather(cli, board, refill)` — which turns every failure mode (no
+        configured binary, spawn error, unreadable board) into `Unavailable`
+        carrying the reason verbatim, rather than an error that would abort
+        the whole review — and `assess(&DrcEvidence) -> DrcGate { summary,
+        findings, incomplete, connectivity_measured }`.
+        `summary` is `Value::Null` when nothing was measured, and each absent
+        category stays `null` inside it when some were: never an object of
+        zeroes standing in for a report nobody has. An absent category also
+        emits its own finding — "its absence is not zero findings" — and sets
+        `incomplete`.
+        Each handler now only gathers evidence and delegates to
+        `validate_for_manufacturing_with(args, &DrcEvidence)` and
+        `run_design_review_with(args, ctx, Option<&DrcEvidence>)`. That is what
+        makes P.6.8's #185 compose with this instead of re-deriving it, and it
+        is also what lets every verdict be proved on an injected `DrcReport`
+        with no KiCAD in the environment — no gated test was added, and D111 is
+        sidestepped entirely because no proof goes through `kicad-cli`.
+        Verdict vocabulary, each extended in its own idiom: manufacturing gains
+        `INCOMPLETE` beside `NOT READY` / `NEEDS REVIEW` / `READY`; design
+        review gains `INCOMPLETE — DRC did not run, so the board is unverified`
+        beside its sentence-form verdicts. Precedence is measured error >
+        incompleteness > warning, and the incompleteness finding is itself a
+        `warning`, so it cannot masquerade as a blocker under `NOT READY`.
+        `net_count > 3 && track_count == 0` is kept, but **only** when
+        `!gate.connectivity_measured`. The measurement behind that choice: once
+        `unconnected_items` is `Some`, the heuristic is strictly subsumed — a
+        board with nets and no copper cannot have an empty unconnected list —
+        so running it anyway could only add a false positive contradicting a
+        measurement. Proved by `the_track_count_heuristic_yields_to_a_measured_drc`
+        (4 nets, 0 tracks, clean DRC injected → no "no traces routed" issue).
+        Red before: `a_board_review_without_drc_evidence_cannot_look_good`
+        (`tests/design_review.rs:325`) —
+        `left: String("LOOKS GOOD — no critical issues found")`,
+        `right: "INCOMPLETE — DRC did not run, so the board is unverified"`.
+        No existing test was modified. `an_unrouted_kicad_10_board_is_flagged`
+        stays green on its own terms: its context carries
+        `kicad_cli: String::new()`, so DRC is unavailable and the heuristic
+        fallback applies — the one case where it still has something to say.
+        Known cost, unmeasured here for want of KiCAD: both tools now spawn a
+        `kicad-cli pcb drc` process per call when a binary is configured.
   - [ ] P.6.9.9 `4536d10` (LATER) — the read-only and batch half of the same
         root cause as P.6.9.7: an omitted `query` becomes `""` and
         `contains("")` is always true, so `search_symbols`

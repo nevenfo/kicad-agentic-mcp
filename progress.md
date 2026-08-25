@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.7 closes. P.6.9.8 à P.6.9.15 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.8 closes. P.6.9.9 à P.6.9.15 restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,41 +15,52 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.7 — cinq voies d'écriture ne tournent plus sur des arguments requis
-substitués. `tools/mod.rs:438-461` porte `require_array` et `require_u64` à
-côté des deux qui existaient. `require_array` rend une `&[Value]` empruntée et
-non un `Vec` possédé : elle supprime le `.cloned()` de `create_footprint` et
-sert directement le `.iter()` d'`export_dxf`. Un tableau explicitement vide
-passe — « un footprint sans pad » est une réponse ; seule l'absence ou un
-mauvais type est refusée, car c'est là que l'appelant n'a rien dit.
-`require_u64` s'appuie sur `as_u64`, qui rejette déjà négatif, fractionnaire et
-chaîne.
+P.6.9.8 — les deux tools de verdict lancent enfin la DRC. Un nouveau module
+`tools/drc_gate.rs` est le seul endroit qui traduit un rapport DRC en mots :
+`DrcEvidence::{Measured(DrcReport), Unavailable(String)}`, `gather(cli, board,
+refill)` — qui convertit tout mode d'échec (binaire non configuré, spawn,
+carte illisible) en `Unavailable` portant la raison verbatim, au lieu d'une
+erreur qui avorterait la revue — et `assess` rendant `DrcGate { summary,
+findings, incomplete, connectivity_measured }`. `summary` est `Null` quand
+rien n'a été mesuré, et chaque catégorie absente reste `null` à l'intérieur
+quand certaines l'ont été : jamais un objet de zéros à la place d'un rapport
+que personne n'a.
 
-Les cinq sites sont routés strictement par la liste `required` de leur propre
-schéma, pas par ce qui semblait risqué : `create_footprint` (`library.rs:625`)
-prend `name` et `pads`, `create_symbol` (`:2297`) `name` et
-`reference_prefix`, `copy_routing_pattern` (`verification.rs:559`) les six
-coordonnées, `export_dxf` (`pcb_export.rs:523`) `layers`, et
-`place_component_array` (`pcb_components.rs:1485`) `count_x` seul — `count_y`
-porte `"default": 1` au schéma. Voir D127.
+Chaque handler ne fait plus que collecter l'évidence et déléguer à
+`validate_for_manufacturing_with(args, &DrcEvidence)` et
+`run_design_review_with(args, ctx, Option<&DrcEvidence>)`. C'est ce qui rend
+le `#185` de P.6.8 composable avec, et ce qui permet de prouver chaque verdict
+sur un `DrcReport` injecté sans KiCAD : aucun test gated ajouté, D111 évitée.
+
+Vocabulaire étendu dans l'idiome de chaque tool : `INCOMPLETE` côté
+manufacturing, `INCOMPLETE — DRC did not run, so the board is unverified` côté
+design review. Précédence : erreur mesurée > incomplétude > warning. Voir D129
+pour le sort de l'heuristique `net_count > 3 && track_count == 0`.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1283
-  tests, 0 échec, 33 ignorés** (1270 + 13 nouveaux, aucun test existant
-  modifié)
-- rouge d'abord : les cinq échouent avant le correctif, dont
-  `create_footprint_without_pads_leaves_the_target_file_byte_identical`
-  (`a call with no pads must be refused`) et
-  `copying_a_pattern_without_a_destination_is_refused_not_dropped_on_the_origin`
-  (`a copy with no destination must be refused`)
+- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1295
+  tests, 0 échec** (1283 + 12 nouveaux, aucun test existant modifié)
+- rouge d'abord : `a_board_review_without_drc_evidence_cannot_look_good`
+  (`tests/design_review.rs:325`) —
+  `left: String("LOOKS GOOD — no critical issues found")`,
+  `right: "INCOMPLETE — DRC did not run, so the board is unverified"`
 
-Changement de contrat assumé : un appelant qui omettait `pads`, `layers`,
-`dest_x`/`dest_y`, `count_x`, `name` ou `reference_prefix` reçoit désormais
-`invalid_argument` au lieu d'une écriture silencieuse.
+Coût connu, non mesuré ici faute de KiCAD dans l'environnement : les deux
+tools lancent désormais un process `kicad-cli pcb drc` par appel dès qu'un
+binaire est configuré.
 
 ## Décisions actives
+
+- **D129** — l'heuristique de routage `net_count > 3 && track_count == 0` est
+  conservée, mais **seulement** quand la connectivité n'a pas été mesurée
+  (`!gate.connectivity_measured`). Mesure : dès que `unconnected_items` est
+  `Some`, l'heuristique est strictement subsumée — une carte avec des nets et
+  zéro cuivre ne peut pas avoir de liste `unconnected_items` vide — donc la
+  lancer quand même ne pourrait qu'ajouter un faux positif contredisant une
+  mesure. Règle générale : une heuristique s'efface devant la mesure qu'elle
+  approximait, elle ne s'y ajoute pas.
 
 - **D127** — la liste `required` du schéma d'un tool est l'autorité sur ce
   qu'un handler doit exiger, pas l'intuition du risque. P.6.9.7 a durci
@@ -229,16 +240,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.8 — `977f0c5` : `run_design_review` (`design_review.rs:522-625`)
-et `validate_for_manufacturing` (`manufacturing.rs:281-390`) répondent tous
-deux « ma carte est-elle prête ? » et **aucun** n'a jamais lancé la DRC ; le
-seul test de routage du second reste `net_count > 3 && track_count == 0`
-(`:351`), qui ne se déclenche que sur une carte sans aucune piste, si bien
-qu'une carte routée sauf un net répond `READY`. Lancer la DRC quand une carte
-est en jeu et replier erreurs, items non connectés et parité schéma dans les
-deux verdicts ; quand la DRC ne peut pas tourner, le verdict est
-INCOMPLETE / NOT READY nommant la preuve manquante, et le résumé DRC est
-`null` plutôt que mis à zéro. `DrcReport` et `missing_categories()` existent
-déjà depuis P.6.1 (voir `tools/cli.rs`). Les revues purement schéma restent
-inchangées. Séquencer contre le `#185` de P.6.8 pour qu'aucune des deux ne
-défasse l'autre.
+Implémenter P.6.9.9 — `4536d10` (LATER) : la moitié lecture seule et batch de
+la même cause racine que P.6.9.7. Un `query` omis devient `""` et
+`contains("")` est toujours vrai, donc `search_symbols` (`library.rs:2807`),
+`search_footprints` (`:2960`) et `search_templates` (`templates.rs:287`, sans
+aucune limite) renvoient **tout** ; `suggest_alternatives`
+(`integration.rs:837-853`) a un défaut du même ordre. Lire la section P.6.9.9
+du plan pour la liste exacte avant de commencer. Les helpers `require_*` de
+P.6.9.7 sont en place dans `tools/mod.rs:413-461` et sont la voie à suivre.
+Écrire le test rouge d'abord.
