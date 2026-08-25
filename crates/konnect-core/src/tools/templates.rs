@@ -8,6 +8,7 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, require_str, ToolContext, ToolDef};
+use crate::try_arg;
 use konnect_sexp::writer::{new_uuid, read_consistent, write_atomic_if_unchanged};
 use serde_json::json;
 use std::path::PathBuf;
@@ -221,7 +222,8 @@ pub fn tools() -> Vec<ToolDef> {
                     "category": {
                         "type": "string",
                         "description": "Filter by category: 'power', 'connectivity', 'mcu', 'misc' (optional)"
-                    }
+                    },
+                    "limit": { "type": "integer", "description": "Maximum number of results to return", "default": 50 }
                 },
                 "required": ["query"]
             }),
@@ -284,7 +286,11 @@ async fn handle_search_templates(
     args: &serde_json::Value,
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
-    let query = args["query"].as_str().unwrap_or("").to_lowercase();
+    // `query` is `required`, and every haystack contains "": without this the
+    // tool answered with the entire library — and it had no limit either, so
+    // it takes the same `limit` its two sibling searches carry.
+    let query = try_arg!(require_str(args, "query")).to_lowercase();
+    let limit = args["limit"].as_u64().unwrap_or(50) as usize;
     let category_filter = args["category"].as_str().map(|s| s.to_lowercase());
 
     info!(query = %query, category = ?category_filter, "Searching templates");
@@ -326,6 +332,9 @@ async fn handle_search_templates(
                 "tags": tags,
                 "component_count": component_count
             }));
+            if results.len() >= limit {
+                break;
+            }
         }
     }
 
@@ -605,4 +614,75 @@ fn find_next_ref_number(content: &str) -> usize {
         pos = abs + 1;
     }
     max_ref + 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    fn body(result: &CallToolResult) -> serde_json::Value {
+        match &result.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => serde_json::from_str(text).unwrap(),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    /// `query` is `required`, but was read with `unwrap_or("")`; every
+    /// haystack contains the empty string, so a call that forgot it returned
+    /// the entire template library — and this tool has no result limit at all.
+    #[tokio::test]
+    async fn search_templates_without_a_query_is_refused_rather_than_answered_with_every_template()
+    {
+        let res = handle_search_templates(&json!({}), &test_ctx())
+            .await
+            .unwrap();
+        assert!(res.is_error, "a search with no query must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+    }
+
+    /// Its two sibling searches (`search_symbols`, `search_footprints`) bound
+    /// their answer with a `limit` defaulting to 50; this one returned however
+    /// many templates matched.
+    #[tokio::test]
+    async fn search_templates_bounds_its_answer_with_the_limit_argument() {
+        let ctx = test_ctx();
+        let all = body(
+            &handle_search_templates(&json!({ "query": "power" }), &ctx)
+                .await
+                .unwrap(),
+        );
+        assert!(
+            all["count"].as_u64().unwrap() >= 2,
+            "the fixture query must match more than one template: {all}"
+        );
+
+        let capped = body(
+            &handle_search_templates(&json!({ "query": "power", "limit": 1 }), &ctx)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(capped["count"], json!(1), "limit was ignored: {capped}");
+        assert_eq!(capped["templates"].as_array().unwrap().len(), 1);
+    }
 }

@@ -2809,7 +2809,9 @@ async fn handle_search_symbols(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
-    let query = args["query"].as_str().unwrap_or("").to_lowercase();
+    // `query` is `required`: `unwrap_or("")` made `contains` true of every
+    // symbol name, so a call that never asked returned the whole catalogue.
+    let query = try_arg!(require_str(args, "query")).to_lowercase();
     let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
     let project_dir = args["project_dir"]
@@ -2962,7 +2964,9 @@ async fn handle_search_footprints(
     args: &serde_json::Value,
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
-    let query = args["query"].as_str().unwrap_or("").to_lowercase();
+    // Same substitution on the footprint side; `query` is `required` here too.
+    let raw_query = try_arg!(require_str(args, "query"));
+    let query = raw_query.to_lowercase();
     let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
     // Walk global fp-lib-table
@@ -2999,7 +3003,7 @@ async fn handle_search_footprints(
 
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
-            "query": args["query"].as_str().unwrap_or(""),
+            "query": raw_query,
             "count": results.len(),
             "results": results
         }))
@@ -5000,6 +5004,36 @@ mod tests {
                     .unwrap()
                     .contains("\"Symbol\""),
             "a symbol named 'Symbol' was written anyway"
+        );
+    }
+
+    /// `query` is `required` in the schema, but the handler read it with
+    /// `unwrap_or("")` and `contains("")` is true of every name: a call that
+    /// forgot it walked every installed library and answered with the whole
+    /// catalogue instead of saying nothing was asked.
+    #[tokio::test]
+    async fn search_symbols_without_a_query_is_refused_rather_than_answered_with_every_symbol() {
+        let res = handle_search_symbols(&json!({ "limit": 5 }), &test_ctx())
+            .await
+            .unwrap();
+        assert!(res.is_error, "a search with no query must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+    }
+
+    /// The same substitution on the footprint side.
+    #[tokio::test]
+    async fn search_footprints_without_a_query_is_refused_rather_than_answered_with_every_footprint(
+    ) {
+        let res = handle_search_footprints(&json!({ "limit": 5 }), &test_ctx())
+            .await
+            .unwrap();
+        assert!(res.is_error, "a search with no query must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
         );
     }
 }

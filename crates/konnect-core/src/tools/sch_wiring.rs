@@ -6,7 +6,10 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{get_path, opt_f64, opt_str, require_f64, require_str, ToolContext, ToolDef};
+use crate::tools::{
+    get_path, opt_f64, opt_str, require_array, require_f64, require_str, ToolContext, ToolDef,
+};
+use crate::try_arg;
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::snap_point,
@@ -579,7 +582,12 @@ async fn handle_batch_add_wire(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let wires = args["wires"].as_array().cloned().unwrap_or_default();
+    // `wires` is `required`. An explicitly empty batch stays a legitimate
+    // answer; only absence is refused.
+    let wires = try_arg!(require_array(args, "wires"));
+    if wires.is_empty() {
+        return Ok(CallToolResult::json(&json!({ "added_wires": 0 })));
+    }
 
     let mut sch = cse::Schematic::load(&sch_path)?;
     let mut added = 0usize;
@@ -589,7 +597,7 @@ async fn handle_batch_add_wire(
         .map(|(_, tree)| crate::tools::all_pin_endpoints(&tree))
         .unwrap_or_default();
 
-    for w in &wires {
+    for w in wires {
         let x1 = w["x1"].as_f64().unwrap_or(0.0);
         let y1 = w["y1"].as_f64().unwrap_or(0.0);
         let x2 = w["x2"].as_f64().unwrap_or(0.0);
@@ -2481,6 +2489,50 @@ mod unit_aware_wiring_tests {
         for (x, y) in tees {
             assert_eq!(junctions_at(&path, x, y), 1, "T at ({x}, {y})");
         }
+    }
+
+    /// `wires` is `required`, and was read with `unwrap_or_default()`: a call
+    /// that forgot it added nothing and rewrote the file anyway.
+    #[tokio::test]
+    async fn batch_add_wire_without_wires_is_refused() {
+        let (_d, path) = bare_schematic();
+        let res = handle_batch_add_wire(
+            &json!({ "schematic": path.display().to_string() }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            res.is_error,
+            "a batch with no wires argument must be refused"
+        );
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+    }
+
+    /// An explicitly empty batch stays a legitimate answer, but it must not
+    /// reserialise the schematic. Asserting the success alone would pass even
+    /// if the rewrite happened, so the bytes are what this pins.
+    #[tokio::test]
+    async fn an_empty_batch_of_wires_leaves_the_schematic_byte_identical() {
+        let (_d, path) = bare_schematic();
+        let before = std::fs::read(&path).unwrap();
+
+        let res = handle_batch_add_wire(
+            &json!({ "schematic": path.display().to_string(), "wires": [] }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!res.is_error, "{:?}", res.content);
+
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "a batch that added nothing reserialised the file"
+        );
     }
 }
 

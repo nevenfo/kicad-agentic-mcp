@@ -3665,7 +3665,7 @@ None. Each item below is independent of the others except where stated.
         fallback applies — the one case where it still has something to say.
         Known cost, unmeasured here for want of KiCAD: both tools now spawn a
         `kicad-cli pcb drc` process per call when a binary is configured.
-  - [ ] P.6.9.9 `4536d10` (LATER) — the read-only and batch half of the same
+  - [x] P.6.9.9 `4536d10` (LATER) — the read-only and batch half of the same
         root cause as P.6.9.7: an omitted `query` becomes `""` and
         `contains("")` is always true, so `search_symbols`
         (`library.rs:2807`), `search_footprints` (`:2960`) and
@@ -3677,6 +3677,48 @@ None. Each item below is independent of the others except where stated.
         2.5M-part catalogue; and `batch_add_wire` (`sch_wiring.rs:579-584`)
         re-serialises the file for a call that added nothing. Bundle with
         P.6.9.7 if that item is already open in the same modules.
+        Done, on P.6.9.7's helpers — every site routes through
+        `try_arg!(require_*)`, strictly by its own schema's `required` list
+        (D127). All five schemas already declared the argument required; the
+        handlers simply never read it that way.
+        `search_symbols` (`library.rs:2812`), `search_footprints` (`:2965`)
+        and `search_templates` (`templates.rs:287`) take `require_str` on
+        `query`; `search_footprints`'s echoed `"query"` in the result now
+        reads the validated value rather than a second `unwrap_or("")`.
+        `search_templates` gained the limit it never had, copying its two
+        siblings' convention exactly — argument `limit`, integer, default 50,
+        `if results.len() >= limit { break }`.
+        The JLCPCB ordering defect turned out to have **three** occurrences,
+        not the two the item named, and all three are fixed:
+        `suggest_alternatives` (`integration.rs:837`) now validates `value`
+        and `footprint` before `db_path.exists()` — so also before
+        `cache_key`/`get`/`put`, which is what stops a refused query from
+        polluting the cache; `get_jlcpcb_part` (`:779`) had `require_str` on
+        `lcsc_id` already but ran it *after* the database test; and
+        `search_jlcpcb_parts` (`:616`) had both defects at once — a `required`
+        `query` read with `unwrap_or("")`, checked after the database.
+        `batch_add_wire` (`sch_wiring.rs:582`) takes `require_array` on
+        `wires`; an explicitly empty batch stays legitimate and now returns
+        `{"added_wires": 0}` without loading or rewriting the file at all.
+        Red before, ten tests, among them
+        `suggest_alternatives_refuses_its_missing_arguments_before_the_database_is_looked_for`
+        (`left: Some("file_not_found") right: Some("invalid_argument")` — the
+        ordering proof, and it holds with no JLCPCB database installed),
+        `a_refused_suggestion_puts_nothing_in_the_cache`, and
+        `an_empty_batch_of_wires_leaves_the_schematic_byte_identical`
+        (`a batch that added nothing reserialised the file` — the red showed
+        `sheet_instances` reflowed onto several lines).
+        `docs/capability-matrix.md` moved, and this time it is a **gain**, not
+        a displacement: `search_footprints` goes from `NOT_TESTED | gated` — an
+        `#[ignore]`d test was its only proof — to `SUPPORTED | test`. Domain
+        `footprints` 85.7 % → 100 %, KiCAD domains 120 → 121 supported
+        (73.2 % → 73.8 %), fork proved 135 → 136 (72.6 % → 73.1 %).
+        One adjacent change: `seed_test_db` (`integration.rs:1459`) became
+        `pub(super)` to be shared with the new test module, matching
+        `create_published_schema`/`response_json` beside it.
+        Contract change, deliberate: omitting `query`, `value`, `footprint`,
+        `lcsc_id` or `wires` now returns `invalid_argument` instead of a whole
+        catalogue or an empty rewrite.
   - [ ] P.6.9.10 `791f95b` (LATER) — nothing validates `required` at the
         dispatch: `execute_tool` (`mcp/handler.rs:210`) turns absent arguments
         into `{}`. This is the floor beneath P.6.9.7 and P.6.9.9 and must land

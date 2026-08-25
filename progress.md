@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.8 closes. P.6.9.9 à P.6.9.15 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.9 closes. P.6.9.10 à P.6.9.15 restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,41 +15,44 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.8 — les deux tools de verdict lancent enfin la DRC. Un nouveau module
-`tools/drc_gate.rs` est le seul endroit qui traduit un rapport DRC en mots :
-`DrcEvidence::{Measured(DrcReport), Unavailable(String)}`, `gather(cli, board,
-refill)` — qui convertit tout mode d'échec (binaire non configuré, spawn,
-carte illisible) en `Unavailable` portant la raison verbatim, au lieu d'une
-erreur qui avorterait la revue — et `assess` rendant `DrcGate { summary,
-findings, incomplete, connectivity_measured }`. `summary` est `Null` quand
-rien n'a été mesuré, et chaque catégorie absente reste `null` à l'intérieur
-quand certaines l'ont été : jamais un objet de zéros à la place d'un rapport
-que personne n'a.
+P.6.9.9 — un `query` omis ne renvoie plus tout le catalogue. Chaque site passe
+par `try_arg!(require_*)` de P.6.9.7, strictement selon la liste `required` de
+son propre schéma (D127) : les cinq schémas déclaraient déjà l'argument requis,
+les handlers ne le lisaient simplement pas ainsi. `search_symbols`
+(`library.rs:2812`), `search_footprints` (`:2965`), `search_templates`
+(`templates.rs:287`) ; ce dernier reçoit la limite qu'il n'avait pas, exactement
+la convention de ses deux frères (`limit`, entier, défaut 50).
 
-Chaque handler ne fait plus que collecter l'évidence et déléguer à
-`validate_for_manufacturing_with(args, &DrcEvidence)` et
-`run_design_review_with(args, ctx, Option<&DrcEvidence>)`. C'est ce qui rend
-le `#185` de P.6.8 composable avec, et ce qui permet de prouver chaque verdict
-sur un `DrcReport` injecté sans KiCAD : aucun test gated ajouté, D111 évitée.
-
-Vocabulaire étendu dans l'idiome de chaque tool : `INCOMPLETE` côté
-manufacturing, `INCOMPLETE — DRC did not run, so the board is unverified` côté
-design review. Précédence : erreur mesurée > incomplétude > warning. Voir D129
-pour le sort de l'heuristique `net_count > 3 && track_count == 0`.
+Le défaut d'ordre JLCPCB avait **trois** occurrences et non deux : les
+arguments sont désormais validés avant `db_path.exists()` dans
+`suggest_alternatives` (`integration.rs:837`) — donc avant le cache, ce qui
+empêche une requête refusée de le polluer —, `get_jlcpcb_part` (`:779`) et
+`search_jlcpcb_parts` (`:616`), qui cumulait les deux défauts.
+`batch_add_wire` (`sch_wiring.rs:582`) prend `require_array` sur `wires` ; un
+batch explicitement vide reste légitime et rend `{"added_wires": 0}` sans
+charger ni réécrire le fichier.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1295
-  tests, 0 échec** (1283 + 12 nouveaux, aucun test existant modifié)
-- rouge d'abord : `a_board_review_without_drc_evidence_cannot_look_good`
-  (`tests/design_review.rs:325`) —
-  `left: String("LOOKS GOOD — no critical issues found")`,
-  `right: "INCOMPLETE — DRC did not run, so the board is unverified"`
+- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1305
+  tests, 0 échec** (1295 + 10 nouveaux, aucun test existant modifié)
+- rouge d'abord : dix tests, dont
+  `suggest_alternatives_refuses_its_missing_arguments_before_the_database_is_looked_for`
+  (`left: Some("file_not_found") right: Some("invalid_argument")`, la preuve
+  d'ordre, valable sans base JLCPCB installée) et
+  `an_empty_batch_of_wires_leaves_the_schematic_byte_identical`
+  (`a batch that added nothing reserialised the file`)
 
-Coût connu, non mesuré ici faute de KiCAD dans l'environnement : les deux
-tools lancent désormais un process `kicad-cli pcb drc` par appel dès qu'un
-binaire est configuré.
+`docs/capability-matrix.md` a bougé, cette fois en **gain** et non en
+déplacement (D128) : `search_footprints` passe de `NOT_TESTED | gated` — un
+test `#[ignore]` était sa seule preuve — à `SUPPORTED | test`. Domaine
+`footprints` 85,7 % → 100 %, domaines KiCAD 120 → 121 supported
+(73,2 % → 73,8 %), fork proved 135 → 136 (72,6 % → 73,1 %).
+
+Changement de contrat assumé : omettre `query`, `value`, `footprint`,
+`lcsc_id` ou `wires` rend `invalid_argument` au lieu d'un catalogue entier ou
+d'une réécriture vide.
 
 ## Décisions actives
 
@@ -240,12 +243,10 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.9 — `4536d10` (LATER) : la moitié lecture seule et batch de
-la même cause racine que P.6.9.7. Un `query` omis devient `""` et
-`contains("")` est toujours vrai, donc `search_symbols` (`library.rs:2807`),
-`search_footprints` (`:2960`) et `search_templates` (`templates.rs:287`, sans
-aucune limite) renvoient **tout** ; `suggest_alternatives`
-(`integration.rs:837-853`) a un défaut du même ordre. Lire la section P.6.9.9
-du plan pour la liste exacte avant de commencer. Les helpers `require_*` de
-P.6.9.7 sont en place dans `tools/mod.rs:413-461` et sont la voie à suivre.
-Écrire le test rouge d'abord.
+Implémenter P.6.9.10 — `791f95b` (LATER) : rien ne valide `required` au niveau
+du dispatch, et un argument absent devient `{}`. C'est le **plancher** sous
+P.6.9.7 et P.6.9.9, qui ont durci les sites un par un ; celui-ci ferme la
+classe entière. Lire la section P.6.9.10 du plan pour la mécanique exacte
+avant de commencer — l'ordre importe : la validation générique ne doit pas
+faire double emploi avec les `require_*` déjà posés, ni changer la forme
+d'erreur qu'ils rendent. Test rouge d'abord.
