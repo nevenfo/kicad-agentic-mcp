@@ -3520,7 +3520,7 @@ None. Each item below is independent of the others except where stated.
         the symbol; `symbol_own_at_span` on an unterminated `(at` panics with
         `byte range starts at 36 but ends at 32`; the noise and standstill
         tests fail against the unrounded, unguarded write.
-  - [ ] P.6.9.6 `8591707` (residual half only) — `edit_schematic_component`
+  - [x] P.6.9.6 `8591707` (residual half only) — `edit_schematic_component`
         declares `fields` in its schema (`sch_components.rs:92-95`) and the
         handler never reads it (`:666-770`), so a call passing only `fields`
         returns `{"changes": []}` as a success: `changed` is empty, but so is
@@ -3531,6 +3531,36 @@ None. Each item below is independent of the others except where stated.
         the same helpers P.6.9.5 shares out, refusing the reserved names.
         Measure before copying upstream's macro rewrite of the apply closure —
         it was forced by their borrow shape, which may not be ours.
+        Done. The `fields` map is parsed into `Vec<(&str, String)>` before the
+        `apply` closure is built (`sch_components.rs:686-720`), through a new
+        `property_text` helper: a JSON string is stored as-is, a number or
+        boolean as its text form — KiCAD stores every property as text — and
+        anything with no text form is refused rather than stringified into
+        nonsense. A `fields` that is present but not an object is an
+        `InvalidArgument` on `fields`, not a silence.
+        `apply` gained a `reject` parameter: the named arguments pass `&[]`,
+        the `fields` loop passes `RESERVED_PROPERTY_KEYS`, so a `Reference`
+        smuggled through the generic map is refused instead of rewriting the
+        property while `(instances …)` keeps the old designator (D124). The
+        loop sits after `datasheet` and before `new_reference`, because the
+        rename must stay last — it is what makes the symbol findable by
+        designator for every field before it.
+        The guard is now `changed.is_empty()` alone, with the reason
+        `no editable field was given` when `errors` is empty. It previously
+        required a non-empty `errors` to fire, which is exactly what let a
+        `fields`-only call — and a call with no editable argument at all —
+        report `{"changes": []}` as a success.
+        Upstream's macro rewrite was measured and not copied, as the item
+        required. A first version looping `apply` directly and pushing invalid
+        values into `errors` failed with
+        `error[E0499]: cannot borrow 'errors' as mutable more than once at a
+        time` — the closure holds the borrow live until `new_reference`. The
+        conversion pass up front resolves it with no macro.
+        Red before: six tests, among them
+        `a_fields_only_edit_writes_the_property_the_symbol_lacks`
+        (`left: Array [] right: Array [String("MPN → RC0805FR-074K7L (added)")]`)
+        and `an_edit_that_changes_nothing_is_a_failure`
+        (`an empty edit reported success: {"changes":[],"reference":"R1"}`).
   - [ ] P.6.9.7 `6ed6cac` — five write paths run on substituted required
         arguments, because nothing enforces `required` server-side and the
         handlers read with `unwrap_or`: `create_footprint`
@@ -3610,6 +3640,21 @@ None. Each item below is independent of the others except where stated.
         helper it needs already exists — route it through `set_symbol_property`
         like the other two. Proof to reproduce first: two `group_components`
         calls naming the same component yield two `Group` properties.
+  - [ ] P.6.9.14 — `batch_edit_schematic_components` carries the same family
+        of defect on `fields` that P.6.9.6 just closed on the single-component
+        path, and was outside its scope. `sch_batch.rs:950-965` guards with
+        `if let Some(new_val) = field_val.as_str()`, so a number or boolean
+        value is **silently dropped** — no write, no error, and the component
+        can still report success from another field in the same spec. It
+        resolves through `field_value_range` rather than `set_symbol_property`,
+        so a key the symbol does not carry yet fails with
+        `Field 'X' not found on 'R1'` instead of being inserted — the very
+        refusal J.2.4.1 removed from the single path. And it opposes no
+        rejection to `Reference`, so the batch path can rewrite the property
+        while `(instances …)` keeps the old designator (D124). Route it through
+        the shared helpers and the same `property_text` conversion. Proof to
+        reproduce first: a batch spec with `fields: {"Qty": 2}` reports success
+        and writes nothing.
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,

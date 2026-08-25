@@ -684,6 +684,41 @@ async fn handle_edit_schematic_component(
     let mut changed = Vec::new();
 
     let mut errors: Vec<String> = Vec::new();
+
+    // The `fields` map was declared in the schema and never read, so a call
+    // carrying only custom properties wrote nothing and still reported success
+    // (P.6.9.6). Values are turned into their stored text here, before the
+    // `apply` closure below borrows `errors`: a rejected value and a rejected
+    // key both belong in the same list, and doing the conversion first is what
+    // keeps one mutable borrow of `errors` live at a time.
+    let mut field_updates: Vec<(&str, String)> = Vec::new();
+    match args.get("fields") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::Object(map)) => {
+            for (key, raw) in map {
+                // KiCAD stores every property as text, so a JSON number or
+                // boolean is written as its text form; anything with no text
+                // form is refused rather than stringified into nonsense.
+                match property_text(raw) {
+                    Some(text) => field_updates.push((key.as_str(), text)),
+                    None => {
+                        errors.push(format!("{key}: value must be a string, number or boolean"))
+                    }
+                }
+            }
+        }
+        Some(_) => {
+            let reason = "'fields' must be an object of key:value pairs";
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "fields".to_string(),
+                    reason: reason.to_string(),
+                },
+                reason.to_string(),
+            ));
+        }
+    }
+
     // Set a property, adding it when the symbol has none.
     //
     // A symbol carries only the properties it was given: a part placed without
@@ -691,12 +726,17 @@ async fn handle_edit_schematic_component(
     // made the tool unable to do the single most common edit after placement
     // (J.2.4.1). A missing property is now created, exactly as
     // `add_component_annotation` creates one.
-    let mut apply = |content: &mut String, field: &str, new_val: &str| {
-        // `reject: &[]` — these are exactly the fields this handler is meant
-        // to set this way, `Reference` included: it goes through
-        // `update_instance_reference` right after, not through the reject
-        // list, which exists for `add_component_annotation`'s free-form keys.
-        match set_field(content, &target, field, new_val, &[]) {
+    //
+    // `reject` is empty for the named arguments — they are exactly the fields
+    // this handler is meant to set this way, `Reference` included: it goes
+    // through `update_instance_reference` right after. The free-form `fields`
+    // map passes `RESERVED_PROPERTY_KEYS`, because that generic path rewrites
+    // only the property and would desynchronise the designator copy that lives
+    // in `(instances …)`.
+    let mut apply =
+        |content: &mut String, field: &str, new_val: &str, reject: &[&str]| match set_field(
+            content, &target, field, new_val, reject,
+        ) {
             Ok((updated, outcome)) => {
                 *content = updated;
                 changed.push(match outcome {
@@ -705,24 +745,26 @@ async fn handle_edit_schematic_component(
                 });
             }
             Err(why) => errors.push(format!("{field}: {why}")),
-        }
-    };
+        };
 
     // On the designator path every field is located by looking the symbol up
     // by `reference`, so the rename has to go last: renaming first made the
     // symbol unfindable and every other field in the same call came back
     // "symbol 'R2' not found".
     if let Some(val) = opt_str(args, "value") {
-        apply(&mut content, "Value", val);
+        apply(&mut content, "Value", val, &[]);
     }
     if let Some(fp) = opt_str(args, "footprint") {
-        apply(&mut content, "Footprint", fp);
+        apply(&mut content, "Footprint", fp, &[]);
     }
     if let Some(ds) = opt_str(args, "datasheet") {
-        apply(&mut content, "Datasheet", ds);
+        apply(&mut content, "Datasheet", ds, &[]);
+    }
+    for (key, value) in &field_updates {
+        apply(&mut content, key, value, RESERVED_PROPERTY_KEYS);
     }
     if let Some(new_ref) = opt_str(args, "new_reference") {
-        apply(&mut content, "Reference", new_ref);
+        apply(&mut content, "Reference", new_ref, &[]);
         // KiCAD resolves a symbol's designator from its `instances` block, not
         // from the Reference property. Renaming only the property left
         // `kicad-cli sch export netlist` still emitting the old designator
@@ -734,34 +776,35 @@ async fn handle_edit_schematic_component(
     }
 
     // A request that changed nothing is a failure, not a success — silently
-    // reporting `"changes": []` is what let the tab-indentation bug hide.
-    if changed.is_empty() && !errors.is_empty() {
+    // reporting `"changes": []` is what let the tab-indentation bug hide, and
+    // what let an edit with no editable argument at all look like it worked.
+    if changed.is_empty() {
+        let reason = if errors.is_empty() {
+            "no editable field was given".to_string()
+        } else {
+            errors.join("; ")
+        };
         return Ok(CallToolResult::error_kind(
             ToolErrorKind::InvalidArgument {
                 field: "fields".to_string(),
-                reason: errors.join("; "),
+                reason: reason.clone(),
             },
-            format!(
-                "No fields were updated on '{}': {}",
-                reference,
-                errors.join("; ")
-            ),
+            format!("No fields were updated on '{reference}': {reason}"),
         ));
     }
 
-    if !changed.is_empty() {
-        let (start, end) = target
-            .block_in(&expected)
-            .ok_or_else(|| anyhow::anyhow!("component '{reference}' not found"))?;
-        let item_id = symbol_block_item_id(&expected[start..end])?;
-        let command = SchematicCommand::replace_item_from_document(
-            &expected,
-            &content,
-            item_id,
-            format!("Edit {reference}"),
-        )?;
-        commit_command(&sch_path, &command)?;
-    }
+    // Past the guard above, `changed` is never empty: something was written.
+    let (start, end) = target
+        .block_in(&expected)
+        .ok_or_else(|| anyhow::anyhow!("component '{reference}' not found"))?;
+    let item_id = symbol_block_item_id(&expected[start..end])?;
+    let command = SchematicCommand::replace_item_from_document(
+        &expected,
+        &content,
+        item_id,
+        format!("Edit {reference}"),
+    )?;
+    commit_command(&sch_path, &command)?;
 
     let mut result = json!({
         "reference": reference,
@@ -771,6 +814,18 @@ async fn handle_edit_schematic_component(
         result["errors"] = json!(errors);
     }
     Ok(CallToolResult::json(&result))
+}
+
+/// The text KiCAD would store for a JSON property value: a string as-is, a
+/// number or boolean as its text form, nothing at all for `null`, an object or
+/// an array, which have no single-line text form a property could hold.
+fn property_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
 }
 
 /// Why a property edit could not be applied.
@@ -2462,6 +2517,183 @@ pub(crate) mod tests {
     /// Two byte-identical schematics, one per directory so the file stem — and
     /// with it the project name written into every instance path — stays the
     /// same. Each holds R1 and R2; the returned uuid is R1's.
+    fn ok_body(result: &CallToolResult) -> serde_json::Value {
+        let crate::mcp::protocol::ToolContent::Text { text } = result.content.first().unwrap()
+        else {
+            panic!("text content expected");
+        };
+        serde_json::from_str::<serde_json::Value>(text).unwrap()
+    }
+
+    /// The `fields` argument was declared in the schema and never read, so a
+    /// call carrying only custom properties reported `"changes": []` as a
+    /// success and wrote nothing (P.6.9.6).
+    #[tokio::test]
+    async fn a_fields_only_edit_writes_the_property_the_symbol_lacks() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": { "MPN": "RC0805FR-074K7L" }
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!edited.is_error, "{:?}", edited.content);
+        let body = ok_body(&edited);
+        assert_eq!(
+            body["changes"],
+            json!(["MPN → RC0805FR-074K7L (added)"]),
+            "the fields edit must be reported as a change: {body}"
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("(property \"MPN\" \"RC0805FR-074K7L\""),
+            "the property was not written:\n{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fields_key_the_symbol_already_has_is_updated_in_place() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        for value in ["RC0805", "RC0603"] {
+            let edited = handle_edit_schematic_component(
+                &json!({
+                    "schematic": path.display().to_string(),
+                    "reference": "R1",
+                    "fields": { "MPN": value }
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert!(!edited.is_error, "{:?}", edited.content);
+        }
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text.matches("(property \"MPN\"").count(),
+            1,
+            "the second write duplicated the property instead of updating it:\n{text}"
+        );
+        assert!(
+            text.contains("\"RC0603\"") && !text.contains("\"RC0805\""),
+            "the property still carries the first value:\n{text}"
+        );
+    }
+
+    /// `Reference` is stored twice — in the property and in `(instances …)` —
+    /// so the generic `fields` path, which rewrites only the property, must
+    /// refuse it and leave `new_reference` as the one way to rename.
+    #[tokio::test]
+    async fn reference_in_fields_is_refused_and_writes_nothing() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": { "Reference": "R9" }
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(edited.is_error, "{:?}", edited.content);
+        assert_eq!(error_body(&edited)["kind"], json!("invalid_argument"));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "a reserved key must not reach the file"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_edit_that_changes_nothing_is_a_failure() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        for args in [
+            json!({ "schematic": path.display().to_string(), "reference": "R1", "fields": {} }),
+            json!({ "schematic": path.display().to_string(), "reference": "R1" }),
+        ] {
+            let edited = handle_edit_schematic_component(&args, &ctx).await.unwrap();
+            assert!(
+                edited.is_error,
+                "an empty edit reported success: {:?}",
+                edited.content
+            );
+            assert_eq!(error_body(&edited)["kind"], json!("invalid_argument"));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_non_object_fields_argument_is_an_invalid_argument() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": "MPN=RC0805"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(edited.is_error, "{:?}", edited.content);
+        let body = error_body(&edited);
+        assert_eq!(body["kind"], json!("invalid_argument"));
+        assert_eq!(body["field"], json!("fields"));
+    }
+
+    /// KiCAD stores every property as text, so a JSON number or boolean is
+    /// written as its text form; a value with no text form is reported.
+    #[tokio::test]
+    async fn numeric_and_boolean_field_values_are_stored_as_text() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": { "Tolerance": 1, "DNP": true, "Bad": null }
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!edited.is_error, "{:?}", edited.content);
+        let body = ok_body(&edited);
+        assert_eq!(
+            body["errors"],
+            json!(["Bad: value must be a string, number or boolean"]),
+            "an unrepresentable value must be reported: {body}"
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("(property \"Tolerance\" \"1\"")
+                && text.contains("(property \"DNP\" \"true\""),
+            "scalar values were not stored as text:\n{text}"
+        );
+    }
+
     async fn twin_schematics(
         ctx: &ToolContext,
     ) -> (

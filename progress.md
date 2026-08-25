@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.5 closes. P.6.9.6 à P.6.9.13 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.6 closes. P.6.9.7 à P.6.9.14 restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,42 +15,46 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.5 — les deux handlers du chemin texte alignés sur leur frère typé.
-`tools/mod.rs` porte les scanners partagés (`symbol_property_blocks`,
-`quoted_string_after`, `find_symbol_property`, `symbol_property_at_spans`,
-`symbol_insertion_site`, `set_symbol_property`), tous par profondeur
-d'imbrication et état de guillemet via `find_direct_child_blocks`, jamais par
-sous-chaîne. `update_field`/`insert_property` fusionnés dans `set_field`.
-`add_component_annotation` met à jour au lieu de dupliquer, refuse
-`Reference`, ancre la propriété sur la position du symbole et lit
-l'indentation d'un frère existant. `bulk_move` déplace chaque ancre de
-propriété du delta appliqué après snap.
+P.6.9.6 — `edit_schematic_component` lit enfin le `fields` qu'il déclare. La
+carte est convertie en `Vec<(&str, String)>` avant la closure `apply`
+(`sch_components.rs:686-720`) par un helper `property_text` : string telle
+quelle, number et bool en texte — KiCAD stocke toute propriété en texte — et
+tout ce qui n'a pas de forme texte est refusé plutôt que stringifié en
+absurdité. Un `fields` présent mais non-objet est un `InvalidArgument`, pas un
+silence. `apply` prend un `reject` : `&[]` pour les arguments nommés,
+`RESERVED_PROPERTY_KEYS` pour la boucle `fields`, donc un `Reference` passé par
+la voie générique est refusé au lieu de désynchroniser `(instances …)` (D124).
+La boucle est placée après `datasheet` et avant `new_reference`, le rename
+devant rester dernier.
 
-Clés réservées réduites à **`Reference` seul** : c'est la seule stockée deux
-fois — propriété **et** `(instances …)`. Voir D124.
-
-Deux défauts introduits par le correctif, corrigés avec la tâche :
-l'ancre de propriété est une addition simple, donc non couverte par
-`snap_point` — un champ à 241,3 sortait en `246.38000000000002` ; les
-coordonnées passent désormais par `mm()` (6 décimales, justifié par mesure).
-Et un déplacement qui snappait au surplace réécrivait quand même chaque
-champ, transformant `(at x y)` en `(at x y 0)` ; il n'écrit plus rien.
-`add_component_annotation` répondait aussi `added_property` après une mise à
-jour : un champ `created` dit lequel des deux a eu lieu.
+La garde est désormais `changed.is_empty()` seule, avec le motif
+`no editable field was given` quand `errors` est vide : elle exigeait un
+`errors` non vide pour se déclencher, ce qui laissait un appel ne passant que
+`fields` — et un appel sans aucun argument éditable — répondre
+`{"changes": []}` en succès. Voir D126. La réécriture par macro d'amont a été
+mesurée et non copiée : la boucle directe échouait en `E0499` (la closure garde
+l'emprunt d'`errors` vivant jusqu'à `new_reference`), et la passe de conversion
+préalable la résout sans macro.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1264
-  tests, 0 échec**
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **13/13**
-- rouge d'abord : deux appels même clé laissent deux `(property "MPN" …)` ;
-  une valeur sosie déraille `find_symbol_property` ; `bulk_move` ne déplace
-  que le symbole ; `symbol_own_at_span` sur un `(at` non fermé panique
-  (`byte range starts at 36 but ends at 32`) ; sans `mm()` ni la garde de
-  surplace, le fichier reçoit `246.38000000000002` et `105.41000000000001`
+- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1270
+  tests, 0 échec** (1264 + 6 nouveaux, aucun test existant modifié)
+- rouge d'abord : les six échouent avant le correctif, dont
+  `a_fields_only_edit_writes_the_property_the_symbol_lacks`
+  (`left: Array [] right: Array [String("MPN → RC0805FR-074K7L (added)")]`) et
+  `an_edit_that_changes_nothing_is_a_failure`
+  (`an empty edit reported success: {"changes":[],"reference":"R1"}`)
 
 ## Décisions actives
+
+- **D126** — une garde « ne rien changer est un échec » qui exige *aussi* une
+  erreur ne garde rien : elle ne se déclenche que là où un autre code a déjà
+  signalé le problème. Les deux silences qu'elle laissait passer —
+  `edit_schematic_component` ignorant `fields`, et un appel sans aucun argument
+  éditable — étaient précisément les cas sans erreur. La condition correcte est
+  « rien n'a changé », l'`errors` ne servant qu'à rédiger le motif.
 
 - **D124** — `Reference` est la **seule** propriété réservée d'un symbole :
   c'est la seule stockée deux fois, dans la propriété **et** dans
@@ -209,16 +213,9 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.6 — `8591707`, moitié résiduelle : `edit_schematic_component`
-déclare `fields` dans son schéma (`sch_components.rs:92-95`) et le handler ne
-le lit jamais (`:666-770`), donc un appel ne passant que `fields` renvoie
-`{"changes": []}` comme un succès — `changed` est vide, `errors` aussi, et la
-garde « ne rien changer est un échec » du fork (`:734-746`) exige un `errors`
-non vide pour se déclencher. La moitié `new_reference` du commit amont est
-déjà corrigée ici (`update_instance_reference`, `:860`). Boucler les clés de
-l'objet à travers les helpers partagés par P.6.9.5 (`set_field`,
-`set_symbol_property` dans `tools/mod.rs`), en refusant `Reference` (D124).
-Mesurer avant de copier la réécriture par macro de la closure d'application
-amont : elle était imposée par leur forme d'emprunt, pas forcément la nôtre.
-Rouge d'abord : un appel ne passant que `fields` doit échouer aujourd'hui à
-écrire quoi que ce soit tout en répondant succès.
+Implémenter P.6.9.7 — `6ed6cac` : cinq voies d'écriture tournent sur des
+arguments requis substitués, parce que rien n'impose `required` côté serveur.
+Cibles vérifiées : `require_str` / `require_f64` / `get_path`
+(`crates/konnect-core/src/tools/mod.rs:414-447`). Lire la section P.6.9.7 du
+plan pour les cinq sites exacts avant de commencer, et écrire le test rouge
+d'abord.
