@@ -618,26 +618,64 @@ async fn handle_find_orphan_items(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let sch = cse::Schematic::load(&sch_path)?;
-    let wires = super::sch_bridge::all_wires_as_sexp(&sch);
-    let labels = super::sch_bridge::all_labels_as_sexp(&sch);
+    let (_, tree) = read_schematic(&sch_path)?;
+    let wires = extract_wires(&tree);
+    let labels = extract_all_net_labels(&tree);
+    let junctions = extract_junction_points(&tree);
+
     let label_pts: HashSet<(i64, i64)> = labels.iter().map(|l| pt_key(l.x, l.y)).collect();
+    let junction_pts: HashSet<(i64, i64)> = junctions.iter().map(|&(x, y)| pt_key(x, y)).collect();
+    let pin_pts: HashSet<(i64, i64)> = placed_pins(&tree)
+        .iter()
+        .map(|p| pt_key(p.x, p.y))
+        .collect();
+
     let mut endpoint_counts: HashMap<(i64, i64), usize> = HashMap::new();
     for w in &wires {
         *endpoint_counts.entry(pt_key(w.x1, w.y1)).or_insert(0) += 1;
         *endpoint_counts.entry(pt_key(w.x2, w.y2)).or_insert(0) += 1;
     }
-    let dangling: Vec<serde_json::Value> = endpoint_counts.iter()
-        .filter(|(k, &c)| c == 1 && !label_pts.contains(k))
-        .map(|(k, _)| json!({ "type": "dangling_wire_end", "x": k.0 as f64/1000.0, "y": k.1 as f64/1000.0 }))
-        .collect();
-    let floating: Vec<serde_json::Value> = labels
+
+    // A wire end is an orphan only if nothing meets it: no second wire end, no
+    // junction, no label, and no pin. The pin was the missing one — a wire
+    // drawn to a component landed here as `dangling_wire_end` while KiCAD
+    // reported that same pin as connected (measured, see `attached_at`).
+    // Lying on another wire's body is deliberately not a rescue: KiCAD calls
+    // that `unconnected_wire_endpoint` unless a junction is on it, and the
+    // junction is already checked.
+    let mut all: Vec<serde_json::Value> = endpoint_counts
         .iter()
-        .filter(|l| !endpoint_counts.contains_key(&pt_key(l.x, l.y)))
-        .map(|l| json!({ "type": "floating_label", "net": l.net, "x": l.x, "y": l.y }))
+        .filter(|(k, &count)| {
+            count == 1
+                && !label_pts.contains(*k)
+                && !junction_pts.contains(*k)
+                && !pin_pts.contains(*k)
+        })
+        .map(|(k, _)| {
+            json!({
+                "type": "dangling_wire_end",
+                "x": k.0 as f64 / 1000.0,
+                "y": k.1 as f64 / 1000.0
+            })
+        })
         .collect();
-    let mut all = dangling;
-    all.extend(floating);
+
+    // A label attaches anywhere it touches a wire, not only at an end, so the
+    // endpoint table alone reported a mid-wire label as floating.
+    all.extend(
+        labels
+            .iter()
+            .filter(|l| !on_a_wire(l.x, l.y, &wires))
+            .filter(|l| !pin_pts.contains(&pt_key(l.x, l.y)))
+            .map(|l| json!({ "type": "floating_label", "net": l.net, "x": l.x, "y": l.y })),
+    );
+
+    // The half the tool's description always promised and never delivered: a
+    // pin with nothing on it was never reported at all (#271). Same finder
+    // `find_single_pin_nets` uses, so the two cannot disagree about what an
+    // unconnected pin is.
+    all.extend(find_isolated_pins(&tree));
+
     Ok(CallToolResult::json(
         &json!({ "orphan_count": all.len(), "orphans": all }),
     ))
@@ -686,6 +724,82 @@ async fn handle_find_single_pin_nets(
     ))
 }
 
+/// One placed pin: the instance it belongs to and where its connection point
+/// actually lands on the sheet.
+///
+/// The single definition of "the pins this schematic really has": unit-aware
+/// (a multi-unit symbol declares different pins per unit, P.6.8.1) and
+/// transformed by the placement, so nothing downstream re-derives either.
+pub(crate) struct PlacedPin {
+    pub reference: String,
+    pub number: String,
+    pub name: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+pub(crate) fn placed_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<PlacedPin> {
+    let lib_syms = tree
+        .find("lib_symbols")
+        .map(|node| node.find_all("symbol"))
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for instance in extract_symbol_instances(tree) {
+        let Some(lib_sym) = find_lib_symbol(&lib_syms, &instance) else {
+            continue;
+        };
+        for pin in extract_lib_pins_for_unit(lib_sym, instance.unit) {
+            let (x, y) = pin_endpoint(&pin, instance.pin_transform());
+            out.push(PlacedPin {
+                reference: instance.reference.clone(),
+                number: pin.number.clone(),
+                name: pin.name.clone(),
+                x,
+                y,
+            });
+        }
+    }
+    out
+}
+
+/// Whether anything electrical meets `(x, y)`.
+///
+/// Measured against KiCAD 10.0.3 on a two-resistor sheet, and it is narrower
+/// than it looks:
+/// * a wire **end** on a pin connects — ERC leaves that pin out of
+///   `pin_not_connected` while reporting the sheet's three other pins;
+/// * a wire end on another wire's **body** does **not** connect: ERC reports
+///   `unconnected_wire_endpoint` at exactly that point, and adding the
+///   junction makes it go away. So touching a body is only a connection for
+///   something that is not itself a wire end — a pin or a label sitting on a
+///   wire.
+///
+/// What is deliberately not modelled: ERC's own rule names. `wire_dangling`
+/// fires on this fixture in cases these three facts do not explain, and
+/// guessing at it would put an unmeasured claim in the answer. This tool
+/// reports geometric attachment, which is what "orphan" means here.
+fn attached_at(
+    x: f64,
+    y: f64,
+    graph: &mut NetGraph,
+    wires: &[konnect_sexp::schematic::Wire],
+) -> bool {
+    graph.net_at(x, y).is_some() || on_a_wire(x, y, wires)
+}
+
+/// Whether a wire passes through `(x, y)` — its ends included, since an end
+/// lies on its own segment.
+///
+/// The geometric half of [`attached_at`], and the whole test for a label: the
+/// net graph carries every label as a node of its own, so asking it whether a
+/// label is attached always answers yes. A label is attached when it touches a
+/// wire (anywhere along it) or a pin, and nothing else.
+fn on_a_wire(x: f64, y: f64, wires: &[konnect_sexp::schematic::Wire]) -> bool {
+    wires
+        .iter()
+        .any(|wire| point_on_segment(x, y, wire.x1, wire.y1, wire.x2, wire.y2, 0.01))
+}
+
 fn find_isolated_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<serde_json::Value> {
     let wires = extract_wires(tree);
     let labels = extract_all_net_labels(tree);
@@ -694,40 +808,24 @@ fn find_isolated_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<serde_json::
         .iter()
         .filter_map(|node| parse_at(node).map(|(x, y, _)| pt_key(x, y)))
         .collect();
-    let lib_syms = tree
-        .find("lib_symbols")
-        .map(|node| node.find_all("symbol"))
-        .unwrap_or_default();
     let mut graph = build_net_graph(&wires, &labels, &extract_junction_points(tree));
-    let mut isolated = Vec::new();
 
-    for instance in extract_symbol_instances(tree) {
-        let Some(lib_sym) = find_lib_symbol(&lib_syms, &instance) else {
-            continue;
-        };
-        for pin in extract_lib_pins_for_unit(lib_sym, instance.unit) {
-            let (x, y) = pin_endpoint(&pin, instance.pin_transform());
-            if no_connects.contains(&pt_key(x, y)) {
-                continue;
-            }
-            let connected = graph.net_at(x, y).is_some()
-                || wires
-                    .iter()
-                    .any(|wire| point_on_segment(x, y, wire.x1, wire.y1, wire.x2, wire.y2, 0.01));
-            if !connected {
-                isolated.push(json!({
-                    "net": null,
-                    "reference": instance.reference,
-                    "pin_number": pin.number,
-                    "pin_name": pin.name,
-                    "x": x,
-                    "y": y,
-                    "type": "unconnected_pin"
-                }));
-            }
-        }
-    }
-    isolated
+    placed_pins(tree)
+        .into_iter()
+        .filter(|pin| !no_connects.contains(&pt_key(pin.x, pin.y)))
+        .filter(|pin| !attached_at(pin.x, pin.y, &mut graph, &wires))
+        .map(|pin| {
+            json!({
+                "net": null,
+                "reference": pin.reference,
+                "pin_number": pin.number,
+                "pin_name": pin.name,
+                "x": pin.x,
+                "y": pin.y,
+                "type": "unconnected_pin"
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

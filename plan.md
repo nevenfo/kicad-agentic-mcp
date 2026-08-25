@@ -3481,12 +3481,45 @@ None. Each item below is independent of the others except where stated.
         introduced here — so a uuid-addressed `bulk_move` on a multi-unit
         symbol is refused with the rest. The refusal names
         `move_schematic_component` with a `uuid`, which does reach one unit.
-  - [ ] P.6.8.3 #271 — `find_orphan_items` counts wire endpoints and label
+  - [x] P.6.8.3 #271 — `find_orphan_items` counts wire endpoints and label
         positions and nothing else, so a wire ending on a pin is reported
         dangling and an unconnected pin is never reported at all: false
         positives and false negatives on any sheet with components. ~470 lines
         plus two `konnect-sexp` extractors; needs `LibPin::electrical_type`,
         which P.6.3 landed.
+        Done, and far cheaper than the audit's ~470 lines: this fork already
+        had the machinery upstream had to build. `find_isolated_pins` — the
+        finder behind `find_single_pin_nets` — already resolved pins per unit,
+        honoured `no_connect` markers and asked the net graph, so the fix is to
+        *use* it rather than port `PointIndex`/`WireIndex`. What was extracted
+        is `placed_pins`, one definition of "the pins this sheet really has",
+        now shared by both (D136).
+        Measured against 10.0.3 before writing anything, on the new fixture
+        `orphan_items.kicad_sch`: `sch erc` reports exactly three
+        `pin_not_connected` — R1 pin 2, R2 pin 1, R2 pin 2 — and leaves R1
+        pin 1 out because a wire ends on it; `label_dangling` for the label in
+        empty space; `isolated_pin_label` for the one sitting mid-wire, which
+        is KiCAD saying that one *is* attached. A second probe settled the
+        mid-segment question: a wire end touching another wire's **body** is
+        `unconnected_wire_endpoint`, and adding the junction makes it go away —
+        so touching a body rescues a pin or a label, never another wire's end.
+        The handler now reports `unconnected_pin` alongside the two old kinds,
+        stops calling a wire end on a pin dangling, and stops calling a
+        mid-wire label floating — the net graph carries every label as a node
+        of its own, so asking it whether a label is attached always answered
+        yes, and the geometric test `on_a_wire` is the one that means
+        something.
+        Red before, each half neutered in turn: without the pin rescue the
+        wire's pin end comes back as a second `dangling_wire_end`; without the
+        pin finder the three unconnected pins vanish from the report.
+        Stated bound: ERC's own rule names are not modelled. `wire_dangling`
+        fires on these fixtures in cases the three measured facts do not
+        explain, and its `pos` is the wire's anchor rather than the offending
+        end; this tool reports geometric attachment, which is what "orphan"
+        means here, and `run_erc` stays the verdict (E7).
+        `docs/capability-matrix.md` moves one line again (D128): the new test
+        lives in `nets_and_wires.rs`, lexicographically ahead of
+        `symbols_and_schematic.rs`. Status unchanged.
   - [ ] P.6.8.4 #185 — `run_design_review` runs its four audits against the
         single `schematic` path and derives the verdict from finding counts, so
         "LOOKS GOOD" is what a caller gets when the audits inspected one sheet

@@ -162,7 +162,7 @@ The always-visible gateway/discovery tools (`crates/konnect-core/src/router/meta
 | `create_schematic` | `sch_components` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `add_component_annotation` | `sch_components` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `get_schematic_view` | `sch_components` | `cli` | `read` | — | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `find_orphan_items` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `find_orphan_items` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `check_schematic_overlaps` | `sch_analysis` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `batch_delete` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
 | `add_schematic_text` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |

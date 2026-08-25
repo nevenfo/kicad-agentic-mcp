@@ -411,3 +411,73 @@ async fn a_net_added_to_a_board_is_written_into_the_file() {
 {text}"
     );
 }
+
+/// `find_orphan_items` counted wire endpoints and label positions and nothing
+/// else, so it was wrong in both directions on any sheet with components: a
+/// wire drawn *to a pin* was reported as a dangling end, and a pin with
+/// nothing on it was never reported at all — though the tool's description
+/// has always promised it (#271, P.6.8.3).
+///
+/// The fixture is measured against KiCAD 10.0.3 rather than reasoned about.
+/// `kicad-cli sch erc` on `orphan_items.kicad_sch` reports exactly three
+/// `pin_not_connected` — R1 pin 2, R2 pin 1, R2 pin 2 — leaving R1 pin 1 out
+/// because the wire ends on it; `label_dangling` for `NOWHERE`; and
+/// `isolated_pin_label` for `MID`, which is KiCAD saying `MID` is attached to
+/// the wire it sits mid-segment on (a rule about the net's pin count, not
+/// about the label being loose).
+#[tokio::test]
+async fn orphan_items_are_the_ones_kicad_calls_unconnected() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture("orphan_items.kicad_sch")).to_string();
+
+    let report = h
+        .json("find_orphan_items", json!({ "schematic": sch }))
+        .await;
+    let orphans = report["orphans"].as_array().expect("orphans array").clone();
+    let of_type = |kind: &str| -> Vec<serde_json::Value> {
+        orphans
+            .iter()
+            .filter(|o| o["type"] == kind)
+            .cloned()
+            .collect()
+    };
+
+    // The false negative: three pins, the same three ERC names.
+    let mut pins: Vec<String> = of_type("unconnected_pin")
+        .iter()
+        .map(|o| {
+            format!(
+                "{}.{}",
+                o["reference"].as_str().unwrap_or("?"),
+                o["pin_number"].as_str().unwrap_or("?")
+            )
+        })
+        .collect();
+    pins.sort();
+    assert_eq!(
+        pins,
+        vec!["R1.2".to_string(), "R2.1".to_string(), "R2.2".to_string()],
+        "unconnected pins must be the three KiCAD reports: {report}"
+    );
+
+    // The false positive: the wire's pin end is not an orphan, only its far
+    // end is.
+    let dangling = of_type("dangling_wire_end");
+    assert_eq!(dangling.len(), 1, "one dangling end, not two: {report}");
+    assert_eq!(
+        dangling[0]["y"],
+        json!(40.64),
+        "the free end, not the pin end"
+    );
+
+    // A label on a wire's body is attached; only the one in empty space is not.
+    let floating = of_type("floating_label");
+    assert_eq!(floating.len(), 1, "only NOWHERE floats: {report}");
+    assert_eq!(floating[0]["net"], json!("NOWHERE"));
+
+    assert_eq!(
+        report["orphan_count"],
+        json!(orphans.len()),
+        "the count must match the list it summarises"
+    );
+}
