@@ -795,6 +795,11 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
                 "index": index,
                 "ok": false,
                 "error_kind": "invalid_argument",
+                // P.6.9.17: named here too. This entry is assembled by hand
+                // rather than classified from a handler's error, and it is the
+                // one refusal where the entry cannot even say which tool it is
+                // about — all the more reason to say which key is missing.
+                "error_field": "tool",
                 "error": "each call needs a 'tool' name",
             }));
             failed_at = Some(index);
@@ -887,7 +892,7 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
                     // carries is in the operating system's language (E9).
                     let kind = ToolErrorKind::from_anyhow(&e);
                     let short = kind.short_code();
-                    let entry = json!({
+                    let mut entry = json!({
                         "index": index,
                         "tool": name,
                         "ok": false,
@@ -895,6 +900,20 @@ async fn handle_kicad_invoke(args: &Value, ctx: &std::sync::Arc<ToolContext>) ->
                         "transient": kind.transient_class(),
                         "error": e.to_string(),
                     });
+                    // P.6.9.17: the `Ok` arm above hands back the handler's
+                    // whole structured body under `result`, so an
+                    // `invalid_argument` from that side already says which
+                    // argument. This arm summarises instead, and used to keep
+                    // only the discriminant — telling a batch caller that an
+                    // argument was invalid without telling them which. Which
+                    // arm a refusal takes is an implementation detail of the
+                    // handler (`get_path` returns `anyhow::Result`,
+                    // `require_str` a `CallToolResult`), and batch entries skip
+                    // the dispatch's `required` check by design (D131), so this
+                    // is the only refusal they get.
+                    if let Some(field) = kind.field() {
+                        entry["error_field"] = json!(field);
+                    }
                     (entry, CallStatus::Error, Some(short.to_string()), 0)
                 }
             };

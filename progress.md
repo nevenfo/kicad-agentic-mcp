@@ -5,8 +5,8 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage), P.6.9.1 à P.6.9.16 et P.6.9.20 closes. Restent, dans l'ordre du
-triage : P.6.9.17 à P.6.9.19, plus P.6.9.21 découverte pendant P.6.9.16 ;
+P.6.9 (triage), P.6.9.1 à P.6.9.17 et P.6.9.20 closes. Restent, dans l'ordre du
+triage : P.6.9.18 et P.6.9.19, plus P.6.9.21 découverte pendant P.6.9.16 ;
 P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
 PR #10 vers `agentic/main`.
 
@@ -16,31 +16,33 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.20 — `jlcpcb_db_path: None` ne veut pas dire « pas de base » mais
-« retombe sur le défaut de la machine » (`resolve_db_path`,
-`tools/integration.rs:248`). Le harness de test disait donc « aucune base n'est
-configurée dans ce harness » tout en mesurant `%APPDATA%\konnect\jlcpcb.db` —
-et le test a commencé à échouer le jour où une vraie base y a été téléchargée
-(2026-08-25, 1 581 parts). Le harness nomme désormais un chemin jamais créé
-sous `CARGO_TARGET_TMPDIR`, et le test assère **quelle** base a été regardée
-avant d'asserter qu'elle est absente.
+P.6.9.17 — une entrée de `kicad_invoke` qui échouait par la voie `Err(anyhow)`
+disait `error_kind: invalid_argument` sans nommer l'argument, alors que la même
+panne par la voie `Ok` le nommait. Mécanisme : la voie `Ok` rend le corps
+structuré entier du handler sous `result`, donc les champs du variant voyagent
+gratuitement ; la voie `Err` résume en `error_kind` + `transient` + `error` et
+ne gardait que le discriminant. Le choix de la voie est un détail
+d'implémentation du handler (`get_path` rend `anyhow::Result`, `require_str`
+un `CallToolResult`), donc l'appelant de batch ne peut pas savoir d'avance
+s'il sera renseigné — et c'est ici que ça compte le plus, les entrées de batch
+sautant la validation `required` du dispatch (D131).
 
-Cette assertion a levé un second défaut, dans le tool : la branche
-`exists: false` de `handle_jlcpcb_stats` ne rendait aucun `path`, seule la
-branche `exists: true` en rendait un. Avec trois sources possibles pour ce
-chemin, « pas de base » sans dire laquelle empêche de distinguer un chemin mal
-configuré d'un téléchargement manquant. `path` est rendu des deux côtés.
+`ToolErrorKind::field()` extrait le champ (`Option<&str>`, `None` pour tout
+kind qui ne parle pas d'un argument) ; la passerelle l'émet en `error_field`,
+à plat comme `error_kind` à côté. Même classe corrigée dans la foulée :
+l'entrée sans clé `tool`, seul refus assemblé à la main, nomme désormais
+`tool` — c'est le seul qui ne peut même pas dire de quel tool il parle.
 
 Validation :
-- `cargo test -p konnect-core --locked --test sourcing_and_manufacturing` :
-  PASS, 9 tests
+- `cargo test -p konnect-core --locked --test required_args` : PASS, 9 tests
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **55 suites, 1335 tests, 0 échec**
+  **55 suites, 1336 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- rouge d'abord : `the harness must name its own absent database, not the
-  machine's: {"exists":false,"note":"Run download_jlcpcb_database to fetch the
-  parts database"}`
+- rouge d'abord : `an entry told its argument is invalid must be told which
+  one: {"error":"Missing required argument: 'schematic'","error_kind":
+  "invalid_argument","index":0,"ok":false,"tool":"audit_decoupling",
+  "transient":"none"}`
 
 ## Décisions actives
 
@@ -285,9 +287,13 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.17 — une entrée de `kicad_invoke` qui échoue par la voie
-`Err(anyhow)` rapporte `error_kind` mais **pas** `error.field`, alors que la
-même panne par la voie `Ok(CallToolResult::error_kind)` rapporte les deux.
-Preuve à reproduire d'abord : une entrée de batch omettant un argument de
-chemin répond `invalid_argument` sans `field`. L'asymétrie est dans
-l'assemblage du résultat de la passerelle, pas dans la classification.
+Implémenter P.6.9.18 — `batch_edit_schematic_components` refuse encore
+`footprint` sur un symbole sans propriété `Footprint`, par la boucle des
+« champs standard » qui résout via `field_value_range` (`sch_batch.rs`) ;
+J.2.4.1 avait retiré exactement ce refus du chemin mono-composant, et P.6.9.14
+n'a corrigé que la moitié `fields`. Preuve à reproduire d'abord : la fixture
+`bus_two_resistors.kicad_sch` ne porte aucun `(property "Footprint" …)`, et un
+spec `{"reference": "R1", "footprint": "R_0805"}` répond
+`Field 'Footprint' not found on 'R1'`. Router les champs standard par
+`set_symbol_property`, en gardant `Reference` sur son propre chemin —
+`new_reference` doit toujours réécrire `(instances …)` (D124).

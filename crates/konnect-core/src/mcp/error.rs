@@ -332,6 +332,25 @@ impl ToolErrorKind {
         }
     }
 
+    /// The argument this error is about, for the one kind that is about an
+    /// argument.
+    ///
+    /// P.6.9.17: `error_kind` alone tells a caller that *an* argument is
+    /// invalid, which is not enough to fix the call. Where the structured body
+    /// travels whole — `CallToolResult::error_kind` serializes the variant's
+    /// own fields beside `kind` — the field rides along for free; where a
+    /// result is flattened into a summary, as `kicad_invoke` flattens a batch
+    /// entry that failed through `Err(anyhow)`, it has to be lifted out
+    /// deliberately. Returns `None` for every other kind rather than an empty
+    /// string, so a caller can tell "not about an argument" from "about an
+    /// argument nobody named".
+    pub fn field(&self) -> Option<&str> {
+        match self {
+            Self::InvalidArgument { field, .. } => Some(field),
+            _ => None,
+        }
+    }
+
     /// Whether retrying this exact call can help.
     pub fn transient_class(&self) -> TransientClass {
         match self {

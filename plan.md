@@ -4036,16 +4036,40 @@ None. Each item below is independent of the others except where stated.
         the *first* key the handler happens to check (see P.6.9.21), and the
         exclusion list has to hide its own tool names from the coverage scanner
         (D133).
-  - [ ] P.6.9.17 — a `kicad_invoke` entry that fails through the
-        `Err(anyhow)` path reports `error_kind` but no `error.field`, while the
-        same failure on the `Ok(CallToolResult::error_kind)` path reports both.
-        Found during P.6.9.11 and left alone as out of scope: the asymmetry
-        predates it, affects every kind rather than the new one, and is in the
-        gateway's result assembly, not in the classification. The consequence
-        is that a batch caller can be told an argument is invalid without being
-        told which — the field P.6.9.11 just took care to carry all the way
-        through `from_anyhow`. Proof to reproduce first: a `kicad_invoke` entry
-        omitting a path argument answers `invalid_argument` with no `field`.
+  - [x] P.6.9.17 — a `kicad_invoke` entry that failed through the
+        `Err(anyhow)` path reported `error_kind` but no field, while the same
+        failure on the `Ok(CallToolResult::error_kind)` path reported both.
+        Found during P.6.9.11 and left alone then as out of scope: the
+        asymmetry predates it, affects every kind rather than the new one, and
+        is in the gateway's result assembly, not in the classification. The
+        consequence is that a batch caller can be told an argument is invalid
+        without being told which — the field P.6.9.11 took care to carry all
+        the way through `from_anyhow`.
+        The mechanism: the `Ok` arm hands back the handler's whole structured
+        body under `result`, so the variant's own fields ride along for free;
+        the `Err` arm summarises into `error_kind` + `transient` + `error`, and
+        kept only the discriminant. Which arm a refusal takes is an
+        implementation detail of the handler — `get_path` returns
+        `anyhow::Result`, `require_str` a `CallToolResult` — so a batch caller
+        cannot know in advance whether it will be told the field. It matters
+        most here of all places, because batch entries skip the dispatch's
+        `required` check by design (D131), making this the only refusal they
+        get.
+        `ToolErrorKind::field()` lifts it out — `Option<&str>`, `None` for
+        every kind that is not about an argument, so "not about an argument" is
+        distinguishable from "about an argument nobody named". `InvalidArgument`
+        is the only variant carrying one. The gateway emits it as
+        `error_field`, matching the flattened `error_kind` beside it rather
+        than inventing a nested object the `Ok` arm does not have either.
+        Fixed in the same pass, same class: the one entry the gateway assembles
+        by hand rather than classifying — a call with no `tool` key — also said
+        `invalid_argument` and named nothing. It is the single refusal that
+        cannot even report which tool it is about, so it now names `tool`.
+        Red before: `an entry told its argument is invalid must be told which
+        one: {"error":"Missing required argument: 'schematic'","error_kind":
+        "invalid_argument","index":0,"ok":false,"tool":"audit_decoupling",
+        "transient":"none"}` — the message carried the name in prose, and
+        nothing structured did.
   - [ ] P.6.9.18 — `batch_edit_schematic_components` still refuses `footprint`
         on a symbol that carries no `Footprint` property, through the "standard
         fields" loop that resolves by `field_value_range` (`sch_batch.rs`).

@@ -367,3 +367,67 @@ async fn the_mode_gate_still_answers_first() {
         "the mode is the reason this call cannot run: {body}"
     );
 }
+
+/// P.6.9.17: a batch entry that fails through the handler's `Err(anyhow)` path
+/// names the argument it could not do without, the same as one that fails
+/// through `Ok(CallToolResult::error_kind)`.
+///
+/// The two paths assemble their result differently — the `Ok` half carries the
+/// handler's whole structured body under `result`, `field` and all, while the
+/// `Err` half is flattened at the gateway into `error_kind` plus a message.
+/// `ToolErrorKind::from_anyhow` classifies a `MissingArgument` into
+/// `InvalidArgument { field, .. }` (P.6.9.11 carried the field that far on
+/// purpose), and the flattening then dropped it: the caller was told an
+/// argument was invalid without being told which one. Which path a given
+/// refusal takes is an implementation detail of the handler — `get_path`
+/// returns `anyhow::Result`, `require_str` returns a `CallToolResult` — so a
+/// batch caller cannot know in advance whether it will be told the field.
+///
+/// Matters most here of all places: batch entries skip the dispatch's
+/// `required` check by design (D131), so this refusal is the *only* one they
+/// get.
+#[tokio::test]
+async fn a_batch_entry_names_the_missing_field_on_either_failure_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let handler = handler_at(dir.path()).await;
+
+    let resp = call(
+        &handler,
+        "kicad_invoke",
+        json!({
+            "calls": [
+                // `audit_decoupling` reads its path with `get_path`, so a
+                // missing `schematic` leaves the handler as `Err(anyhow)`.
+                { "tool": "audit_decoupling", "args": {} }
+            ],
+            "stop_on_error": false
+        }),
+    )
+    .await;
+    assert!(
+        !is_error(&resp),
+        "kicad_invoke's own call must not error: {resp}"
+    );
+    let body = tool_body(&resp);
+    let entry = &body["results"][0];
+    assert_eq!(entry["ok"], false, "{body}");
+    assert_eq!(entry["error_kind"], "invalid_argument", "{body}");
+    assert_eq!(
+        entry["error_field"], "schematic",
+        "an entry told its argument is invalid must be told which one: {body}"
+    );
+
+    // The one refusal the gateway assembles by hand, rather than classifying
+    // from a handler's error: an entry with no `tool` key. It cannot even name
+    // the tool it is about, so naming the key matters more here, not less.
+    let resp = call(
+        &handler,
+        "kicad_invoke",
+        json!({ "calls": [ { "args": {} } ], "stop_on_error": false }),
+    )
+    .await;
+    let body = tool_body(&resp);
+    let entry = &body["results"][0];
+    assert_eq!(entry["error_kind"], "invalid_argument", "{body}");
+    assert_eq!(entry["error_field"], "tool", "{body}");
+}
