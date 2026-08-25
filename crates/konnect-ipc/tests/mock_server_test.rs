@@ -1115,3 +1115,65 @@ fn record_doc(
         }
     }
 }
+
+// ─── Listing a track has to be enough to act on it (#162) ────────────────────
+
+/// `query_traces` used to report net, layer, width and endpoints and nothing
+/// else, while `delete_trace` and `modify_trace` both require a `uuid` — so
+/// there was no path from listing a trace to acting on one. KiCAD sends the
+/// id in the `Track` message all along; this is the proof it survives the
+/// decode and reaches [`konnect_ipc::IpcTrack`].
+#[test]
+fn a_listed_track_carries_the_id_its_delete_requires() {
+    const KIID: &str = "1f0e5b1a-0000-4000-8000-00000000abcd";
+
+    let mock = spawn_mock(|request| {
+        let message = request.message.expect("request must pack a command");
+        if message.type_url.ends_with("GetOpenDocuments") {
+            return Some(open_board_response());
+        }
+        assert!(message.type_url.ends_with("GetItems"));
+        let track = kiapi::board::types::Track {
+            id: Some(kiapi::common::types::Kiid {
+                value: KIID.to_string(),
+            }),
+            start: Some(kiapi::common::types::Vector2 {
+                x_nm: 1_000_000,
+                y_nm: 2_000_000,
+            }),
+            end: Some(kiapi::common::types::Vector2 {
+                x_nm: 3_000_000,
+                y_nm: 4_000_000,
+            }),
+            width: Some(kiapi::common::types::Distance { value_nm: 250_000 }),
+            locked: kiapi::common::types::LockedState::LsUnlocked as i32,
+            layer: kiapi::board::types::BoardLayer::BlFCu as i32,
+            net: Some(kiapi::board::types::Net {
+                code: Some(kiapi::board::types::NetCode { value: 1 }),
+                name: "GND".to_string(),
+            }),
+        };
+        let response = kiapi::common::commands::GetItemsResponse {
+            header: None,
+            status: kiapi::common::types::ItemRequestStatus::IrsOk as i32,
+            items: vec![builders::pack_any(&track, "kiapi.board.types.Track")],
+        };
+        Some(reply_with(builders::pack_any(
+            &response,
+            "kiapi.common.commands.GetItemsResponse",
+        )))
+    });
+
+    let client = KiCadIpcClient::new(&mock.url);
+    let tracks = client.get_tracks(None, None).expect("the query succeeds");
+    assert_eq!(tracks.len(), 1, "the mock served exactly one track");
+    assert_eq!(
+        tracks[0].uuid.as_deref(),
+        Some(KIID),
+        "the id KiCAD sent must reach the caller, or delete_trace is unreachable"
+    );
+    // The rest of the decode is what makes the id worth having: an id without
+    // the segment it names would not let a caller pick which one to delete.
+    assert_eq!(tracks[0].net_name, "GND");
+    assert_eq!(tracks[0].layer, "F.Cu");
+}

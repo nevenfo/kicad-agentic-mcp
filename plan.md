@@ -3543,10 +3543,19 @@ None. Each item below is independent of the others except where stated.
         cannot satisfy its own search (D133). Live probe added:
         `fab_drill_options` writes `-PTH`/`-NPTH`. Measured and not assumed:
         KiCAD writes **both** files even on a board with no non-plated hole.
-  - [ ] P.6.8.7 #162 — `query_traces` emits no uuid while `delete_trace`
+  - [x] P.6.8.7 #162 — `query_traces` emits no uuid while `delete_trace`
         requires one, so there is no path from listing a trace to deleting it.
         Twelve lines across three files; the audit says to bundle it into the
         next PCB change rather than schedule it alone.
+        Done, on its own after all: the twelve lines are a decode, and their
+        proof is a mock-server round-trip that no other PCB change would have
+        carried. `IpcTrack` gains `uuid: Option<String>`, filled from the
+        `Track` message's own `id` — KiCAD sent it all along and the decode
+        dropped it — and `query_traces` puts it first in each entry. `Option`
+        rather than an empty string on purpose: a track without an id must not
+        read as one with a usable id and be handed to a delete.
+        Red before: with the field forced to `None`, the mock test fails on
+        the assertion that says why the id matters.
   - [ ] P.6.8.8 #186 — `Reference` and `Value` are placed at a hard-coded
         ±3.81 mm at rotation 0, whatever the symbol and whatever the placement
         rotation. Visual only, no electrical effect and no data loss: last on

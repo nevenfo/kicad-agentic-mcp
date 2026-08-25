@@ -598,6 +598,9 @@ async fn handle_query_traces(
         .iter()
         .map(|t| {
             json!({
+                // The id first: it is what delete_trace and modify_trace
+                // take, and listing without it left them unreachable (#162).
+                "uuid": t.uuid,
                 "net": t.net_name, "layer": t.layer, "width": t.width,
                 "x1": t.start.x, "y1": t.start.y,
                 "x2": t.end.x,   "y2": t.end.y
