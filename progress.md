@@ -5,8 +5,9 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage), P.6.9.1 à P.6.9.18 et P.6.9.20 closes. Restent : P.6.9.19, plus
-P.6.9.21 découverte pendant P.6.9.16 ; P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
+P.6.9 (triage) et P.6.9.1 à P.6.9.20 closes — tout le triage d'origine et ses
+découvertes, sauf P.6.9.21 (découverte pendant P.6.9.16). Restent P.6.9.21,
+P.6.8 et P.6.11. Branche de travail : `ai/P-schematic-fidelity`,
 PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -15,34 +16,39 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.18 — la moitié « champs standard » de `batch_edit_schematic_components`
-refusait encore `footprint` sur un symbole sans propriété `Footprint`, par une
-boucle séparée qui résolvait `value`/`footprint` en plages d'octets via
-`field_value_range`. J.2.4.1 avait retiré ce refus du chemin mono-composant ;
-P.6.9.14 avait corrigé la moitié `fields`, pas celle-ci. Les deux champs
-passent désormais par le même vecteur `updates`, donc par
-`set_symbol_property`, qui insère au lieu de refuser.
+P.6.9.19 — l'item supposait que les 24 tools dont le handler ne s'appelle pas
+`handle_<tool>` lisaient `NOT_TESTED` alors qu'un test les exerce, et demandait
+le chiffre réel d'abord. Mesuré : la couverture cachée est **zéro**. 22 des 24
+sont déjà `SUPPORTED`/`PARTIAL`/`EXTERNAL_TOOL` parce qu'un test nomme le tool
+en chaîne — l'autre critère du scan, insensible au mismatch de handler. Les
+deux restants (`route_differential_pair`, `open_schematic_viewer`) n'ont
+réellement aucun test : leur `NOT_TESTED` est exact, pas caché.
 
-Règle de collision reprise du chemin mono-composant plutôt qu'inventée :
-`edit_schematic_component` applique ses arguments nommés puis sa map `fields`
-(`sch_components.rs:754-763`), donc `fields` gagne ; le batch pousse les champs
-standard avant la map pour le même résultat, et un test le fige.
+Ce qui rend le mismatch inoffensif n'est ni la chance ni le nommage, mais la
+convention de test du dépôt : `tests/harness/mod.rs` passe par `ToolRouter` par
+nom plutôt que d'appeler un handler privé, délibérément. L'exposition restante
+est étroite et actuellement vide : un tool prouvé **uniquement** par un test
+unitaire appelant son handler lirait `NOT_TESTED`.
 
-Conséquence : `field_value_range` n'avait plus d'appelant et disparaît, avec la
-dernière édition par offsets de ce handler — donc aussi la découpe en deux
-phases qu'elle imposait. Une seule passe reste, chaque écriture relocalisant le
-symbole par référence, comme `set_field` sur le chemin mono-composant : une
-édition d'un champ reste un diff d'une ligne (P.6.9.4).
+Donc **pas de renommage** : delta de matrice nul, et un des 24 ne peut pas être
+renommé — `handle_get_pin_connections` sert `get_pin_connections` **et**
+`get_pin_net_name` (`sch_analysis.rs:83,95`). Une table d'alias achète le même
+rien en ajoutant une liste écrite à la main à tenir à jour.
+
+Ce que la mesure a rendu corrigible, c'est le préambule de la matrice, qui
+affirmait que le scan ne se trompe que dans un sens. D133 l'avait déjà réfuté.
+Le préambule (`capability/render.rs`) énonce désormais les deux directions,
+nomme la convention `ToolRouter` qui garde le sous-comptage vide, et dit à un
+futur auteur de test de casser un nom de tool qu'il mentionne sans l'appeler.
 
 Validation :
-- `cargo test -p konnect-core --locked --test symbols_and_schematic` : PASS,
-  27 tests, 1 ignoré (kicad-cli)
+- `cargo test -p konnect-core --locked --test capability_matrix` : PASS,
+  14 tests ; matrice régénérée, **aucun statut ni pourcentage changé** — le
+  diff porte sur le seul préambule
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
   **55 suites, 1338 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- rouge d'abord : `{"errors":["Field 'Footprint' not found on 'R1'"],
-  "updated":[],"updated_count":0}`
 
 ## Décisions actives
 
@@ -287,15 +293,15 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.19 — le scanner de couverture reconnaît un tool par
-`"<tool>"` ou `handle_<tool>` (`capability/coverage.rs:210`), et 24 des 198
-tools enregistrés ont un handler dont le nom diffère du leur
-(`place_component_array` → `handle_place_array`, `batch_edit_schematic_components`
-→ `handle_batch_edit`, `route_differential_pair` → `handle_route_diff_pair`,
-`list_schematic_wires` → `handle_list_wires`, et vingt autres). Mesurer d'abord
-l'effet réel : pour chacun des 24, un test l'exerce-t-il déjà ? Ce nombre est
-la couverture que la matrice cache aujourd'hui. Deux sorties possibles —
-renommer les 24 handlers en `handle_<tool>`, ou donner une table d'alias au
-scan ; le renommage est celui qui garde la convention auto-portante. Tenir
-compte de D133 : le scanner produit aussi des faux positifs, et une passe sur
-ce sujet devrait traiter les deux directions.
+Implémenter P.6.9.21 — `required_schema_honesty.rs` appelle chaque handler avec
+`{}`, ce qui manque **toutes** les clés `required` d'un coup et ne prouve donc
+que la **première** que le handler vérifie. Mesuré : dans `pcb_routing.rs`,
+`"board"` apparaît dans 33 schémas de tools et n'est lu que par 5 handlers
+(`get_path(args, "board")` l.267, 343, 495, 729, 809) ; `query_traces` et
+`get_nets_list` n'ont été attrapés que parce qu'ils ne vérifient aucune autre
+clé requise avant. Atteindre le reste demande d'appeler avec chaque clé requise
+omise à tour de rôle, donc des valeurs plausibles pour les autres — et un
+chemin plausible mais inexistant fait répondre `not_found` à un handler correct,
+pas `invalid_argument`, ce qui noie la forme naïve sous les faux positifs.
+Mesurer ça avant de figer une forme ; premier essai évident : valeurs
+bidons par type, et ne scorer que `invalid_argument` sur la clé omise.

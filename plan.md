@@ -4104,27 +4104,52 @@ None. Each item below is independent of the others except where stated.
         integration (no D128 evidence shift):
         `a_batch_edit_sets_a_footprint_the_symbol_does_not_carry_yet` and
         `a_batch_edit_resolves_a_footprint_collision_the_same_way_the_single_component_path_does`.
-  - [ ] P.6.9.19 — the capability scanner recognises a tool by `"<tool>"` or
-        `handle_<tool>` (`capability/coverage.rs:210`), and **24 of the 198
-        registered tools have a handler whose name does not match their own**:
+  - [x] P.6.9.19 — the capability scanner recognises a tool by `"<tool>"` or
+        `handle_<tool>` (`capability/coverage.rs:210`), and 24 of the 198
+        registered tools have a handler whose name does not match their own:
         `place_component_array` is `handle_place_array`,
         `batch_edit_schematic_components` is `handle_batch_edit`,
         `route_differential_pair` is `handle_route_diff_pair`,
-        `list_schematic_wires` is `handle_list_wires`, and twenty more. A unit
-        test that calls the handler directly — the ordinary way to test one —
-        is therefore invisible to the scan for every one of them, and the tool
-        reads `NOT_TESTED` while a test exercises it. P.6.9.15 hit this: the
-        matrix credited `place_component_array` only once a test happened to
-        quote its name as a literal. The error runs toward under-counting,
-        which is the safe direction, but the matrix's whole claim is that its
-        percentage is measured rather than decorative, and this makes part of
-        it depend on how a handler was named. Two ways out — rename the 24
-        handlers to `handle_<tool>`, or give the scan an explicit alias table —
-        and the rename is the one that keeps the convention self-enforcing.
-        Measure the real effect first: for each of the 24, does a test already
-        exercise it? That number is how much coverage the matrix is currently
-        hiding.
-
+        `list_schematic_wires` is `handle_list_wires`, and twenty more. The
+        item assumed those tools read `NOT_TESTED` while a test exercises them,
+        and asked for the real number first: **for each of the 24, does a test
+        already exercise it?**
+        Measured, and the answer closes the item differently than it proposed:
+        the hidden coverage is **zero**. 22 of the 24 are already `SUPPORTED`,
+        `PARTIAL` or `EXTERNAL_TOOL` because a test names the tool as a string
+        — the scan's *other* criterion, untouched by the handler mismatch. The
+        remaining two, `route_differential_pair` and `open_schematic_viewer`,
+        have no test at all: nothing in the repository mentions either the tool
+        name or the handler name outside the tool definition. Their
+        `NOT_TESTED` is correct, not hidden.
+        What makes the mismatch harmless is therefore not luck and not the
+        naming: it is this repository's testing convention. `tests/harness/mod.rs`
+        goes through `ToolRouter` by name rather than calling a private handler,
+        on purpose — "the tool has to be registered, findable by name, and take
+        the arguments its schema advertises". Every test written that way trips
+        the first criterion regardless of what the handler is called. The
+        exposure is real but narrow and currently empty: a tool proved *only*
+        by a unit test calling its handler directly would read `NOT_TESTED`.
+        So neither remedy the item floated is worth doing. Renaming the 24
+        handlers moves **zero** matrix lines and zero percentage points, and one
+        of the 24 cannot be renamed at all: `handle_get_pin_connections` serves
+        both `get_pin_connections` and `get_pin_net_name`
+        (`sch_analysis.rs:83,95`), so making it match one name unmatches the
+        other. An alias table buys the same nothing and adds a hand-written list
+        to keep in sync — the exact failure mode D120 rejects elsewhere.
+        What the measurement *did* find worth fixing is the matrix's own
+        preamble, which claimed the scan errs in one direction only: "That
+        direction is deliberate: a scanner that guesses wide inflates the number
+        it exists to keep honest." D133 had already disproved that — a tool name
+        quoted in a test that does not call it counts as proof, which is why
+        `required_schema_honesty.rs` splits three names with `concat!`. A
+        document whose whole claim is that its percentage is measured cannot
+        describe its own method as safer than it is. The preamble
+        (`capability/render.rs`) now states both directions, names the
+        `ToolRouter` convention that keeps the under-reporting empty, and tells
+        a future test author to break a tool name they mention without calling.
+        No status or percentage changes: the regenerated matrix differs by its
+        preamble alone.
   - [x] P.6.9.20 — `the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
         (`sourcing_and_manufacturing.rs:25`) asserted `stats["exists"] == false`
         on the grounds that "no database is configured in this harness" — but

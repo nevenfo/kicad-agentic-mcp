@@ -26,11 +26,23 @@ The last section lists what no tool covers at all, because a matrix keyed on
 the tools that exist is exactly how a document reports full coverage of a
 partial feature set.
 
-The scan recognises a tool by its name in quotes or by a call to
-`handle_<tool>`. A tool whose handler is named differently — `route_differential_pair`
-is handled by `handle_route_diff_pair` — is therefore under-reported unless a
-test names it. That direction is deliberate: a scanner that guesses wide
-inflates the number it exists to keep honest.
+The scan is lexical: it recognises a tool by its name in quotes or by a call to
+`handle_<tool>`, and it errs in both directions.
+
+It under-reports a tool whose handler is named differently — `route_differential_pair`
+is handled by `handle_route_diff_pair` — unless a test names the tool itself.
+Twenty-four tools are in that position, and none of them is currently
+under-reported, because the tests here go through `ToolRouter` by name rather
+than calling a private handler (`tests/harness/mod.rs` says why). That
+convention, not the naming, is what keeps the number honest for those
+twenty-four; a tool proved *only* by a unit test calling its handler directly
+would read `NOT_TESTED` while a test exercises it.
+
+It over-reports a tool whose name is quoted in a test that does not call it — a
+list of exclusions counts as proof, which is why the exclusion list in
+`tests/required_schema_honesty.rs` has to split its three tool names with
+`concat!` to stay out of the scan. Where a test mentions a tool it deliberately
+does not exercise, break the name.
 
 ## Headline
 
