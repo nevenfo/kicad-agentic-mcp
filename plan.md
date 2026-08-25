@@ -3719,12 +3719,46 @@ None. Each item below is independent of the others except where stated.
         Contract change, deliberate: omitting `query`, `value`, `footprint`,
         `lcsc_id` or `wires` now returns `invalid_argument` instead of a whole
         catalogue or an empty rewrite.
-  - [ ] P.6.9.10 `791f95b` (LATER) — nothing validates `required` at the
+  - [x] P.6.9.10 `791f95b` (LATER) — nothing validates `required` at the
         dispatch: `execute_tool` (`mcp/handler.rs:210`) turns absent arguments
         into `{}`. This is the floor beneath P.6.9.7 and P.6.9.9 and must land
         *after* them — added first it fires before any handler runs, and a
         per-tool test could no longer tell a fixed handler from a broken one.
         Presence only; an explicit `null` counts as absent.
+        Done. `tools/mod.rs:425` gained `first_missing_required(schema, args)`
+        — presence only, `args.get(k).unwrap_or(&Value::Null).is_null()`, so an
+        explicit `null` counts as absent — and `handler.rs` wraps it in
+        `missing_required_refusal`, which returns the same
+        `ToolErrorKind::InvalidArgument` shape the `require_*` helpers produce.
+        One vocabulary of refusal, wherever it happens.
+        Placed **after** the mode gate on both paths, and the placement was
+        measured rather than assumed: moving it ahead of the domain gate turns
+        `the_mode_gate_still_answers_first` red (`invalid_argument` instead of
+        `write_refused_by_mode`) and moves nothing else. The gate answers
+        first — a `ReadOnly` caller gets no argument coaching on a call that
+        would be refused anyway. For domain tools the check also sits after
+        `get_tool`, hence after auto-load, which is what makes it reachable at
+        all for a toolset not yet loaded.
+        `kicad_invoke`: envelope only. The check reads the **top-level**
+        `required` of the published schema (`["calls"]`) and never the nested
+        `required: ["tool"]` inside `items` — batch entries stay validated and
+        gated one by one inside `handle_kicad_invoke`, exactly as the mode gate
+        treats them.
+        Lying schemas found: **none**. The single pre-existing test that
+        flipped is not one: `auto_load_toolsets_config_loads_and_executes_on_miss`
+        (`crates/konnect/tests/protocol_stdio.rs:424`) calls `route_trace` with
+        `{}` and asserted `field == "net_name"`, the first key the *handler*
+        checks. The schema declares `required: ["board", "net_name", …]`
+        (`pcb_routing.rs:83`) and `board` is genuinely mandatory, so the
+        refusal now names `board`. The assertion moved to `"board"`; `kind` is
+        unchanged and the test's intent — proving auto-load happened — is
+        preserved and in fact strengthened, since only a loaded tool has a
+        schema to consult.
+        Red before: `a_missing_required_key_is_refused_before_the_handler_runs`
+        (`left: String("not_found") right: "invalid_argument"`) — observability
+        chosen so "the handler ran" is visible: `move_schematic_component`
+        addressed by an unknown `uuid`, whose `not_found` can only come from a
+        resolver that already read the file.
   - [ ] P.6.9.11 `c6a6407` (LATER) — `get_path` (`tools/mod.rs:442-447`)
         returns `anyhow::Result` so handlers can use `?`, and the dispatch
         stringifies it through the `handler_error` fallback
@@ -3782,6 +3816,19 @@ None. Each item below is independent of the others except where stated.
         right — measure what a row array is normally asked for — then make the
         other match, and cover it with a test that places a 3×2 array without
         `spacing_y` and asserts the y coordinates.
+  - [ ] P.6.9.16 — P.6.9.10 validates `required` at the dispatch, but nothing
+        proves a schema's `required` list is *honest*: that every key it names
+        is genuinely mandatory, and that no argument the handler cannot do
+        without is missing from it. P.6.9.10 found no lying schema, but it only
+        looked where a test happens to exercise the tool — a wrong `required`
+        on an uncovered tool surfaces at the caller, not in CI. Both directions
+        are real: a key wrongly listed refuses a legitimate call, and a key
+        wrongly omitted is exactly the class P.6.9.7 and P.6.9.9 fixed by hand,
+        one site at a time. Consider a test that walks the whole registry and
+        calls each tool with `{}`, asserting the refusal names a key from its
+        own `required` list — cheap, and it would have caught the five sites of
+        P.6.9.7 as a class instead of one by one. Measure the cost before
+        committing to a shape: some handlers may do work before refusing.
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,

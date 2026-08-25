@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.9 closes. P.6.9.10 à P.6.9.15 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.10 closes. P.6.9.11 à P.6.9.16 restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,46 +15,51 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.9 — un `query` omis ne renvoie plus tout le catalogue. Chaque site passe
-par `try_arg!(require_*)` de P.6.9.7, strictement selon la liste `required` de
-son propre schéma (D127) : les cinq schémas déclaraient déjà l'argument requis,
-les handlers ne le lisaient simplement pas ainsi. `search_symbols`
-(`library.rs:2812`), `search_footprints` (`:2965`), `search_templates`
-(`templates.rs:287`) ; ce dernier reçoit la limite qu'il n'avait pas, exactement
-la convention de ses deux frères (`limit`, entier, défaut 50).
+P.6.9.10 — `required` est enfin validé au dispatch, le plancher sous P.6.9.7
+et P.6.9.9. `tools/mod.rs:425` porte `first_missing_required(schema, args)` —
+présence seule, `args.get(k).unwrap_or(&Value::Null).is_null()`, donc un `null`
+explicite compte comme absent — et `handler.rs` l'enveloppe dans
+`missing_required_refusal`, qui rend la même forme
+`ToolErrorKind::InvalidArgument` que les helpers `require_*` : un seul
+vocabulaire de refus, où qu'il ait lieu.
 
-Le défaut d'ordre JLCPCB avait **trois** occurrences et non deux : les
-arguments sont désormais validés avant `db_path.exists()` dans
-`suggest_alternatives` (`integration.rs:837`) — donc avant le cache, ce qui
-empêche une requête refusée de le polluer —, `get_jlcpcb_part` (`:779`) et
-`search_jlcpcb_parts` (`:616`), qui cumulait les deux défauts.
-`batch_add_wire` (`sch_wiring.rs:582`) prend `require_array` sur `wires` ; un
-batch explicitement vide reste légitime et rend `{"added_wires": 0}` sans
-charger ni réécrire le fichier.
+Placé **après** le mode gate sur les deux chemins, et le placement est mesuré :
+déplacé avant le gate domaine, `the_mode_gate_still_answers_first` passe au
+rouge (`invalid_argument` au lieu de `write_refused_by_mode`) et rien d'autre
+ne bouge. Voir D130. `kicad_invoke` : enveloppe seulement — la vérification lit
+le `required` top-level (`["calls"]`) et jamais le `required: ["tool"]`
+imbriqué dans `items`, les entrées restant validées une par une dans
+`handle_kicad_invoke`.
+
+Aucun schéma menteur trouvé. Le seul test préexistant qui a basculé n'en est
+pas un : `auto_load_toolsets_config_loads_and_executes_on_miss`
+(`crates/konnect/tests/protocol_stdio.rs:424`) appelait `route_trace` avec `{}`
+et attendait `field == "net_name"`, première clé vérifiée par le *handler* ; le
+schéma déclare `board` avant, et `board` est réellement obligatoire. Assertion
+passée à `"board"`, `kind` inchangé, intention du test préservée et même
+renforcée — seul un tool chargé a un schéma à consulter.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1305
-  tests, 0 échec** (1295 + 10 nouveaux, aucun test existant modifié)
-- rouge d'abord : dix tests, dont
-  `suggest_alternatives_refuses_its_missing_arguments_before_the_database_is_looked_for`
-  (`left: Some("file_not_found") right: Some("invalid_argument")`, la preuve
-  d'ordre, valable sans base JLCPCB installée) et
-  `an_empty_batch_of_wires_leaves_the_schematic_byte_identical`
-  (`a batch that added nothing reserialised the file`)
-
-`docs/capability-matrix.md` a bougé, cette fois en **gain** et non en
-déplacement (D128) : `search_footprints` passe de `NOT_TESTED | gated` — un
-test `#[ignore]` était sa seule preuve — à `SUPPORTED | test`. Domaine
-`footprints` 85,7 % → 100 %, domaines KiCAD 120 → 121 supported
-(73,2 % → 73,8 %), fork proved 135 → 136 (72,6 % → 73,1 %).
-
-Changement de contrat assumé : omettre `query`, `value`, `footprint`,
-`lcsc_id` ou `wires` rend `invalid_argument` au lieu d'un catalogue entier ou
-d'une réécriture vide.
+- `cargo test --workspace --locked --lib --tests` : PASS, **53 suites, 1313
+  tests, 0 échec** (1305 + 8 nouveaux dans une nouvelle suite
+  `tests/required_args.rs`)
+- rouge d'abord : `a_missing_required_key_is_refused_before_the_handler_runs`
+  (`left: String("not_found") right: "invalid_argument"`), l'observabilité
+  étant choisie pour que « le handler a tourné » soit visible —
+  `move_schematic_component` adressé par un `uuid` inconnu, dont le `not_found`
+  ne peut venir que d'un résolveur ayant déjà lu le fichier
 
 ## Décisions actives
+
+- **D130** — l'ordre des refus au dispatch est : mode gate d'abord, validation
+  des arguments ensuite. Mesuré : placer la validation avant le gate domaine
+  fait passer `the_mode_gate_still_answers_first` au rouge et ne change rien
+  d'autre. Un appelant `ReadOnly` ne reçoit pas de coaching d'arguments sur un
+  appel qui serait refusé de toute façon. Corollaire pour les tools de
+  domaine : la vérification vit après `get_tool`, donc après l'auto-load, ce
+  qui la rend atteignable pour un toolset pas encore chargé.
 
 - **D129** — l'heuristique de routage `net_count > 3 && track_count == 0` est
   conservée, mais **seulement** quand la connectivité n'a pas été mesurée
@@ -243,10 +248,9 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.10 — `791f95b` (LATER) : rien ne valide `required` au niveau
-du dispatch, et un argument absent devient `{}`. C'est le **plancher** sous
-P.6.9.7 et P.6.9.9, qui ont durci les sites un par un ; celui-ci ferme la
-classe entière. Lire la section P.6.9.10 du plan pour la mécanique exacte
-avant de commencer — l'ordre importe : la validation générique ne doit pas
-faire double emploi avec les `require_*` déjà posés, ni changer la forme
-d'erreur qu'ils rendent. Test rouge d'abord.
+Implémenter P.6.9.11 — `c6a6407` (LATER) : `get_path` (`tools/mod.rs`, voisin
+des helpers `require_*`) est la dernière voie d'argument non alignée. Lire la
+section P.6.9.11 du plan pour le mécanisme exact avant de commencer, et
+vérifier ce que P.6.9.10 a déjà couvert : la validation de présence au dispatch
+peut avoir rendu une partie de l'item sans objet, auquel cas le mesurer et le
+dire plutôt que d'écrire du code redondant. Test rouge d'abord.

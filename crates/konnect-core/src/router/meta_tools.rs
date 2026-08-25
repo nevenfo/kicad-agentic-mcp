@@ -28,6 +28,25 @@ use crate::observability::{new_call_id, unix_ms, CallRecord, CallStatus};
 use crate::tools::ToolContext;
 use serde_json::{json, Value};
 
+/// The input schema a meta-tool advertises, by name — the same value
+/// `tools/list` publishes, so what the dispatch checks and what the client was
+/// told cannot disagree.
+///
+/// Built once: [`meta_tool_descriptions`] allocates every description string
+/// on each call, and this is consulted on every meta-tool call.
+pub fn meta_tool_schema(name: &str) -> Option<&'static Value> {
+    static SCHEMAS: std::sync::OnceLock<std::collections::HashMap<String, Value>> =
+        std::sync::OnceLock::new();
+    SCHEMAS
+        .get_or_init(|| {
+            meta_tool_descriptions()
+                .into_iter()
+                .map(|d| (d.name, d.input_schema))
+                .collect()
+        })
+        .get(name)
+}
+
 /// Return the meta-tool MCP descriptions (always in the tools/list response).
 ///
 /// Each literal below carries `annotations: None`; this function is the one

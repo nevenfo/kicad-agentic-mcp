@@ -410,8 +410,11 @@ fn auto_load_toolsets_config_loads_and_executes_on_miss() {
 
     // route_trace is in pcb_routing, not loaded at startup. With auto-load on,
     // the toolset loads, a list_changed notification fires, and the call
-    // reaches the handler's own missing-argument check (net_name) instead of
-    // failing with toolset_not_loaded.
+    // reaches the missing-argument check instead of failing with
+    // toolset_not_loaded. That check is the dispatch-level one (P.6.9.10),
+    // which reads the tool's own `input_schema` and so is only reachable once
+    // the tool is loaded — it names `board`, the first key that schema's
+    // `required` list declares, ahead of the handler's own `net_name` check.
     let lines = p.call_tool_then_fence("route_trace", json!({}));
     let r = lines
         .iter()
@@ -421,7 +424,7 @@ fn auto_load_toolsets_config_loads_and_executes_on_miss() {
     assert_eq!(r["isError"], json!(true));
     let body = McpProcess::tool_body(&r);
     assert_eq!(body["error"]["kind"], "invalid_argument");
-    assert_eq!(body["error"]["field"], "net_name");
+    assert_eq!(body["error"]["field"], "board");
 
     let saw_notification = lines.iter().any(|v| {
         v.get("method").and_then(Value::as_str) == Some("notifications/tools/list_changed")

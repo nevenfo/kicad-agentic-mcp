@@ -288,6 +288,17 @@ impl McpHandler {
             }
         }
 
+        // A meta-tool's own envelope is held to the `required` list it
+        // publishes, exactly like a domain tool. For `kicad_invoke` that is
+        // `calls` and nothing else: the per-entry `tool` key is nested inside
+        // the batch, and each entry's own required list is the gateway's
+        // business, entry by entry, in the same place it mode-gates them.
+        if let Some(schema) = meta_tools::meta_tool_schema(name) {
+            if let Some(refusal) = missing_required_refusal(name, schema, args) {
+                return refusal;
+            }
+        }
+
         // Meta-tools always win.
         if let Some(result) = meta_tools::handle_meta_tool(name, args, &self.ctx).await {
             // Any meta-tool that changes what tools/list would return must say
@@ -326,6 +337,12 @@ impl McpHandler {
                     CallStatus::Error,
                     Some("write_refused_by_mode".to_string()),
                 );
+            }
+            // Then the schema's own `required` list, before the handler: a
+            // handler that reads a file (or worse, writes one) before it
+            // notices an argument it cannot do without has already run.
+            if let Some(refusal) = missing_required_refusal(name, &tool_def.input_schema, args) {
+                return refusal;
             }
             return match (tool_def.handler)(args, self.ctx.clone()).await {
                 Ok(result) => {
@@ -412,6 +429,29 @@ impl McpHandler {
             sinks.retain(|tx| tx.try_send(json.clone()).is_ok());
         }
     }
+}
+
+/// The dispatch outcome for a call missing a key its schema declares
+/// `required`, or `None` when the call carries them all.
+///
+/// Presence only, and deliberately in the same `InvalidArgument` shape the
+/// `require_*` helpers emit (`tools::invalid_arg`): whether a key is refused
+/// here or three lines into a handler is an implementation detail of that
+/// tool, and a client that branches on `error.kind` / `error.field` must not
+/// have to know which happened. The helpers stay where they are — they check
+/// the *type*, they serve internal callers that never pass through dispatch,
+/// and they are the only thing guarding a mandatory argument a schema omits
+/// from `required`.
+fn missing_required_refusal(
+    tool: &str,
+    schema: &Value,
+    args: &Value,
+) -> Option<(CallToolResult, CallStatus, Option<String>)> {
+    let field = crate::tools::first_missing_required(schema, args)?;
+    let result = crate::tools::invalid_arg(&field, "missing");
+    let kind = extract_error_kind(&result);
+    debug!(tool = %tool, field = %field, "required_argument_missing");
+    Some((result, CallStatus::Error, kind))
 }
 
 /// Sum of content bytes in a `CallToolResult` — used for observability size

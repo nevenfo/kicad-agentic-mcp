@@ -400,7 +400,7 @@ macro_rules! try_arg {
 /// Build a structured `InvalidArgument` CallToolResult. Used by the
 /// `require_*` helpers so every handler that uses them emits structured
 /// errors the client / observer can match on — no per-handler change needed.
-fn invalid_arg(field: &str, reason: &str) -> CallToolResult {
+pub(crate) fn invalid_arg(field: &str, reason: &str) -> CallToolResult {
     CallToolResult::error_kind(
         crate::mcp::error::ToolErrorKind::InvalidArgument {
             field: field.to_string(),
@@ -408,6 +408,28 @@ fn invalid_arg(field: &str, reason: &str) -> CallToolResult {
         },
         format!("Argument '{}' is invalid: {}", field, reason),
     )
+}
+
+/// The first key a schema's `"required"` list names that the call did not
+/// supply, if any.
+///
+/// Presence only — no type, no format, no value constraint: that is what the
+/// `require_*` helpers below still do, from inside the handler, where the type
+/// a key must have is known. This is the floor under them, applied at dispatch
+/// so a tool whose handler forgot to check (or checks late, after it has
+/// already read a file) cannot run on an incomplete call.
+///
+/// An explicit `null` is missing. A client that serialises its absent
+/// optionals as `null` is saying the same thing as one that omits the key, and
+/// no `require_*` helper accepts `null` either.
+pub(crate) fn first_missing_required(schema: &Value, args: &Value) -> Option<String> {
+    schema
+        .get("required")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .find(|key| args.get(*key).unwrap_or(&Value::Null).is_null())
+        .map(str::to_string)
 }
 
 /// Extract a required string argument, returning a structured
