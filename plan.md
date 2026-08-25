@@ -3934,7 +3934,7 @@ None. Each item below is independent of the others except where stated.
         Behaviour note: the `fields` path's error message changes shape
         (`Field 'X' not found on 'R1'` → `'X' on 'R1': …`); no test or doc
         asserted the old one.
-  - [ ] P.6.9.15 — `place_component_array`'s schema and handler disagree on
+  - [x] P.6.9.15 — `place_component_array`'s schema and handler disagree on
         `spacing_y`. The schema documents `"spacing_y": { "default": 0 }`
         (`pcb_components.rs:1030`); the handler reads
         `args["spacing_y"].as_f64().unwrap_or(spacing_x)` (`:1511`). A caller
@@ -3946,6 +3946,27 @@ None. Each item below is independent of the others except where stated.
         right — measure what a row array is normally asked for — then make the
         other match, and cover it with a test that places a 3×2 array without
         `spacing_y` and asserts the y coordinates.
+        Done. The **schema** was the half that was wrong. A default of 0 is not
+        defensible: it stacks every row of an N x M array on the same y, which
+        nobody asks for, while the handler's fallback to `spacing_x` gives a
+        square grid — the ordinary reading of "place these in a grid, 2.54
+        apart". So `"default": 0` is gone and the description now says what an
+        omitted `spacing_y` actually does; the handler is unchanged apart from
+        a comment recording which half was wrong.
+        The test is a schema-contract test rather than a placement test,
+        because the behaviour was never broken: `place_component_array` is an
+        IPC tool whose y coordinates cannot be observed without a live KiCAD,
+        and the defect was entirely in what the published contract promised.
+        Red before: `the_schema_does_not_promise_a_spacing_y_default_the_handler_ignores`
+        — `the schema still publishes a spacing_y default the handler
+        overrides: {"default":0,"description":"Row spacing in mm","type":"number"}`.
+        `docs/capability-matrix.md` gained a line: `place_component_array` goes
+        `NOT_TESTED | gated` to `SUPPORTED | test`, placement 9.1 % to 18.2 %,
+        KiCAD domains 121 to 122 supported. The gain is real but the mechanism
+        is not flattering, and it is what turned up P.6.9.19: the tool has been
+        exercised since P.6.9.7, and the scanner simply could not see it,
+        because it recognises `"<tool>"` or `handle_<tool>` and this handler is
+        named `handle_place_array`.
   - [ ] P.6.9.16 — P.6.9.10 validates `required` at the dispatch, but nothing
         proves a schema's `required` list is *honest*: that every key it names
         is genuinely mandatory, and that no argument the handler cannot do
@@ -3983,6 +4004,26 @@ None. Each item below is independent of the others except where stated.
         `Field 'Footprint' not found on 'R1'`. Route the standard fields
         through `set_symbol_property` as well, keeping `Reference` on its own
         path — `new_reference` still has to rewrite `(instances …)` (D124).
+  - [ ] P.6.9.19 — the capability scanner recognises a tool by `"<tool>"` or
+        `handle_<tool>` (`capability/coverage.rs:210`), and **24 of the 198
+        registered tools have a handler whose name does not match their own**:
+        `place_component_array` is `handle_place_array`,
+        `batch_edit_schematic_components` is `handle_batch_edit`,
+        `route_differential_pair` is `handle_route_diff_pair`,
+        `list_schematic_wires` is `handle_list_wires`, and twenty more. A unit
+        test that calls the handler directly — the ordinary way to test one —
+        is therefore invisible to the scan for every one of them, and the tool
+        reads `NOT_TESTED` while a test exercises it. P.6.9.15 hit this: the
+        matrix credited `place_component_array` only once a test happened to
+        quote its name as a literal. The error runs toward under-counting,
+        which is the safe direction, but the matrix's whole claim is that its
+        percentage is measured rather than decorative, and this makes part of
+        it depend on how a handler was named. Two ways out — rename the 24
+        handlers to `handle_<tool>`, or give the scan an explicit alias table —
+        and the rename is the one that keeps the convention self-enforcing.
+        Measure the real effect first: for each of the 24, does a test already
+        exercise it? That number is how much coverage the matrix is currently
+        hiding.
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,

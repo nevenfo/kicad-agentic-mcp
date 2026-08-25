@@ -36,7 +36,7 @@ inflates the number it exists to keep honest.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 121 | 19 | 22 | 2 | 5 | 73.8 % |
+| KiCAD domains | 169 | 122 | 19 | 21 | 2 | 5 | 74.4 % |
 | server's own | 40 | 27 | 10 | 3 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -48,7 +48,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 136 | 73.1 % |
+| this fork | 186 | 137 | 73.7 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -67,7 +67,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`libraries`](#libraries) | 9 | 9 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`footprints`](#footprints) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`pcb`](#pcb) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`placement`](#placement) | 11 | 1 | 0 | 9 | 1 | 0 | 9.1 % |
+| [`placement`](#placement) | 11 | 2 | 0 | 8 | 1 | 0 | 18.2 % |
 | [`routing`](#routing) | 10 | 3 | 0 | 5 | 0 | 2 | 37.5 % |
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`zones`](#zones) | 3 | 2 | 0 | 1 | 0 | 0 | 66.7 % |
@@ -317,7 +317,7 @@ Not covered by any tool:
 | `edit_component` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
 | `find_component` | `pcb_components` | `ipc` | `read` | — | NOT_TESTED | — | — |  |
 | `get_component_list` | `pcb_components` | `ipc` | `read` | — | NOT_TESTED | — | — |  |
-| `place_component_array` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
+| `place_component_array` | `pcb_components` | `ipc` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
 | `align_components` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
 | `duplicate_component` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | — | — |  |
 
@@ -556,7 +556,7 @@ Not covered by any tool:
 
 ## Not tested
 
-25 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+24 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -572,7 +572,6 @@ Not covered by any tool:
 | `edit_component` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `find_component` | `placement` | `ipc` | none |
 | `get_component_list` | `placement` | `ipc` | none |
-| `place_component_array` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `align_components` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `duplicate_component` | `placement` | `ipc` | none |
 | `route_pad_to_pad` | `routing` | `ipc` | none |

@@ -1027,7 +1027,7 @@ pub fn tools() -> Vec<ToolDef> {
                     "count_x":      { "type": "integer", "description": "Number of columns" },
                     "count_y":      { "type": "integer", "description": "Number of rows", "default": 1 },
                     "spacing_x":    { "type": "number", "description": "Column spacing in mm" },
-                    "spacing_y":    { "type": "number", "description": "Row spacing in mm", "default": 0 },
+                    "spacing_y":    { "type": "number", "description": "Row spacing in mm; omitted, it follows spacing_x, giving a square grid" },
                     "ref_prefix":   { "type": "string", "description": "Reference prefix (e.g. 'R')", "default": "U" },
                     "ref_start":    { "type": "integer", "description": "Starting reference number", "default": 1 }
                 },
@@ -1508,6 +1508,10 @@ async fn handle_place_array(
         Ok(v) => v,
         Err(e) => return Ok(e),
     };
+    // Falling back to `spacing_x` — a square grid — rather than to 0, which
+    // would stack every row on the same y. The schema used to publish a
+    // `"default": 0` this line has always overridden (P.6.9.15); the schema
+    // was the half that was wrong.
     let spacing_y = args["spacing_y"].as_f64().unwrap_or(spacing_x);
     let prefix = args["ref_prefix"].as_str().unwrap_or("U").to_string();
     let ref_start = args["ref_start"].as_u64().unwrap_or(1);
@@ -2692,5 +2696,31 @@ mod field_placement_tests {
         };
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["error"]["field"], "count_x");
+    }
+
+    /// The published schema is a contract, and it promised `spacing_y`
+    /// defaulted to 0 while the handler defaulted it to `spacing_x`. Zero is
+    /// not a defensible default here — it stacks every row on the same y — so
+    /// the schema was the half that was wrong, and it must not promise a
+    /// number the handler will not honour.
+    #[test]
+    fn the_schema_does_not_promise_a_spacing_y_default_the_handler_ignores() {
+        let schema = tools()
+            .into_iter()
+            .find(|t| t.name == "place_component_array")
+            .expect("the tool is registered")
+            .input_schema;
+        let spacing_y = &schema["properties"]["spacing_y"];
+        assert!(
+            spacing_y["default"].is_null(),
+            "the schema still publishes a spacing_y default the handler overrides: {spacing_y}"
+        );
+        let described = spacing_y["description"]
+            .as_str()
+            .expect("spacing_y is described");
+        assert!(
+            described.contains("spacing_x"),
+            "the description must say what an omitted spacing_y actually does: {described}"
+        );
     }
 }

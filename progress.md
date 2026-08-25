@@ -6,7 +6,7 @@
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
 P.6.9 (triage) et P.6.9.1 à P.6.9.12 closes (tous les items du triage
-d'origine). P.6.9.15 à P.6.9.18, découverts en route, restent, dans
+d'origine). P.6.9.16 à P.6.9.19, découverts en route, restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -16,42 +16,42 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.14 — la voie batch traite `fields` comme la voie mono-composant. La
-difficulté n'était pas le diagnostic mais la conciliation de deux modèles
-d'écriture : ce handler accumule des `SexpEdit` dont les plages indexent le
-contenu **d'origine** et ne sont justes qu'appliquées d'un coup, tandis que
-`set_symbol_property` rend un document déjà splicé — il le doit, puisque la
-position et l'indentation d'une insertion se lisent sur le symbole tel qu'il
-est.
+P.6.9.15 — c'est le **schéma** qui avait tort, pas le handler. Un défaut de 0
+pour `spacing_y` n'est pas défendable : il empile toutes les rangées d'un
+tableau N×M sur le même y, ce que personne ne demande, tandis que le repli du
+handler sur `spacing_x` donne une grille carrée — la lecture ordinaire de
+« place-les en grille, à 2,54 ». Le `"default": 0` est retiré et la description
+dit ce qu'un `spacing_y` omis fait réellement ; le handler ne change pas, hors
+un commentaire consignant quelle moitié était fausse.
 
-Résolu en deux phases. Phase 1 inchangée : les champs standard restent des
-édits d'offsets appliqués en un seul `apply_edits`. Phase 2 déroule les paires
-`(champ, texte)` validées — parquées par composant dans un
-`PendingProperties` — sur la chaîne résultante, en relocalisant le symbole par
-`find_symbol_instance_block` avant chaque écriture, exactement comme
-`set_field` sur la voie mono-composant et pour la même raison : une insertion
-précédente du même batch a décalé tout ce qui la suit. Tous les offsets de
-phase 1 restent valides, rien n'est jamais resérialisé, et une édition d'un
-champ reste un diff d'une ligne (P.6.9.4).
-
-`property_text` est passé `pub(crate)` — comme `place_one_component`, seul
-autre voisin exporté du fichier — au lieu d'être dupliqué, si bien que les deux
-voies refusent les mêmes valeurs. `RESERVED_PROPERTY_KEYS` sert de `reject`,
-donc `Reference` est écarté avant toute écriture.
+Le test est un test de contrat de schéma et non de placement : le comportement
+n'a jamais été cassé, `place_component_array` est un tool IPC dont les
+coordonnées y ne s'observent pas sans KiCAD vivant, et le défaut était
+entièrement dans ce que le contrat publié promettait.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1332
-  tests, 0 échec** (1326 + 6 nouveaux, aucun test existant modifié)
-- rouge d'abord : quatre des six, dont
-  `a_batch_edit_writes_a_field_given_as_a_number`
-  (`{"errors":[],"updated":[],"updated_count":0}` — succès, rien d'écrit) et
-  `a_batch_edit_refuses_to_rewrite_the_reference_property`
-  (`changes: ["Reference → R9"]`). Les deux autres étaient verts avant comme
-  après et bornent la non-régression, dont le diff d'exactement une ligne
+- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1333
+  tests, 0 échec** (1332 + 1 nouveau, aucun test existant modifié)
+- rouge d'abord :
+  `the_schema_does_not_promise_a_spacing_y_default_the_handler_ignores` —
+  `the schema still publishes a spacing_y default the handler overrides:
+  {"default":0,"description":"Row spacing in mm","type":"number"}`
+
+`docs/capability-matrix.md` gagne une ligne — `place_component_array` passe de
+`NOT_TESTED | gated` à `SUPPORTED | test`, placement 9,1 % → 18,2 %. Le gain
+est réel mais son mécanisme ne l'est pas : voir D132 et P.6.9.19.
 
 ## Décisions actives
+
+- **D132** — le scanner de couverture reconnaît un tool par `"<tool>"` ou
+  `handle_<tool>` (`capability/coverage.rs:210`), et **24 des 198 tools
+  enregistrés ont un handler dont le nom ne correspond pas au leur**. Un test
+  unitaire appelant le handler directement — la façon ordinaire d'en tester un —
+  est donc invisible au scan pour ceux-là. Conséquence de méthode immédiate :
+  tant que P.6.9.19 n'est pas faite, un `NOT_TESTED` dans la matrice ne prouve
+  pas l'absence de test ; le vérifier avant de conclure à un trou de couverture.
 
 - **D131** — la validation `required` du dispatch (P.6.9.10) ne couvre pas les
   entrées de `kicad_invoke` : la passerelle est vérifiée en enveloppe seule et
@@ -256,11 +256,11 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.15 — `place_component_array` : son schéma publie
-`"spacing_y": { "default": 0 }` (`pcb_components.rs:1030`) alors que le handler
-lit `args["spacing_y"].as_f64().unwrap_or(spacing_x)` (`:1511`). Qui croit le
-schéma demande une ligne et obtient une grille carrée : toutes les pièces d'un
-tableau N×M sont placées au mauvais y. Décider lequel des deux a raison — en
-mesurant ce qu'un tableau en ligne demande normalement — puis aligner l'autre,
-et couvrir par un test qui place un 3×2 sans `spacing_y` et assère les
-coordonnées y. Rouge d'abord.
+Implémenter P.6.9.16 — un test qui parcourt tout le registre et appelle chaque
+tool avec `{}`, assérant que le refus nomme une clé de sa propre liste
+`required`. P.6.9.10 a posé la validation au dispatch mais n'a trouvé aucun
+schéma menteur **là où un test existe** ; cette passe rendrait la classe
+entière visible et aurait attrapé les cinq sites de P.6.9.7 d'un coup. Mesurer
+le coût avant de figer la forme : certains handlers travaillent avant de
+refuser. Attention à D131 — la passerelle `kicad_invoke` n'est pas couverte par
+la validation du dispatch — et à D132 pour l'interprétation de la matrice.
