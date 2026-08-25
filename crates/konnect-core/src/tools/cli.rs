@@ -508,40 +508,86 @@ pub async fn export_schematic_pdf(cli: &str, schematic: &Path, output: &Path) ->
 }
 
 /// Filtering options for `sch export bom`. `exclude_dnp: false` reproduces
-/// kicad-cli's own default (Do-Not-Populate symbols included).
-#[derive(Debug, Default, Clone, Copy)]
+/// kicad-cli's own default (Do-Not-Populate symbols included). An empty
+/// `fields`/`labels`/`group_by` reproduces kicad-cli's own defaults too: the
+/// flag is simply omitted and kicad-cli applies
+/// `Reference,Value,Footprint,QUANTITY,DNP` / `Refs,Value,Footprint,Qty,DNP` /
+/// no grouping.
+#[derive(Debug, Default, Clone)]
 pub struct BomOptions {
     /// Drop Do-Not-Populate symbols via `--exclude-dnp`.
     pub exclude_dnp: bool,
+    /// `--fields`: ordered field list. Empty means "kicad-cli's default".
+    pub fields: Vec<String>,
+    /// `--labels`: ordered label list, applied to `fields` in order. Measured
+    /// (kicad-cli 10.0.3): a label list shorter than `fields` leaves the
+    /// remaining columns titled with the field name itself, not shifted or
+    /// blank; a longer one has its extra entries ignored. Neither is a trap,
+    /// so this is not guarded.
+    pub labels: Vec<String>,
+    /// `--group-by`: fields to group identical references by. Measured
+    /// (kicad-cli 10.0.3): naming a field absent from the effective `fields`
+    /// list is accepted and silently produces no grouping at all — that *is*
+    /// the trap, guarded by the caller before this is ever built.
+    pub group_by: Vec<String>,
 }
 
-/// Argument vector for the BOM export, factored out so the `--exclude-dnp`
-/// flag can be asserted without a kicad-cli on the machine.
-fn bom_args<'a>(output: &'a str, schematic: &'a str, options: &BomOptions) -> Vec<&'a str> {
+/// Argument vector for the BOM export, factored out so `--exclude-dnp`,
+/// `--fields`, `--labels` and `--group-by` can be asserted without a
+/// kicad-cli on the machine. `fields`/`labels`/`group_by` are the
+/// comma-joined values (kicad-cli takes one value per flag, not a repeated
+/// option — the same shape `--layers` needed, see
+/// `single_file_pcb_export_args`); an empty string omits the flag.
+fn bom_args<'a>(
+    output: &'a str,
+    schematic: &'a str,
+    options: &BomOptions,
+    fields: &'a str,
+    labels: &'a str,
+    group_by: &'a str,
+) -> Vec<&'a str> {
     let mut args = vec!["sch", "export", "bom", "--output", output];
     if options.exclude_dnp {
         args.push("--exclude-dnp");
+    }
+    if !fields.is_empty() {
+        args.push("--fields");
+        args.push(fields);
+    }
+    if !labels.is_empty() {
+        args.push("--labels");
+        args.push(labels);
+    }
+    if !group_by.is_empty() {
+        args.push("--group-by");
+        args.push(group_by);
     }
     args.push(schematic);
     args
 }
 
-/// KiCAD 10: `sch export bom --output <path> [--exclude-dnp] <input>`
+/// KiCAD 10: `sch export bom --output <path> [--exclude-dnp] [--fields F]
+/// [--labels L] [--group-by G] <input>`
 ///
 /// Note: v10 BOM does NOT take `--format` — `kicad-cli sch export bom --help`
-/// has no such flag. Output is always the fixed
-/// `Reference,Value,Footprint,QUANTITY,DNP` CSV-like set (customizable via
-/// `--fields`/`--labels`, not exposed here).
+/// has no such flag. Its default field set is
+/// `Reference,Value,Footprint,QUANTITY,DNP`, overridable with `--fields`.
 pub async fn export_bom(
     cli: &str,
     schematic: &Path,
     output: &Path,
     options: &BomOptions,
 ) -> Result<()> {
+    let fields = options.fields.join(",");
+    let labels = options.labels.join(",");
+    let group_by = options.group_by.join(",");
     let args = bom_args(
         output.to_str().unwrap_or(""),
         schematic.to_str().unwrap_or(""),
         options,
+        &fields,
+        &labels,
+        &group_by,
     );
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
@@ -620,18 +666,32 @@ mod bom_export_tests {
     /// was never sent to `kicad-cli` — every BOM included DNP parts.
     #[test]
     fn exclude_dnp_is_passed_only_when_asked_for() {
-        let on = BomOptions { exclude_dnp: true };
-        assert!(bom_args("/out/bom.csv", "/s.kicad_sch", &on).contains(&"--exclude-dnp"));
+        let on = BomOptions {
+            exclude_dnp: true,
+            ..Default::default()
+        };
+        assert!(
+            bom_args("/out/bom.csv", "/s.kicad_sch", &on, "", "", "").contains(&"--exclude-dnp")
+        );
 
         let off = BomOptions::default();
-        assert!(!bom_args("/out/bom.csv", "/s.kicad_sch", &off).contains(&"--exclude-dnp"));
+        assert!(
+            !bom_args("/out/bom.csv", "/s.kicad_sch", &off, "", "", "").contains(&"--exclude-dnp")
+        );
     }
 
     /// Defaults must reproduce the previous argv exactly, so a caller that
     /// wants KiCAD's own BOM keeps getting it.
     #[test]
     fn default_options_are_the_bare_kicad_cli_invocation() {
-        let args = bom_args("/out/bom.csv", "/s.kicad_sch", &BomOptions::default());
+        let args = bom_args(
+            "/out/bom.csv",
+            "/s.kicad_sch",
+            &BomOptions::default(),
+            "",
+            "",
+            "",
+        );
         assert_eq!(
             args,
             [
@@ -643,6 +703,56 @@ mod bom_export_tests {
                 "/s.kicad_sch"
             ]
         );
+    }
+
+    /// `--fields`, `--labels` and `--group-by` each take one comma-joined
+    /// value, the same shape `--layers` needed (kicad-cli refuses a repeated
+    /// option outright).
+    #[test]
+    fn fields_labels_and_group_by_are_passed_as_one_joined_value_each() {
+        let args = bom_args(
+            "/out/bom.csv",
+            "/s.kicad_sch",
+            &BomOptions::default(),
+            "Reference,Value,MPN",
+            "Refs,Value,MPN",
+            "Value",
+        );
+        assert_eq!(
+            args,
+            [
+                "sch",
+                "export",
+                "bom",
+                "--output",
+                "/out/bom.csv",
+                "--fields",
+                "Reference,Value,MPN",
+                "--labels",
+                "Refs,Value,MPN",
+                "--group-by",
+                "Value",
+                "/s.kicad_sch"
+            ]
+        );
+    }
+
+    /// An omitted field, label or group-by list must not pass `--fields ""`,
+    /// `--labels ""` or `--group-by ""` — that would ask kicad-cli for zero
+    /// columns / zero labels, not "use your own default".
+    #[test]
+    fn an_empty_fields_labels_or_group_by_passes_no_flag_at_all() {
+        let args = bom_args(
+            "/out/bom.csv",
+            "/s.kicad_sch",
+            &BomOptions::default(),
+            "",
+            "",
+            "",
+        );
+        assert!(!args.contains(&"--fields"), "{args:?}");
+        assert!(!args.contains(&"--labels"), "{args:?}");
+        assert!(!args.contains(&"--group-by"), "{args:?}");
     }
 }
 

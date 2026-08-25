@@ -3240,13 +3240,45 @@ None. Each item below is independent of the others except where stated.
         advertised, so DNP parts stop appearing by default.
         Red before on the only honest oracle — the CSV KiCad writes: with
         `exclude_dnp: true` the DNP part **R2 was still in the BOM**.
-  - [ ] P.6.7.10 `export_bom` exposes none of `--fields`, `--labels` or
+  - [x] P.6.7.10 `export_bom` exposed none of `--fields`, `--labels` or
         `--group-by`, which `kicad-cli sch export bom --help` does offer
         (verified on 10.0.3 while closing P.6.7.6). Upstream's #139 carried
         them; this fork's item named only `exclude_dnp` and `format`, so they
-        were left out rather than folded in silently. They are what a fab BOM
-        needs for MPN/LCSC columns. Decide whether the tool should expose them
-        before implementing.
+        were left out rather than folded in silently. This item asked to decide
+        before implementing: **yes, expose all three.** Without `--fields` the
+        BOM comes out as KiCad's default `Reference,Value,Footprint,QUANTITY,DNP`
+        — no MPN column, no LCSC column, so a BOM nobody can order from, on a
+        server that carries a whole sourcing toolset.
+        Form follows P.6.7.7's `--layers`: arrays of strings in the schema,
+        joined into the single comma-separated value the CLI takes. A field
+        left out pushes no flag at all, so kicad-cli applies its own default
+        rather than one this repository invented — and the schema descriptions
+        quote those real defaults.
+        Three behaviours measured against 10.0.3 before any code, because each
+        decided whether a guard was owed. Two said no:
+        * `--fields` longer than `--labels` does **not** shift columns — the
+          unlabelled column takes the field's own name as its header; more
+          labels than fields simply ignores the extras;
+        * `--labels` without `--fields` applies to the leading default fields
+          and leaves the rest with their default labels.
+        Guarding either would be a guard that guards nothing (D126). The third
+        said yes: `--group-by` naming a field absent from the effective field
+        set is accepted, exits 0, and **silently groups nothing** — measured
+        with two resistors sharing a value that stayed unmerged. So that one is
+        refused server-side, before kicad-cli is spawned, as an
+        `invalid_argument` on `group_by` naming the exported fields; `${}`
+        delimiters are normalised first, since the CLI accepts a field either
+        way. The default set is mirrored in our code to make that check
+        possible, which couples us to a CLI default — stated rather than
+        hidden.
+        Red before: the unit half by `BomOptions` failing to compile against
+        the new argument vector, the guard half with the check disabled. The
+        honest oracle is a `#[ignore]`d probe like P.6.7.6's — a temporary copy
+        of the fixture with an `MPN` field added to R1, exported with a custom
+        label, and the column checked in the CSV KiCad actually wrote. Run here
+        against 10.0.3: passes. `BomOptions` loses `Copy` (it now holds
+        `Vec<String>`), which no caller depended on, and `manufacturing.rs`
+        keeps its behaviour through `default()`.
   - [x] P.6.7.7 #266 — `--layers` repeated per layer, no `--mode-single`.
         Done: `single_file_pcb_export_args` joins the layers into the one
         comma-separated value KiCad 10 takes and asks for `--mode-single`, so

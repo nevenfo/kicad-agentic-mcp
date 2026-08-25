@@ -4,10 +4,10 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
-ouverte (les huit items d'origine et P.6.7.9 clos, P.6.7.10 et P.6.7.11
-ouvertes), P.6.10,
+ouverte (les huit items d'origine, P.6.7.9 et P.6.7.10 clos, P.6.7.11
+ouverte), P.6.10,
 P.6.9 (triage) et P.6.9.1 à P.6.9.23 closes — **tout le triage d'origine et
-toutes ses découvertes**. Restent P.6.7.10, P.6.7.11, P.6.8 et P.6.11.
+toutes ses découvertes**. Restent P.6.7.11, P.6.8 et P.6.11.
 Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -16,35 +16,43 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.7.9 — `validate_for_manufacturing` comptait les couches de cuivre par
-sous-chaîne (`content.matches("signal)")` + `signal "`). KiCad marque le cuivre
-de **quatre** façons — `signal`, `power`, `mixed`, `jumper` — et la sonde
-attrapait aussi le mot n'importe où ailleurs dans le fichier.
+P.6.7.10 — `export_bom` n'exposait ni `--fields`, ni `--labels`, ni
+`--group-by`. Décision prise avant d'implémenter : **exposer les trois**. Sans
+`--fields`, le BOM sort avec le défaut de KiCad
+`Reference,Value,Footprint,QUANTITY,DNP` — ni colonne MPN ni colonne LCSC, donc
+un BOM qu'on ne peut pas commander, sur un serveur qui porte tout un toolset de
+sourcing. Forme reprise de `--layers` (P.6.7.7) : tableaux de chaînes côté
+schéma, joints en une valeur séparée par virgules ; un champ omis ne pousse
+aucun flag, donc la CLI applique **ses** défauts.
 
-Mesuré sur le corpus de démos KiCad 10 **avant** d'écrire le test, comme le
-plan l'exigeait, et les deux directions sont réelles : `complex_hierarchy` 1
-contre 2, `One-Air-Max` 2 contre 4, `jetson-agx-thor-baseboard` 9 contre 10, et
-`multichannel_mixer-unrouted` **11 contre 2**.
+Trois comportements mesurés sur 10.0.3 avant tout code, chacun décidant si une
+garde était due — et la réponse est asymétrique :
+- `--fields` plus long que `--labels` **ne décale pas** les colonnes (l'en-tête
+  reprend le nom du champ) et l'inverse ignore le surplus → **aucune garde** ;
+- `--labels` sans `--fields` s'applique aux premiers champs par défaut →
+  **aucune garde** ;
+- `--group-by` nommant un champ absent des champs exportés est accepté, sort 0
+  et **ne groupe rien** en silence → **garde**, refusée avant tout spawn de
+  kicad-cli, en `invalid_argument` sur `group_by`, avec normalisation des
+  délimiteurs `${}`.
 
-Second site trouvé par cette mesure, hors énoncé du plan : `handle_estimate_cost`
-porte la même sonde en repli, et là le compte choisit la **tranche de prix**.
-Les deux passent désormais par `konnect_sexp::layers`, qui décide par le suffixe
-`.Cu`. `.max(2)` est conservé mais change de rôle : plancher pour un board dont
-le stack ne se lit pas, non plus compensation d'un mauvais comptage.
+Garder les deux premiers aurait été poser une garde qui ne garde rien (D126).
 
 Validation :
-- rouge d'abord sur les deux : `left: Number(3) right: 4` ; la moitié coût
-  affichait la conséquence — 3 tombait dans la branche `_ =>` et cotait
-  `pcb_fabrication: $30.00` là où la tranche 4 couches est $7.00
-- fixture `unrouted_power_planes.kicad_pcb` (dérivée de `unrouted.kicad_pcb`,
-  même version et même schéma d'ordinaux, D117), fausse dans les **deux** sens
-  à la fois ; **`kicad-cli` 10.0.3 la charge** — vérifié ici, l'oracle que D111
-  impose
+- rouge d'abord : moitié unitaire par `BomOptions` refusant de compiler contre
+  le nouveau vecteur d'arguments, moitié garde en la désactivant
+- oracle honnête (`#[ignore]`, comme P.6.7.6) : copie temporaire de la fixture
+  avec un champ `MPN` sur R1, exportée avec une étiquette personnalisée, la
+  colonne vérifiée dans le CSV réellement écrit par KiCad. **Lancé ici contre
+  10.0.3 : PASS**
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **56 suites, 1342 tests, 0 échec**
+  **56 suites, 1345 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `the_committed_matrix_is_up_to_date` : PASS, matrice intacte
+
+`BomOptions` perd `Copy` (il porte des `Vec<String>`), sans appelant concerné ;
+`manufacturing.rs` garde son comportement par `default()`.
 
 ## Décisions actives
 
@@ -309,9 +317,9 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.7.10 — `export_bom` n'expose ni `--fields`, ni `--labels`, ni
-`--group-by`, que `kicad-cli sch export bom --help` offre pourtant (D118 : la
-CLI installée est l'autorité, pas un diff upstream ; et elle n'a **aucun**
-`--format`). Relire la section dans `plan.md` (`rg -n "P.6.7.10" plan.md`) pour
-sa preuve à reproduire d'abord et ses critères. P.6.7.6 a déjà posé
-`BomOptions` et un `bom_args` assertable sans KiCad : c'est le point d'entrée.
+Implémenter P.6.7.11 — la mesure sur laquelle P.6.7.8 repose ne vit que dans un
+commentaire. Relire la section dans `plan.md` (`rg -n "P.6.7.11" plan.md`) pour
+ce qu'elle demande exactement et ses critères de validation. Contexte utile
+déjà établi : D122 borne ce qu'une sonde live peut observer sur ce sujet, et
+P.6.7.8 a mesuré 67 violations dont 46 `lib_symbol_issues` sur la sous-feuille
+`ampli_ht` de `demos/complex_hierarchy`, contre 0 sur la feuille racine.

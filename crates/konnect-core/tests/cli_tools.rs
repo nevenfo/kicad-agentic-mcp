@@ -141,6 +141,55 @@ async fn export_bom_rejects_a_format_kicad_cli_has_no_flag_for() {
     );
 }
 
+/// kicad-cli 10.0.3, measured: `--group-by` naming a field absent from the
+/// effective `--fields` list is accepted and silently produces no grouping
+/// at all (two references with an identical, ungrouped field still print as
+/// two separate rows). `export_bom` must refuse this before ever spawning
+/// kicad-cli, both when `fields` is explicit and when it is left to
+/// kicad-cli's own default set.
+#[tokio::test]
+async fn export_bom_group_by_must_name_a_field_that_is_actually_exported() {
+    let h = Harness::new();
+
+    let explicit_fields = h
+        .call(
+            "export_bom",
+            json!({
+                "schematic": "x.kicad_sch",
+                "output": "bom.csv",
+                "fields": ["Reference", "Value"],
+                "group_by": ["Footprint"]
+            }),
+        )
+        .await
+        .expect("the tool call itself does not fail");
+    assert!(
+        explicit_fields.is_error,
+        "grouping by a field missing from 'fields' must be refused"
+    );
+    let body = harness::body(&explicit_fields).to_string();
+    assert!(
+        body.contains("Footprint") && body.contains("Reference,Value"),
+        "the rejection should name the bad group-by value and the exported fields: {body}"
+    );
+
+    let default_fields = h
+        .call(
+            "export_bom",
+            json!({
+                "schematic": "x.kicad_sch",
+                "output": "bom.csv",
+                "group_by": ["MPN"]
+            }),
+        )
+        .await
+        .expect("the tool call itself does not fail");
+    assert!(
+        default_fields.is_error,
+        "grouping by a field absent from kicad-cli's own default fields must be refused too"
+    );
+}
+
 /// `run_drc` and `get_drc_violations` both take a severity filter, and neither
 /// may treat an unknown one as "everything" — silently widening a filter is how
 /// a caller ends up reading a report they did not ask for.
@@ -253,6 +302,51 @@ async fn export_bom_exclude_dnp_actually_filters_the_dnp_part() {
     assert!(
         without_dnp_text.contains("R1"),
         "exclude_dnp:true should not drop the non-DNP part R1: {without_dnp_text}"
+    );
+}
+
+/// `export_bom`'s `fields`/`labels`/`group_by` only reach kicad-cli if they
+/// are actually joined and passed through — the only honest oracle is the
+/// CSV kicad-cli writes. `TWO_RESISTORS` carries no custom field, so a copy
+/// gets one (`MPN`) added to R1 before the export, rather than touching the
+/// shared fixture.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn export_bom_fields_and_labels_reach_a_custom_column_in_the_csv() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let schematic = h.fixture(TWO_RESISTORS);
+    let text = std::fs::read_to_string(&schematic).expect("the fixture is readable");
+    let with_mpn = text.replace(
+        "(property \"Value\" \"10k\" (at 101.6 50.8 90) (effects (font (size 1.27 1.27))))",
+        "(property \"Value\" \"10k\" (at 101.6 50.8 90) (effects (font (size 1.27 1.27))))\n    \
+         (property \"MPN\" \"RC0603FR-0710KL\" (at 101.6 53 90) (effects (font (size 1.27 1.27))))",
+    );
+    assert_ne!(
+        text, with_mpn,
+        "the fixture no longer matches R1's Value property"
+    );
+    std::fs::write(&schematic, with_mpn).expect("the modified fixture is writable");
+    let sch = harness::as_str(&schematic).to_string();
+
+    let bom = h.path("with_mpn.csv");
+    h.json(
+        "export_bom",
+        json!({
+            "schematic": sch,
+            "output": harness::as_str(&bom),
+            "fields": ["Reference", "Value", "MPN"],
+            "labels": ["Refs", "Value", "Part Number"]
+        }),
+    )
+    .await;
+    let bom_text = std::fs::read_to_string(&bom).expect("the BOM is readable");
+    assert!(
+        bom_text.contains("Part Number"),
+        "the custom label did not reach the CSV header: {bom_text}"
+    );
+    assert!(
+        bom_text.contains("RC0603FR-0710KL"),
+        "R1's custom MPN field did not reach the CSV: {bom_text}"
     );
 }
 

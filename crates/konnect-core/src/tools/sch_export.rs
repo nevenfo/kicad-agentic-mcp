@@ -150,6 +150,33 @@ pub fn tools() -> Vec<ToolDef> {
                         "type": "boolean",
                         "description": "Exclude 'Do Not Place' components",
                         "default": true
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Ordered list of fields to export, e.g. ['Reference','Value','MPN','LCSC']. \
+                                         Generated fields (QUANTITY, ITEM_NUMBER, DNP, EXCLUDE_FROM_BOM, \
+                                         EXCLUDE_FROM_BOARD, EXCLUDE_FROM_SIM) may be listed with or without \
+                                         '${}' delimiters. Omitted entirely: kicad-cli falls back to its own \
+                                         default 'Reference,Value,Footprint,QUANTITY,DNP'."
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Ordered column labels applied to 'fields' in order. Measured against \
+                                         kicad-cli 10.0.3: fewer labels than fields leaves the remaining columns \
+                                         titled with the field name itself; more labels than fields has the extras \
+                                         ignored — neither shifts columns silently. Omitted entirely: kicad-cli \
+                                         falls back to its own default 'Refs,Value,Footprint,Qty,DNP'."
+                    },
+                    "group_by": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Fields to group references by when their values match, e.g. ['Value'] to \
+                                         merge R1 and R2 into one 'R1,R2' row. Every entry must name a field that \
+                                         is actually being exported (in 'fields', or in kicad-cli's default field \
+                                         set when 'fields' is omitted) — kicad-cli otherwise accepts the name and \
+                                         silently produces no grouping at all. Omitted entirely: no grouping."
                     }
                 },
                 "required": ["schematic", "output"]
@@ -192,7 +219,49 @@ async fn handle_export_bom(
     // shipped; the handler never read it, so every BOM included DNP parts
     // regardless of what the caller asked for.
     let exclude_dnp = args["exclude_dnp"].as_bool().unwrap_or(true);
-    let options = cli::BomOptions { exclude_dnp };
+    let fields = string_array(args, "fields");
+    let labels = string_array(args, "labels");
+    let group_by = string_array(args, "group_by");
+
+    // kicad-cli 10.0.3, measured: `--group-by` naming a field absent from the
+    // effective field list (the caller's `--fields`, or kicad-cli's own
+    // default set when `--fields` is omitted) is accepted and silently
+    // produces no grouping at all — no error, no warning, just a BOM that
+    // looks grouped-and-isn't. That is exactly the kind of trap this tool
+    // refuses rather than reproduces.
+    const DEFAULT_FIELDS: [&str; 5] = ["Reference", "Value", "Footprint", "QUANTITY", "DNP"];
+    let effective_fields: Vec<&str> = if fields.is_empty() {
+        DEFAULT_FIELDS.to_vec()
+    } else {
+        fields.iter().map(|f| f.as_str()).collect()
+    };
+    fn normalize(f: &str) -> &str {
+        f.trim_start_matches("${").trim_end_matches('}')
+    }
+    for g in &group_by {
+        let g_norm = normalize(g);
+        if !effective_fields.iter().any(|f| normalize(f) == g_norm) {
+            let reason = format!(
+                "'{g}' is not among the exported fields ({}); kicad-cli would accept it and \
+                 silently group nothing.",
+                effective_fields.join(",")
+            );
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "group_by".to_string(),
+                    reason: reason.clone(),
+                },
+                reason,
+            ));
+        }
+    }
+
+    let options = cli::BomOptions {
+        exclude_dnp,
+        fields,
+        labels,
+        group_by,
+    };
 
     let cli = &ctx.config.kicad_cli;
     cli::export_bom(cli, &schematic, &output, &options).await?;
@@ -205,6 +274,20 @@ async fn handle_export_bom(
         }))
         .unwrap(),
     ))
+}
+
+/// Reads `args[key]` as a `Vec<String>`, treating an absent or non-array
+/// value as empty rather than an error — the schema documents these as
+/// optional lists whose absence means "let kicad-cli use its own default".
+fn string_array(args: &serde_json::Value, key: &str) -> Vec<String> {
+    args[key]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 async fn handle_export_svg(
