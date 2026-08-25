@@ -821,6 +821,11 @@ pub struct DrillOptions<'a> {
     /// measured from.
     pub origin: &'a str,
     /// Write plated and non-plated holes to separate files.
+    ///
+    /// KiCAD's own default is `false`, and [`Default`] keeps it, because this
+    /// struct mirrors `kicad-cli`. What this server *hands a fabricator* is
+    /// [`fab_drill_options`] instead — see [`SEPARATE_PLATED_HOLES`] for the
+    /// measurement that decides it.
     pub separate_th: bool,
     /// Also write a drill map.
     pub generate_map: bool,
@@ -842,6 +847,36 @@ impl Default for DrillOptions<'_> {
     }
 }
 
+/// Whether a drill export destined for a fabricator separates plated from
+/// non-plated holes. It does, and the reason is what a single file leaves out.
+///
+/// Measured on 10.0.3, one board carrying a plated `thru_hole` pad and one
+/// `np_thru_hole` mounting hole. Exported together, the two holes are told
+/// apart **only** by a comment line above the tool definition —
+/// `; #@! TA.AperFunction,NonPlated,NPTH,ComponentDrill` — while the body of
+/// the file is plain Excellon: `T1`/`T2` and coordinates, carrying no plating
+/// information at all. A reader that drops comments, which is what a comment
+/// is for, plates every hole. With `--excellon-separate-th` the distinction
+/// moves into the file itself: `<board>-PTH.drl` and `<board>-NPTH.drl`, each
+/// holding only its own kind, with `TF.FileFunction` naming it.
+///
+/// So the failure mode of one file is silent and physical — a mounting hole
+/// comes back plated — and the failure mode of two is a fab that receives an
+/// extra file it already knows. Callers who want KiCAD's own default still
+/// have it: `separate_plated` is an explicit argument.
+pub const SEPARATE_PLATED_HOLES: bool = true;
+
+/// The drill options this server hands a fabricator: KiCAD's own defaults,
+/// except [`SEPARATE_PLATED_HOLES`]. One definition, so the fab package, the
+/// Gerber export's drill companion and the `export_drill` tool cannot drift
+/// apart on the question that costs a board.
+pub fn fab_drill_options<'a>() -> DrillOptions<'a> {
+    DrillOptions {
+        separate_th: SEPARATE_PLATED_HOLES,
+        ..DrillOptions::default()
+    }
+}
+
 /// KiCAD 10: `pcb export drill --output <dir> <input>`
 ///
 /// `--output` is a **directory**, not a file: KiCAD names the files after the
@@ -850,6 +885,15 @@ impl Default for DrillOptions<'_> {
 /// path makes KiCAD create a directory of that name and write the real file
 /// inside it — verified against KiCAD 10.0, and the reason this takes
 /// `output_dir`.
+///
+/// The path is passed exactly as given, with no trailing separator appended.
+/// Re-measured on 10.0.3 for all four cases — directory present or missing,
+/// with and without a trailing separator — and every one writes `<board>.drl`
+/// *inside* the named directory, creating it when absent. Upstream appends
+/// `MAIN_SEPARATOR` on the grounds that kicad-cli otherwise reads the last
+/// component as a file name; that is not what this version does, and
+/// `a_file_path_as_output_would_have_become_a_directory` is the standing
+/// proof.
 ///
 /// Every option is validated here rather than passed through, so a typo comes
 /// back naming the valid values instead of as `kicad-cli` exiting non-zero.

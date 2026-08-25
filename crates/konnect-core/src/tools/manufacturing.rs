@@ -144,7 +144,7 @@ async fn handle_export_manufacturing_package(
     //    files after the board, so this reports the directory it filled.
     let drill_dir = output_dir.join("drill");
     tokio::fs::create_dir_all(&drill_dir).await?;
-    match cli::export_drill(cli_path, &board, &drill_dir, &cli::DrillOptions::default()).await {
+    match cli::export_drill(cli_path, &board, &drill_dir, &cli::fab_drill_options()).await {
         Ok(()) => {
             info!("[BETA] Drill export succeeded");
             files_generated.push(json!({

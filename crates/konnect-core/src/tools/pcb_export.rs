@@ -61,7 +61,7 @@ pub fn tools() -> Vec<ToolDef> {
                     "format": { "type": "string", "description": "'excellon' (default) or 'gerber'", "default": "excellon" },
                     "units": { "type": "string", "description": "Excellon coordinate units: 'mm' (default) or 'in'", "default": "mm" },
                     "drill_origin": { "type": "string", "description": "'absolute' (default) or 'plot'", "default": "absolute" },
-                    "separate_plated": { "type": "boolean", "description": "Write plated (PTH) and non-plated (NPTH) holes to separate files", "default": false },
+                    "separate_plated": { "type": "boolean", "description": "Write plated (PTH) and non-plated (NPTH) holes to separate files. Default true: in one file the two are told apart only by a comment, which an Excellon reader may drop, and the fab plates a hole that must not be", "default": true },
                     "generate_map": { "type": "boolean", "description": "Also write a drill map", "default": false },
                     "map_format": { "type": "string", "description": "Map format when generate_map is set: 'pdf' (default), 'gerberx2', 'ps', 'dxf', or 'svg'", "default": "pdf" }
                 },
@@ -303,8 +303,10 @@ async fn handle_export_gerber(
     if drill {
         // kicad-cli also has a dedicated drill export, into the same directory
         // — its `--output` is a directory and it names the file after the
-        // board. For anything beyond the defaults, call `export_drill`.
-        let _ = cli::export_drill(cli, &board, &output_dir, &cli::DrillOptions::default()).await;
+        // board. These are Gerbers for a fabricator, so the holes are split
+        // the way the fab package splits them (`cli::SEPARATE_PLATED_HOLES`);
+        // for anything else, call `export_drill`.
+        let _ = cli::export_drill(cli, &board, &output_dir, &cli::fab_drill_options()).await;
         // best-effort
     }
 
@@ -456,7 +458,9 @@ async fn handle_export_drill(
         format: args["format"].as_str().unwrap_or("excellon"),
         units: args["units"].as_str().unwrap_or("mm"),
         origin: args["drill_origin"].as_str().unwrap_or("absolute"),
-        separate_th: args["separate_plated"].as_bool().unwrap_or(false),
+        separate_th: args["separate_plated"]
+            .as_bool()
+            .unwrap_or(cli::SEPARATE_PLATED_HOLES),
         generate_map: args["generate_map"].as_bool().unwrap_or(false),
         map_format: args["map_format"].as_str().unwrap_or("pdf"),
     };
@@ -896,6 +900,41 @@ mod new_export_format_tests {
         for other in ["kicad", "kicadxml", "spice", "orcadpcb2", "pads"] {
             assert!(!is_ipc_d356(other), "'{other}' is a sch netlist format");
         }
+    }
+
+    /// The published default and the one the handler falls back on have to be
+    /// the same value, and both have to be the fab policy. A schema that
+    /// announces one default while the handler applies another is a defect in
+    /// its own right (P.6.9.15), and here it would be a silent one: the caller
+    /// reads `false`, the board comes back with its mounting holes plated.
+    #[test]
+    fn the_published_drill_default_is_the_one_the_handler_applies() {
+        let schema = tools()
+            .into_iter()
+            .find(|t| t.name == "export_drill")
+            .expect("export_drill is registered")
+            .input_schema;
+        assert_eq!(
+            schema["properties"]["separate_plated"]["default"],
+            json!(cli::SEPARATE_PLATED_HOLES),
+            "the schema's default has drifted from cli::SEPARATE_PLATED_HOLES"
+        );
+
+        // The handler's own fallback: it spawns kicad-cli, so there is no
+        // value to read back without one. What can be asserted is that the
+        // fallback is the constant and not a literal that would drift from it
+        // in silence — the same lexical guard `ipc_boundary` uses.
+        // The needle is split on purpose: written whole, it would sit in this
+        // file and satisfy its own search whatever the handler does (D133).
+        let needle = concat!(".unwrap_or(cli::SEPARATE_", "PLATED_HOLES)");
+        assert!(
+            include_str!("pcb_export.rs").contains(needle),
+            "handle_export_drill's separate_plated fallback must be the constant"
+        );
+        assert!(
+            cli::fab_drill_options().separate_th,
+            "the fab package and the Gerber companion must separate too"
+        );
     }
 
     #[tokio::test]

@@ -3459,7 +3459,7 @@ None. Each item below is independent of the others except where stated.
         then plants junction dots on them. The `justify` half is already done
         here. Port `pin_outward_at`/`stub_direction` as the default, leaving an
         explicit `direction` authoritative.
-  - [ ] P.6.8.6 #138 residual — the doc comment above `export_drill` claims the
+  - [x] P.6.8.6 #138 residual — the doc comment above `export_drill` claims the
         directory form of `--output` was verified against KiCAD 10, while
         upstream appends a trailing separator because kicad-cli otherwise reads
         the last component as a file name. The two claims contradict each other
@@ -3467,6 +3467,41 @@ None. Each item below is independent of the others except where stated.
         to `false` here, where upstream always separates because a single
         `MixedPlating` file distinguishes NPTH by a comment most Excellon
         readers drop.
+        Done, and both halves are settled by measurement rather than by
+        reading a diff.
+        The trailing separator is **not needed** on 10.0.3: all four cases —
+        output directory present or missing, with and without a trailing
+        separator — write `<board>.drl` *inside* the named directory, creating
+        it when absent, for drill and for gerbers alike. This fork's doc
+        comment was right, upstream's `MAIN_SEPARATOR` workaround does not
+        apply to this version, and `a_file_path_as_output_would_have_become_a_directory`
+        was already the standing proof. No code change; the doc now carries the
+        measurement and says what upstream does differently.
+        `separate_plated` now defaults to **true**, but not in
+        `DrillOptions::default()`, which must keep mirroring `kicad-cli` — two
+        live probes assert KiCAD's own defaults through it. The policy lives in
+        one place instead, `cli::SEPARATE_PLATED_HOLES` and
+        `cli::fab_drill_options()`, shared by the three paths that hand a
+        fabricator a file: the `export_drill` tool, the Gerber export's drill
+        companion, and the manufacturing package (D136 — one definition, or it
+        drifts).
+        What decides it, measured on a board carrying one plated `thru_hole`
+        and one `np_thru_hole`: in a single file the two are told apart **only**
+        by a comment line above the tool definition
+        (`; #@! TA.AperFunction,NonPlated,NPTH,ComponentDrill`), while the body
+        is plain Excellon — `T1`/`T2` and coordinates, no plating information
+        at all. A reader that drops comments plates the mounting hole. With
+        `--excellon-separate-th` the distinction moves into the file itself,
+        `-PTH.drl` and `-NPTH.drl`, each with its own `TF.FileFunction`. The
+        failure mode of one file is silent and physical; of two, a fab receives
+        a file it already knows.
+        Tests: the published schema default must equal the constant the
+        handler falls back on — a divergence there would be P.6.9.15's defect
+        with a physical consequence — plus a lexical guard that the fallback is
+        the constant and not a literal, its needle split by `concat!` so it
+        cannot satisfy its own search (D133). Live probe added:
+        `fab_drill_options` writes `-PTH`/`-NPTH`. Measured and not assumed:
+        KiCAD writes **both** files even on a board with no non-plated hole.
   - [ ] P.6.8.7 #162 — `query_traces` emits no uuid while `delete_trace`
         requires one, so there is no path from listing a trace to deleting it.
         Twelve lines across three files; the audit says to bundle it into the
