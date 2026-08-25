@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage), P.6.9.1 et P.6.9.2 closes. P.6.9.3 à P.6.9.12 restent, dans l'ordre du
+P.6.9 (triage) et P.6.9.1 à P.6.9.3 closes. P.6.9.4 à P.6.9.12 restent, dans l'ordre du
 triage ; P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
 PR #10 vers `agentic/main`.
 
@@ -15,42 +15,48 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.2 — une zone écrit sa référence de net dans la forme du board qu'elle
-modifie. `konnect_sexp::net` gagne `NetRef`, `net_ref_for_write` et
-`NetRef::zone_tokens`, qui réutilisent le discriminant par forme de P.6.5 :
-lecture et écriture ne peuvent plus diverger. Les deux copies privées de
-`find_net_id` (résolution par offset de chaîne) sont supprimées.
+P.6.9.3 — le bloc `(instances …)` d'un symbole est désormais clé sur la
+**racine** du projet, pas sur le fichier où l'on écrit.
+`sheet_instance_context` (`tools/mod.rs`) résout la place réelle de la
+feuille — `.kicad_pro` le plus proche pour le nom, sa racine `.kicad_sch`
+sœur pour l'uuid de tête, puis une descente bornée avec retour arrière qui
+enregistre l'uuid de chaque `(sheet …)` traversé — et `instance_targets` est
+le point unique où les trois sites d'écriture (`sch_components`, `sch_batch`,
+`sch_wiring`) demandent la réponse, avec repli sur la dérivation actuelle
+quand rien ne se résout.
 
-Correction d'une hypothèse du triage, mesurée avant d'écrire : `(layer …)` vs
-`(layers …)` n'est **pas** une différence de forme de fichier mais de
-cardinalité (voir D121). Ce qui diffère, c'est le nœud net, et de plus que
-l'id.
+Au-delà du correctif amont, tiré de la démo et non du commit :
+`complex_hierarchy` place `ampli_ht.kicad_sch` **deux fois**, et ses symboles
+portent un `(path …)` par placement. Un symbole écrit avec un seul des deux
+est annoté dans une instance et invisible dans l'autre : on émet donc une
+entrée par placement, triées pour que deux appels identiques produisent des
+fichiers identiques.
 
-Le refus est cadré : un board legacy qui ne déclare pas le net est refusé en
-nommant `add_net`, fichier vérifié byte-identique ; un board sans table ne
-déclare rien, donc un nom inconnu s'écrit tel quel et KiCad crée le net au
-chargement. Les deux sens sont testés. `add_zone` ne rapporte `net_id` que
-lorsqu'il en existe un.
-
-Nouvelle fixture `kicad10_no_net_table.kicad_pcb` (20260206, nets nommés sur
-les pads), vérifiée chargeable par kicad-cli 10.0.3 — 0 erreur, 0 non connecté
-— avant de servir d'oracle.
+La borne de `owning_project_root` (répertoire du fichier seulement, P.6.7.8)
+n'a **pas** été élargie : même `project_root_schematic` réutilisé, donc une
+feuille déplacée hors du répertoire de son projet garde le comportement
+autonome — borne énoncée, pas trou silencieux.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **51 suites, 1240
+- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1244
   tests, 0 échec**
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **11/11**, dont la nouvelle
-  (`a_pour_on_a_kicad_10_board_still_loads_in_kicad_cli`), ajoutée au job E2E
-- rouge d'abord : `net_ref_for_write` neutralisé au comportement zéro-ou-id
-  fait échouer trois des quatre tests d'intégration
-- borne énoncée : la sonde live prouve la validité du fichier, pas
-  l'attachement électrique — le DRC ne peut pas le montrer sur un net à une
-  seule pastille ; la preuve octet par octet vit dans les tests unitaires
-
+- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **12/12**
+- rouge d'abord : `sheet_instance_context` neutralisé à `None` fait échouer
+  trois des quatre tests de `tests/sheet_instances.rs`
+- borne mesurée, qui corrige l'énoncé d'impact du triage : voir D122
 ## Décisions actives
 
+- **D122** — mesuré sur `complex_hierarchy` : avec l'ancienne dérivation
+  d'instances (feuille clé sur elle-même), `kicad-cli sch erc` rapporte
+  **zéro** violation — il n'exécute pas la vérification d'annotation — et le
+  netlist exporté **contient quand même** le symbole, KiCad retombant sur la
+  propriété `Reference` faute de chemin d'instance correspondant. La
+  conséquence réelle est l'annotation par instance dans eeschema, qu'aucune
+  CLI disponible ici n'observe. Toute sonde live sur ce sujet doit donc se
+  limiter à « KiCad accepte le fichier » ; la preuve de forme reste dans les
+  tests unitaires. L'affirmation contraire venait du message de commit amont.
 - **D121** — dans un `(zone …)`, `(layer "X")` et `(layers "A" "B")` ne
   distinguent pas les versions de fichier mais la **cardinalité** : mesuré sur
   les démos, `vme-wren` (20241229) écrit les deux formes, et `CM5_MINIMA_3`
@@ -161,9 +167,9 @@ Aucun.
 - `crates/konnect-ipc/src/builders.rs` — `try_layer_from_name` / `layer_from_name` ;
   `crates/konnect-ipc/src/client.rs` — `check_layer`, `build_footprint_item`,
   `build_graphic_child`.
-- `crates/konnect-core/src/tools/mod.rs` — `project_name_for` l.452,
-  `ensure_root_uuid` l.497 (P.6.9.3), `require_str`/`require_f64`/`get_path`
-  l.414-447 (P.6.9.7).
+- `crates/konnect-core/src/tools/mod.rs` — `sheet_instance_context` et
+  `instance_targets` (P.6.9.3), `zone_net_ref` (P.6.9.2),
+  `require_str`/`require_f64`/`get_path` l.414-447 (cibles de P.6.9.7).
 - `crates/konnect-schematic-editor/src/sexp/writer.rs` — les trois causes du
   reformatage (P.6.9.4).
 - `crates/konnect-core/src/tools/cli.rs` — `DrcReport`, base de P.6.9.8.
@@ -171,21 +177,19 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.3 — `e7b0c54` : sur une feuille fille, le bloc
-`(instances (project "NOM" (path "/…")))` d'un symbole est aujourd'hui
-construit à partir du fichier où l'on écrit — `project_name_for`
-(`tools/mod.rs:452`) rend le stem du fichier et `ensure_root_uuid` (`:497`)
-son propre uuid, utilisé comme chemin entier. Juste sur une racine, faux sur
-une fille : KiCad ne fait correspondre ni le projet ni le chemin, et tout
-symbole placé là se lit comme non annoté pendant que l'outil rapporte un
-succès. Sites d'écriture : `sch_components.rs:492`, `sch_batch.rs:468`,
-`sch_wiring.rs:1754`. Résoudre la vraie place de la feuille : `.kicad_pro` le
-plus proche pour le nom du projet, sa racine `.kicad_sch` sœur pour l'uuid de
-tête, puis une descente bornée en profondeur depuis cette racine qui enregistre
-l'uuid de chaque `(sheet …)` traversé, d'où `"/<root>/<sheet>[/<sheet>…]"`.
-`owning_project_root` (`sch_export.rs:582`, P.6.7.8) fait déjà la moitié
-« trouver le projet », mais ne regarde que le répertoire du fichier : élargir
-cette borne seulement si la mesure l'exige, et le dire. Tout ce qui ne se
-résout pas retombe sur le comportement autonome actuel, qui doit rester testé.
-Oracle disponible en local : la démo `complex_hierarchy` de KiCad 10, dont
-`ampli_ht.kicad_sch` est une fille non nommée d'après le projet.
+Implémenter P.6.9.4 — `f8a8db0` : chaque écriture par le modèle typé
+reformate la feuille entière. Trois causes, toutes dans
+`crates/konnect-schematic-editor/src/sexp/writer.rs` : indentation de deux
+espaces là où KiCad écrit des tabulations (l.109-113), parenthèse fermante
+collée au dernier enfant (l.104) là où KiCad la met seule sur sa ligne, et
+lignes blanches insérées devant 22 tags (l.3-24) là où une feuille KiCad n'en
+a qu'une, à la fin. `Schematic::overwrite` (`schematic/mod.rs:163-165`) passe
+tout le document par ce writer et ~20 sites de production l'atteignent, donc
+une modification d'une ligne arrive en diff de plusieurs milliers de lignes.
+Renifler l'unité d'indentation au chargement et la porter sur `Schematic` ;
+corriger la parenthèse et les lignes blanches. C'est le plus gros des huit et
+le seul dont le rayon d'action touche toutes les assertions octet du
+workspace : à faire seul, avec la mesure sur le corpus de démos comme
+critère d'acceptation (amont : `add_junction` passait de 3151 lignes
+modifiées sur 3712 à 360). L'empaquetage des `(xy …)` par largeur reste hors
+périmètre et la tâche doit le dire.

@@ -3373,7 +3373,7 @@ None. Each item below is independent of the others except where stated.
         file kicad-cli still opens. Its bound is stated in the test — it
         proves file validity, not that the copper is electrically on GND,
         which DRC cannot show on a net with a single pad.
-  - [ ] P.6.9.3 `e7b0c54` — a child sheet's `(instances (project … (path …)))`
+  - [x] P.6.9.3 `e7b0c54` — a child sheet's `(instances (project … (path …)))`
         is keyed to the child instead of the root: `project_name_for`
         (`tools/mod.rs:452`) returns the file's own stem and `ensure_root_uuid`
         (`:497`) its own uuid, used as the whole path. Both are right on a root
@@ -3386,6 +3386,34 @@ None. Each item below is independent of the others except where stated.
         (`sch_export.rs:582`, P.6.7.8) and widening its directory-only bound if
         the measurement requires it. Anything unresolvable falls back to
         today's standalone behaviour, which must stay tested.
+        Done. `sheet_instance_context` resolves the sheet's place in its
+        project — nearest `.kicad_pro` for the name, its sibling root
+        `.kicad_sch` for the head uuid, then a depth-bounded backtracking
+        walk that records each stepped-through `(sheet …)` uuid — and
+        `instance_targets` is the single place the three write sites now ask
+        for the answer, falling back to today's derivation when nothing
+        resolves. `owning_project_root`'s directory-only bound was **not**
+        widened: the same `project_root_schematic` is reused, so a sheet
+        moved out of its project's directory still keeps standalone
+        behaviour, and that stays a stated bound rather than a silent gap.
+        Beyond the upstream fix, from reading the demo rather than the
+        commit: `complex_hierarchy` places `ampli_ht.kicad_sch` **twice**,
+        and its symbols carry one `(path …)` per placement. Upstream builds
+        a single path; a symbol written with one of two is annotated in one
+        instance and invisible in the other, so this emits one entry per
+        placement, sorted so two identical calls produce identical files.
+        Measured, and it corrects this task's own impact claim: with the old
+        derivation restored, `kicad-cli sch erc` reports **zero** violations
+        (it does not run the annotation check) and the exported netlist
+        **still lists** the symbol, because KiCad falls back to the
+        Reference property when no instance path matches. The real
+        consequence is per-instance annotation inside eeschema, which no CLI
+        available here can observe. The live probe was therefore rewritten
+        to claim only what it proves — that KiCad accepts a two-path block
+        and still builds a netlist containing the symbol — and its doc
+        comment records the measurement so nobody re-derives it.
+        Red before: `sheet_instance_context` neutered to `None` fails three
+        of the four tests in `tests/sheet_instances.rs`.
   - [ ] P.6.9.4 `f8a8db0` — every typed write reformats the whole sheet. The
         writer indents two spaces where KiCad writes tabs
         (`konnect-schematic-editor/src/sexp/writer.rs:109-113`), collapses each

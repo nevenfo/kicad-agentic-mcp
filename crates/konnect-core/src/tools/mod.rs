@@ -513,6 +513,138 @@ pub fn snap_reporting(x: f64, y: f64) -> ((f64, f64), Option<serde_json::Value>)
     }
 }
 
+/// Where a sheet sits in its project, as the `(instances …)` block needs it.
+///
+/// Both halves of that block belong to the **root** sheet, not to the file
+/// being written into: the project name is the one the `.kicad_pro` carries,
+/// and the path starts at the root's uuid. On a root sheet the two coincide,
+/// which is why deriving them from the file's own stem and uuid looked right
+/// for so long; on a child sheet they name a project and a path KiCad matches
+/// against nothing, and every symbol placed there reads as unannotated.
+pub struct SheetInstanceContext {
+    /// The `.kicad_pro`'s stem.
+    pub project_name: String,
+    /// One `"/<root-uuid>/<sheet-uuid>[/<sheet-uuid>…]"` per placement of this
+    /// sheet in the hierarchy. A sheet instantiated twice — KiCad's own
+    /// `complex_hierarchy` does exactly that with `ampli_ht.kicad_sch` — needs
+    /// an entry for each, or the symbol is annotated in one instance and
+    /// invisible in the other.
+    pub paths: Vec<String>,
+}
+
+/// Resolve `sch_path`'s place in its project, or `None` when it cannot be
+/// resolved and the caller must fall back to standalone behaviour.
+///
+/// `None` covers: a root sheet (it sits beside its own `.kicad_pro`), a
+/// schematic belonging to no project, a directory holding several projects, a
+/// root that cannot be read or carries no uuid, and a sheet that does not
+/// appear anywhere in that root's tree. Every one of those is a case where a
+/// guess would be worse than today's behaviour.
+///
+/// The walk is depth-bounded and tracks visited files, like every other
+/// hierarchy walk here: a sheet may reference a file that references it back.
+pub fn sheet_instance_context(sch_path: &std::path::Path) -> Option<SheetInstanceContext> {
+    use crate::tools::sch_export::{project_root_schematic, same_file};
+
+    // A file beside its own `.kicad_pro` is a root: today's derivation is
+    // already right for it, and `ensure_root_uuid` can repair a missing uuid,
+    // which this function deliberately does not do.
+    if sch_path.with_extension("kicad_pro").is_file() {
+        return None;
+    }
+    let dir = sch_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let root = project_root_schematic(dir)?;
+    if same_file(&root, sch_path) {
+        return None;
+    }
+    let project_name = root.file_stem()?.to_str()?.to_string();
+    let root_sch = konnect_schematic_editor::Schematic::load(&root).ok()?;
+    let root_uuid = root_sch.uuid.clone()?;
+
+    let mut paths = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    collect_sheet_paths(
+        &root,
+        sch_path,
+        &format!("/{root_uuid}"),
+        0,
+        &mut visited,
+        &mut paths,
+    );
+    if paths.is_empty() {
+        return None;
+    }
+    // A file reachable by several routes must be written in a stable order, or
+    // two identical calls produce two different files.
+    paths.sort();
+    paths.dedup();
+    Some(SheetInstanceContext {
+        project_name,
+        paths,
+    })
+}
+
+/// Append, to `out`, the instance path of every placement of `target` beneath
+/// `sheet` — whose own path is `prefix`.
+fn collect_sheet_paths(
+    sheet: &std::path::Path,
+    target: &std::path::Path,
+    prefix: &str,
+    depth: usize,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+    out: &mut Vec<String>,
+) {
+    use crate::tools::sch_export::{canonical, same_file};
+
+    if depth > crate::tools::sch_hierarchy::MAX_HIERARCHY_DEPTH {
+        return;
+    }
+    if !visited.insert(canonical(sheet)) {
+        return;
+    }
+    let Ok(sch) = konnect_schematic_editor::Schematic::load(sheet) else {
+        return;
+    };
+    let dir = sheet.parent().unwrap_or_else(|| std::path::Path::new("."));
+    for child_sheet in sch.sheets.iter() {
+        let child = dir.join(child_sheet.file());
+        let child_path = format!("{prefix}/{}", child_sheet.uuid);
+        if same_file(&child, target) {
+            out.push(child_path.clone());
+        }
+        // Not `else`: a sheet can be both a placement of the target and a
+        // parent of another placement of it further down.
+        collect_sheet_paths(&child, target, &child_path, depth + 1, visited, out);
+    }
+    // A file reached through one branch may sit under another as well, so it
+    // must not stay marked once this branch is done.
+    visited.remove(&canonical(sheet));
+}
+
+/// The project name and instance paths a symbol placed in `sch_path` must be
+/// written with.
+///
+/// One call site's worth of the answer to "where does this sheet live": it
+/// resolves the sheet's real place in its project via
+/// [`sheet_instance_context`], and falls back to the standalone derivation —
+/// this file's own stem and uuid — when it cannot be resolved. `sch` is only
+/// touched on that fallback, where [`ensure_root_uuid`] may assign a uuid to a
+/// file that predates Konnect writing them.
+pub fn instance_targets(
+    sch_path: &std::path::Path,
+    sch: &mut konnect_schematic_editor::Schematic,
+) -> (String, Vec<String>) {
+    match sheet_instance_context(sch_path) {
+        Some(ctx) => (ctx.project_name, ctx.paths),
+        None => {
+            let root_uuid = ensure_root_uuid(sch);
+            (project_name_for(sch_path), vec![format!("/{root_uuid}")])
+        }
+    }
+}
+
 /// Root UUID of a loaded schematic, assigning a fresh one when the file
 /// predates Konnect writing root UUIDs — the file is repaired on its next
 /// overwrite. Instance paths are built as "/<root-uuid>[/<sheet-uuid>…]".

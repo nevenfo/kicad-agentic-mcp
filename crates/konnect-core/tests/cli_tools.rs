@@ -535,6 +535,129 @@ async fn a_pour_on_a_kicad_10_board_still_loads_in_kicad_cli() {
     );
 }
 
+/// Where KiCad demos live, for the probes whose oracle is a real hierarchy.
+/// An explicit `KICAD_DEMOS` that does not exist fails rather than skipping,
+/// for the reason D113 records: a test that can skip must make its silence
+/// visible.
+fn kicad_demos() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("KICAD_DEMOS") {
+        let pb = PathBuf::from(&p);
+        assert!(
+            pb.exists(),
+            "KICAD_DEMOS points at {p}, which does not exist"
+        );
+        return Some(pb);
+    }
+    let candidates: Vec<PathBuf> = if cfg!(windows) {
+        let mut paths = vec![
+            PathBuf::from(r"C:\KiCad\10.0\share\kicad\demos"),
+            PathBuf::from(r"C:\Program Files\KiCad\10.0\share\kicad\demos"),
+        ];
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            paths.push(PathBuf::from(local).join(r"Programs\KiCad\10.0\share\kicad\demos"));
+        }
+        paths
+    } else if cfg!(target_os = "macos") {
+        vec![PathBuf::from(
+            "/Applications/KiCad/KiCad.app/Contents/SharedSupport/demos",
+        )]
+    } else {
+        vec![
+            PathBuf::from("/usr/share/kicad/demos"),
+            PathBuf::from("/usr/local/share/kicad/demos"),
+        ]
+    };
+    candidates.into_iter().find(|p| p.exists())
+}
+
+/// A symbol placed on a CHILD sheet is now written with a `(path ...)` per
+/// placement of that sheet, starting at the ROOT's uuid and under the
+/// project's name. `complex_hierarchy` instantiates `ampli_ht.kicad_sch`
+/// twice, so this is the shape KiCad has to accept: two paths in one
+/// `(project ...)`. This probe is what says it does.
+///
+/// What this probe deliberately does NOT claim, because it was measured and
+/// found untrue: that kicad-cli can tell the old derivation from the new
+/// one. With the child's own stem and uuid restored, `sch erc` still reports
+/// zero violations (it does not run the annotation check at all) and the
+/// exported netlist still lists the symbol, because KiCad falls back to the
+/// Reference property when no instance path matches. The consequence of the
+/// old derivation is per-instance annotation inside eeschema, which no CLI
+/// here can observe. The byte-level proof of the written block lives in
+/// `tests/sheet_instances.rs`; this one proves KiCad still accepts the file.
+#[tokio::test]
+#[ignore = "requires kicad-cli and KiCad demos; run with --ignored"]
+async fn a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable() {
+    let Some(demos) = kicad_demos() else {
+        eprintln!("SKIP: no KiCad demos found (set KICAD_DEMOS to enable)");
+        return;
+    };
+    let src = demos.join("complex_hierarchy");
+    assert!(
+        src.join("ampli_ht.kicad_sch").is_file(),
+        "{} is not the complex_hierarchy demo",
+        src.display()
+    );
+
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let dir = h.path("");
+    for entry in std::fs::read_dir(&src)
+        .expect("the demo is readable")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.is_file() {
+            let name = path.file_name().expect("a file name");
+            std::fs::copy(&path, dir.join(name)).expect("the copy succeeds");
+        }
+    }
+    let root = dir.join("complex_hierarchy.kicad_sch");
+    let child = dir.join("ampli_ht.kicad_sch");
+
+    // The demo is clean as shipped, so anything reported afterwards is this
+    // call's doing.
+    let before = h
+        .json("run_erc", json!({ "schematic": harness::as_str(&root) }))
+        .await;
+    assert_eq!(
+        before["total"],
+        json!(0),
+        "the demo should start clean: {before}"
+    );
+
+    h.json(
+        "add_schematic_component",
+        json!({
+            "schematic": harness::as_str(&child),
+            "lib_id": "Device:R",
+            "reference": "R999",
+            "value": "10k",
+            "x": 63.5,
+            "y": 63.5
+        }),
+    )
+    .await;
+
+    // Both halves matter: the hierarchy must still export, and the symbol
+    // must be in what it exports. Neither distinguishes the old derivation
+    // (see the note above); together they catch a written block KiCad
+    // rejects or silently drops.
+    let netlist = dir.join("after.net");
+    h.json(
+        "export_netlist",
+        json!({
+            "board": harness::as_str(&root),
+            "output": harness::as_str(&netlist)
+        }),
+    )
+    .await;
+    let text = std::fs::read_to_string(&netlist).expect("the netlist is readable");
+    assert!(
+        text.contains("R999"),
+        "the added symbol is not in the netlist KiCad built from this hierarchy"
+    );
+}
+
 /// The manufacturing package is the pipeline end to end: Gerbers, drills and
 /// the assembly files in one directory.
 #[tokio::test]

@@ -9,8 +9,7 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_str, project_name_for, require_f64, require_str,
-    ToolDef,
+    find_symbol_instance_block, get_path, opt_str, require_f64, require_str, ToolDef,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -465,8 +464,7 @@ async fn handle_batch_place_components(
     };
 
     let mut sch = cse::Schematic::load(&sch_path)?;
-    let root_uuid = crate::tools::ensure_root_uuid(&mut sch);
-    let project_name = project_name_for(&sch_path);
+    let (project_name, instance_paths) = crate::tools::instance_targets(&sch_path, &mut sch);
 
     let mut placed: Vec<serde_json::Value> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
@@ -487,7 +485,7 @@ async fn handle_batch_place_components(
 
         match place_one_component(
             &mut sch,
-            &root_uuid,
+            &instance_paths,
             &project_name,
             lib_id,
             x,

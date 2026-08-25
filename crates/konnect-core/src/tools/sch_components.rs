@@ -8,8 +8,8 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_f64, opt_str, project_name_for, require_f64,
-    require_str, ToolContext, ToolDef,
+    find_symbol_instance_block, get_path, opt_f64, opt_str, require_f64, require_str, ToolContext,
+    ToolDef,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -489,12 +489,11 @@ async fn handle_add_schematic_component(
     // The instance path below must be "/<root-uuid>" — KiCAD's netlister
     // resolves instances against the root sheet UUID and silently forms no
     // wire-only nets for symbols whose path doesn't resolve.
-    let root_uuid = crate::tools::ensure_root_uuid(&mut sch);
-    let project_name = project_name_for(&sch_path);
+    let (project_name, instance_paths) = crate::tools::instance_targets(&sch_path, &mut sch);
 
     let result = match place_one_component(
         &mut sch,
-        &root_uuid,
+        &instance_paths,
         &project_name,
         &lib_id,
         x,
@@ -530,7 +529,7 @@ async fn handle_add_schematic_component(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn place_one_component(
     sch: &mut cse::Schematic,
-    root_uuid: &str,
+    instance_paths: &[String],
     project_name: &str,
     lib_id: &str,
     x: f64,
@@ -612,7 +611,12 @@ pub(crate) fn place_one_component(
 
     // Instance entry, keyed to the root sheet UUID like eeschema writes it:
     // (instances (project "<name>" (path "/<root-uuid>" (reference ...) (unit 1))))
-    sym.set_instance_path(project_name, &format!("/{}", root_uuid), reference, unit);
+    // One entry per placement of this sheet in the hierarchy: a sheet
+    // instantiated twice carries two paths, and a symbol written with only one
+    // of them is annotated in one instance and invisible in the other.
+    for path in instance_paths {
+        sym.set_instance_path(project_name, path, reference, unit);
+    }
 
     let uuid = sym.uuid.clone();
     sch.add_symbol(sym);

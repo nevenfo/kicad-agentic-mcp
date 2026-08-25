@@ -6,9 +6,7 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{
-    get_path, opt_f64, opt_str, project_name_for, require_f64, require_str, ToolContext, ToolDef,
-};
+use crate::tools::{get_path, opt_f64, opt_str, require_f64, require_str, ToolContext, ToolDef};
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::snap_point,
@@ -1751,13 +1749,12 @@ async fn handle_add_power_symbol(
     // Instance entry, keyed to the root sheet UUID like eeschema writes it —
     // without a resolvable "/<root-uuid>" path KiCAD's netlister drops the
     // symbol from net formation.
-    let root_uuid = crate::tools::ensure_root_uuid(&mut sch);
-    sym.set_instance_path(
-        &project_name_for(&sch_path),
-        &format!("/{}", root_uuid),
-        &pwr_ref,
-        1,
-    );
+    let (project_name, instance_paths) = crate::tools::instance_targets(&sch_path, &mut sch);
+    // One entry per placement of this sheet: a power symbol on a sheet
+    // instantiated twice belongs to both instances.
+    for path in &instance_paths {
+        sym.set_instance_path(&project_name, path, &pwr_ref, 1);
+    }
 
     sch.add_symbol(sym);
     sch.overwrite()?;

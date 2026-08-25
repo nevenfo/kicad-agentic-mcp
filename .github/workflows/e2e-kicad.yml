@@ -114,6 +114,14 @@ jobs:
       - name: "Schematic fidelity against real KiCAD (#144, #209)"
         run: cargo test -p konnect-core --test schematic_fidelity_live -- --ignored --nocapture
 
+      # A symbol placed on a child sheet is written with one instance path per
+      # placement of that sheet, keyed to the project root. complex_hierarchy
+      # places the same child twice, so this is where KiCAD says whether it
+      # accepts that shape (P.6.9.3). The probe's own doc comment records what
+      # it cannot show: no CLI here distinguishes the old derivation.
+      - name: "A symbol on a child sheet keeps the hierarchy loadable (e7b0c54)"
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable
+
       # A board with open copper is reported by kicad-cli under
       # `unconnected_items`, a sibling of `violations` this fork read alone
       # until P.6.1 — so the evidence gate approved unrouted boards and every

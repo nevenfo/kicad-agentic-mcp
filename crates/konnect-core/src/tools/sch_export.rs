@@ -595,7 +595,7 @@ fn owning_project_root(file: &Path) -> Option<PathBuf> {
 /// The `<stem>.kicad_sch` beside the single `.kicad_pro` in `dir`. A directory
 /// holding more than one project says nothing definite about which root a loose
 /// sheet belongs to, so it yields nothing rather than a guess.
-fn project_root_schematic(dir: &Path) -> Option<PathBuf> {
+pub(crate) fn project_root_schematic(dir: &Path) -> Option<PathBuf> {
     let mut found: Option<PathBuf> = None;
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let path = entry.path();
@@ -638,11 +638,11 @@ fn sheet_tree_contains(
 
 /// Path equality that survives `.\foo` versus `foo` and case-insensitive
 /// filesystems. Falls back to a literal comparison for paths that do not exist.
-fn same_file(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_file(a: &Path, b: &Path) -> bool {
     canonical(a) == canonical(b)
 }
 
-fn canonical(p: &Path) -> PathBuf {
+pub(crate) fn canonical(p: &Path) -> PathBuf {
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
