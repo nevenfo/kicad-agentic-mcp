@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.10 closes. P.6.9.11 à P.6.9.16 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.11 closes. P.6.9.12 à P.6.9.17 restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,43 +15,54 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.10 — `required` est enfin validé au dispatch, le plancher sous P.6.9.7
-et P.6.9.9. `tools/mod.rs:425` porte `first_missing_required(schema, args)` —
-présence seule, `args.get(k).unwrap_or(&Value::Null).is_null()`, donc un `null`
-explicite compte comme absent — et `handler.rs` l'enveloppe dans
-`missing_required_refusal`, qui rend la même forme
-`ToolErrorKind::InvalidArgument` que les helpers `require_*` : un seul
-vocabulaire de refus, où qu'il ait lieu.
+P.6.9.11 — un seul vocabulaire d'erreur, quel que soit le helper saisi. La
+mesure est venue d'abord, P.6.9.10 pouvant avoir vidé l'item : passe statique
+sur les 202 `tool!(…)` — nom → `required` de premier niveau → clés `get_path`
+du handler, callees suivis d'un niveau — **zéro** site encore atteignable par
+`tools/call`, les deux candidats bruts étant déjà gardés.
 
-Placé **après** le mode gate sur les deux chemins, et le placement est mesuré :
-déplacé avant le gate domaine, `the_mode_gate_still_answers_first` passe au
-rouge (`invalid_argument` au lieu de `write_refused_by_mode`) et rien d'autre
-ne bouge. Voir D130. `kicad_invoke` : enveloppe seulement — la vérification lit
-le `required` top-level (`["calls"]`) et jamais le `required: ["tool"]`
-imbriqué dans `items`, les entrées restant validées une par une dans
-`handle_kicad_invoke`.
+L'item n'était pourtant pas sans objet : `handle_kicad_invoke` appelle
+`(def.handler)(&call_args, …)` **sans** `first_missing_required` — l'exemption
+enveloppe-seule que P.6.9.10 a délibérément choisie et figée dans
+`the_gateway_envelope_is_checked_but_not_its_entries`. Les **172** sites
+`get_path` sont donc observables par la passerelle, où une entrée sans sa clé
+de chemin répondait `handler_error` quand une entrée sans argument `require_*`
+répondait `invalid_argument`. Voir D131.
 
-Aucun schéma menteur trouvé. Le seul test préexistant qui a basculé n'en est
-pas un : `auto_load_toolsets_config_loads_and_executes_on_miss`
-(`crates/konnect/tests/protocol_stdio.rs:424`) appelait `route_trace` avec `{}`
-et attendait `field == "net_name"`, première clé vérifiée par le *handler* ; le
-schéma déclare `board` avant, et `board` est réellement obligatoire. Assertion
-passée à `"board"`, `kind` inchangé, intention du test préservée et même
-renforcée — seul un tool chargé a un schéma à consulter.
+`MissingArgument { key }` vit dans `mcp/error.rs` à côté de
+`TransportUnreachable`/`BoardNotOpen`, et est lu par une passe de downcast dans
+`ToolErrorKind::from_anyhow`, **avant** les passes `io::Error`/`Conflict` : une
+requête incomplète n'est jamais allée assez loin pour produire l'échec io que
+la passe suivante cherche. Aucun texte de message n'est matché nulle part.
+« Présent mais inutilisable » n'est pas reclassifié : `get_path` ne teste
+aucune existence, donc un mauvais chemin reste `Io { code: "not_found" }`.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **53 suites, 1313
-  tests, 0 échec** (1305 + 8 nouveaux dans une nouvelle suite
-  `tests/required_args.rs`)
-- rouge d'abord : `a_missing_required_key_is_refused_before_the_handler_runs`
-  (`left: String("not_found") right: "invalid_argument"`), l'observabilité
-  étant choisie pour que « le handler a tourné » soit visible —
-  `move_schematic_component` adressé par un `uuid` inconnu, dont le `not_found`
-  ne peut venir que d'un résolveur ayant déjà lu le fichier
+- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1319
+  tests, 0 échec** (1313 + 6 nouveaux, aucun test existant modifié)
+- rouge d'abord :
+  `an_absent_path_argument_is_an_invalid_argument_like_any_other`
+  (`missing_path_argument.rs:85`) —
+  `left: String("handler_error") right: "invalid_argument"`
+
+Deux effets de bord traités et non maquillés : `docs/capability-matrix.md`
+déplace une ligne de preuve (D128, déplacement et non gain) ; et
+`error_catalog_debt.rs` est passé de 2 à 3 parce que le nouveau test unitaire
+écrivait `ToolErrorKind::HandlerError` littéralement, que le scanner compte
+comme dette — réécrit en assertion négative, la garde est identique et le
+plafond de dette n'a **pas** été relevé.
 
 ## Décisions actives
+
+- **D131** — la validation `required` du dispatch (P.6.9.10) ne couvre pas les
+  entrées de `kicad_invoke` : la passerelle est vérifiée en enveloppe seule et
+  appelle `(def.handler)(…)` directement. Les helpers `require_*` et
+  `get_path`, désormais alignés sur une même forme d'erreur (P.6.9.11), sont
+  donc la **seule** validation d'argument que voit une entrée de batch. Toute
+  future garde d'argument posée uniquement au dispatch laissera la passerelle
+  derrière elle ; c'est la question ouverte de P.6.9.17.
 
 - **D130** — l'ordre des refus au dispatch est : mode gate d'abord, validation
   des arguments ensuite. Mesuré : placer la validation avant le gate domaine
@@ -248,9 +259,8 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.11 — `c6a6407` (LATER) : `get_path` (`tools/mod.rs`, voisin
-des helpers `require_*`) est la dernière voie d'argument non alignée. Lire la
-section P.6.9.11 du plan pour le mécanisme exact avant de commencer, et
-vérifier ce que P.6.9.10 a déjà couvert : la validation de présence au dispatch
-peut avoir rendu une partie de l'item sans objet, auquel cas le mesurer et le
-dire plutôt que d'écrire du code redondant. Test rouge d'abord.
+Implémenter P.6.9.12 — `6693681` (LATER) : `register_in_lib_table`. Lire la
+section P.6.9.12 du plan pour le mécanisme exact et les ancres avant de
+commencer. C'est le dernier item `LATER` du triage P.6.9 ; restent ensuite
+P.6.9.13 à P.6.9.17 (tous découverts en cours de route), puis P.6.8 et P.6.11.
+Test rouge d'abord.

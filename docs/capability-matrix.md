@@ -197,7 +197,7 @@ Not covered by any tool:
 | `split_wire_at_point` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `add_junction` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `batch_add_junction` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
-| `list_schematic_wires` | `sch_analysis` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `list_schematic_wires` | `sch_analysis` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/missing_path_argument.rs` |  |
 
 ### nets
 

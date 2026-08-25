@@ -484,12 +484,23 @@ pub fn require_u64(args: &Value, key: &str) -> Result<u64, CallToolResult> {
 
 /// Extract a required path string and return it as a PathBuf, using
 /// `anyhow::Error`. Use this variant with `?` inside handlers that return
-/// `anyhow::Result`. The surrounding dispatch will stringify the error and
-/// surface it as `ToolErrorKind::HandlerError`.
+/// `anyhow::Result`.
+///
+/// The absence is carried as a typed [`crate::mcp::error::MissingArgument`] in
+/// the error chain, which
+/// [`crate::mcp::error::ToolErrorKind::from_anyhow`] downcasts back into the
+/// same `InvalidArgument` the `require_*` helpers return. Which of the two
+/// helpers a handler was written with is an accident of its author; the
+/// vocabulary a caller sees must not depend on it.
+///
+/// Only absence. A path that is present but leads nowhere stays whatever the
+/// tool's own attempt to use it produced.
 pub fn get_path(args: &Value, key: &str) -> anyhow::Result<std::path::PathBuf> {
-    let s = args[key]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Missing required argument: '{}'", key))?;
+    let s = args[key].as_str().ok_or_else(|| {
+        anyhow::Error::new(crate::mcp::error::MissingArgument {
+            key: key.to_string(),
+        })
+    })?;
     Ok(std::path::PathBuf::from(s))
 }
 
@@ -1787,6 +1798,44 @@ mod arg_helper_tests {
             extract_error_kind(&err).as_deref(),
             Some("invalid_argument")
         );
+    }
+
+    /// The `anyhow` helper says the same thing as `require_str`, by type: the
+    /// marker rides the chain and `from_anyhow` downcasts it. No assertion
+    /// here reads the message, which is the point — a classifier that matched
+    /// text would pass this too, and would break the first time the prose
+    /// changed.
+    #[test]
+    fn get_path_missing_classifies_as_invalid_argument_by_type() {
+        let args = json!({});
+        let err = get_path(&args, "board").expect_err("no board key");
+        assert!(err.chain().any(|cause| cause
+            .downcast_ref::<crate::mcp::error::MissingArgument>()
+            .is_some()));
+        match crate::mcp::error::ToolErrorKind::from_anyhow(&err) {
+            crate::mcp::error::ToolErrorKind::InvalidArgument { field, .. } => {
+                assert_eq!(field, "board")
+            }
+            other => panic!("an argument nobody supplied is not a handler failure: {other:?}"),
+        }
+    }
+
+    /// An unrelated failure is untouched: only the marker reclassifies, so a
+    /// tool that tried and failed keeps the classification it already had.
+    #[test]
+    fn an_error_without_the_marker_is_not_reclassified() {
+        let err = anyhow::anyhow!("the tool tried and failed");
+        assert!(!matches!(
+            crate::mcp::error::ToolErrorKind::from_anyhow(&err),
+            crate::mcp::error::ToolErrorKind::InvalidArgument { .. }
+        ));
+    }
+
+    #[test]
+    fn get_path_present_returns_the_path() {
+        let args = json!({ "board": "b.kicad_pcb" });
+        let path = get_path(&args, "board").expect("present");
+        assert_eq!(path, std::path::PathBuf::from("b.kicad_pcb"));
     }
 
     #[test]

@@ -3759,7 +3759,7 @@ None. Each item below is independent of the others except where stated.
         chosen so "the handler ran" is visible: `move_schematic_component`
         addressed by an unknown `uuid`, whose `not_found` can only come from a
         resolver that already read the file.
-  - [ ] P.6.9.11 `c6a6407` (LATER) — `get_path` (`tools/mod.rs:442-447`)
+  - [x] P.6.9.11 `c6a6407` (LATER) — `get_path` (`tools/mod.rs:442-447`)
         returns `anyhow::Result` so handlers can use `?`, and the dispatch
         stringifies it through the `handler_error` fallback
         (`mcp/handler.rs:338`), while `require_str` returns a structured
@@ -3769,6 +3769,47 @@ None. Each item below is independent of the others except where stated.
         downcast at the dispatch, as `konnect_ipc::TransportUnreachable`
         already does — classify by type, never by matching message text. A path
         that is present but unusable stays a handler error.
+        Done, and the measurement came first because P.6.9.10 might have
+        emptied the item. Static pass over all 202 `tool!(…)` registrations —
+        name → top-level `required` → the handler's `get_path` keys, callees
+        followed one level — found **zero** sites still reachable through
+        `tools/call`: the two raw candidates (`expand_bus` `sch_buses.rs:306`,
+        `run_design_review` `design_review.rs:528`/`:420`) are both already
+        guarded by an `is_string()`/`Some(_)` check.
+        The item is not moot, though, and the reason is worth recording:
+        `handle_kicad_invoke` calls `(def.handler)(&call_args, …)` **without**
+        `first_missing_required` — the deliberate envelope-only exemption
+        P.6.9.10 chose and froze in
+        `the_gateway_envelope_is_checked_but_not_its_entries`. All **172**
+        `get_path` sites are therefore observable through the gateway, where an
+        entry missing its path key answered `handler_error` while an entry
+        missing a `require_*` argument answered `invalid_argument` — the exact
+        split this item is about, surviving in the one place the dispatch check
+        does not reach.
+        `MissingArgument { key }` lives in `mcp/error.rs` beside
+        `TransportUnreachable`/`BoardNotOpen` and is read by a downcast pass in
+        `ToolErrorKind::from_anyhow`, ahead of the `io::Error`/`Conflict`
+        passes — an incomplete request never got far enough to produce the io
+        failure the later pass looks for. Both dispatch paths already funnel
+        through `from_anyhow`, so one downcast covers them. No message text is
+        matched anywhere, and
+        `get_path_missing_classifies_as_invalid_argument_by_type` proves the
+        classification by `downcast_ref` alone.
+        "Present but unusable" is deliberately not reclassified: `get_path`
+        tests no existence, so a bad path stays an `io::Error` in the chain and
+        keeps `Io { code: "not_found" }` — guarded by
+        `a_path_that_is_present_but_unusable_is_still_the_tools_failure`.
+        Red before: `an_absent_path_argument_is_an_invalid_argument_like_any_other`
+        (`missing_path_argument.rs:85`) —
+        `left: String("handler_error") right: "invalid_argument"`.
+        Two side effects handled rather than papered over:
+        `docs/capability-matrix.md` moved one line — a **displacement**, not a
+        gain: `list_schematic_wires`'s evidence goes to the alphabetically
+        first test file, now `tests/missing_path_argument.rs` (D128). And
+        `error_catalog_debt.rs` went 2 → 3 because the new unit test wrote
+        `ToolErrorKind::HandlerError` literally, which the debt scanner counts;
+        rewritten as a negative assertion (`!matches!(…, InvalidArgument{..})`)
+        so the guard is identical and the debt ceiling was **not** raised.
   - [ ] P.6.9.12 `6693681` (LATER) — `register_in_lib_table`
         (`library.rs:1549-1583`) returns `Ok(())` the moment the nickname
         exists, and both handlers — footprint (`:1355-1385`) and symbol
@@ -3829,6 +3870,16 @@ None. Each item below is independent of the others except where stated.
         own `required` list — cheap, and it would have caught the five sites of
         P.6.9.7 as a class instead of one by one. Measure the cost before
         committing to a shape: some handlers may do work before refusing.
+  - [ ] P.6.9.17 — a `kicad_invoke` entry that fails through the
+        `Err(anyhow)` path reports `error_kind` but no `error.field`, while the
+        same failure on the `Ok(CallToolResult::error_kind)` path reports both.
+        Found during P.6.9.11 and left alone as out of scope: the asymmetry
+        predates it, affects every kind rather than the new one, and is in the
+        gateway's result assembly, not in the classification. The consequence
+        is that a batch caller can be told an argument is invalid without being
+        told which — the field P.6.9.11 just took care to carry all the way
+        through `from_anyhow`. Proof to reproduce first: a `kicad_invoke` entry
+        omitting a path argument answers `invalid_argument` with no `field`.
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,
