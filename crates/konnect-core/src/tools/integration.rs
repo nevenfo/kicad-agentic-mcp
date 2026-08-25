@@ -126,7 +126,15 @@ pub fn tools() -> Vec<ToolDef> {
                     "mpn": { "type": "string", "description": "Manufacturer part number (optional)" },
                     "lcsc_id": { "type": "string", "description": "LCSC part number (optional)" }
                 },
-                "required": []
+                // P.6.9.16: the handler needs `mpn` *or* `lcsc_id`, a contract
+                // `required` alone cannot express (it is a conjunction). The
+                // disjunction is published in `anyOf` instead, and `required`
+                // stays empty since neither key alone is mandatory.
+                "required": [],
+                "anyOf": [
+                    { "required": ["mpn"] },
+                    { "required": ["lcsc_id"] }
+                ]
             }),
             |args, ctx| async move { handle_get_datasheet_url(args, ctx).await }
         ),
@@ -141,7 +149,12 @@ pub fn tools() -> Vec<ToolDef> {
                     "timeout_seconds": { "type": "integer", "description": "Maximum autorouter runtime in seconds", "default": 120 },
                     "jar_path": { "type": "string", "description": "Path to freerouting.jar (optional, uses config default)" }
                 },
-                "required": ["board"]
+                // P.6.9.16: `handle_autoroute` takes `_args` and always answers
+                // `ManualStepRequired` — the DSN/SES round trip it needs was
+                // removed from kicad-cli in KiCAD 10. Nothing reads `board`, so
+                // nothing may be required; it stays in `properties` for the day
+                // the IPC round trip lands and the tool does real work again.
+                "required": []
             }),
             |args, ctx| async move { handle_autoroute(args, ctx).await }
         ),

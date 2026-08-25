@@ -5,10 +5,10 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.12 closes (tous les items du triage
-d'origine). P.6.9.16 à P.6.9.19, découverts en route, restent, dans
-l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
-`ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
+P.6.9 (triage) et P.6.9.1 à P.6.9.16 closes. Restent, dans l'ordre du triage :
+P.6.9.17 à P.6.9.19, plus P.6.9.20 et P.6.9.21 découvertes pendant P.6.9.16 ;
+P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
+PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
 
@@ -16,34 +16,58 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.15 — c'est le **schéma** qui avait tort, pas le handler. Un défaut de 0
-pour `spacing_y` n'est pas défendable : il empile toutes les rangées d'un
-tableau N×M sur le même y, ce que personne ne demande, tandis que le repli du
-handler sur `spacing_x` donne une grille carrée — la lecture ordinaire de
-« place-les en grille, à 2,54 ». Le `"default": 0` est retiré et la description
-dit ce qu'un `spacing_y` omis fait réellement ; le handler ne change pas, hors
-un commentaire consignant quelle moitié était fausse.
+P.6.9.16 — `crates/konnect-core/tests/required_schema_honesty.rs` : une passe
+sur tout le registre qui appelle **directement** le handler de chaque tool avec
+`{}`, contournant le gate du dispatch.
 
-Le test est un test de contrat de schéma et non de placement : le comportement
-n'a jamais été cassé, `place_component_array` est un tool IPC dont les
-coordonnées y ne s'observent pas sans KiCAD vivant, et le défaut était
-entièrement dans ce que le contrat publié promettait.
+La forme proposée par le plan — appeler `{}` **à travers** le dispatch — a été
+écrite d'abord et mesurée **tautologique** : `missing_required_refusal`
+(`handler.rs:344`) refuse avant le handler et fabrique l'erreur *depuis la liste
+`required` elle-même`. L'assertion ne peut jamais être rouge. L'appel direct
+score la réponse du handler, donc les deux directions en un appel par tool.
+
+Cinq sites sortis de la première passe : quatre schémas faux, un handler faux,
+et un qui n'était pas un mensonge. Détail dans `plan.md`.
 
 Validation :
+- `cargo test -p konnect-core --locked --test required_schema_honesty` : PASS,
+  2 tests, 0,25 s — 215 tools, 191 avec `required` vérifiés, 21 sans, 3 exclus
+- `cargo test --workspace --locked --lib --tests --no-fail-fast` : 55 suites,
+  **1334 passed / 1 failed** ; l'unique échec est `the_jlcpcb_tools_say_the_
+  database_is_missing_rather_than_finding_nothing`, indépendant de ce travail,
+  reproduit sur arbre stashé, et inscrit au plan comme P.6.9.20
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1333
-  tests, 0 échec** (1332 + 1 nouveau, aucun test existant modifié)
-- rouge d'abord :
-  `the_schema_does_not_promise_a_spacing_y_default_the_handler_ignores` —
-  `the schema still publishes a spacing_y default the handler overrides:
-  {"default":0,"description":"Row spacing in mm","type":"number"}`
-
-`docs/capability-matrix.md` gagne une ligne — `place_component_array` passe de
-`NOT_TESTED | gated` à `SUPPORTED | test`, placement 9,1 % → 18,2 %. Le gain
-est réel mais son mécanisme ne l'est pas : voir D132 et P.6.9.19.
+- `the_committed_matrix_is_up_to_date` : PASS sans toucher à
+  `docs/capability-matrix.md` (voir D133)
+- rouge d'abord, par mutation : `list_footprint_libraries` `"required": []` →
+  `["bogus_field"]` — `requires ["bogus_field"] but succeeded on an empty
+  argument object`
+- rouge d'abord, sur le vrai défaut : `kicad_invoke` avec une entrée
+  `run_design_review` sans arguments répondait
+  `{"ok":true,"verdict":"LOOKS GOOD — no critical issues found","findings":[]}`
 
 ## Décisions actives
+
+- **D134** — `required` ne peut pas dire « l'un ou l'autre », et deux tools en
+  ont besoin : `get_datasheet_url` (`mpn` ou `lcsc_id`) et `run_design_review`
+  (`schematic` ou `board`). La forme retenue est `"required": []` plus
+  `"anyOf": [{"required":[a]}, {"required":[b]}]` — le contrat est publié, et
+  le dispatch cesse de refuser un appel légitime. Conséquence : `anyOf` n'est
+  **pas** appliqué par `first_missing_required`, donc un tool disjonctif garde
+  sa garde dans le handler ; c'est la seule qui protège une entrée de batch
+  (D131).
+
+- **D133** — amende D132. Le scanner de couverture produit aussi des **faux
+  positifs** : il reconnaît `"<tool>"` n'importe où dans une source de test, y
+  compris dans une liste d'exclusion. Écrire `"save_project"` dans le tableau
+  `EXCLUDED` d'un test qui refuse précisément d'appeler ce tool le fait passer
+  `NOT_TESTED` → `SUPPORTED` dans la matrice (delta mesuré : +2 tools, fork
+  73,7 % → 74,7 %). L'erreur ne va donc pas seulement vers le sous-comptage
+  comme D132 l'affirmait. Contournement en place : les trois noms sont
+  construits par `concat!` et la matrice n'est **pas** régénérée. Règle : un
+  nom de tool cité dans un test qui ne l'appelle pas doit être cassé
+  lexicalement, avec le commentaire qui dit pourquoi.
 
 - **D132** — le scanner de couverture reconnaît un tool par `"<tool>"` ou
   `handle_<tool>` (`capability/coverage.rs:210`), et **24 des 198 tools
@@ -59,7 +83,9 @@ est réel mais son mécanisme ne l'est pas : voir D132 et P.6.9.19.
   `get_path`, désormais alignés sur une même forme d'erreur (P.6.9.11), sont
   donc la **seule** validation d'argument que voit une entrée de batch. Toute
   future garde d'argument posée uniquement au dispatch laissera la passerelle
-  derrière elle ; c'est la question ouverte de P.6.9.17.
+  derrière elle ; c'est la question ouverte de P.6.9.17. Mesuré vivant par
+  P.6.9.16 : c'est cette exemption qui rendait atteignable la revue de design
+  vide annoncée en succès.
 
 - **D130** — l'ordre des refus au dispatch est : mode gate d'abord, validation
   des arguments ensuite. Mesuré : placer la validation avant le gate domaine
@@ -83,7 +109,8 @@ est réel mais son mécanisme ne l'est pas : voir D132 et P.6.9.19.
   exactement ces clés-là : `count_y` porte `"default": 1` et reste optionnel
   bien que voisin de `count_x`, qui est durci. Corollaire, découvert en
   passant : quand schéma et handler divergent sur un défaut, c'est un défaut à
-  part entière — voir P.6.9.15 pour `spacing_y`.
+  part entière — voir P.6.9.15 pour `spacing_y`. P.6.9.16 renverse la charge :
+  quatre fois sur cinq, c'est le **schéma** qui avait tort.
 - **D128** — `docs/capability-matrix.md` est généré, et son scanner conserve la
   source de preuve **lexicographiquement la plus petite**
   (`capability/coverage.rs:93`). Ajouter un test unitaire dans `src/tools/…`
@@ -189,7 +216,9 @@ est réel mais son mécanisme ne l'est pas : voir D132 et P.6.9.19.
   `KICAD_DEMOS` explicite mais introuvable échoue, et les comptes sont assertés.
   La leçon reste : un test qui peut se sauter doit rendre son silence visible.
   `layer_corpus_test` suit la même règle : `KICAD_FOOTPRINTS` explicite mais
-  introuvable échoue, et les comptes sont assertés et affichés.
+  introuvable échoue, et les comptes sont assertés et affichés. P.6.9.20 est le
+  même défaut sous un autre angle : un test qui affirme une propriété de la
+  machine en croyant affirmer une propriété du harness.
 - **D112** — mesures d'oracle de P.6.2 : le bloc `(netclass …)` inséré dans le
   board fait sortir `kicad-cli` en **code 3** ("Échec du chargement de la
   carte") sans écrire de rapport. Et un vrai `.kicad_pro` KiCad 10 porte
@@ -228,12 +257,18 @@ est réel mais son mécanisme ne l'est pas : voir D132 et P.6.9.19.
 
 ## Blocage actif
 
-Aucun.
+Aucun. La suite workspace porte un échec, mais il est indépendant de tout
+travail en cours et inscrit comme P.6.9.20.
 
 ## Fichiers / zones utiles
 
 - `docs/upstream-audit.md` — annexe A : le triage P.6.9, avec pour chaque item
   mécanisme amont, état dans ce fork (`file:line`), impact et coût.
+- `crates/konnect-core/tests/required_schema_honesty.rs` — la passe P.6.9.16 ;
+  ses doc-comments portent ce que la forme ne couvre pas, y compris P.6.9.21.
+- `crates/konnect-core/src/mcp/handler.rs:344` — `missing_required_refusal`, le
+  gate que la passe contourne ; `tools/mod.rs:425` — `first_missing_required`,
+  qui n'applique **pas** `anyOf` (D134).
 - `crates/konnect-schematic-editor/src/sexp/writer.rs` — `WriteStyle`,
   `IndentStyle`, `write` (fragment, défaut) et `write_styled` (document) ;
   `schematic/mod.rs::sniff_write_style` est le seul point de reniflage.
@@ -256,11 +291,9 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.16 — un test qui parcourt tout le registre et appelle chaque
-tool avec `{}`, assérant que le refus nomme une clé de sa propre liste
-`required`. P.6.9.10 a posé la validation au dispatch mais n'a trouvé aucun
-schéma menteur **là où un test existe** ; cette passe rendrait la classe
-entière visible et aurait attrapé les cinq sites de P.6.9.7 d'un coup. Mesurer
-le coût avant de figer la forme : certains handlers travaillent avant de
-refuser. Attention à D131 — la passerelle `kicad_invoke` n'est pas couverte par
-la validation du dispatch — et à D132 pour l'interprétation de la matrice.
+Implémenter P.6.9.20 — pointer `jlcpcb_db_path` du harness de test vers un
+chemin inexistant de son propre tempdir, pour que
+`the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
+mesure le harness et non la machine, puis relancer
+`cargo test -p konnect-core --locked --test sourcing_and_manufacturing` et la
+suite workspace complète, qui doit revenir à 0 échec.

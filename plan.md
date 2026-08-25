@@ -3967,19 +3967,75 @@ None. Each item below is independent of the others except where stated.
         exercised since P.6.9.7, and the scanner simply could not see it,
         because it recognises `"<tool>"` or `handle_<tool>` and this handler is
         named `handle_place_array`.
-  - [ ] P.6.9.16 — P.6.9.10 validates `required` at the dispatch, but nothing
-        proves a schema's `required` list is *honest*: that every key it names
-        is genuinely mandatory, and that no argument the handler cannot do
-        without is missing from it. P.6.9.10 found no lying schema, but it only
-        looked where a test happens to exercise the tool — a wrong `required`
-        on an uncovered tool surfaces at the caller, not in CI. Both directions
-        are real: a key wrongly listed refuses a legitimate call, and a key
-        wrongly omitted is exactly the class P.6.9.7 and P.6.9.9 fixed by hand,
-        one site at a time. Consider a test that walks the whole registry and
-        calls each tool with `{}`, asserting the refusal names a key from its
-        own `required` list — cheap, and it would have caught the five sites of
-        P.6.9.7 as a class instead of one by one. Measure the cost before
-        committing to a shape: some handlers may do work before refusing.
+  - [x] P.6.9.16 — P.6.9.10 validates `required` at the dispatch, but nothing
+        proved a schema's `required` list *honest*: that every key it names is
+        genuinely mandatory, and that no argument the handler cannot do without
+        is missing from it. Done as `required_schema_honesty.rs`, one pass over
+        the whole registry — but not in the shape this item proposed. The
+        proposed shape, calling each tool with `{}` **through dispatch**, was
+        written first and measured tautological: `missing_required_refusal`
+        (`handler.rs:344`) refuses before the handler runs and builds the
+        refusal *from the required list itself*, so "the refusal names a key
+        from its own `required` list" is true by construction and can never go
+        red. It passed on 215 tools in 0.41 s and proved nothing.
+        The shape that works calls `(tool.handler)(&{}, ctx)` **directly**,
+        bypassing the dispatch gate, so the handler's own answer is what is
+        scored — both directions in one call per tool: a handler that succeeds
+        despite a non-empty `required` over-promises; one that refuses
+        `invalid_argument` on a field absent from its own list is the omission
+        class of P.6.9.7/P.6.9.9. `Err(anyhow)` is reconverted through
+        `ToolErrorKind::from_anyhow` first, as `dispatch_tool` does, or the
+        `get_path`/`MissingArgument` path shows up as ~90 false positives.
+        Cost measured: 0.25 s, 215 tools, 191 with a `required` list checked,
+        21 without, 3 excluded. The exclusions are what the shape costs:
+        without dispatch in front, a handler that does I/O, spawns a process or
+        reaches the network on `{}` now really does — `download_jlcpcb_database`
+        (fetches hundreds of MB), `launch_kicad_ui` (spawns the GUI),
+        `save_project` (writes a live session's board).
+        Red before, by mutation: `list_footprint_libraries` `"required": []` →
+        `["bogus_field"]` gives `list_footprint_libraries: requires
+        ["bogus_field"] but succeeded on an empty argument object — the schema
+        over-promises, or the handler ignores the key`.
+        Five sites came out of the first run. Four schemas were wrong, one
+        handler was, and one of the five was not a lie at all:
+        * `get_datasheet_url` — not lying: the handler needs `mpn` **or**
+          `lcsc_id`, which `required` cannot express, so `required: []` was the
+          only correct answer and the refusal names `mpn` as a representative.
+          The schema now publishes the real contract as
+          `anyOf: [{required:[mpn]}, {required:[lcsc_id]}]`, and the pass reads
+          `anyOf` branches as honest. Handler unchanged.
+        * `autoroute` — schema wrong. `handle_autoroute` takes `_args` and
+          always answers `ManualStepRequired`: the tool has been a stub since
+          kicad-cli 10 dropped the DSN/SES round trip. `required: ["board"]`
+          made the dispatch demand an argument nothing reads, for a tool that
+          will do nothing either way. Now `required: []`, `board` kept in
+          `properties` against the day IPC lands.
+        * `get_nets_list` — schema wrong. Handler takes `_args`: it queries the
+          **open KiCAD session** over IPC, never a file. `board` was neither
+          read nor readable, and publishing it suggested the caller was
+          querying *that* file. Removed from `required` and `properties`.
+        * `query_traces` — same mechanism: the handler reads only `net_name`
+          and `layer`. Same fix.
+        * `run_design_review` — both halves wrong, in opposite directions.
+          `run_design_review_with` only *tests* `args["schematic"].is_string()`
+          and skips every schematic audit when it is absent, so a call carrying
+          neither `schematic` nor `board` came back `{"ok":true,"verdict":"LOOKS
+          GOOD — no critical issues found","findings":[]}` — a passed review of
+          nothing. Dispatch hid it; `kicad_invoke` did not, its batch entries
+          skipping `first_missing_required` (D131), which is how it was proved
+          red. But `required: ["schematic"]` could not be the fix either:
+          `a_board_review_without_drc_evidence_cannot_look_good` calls the
+          handler with `board` alone and asserts success, so a board-only
+          review is intended and the schema was refusing a legitimate call. The
+          contract is `schematic` **or** `board`: schema now `required: []` plus
+          the same `anyOf` shape as `get_datasheet_url`, and the handler refuses
+          only when both are absent — the case `anyOf` cannot reach, since a
+          batch entry never gets schema-validated at all.
+        Two things the shape does **not** reach, both written into the test's
+        own docs: a `required` list naming several keys is only ever proved on
+        the *first* key the handler happens to check (see P.6.9.21), and the
+        exclusion list has to hide its own tool names from the coverage scanner
+        (D133).
   - [ ] P.6.9.17 — a `kicad_invoke` entry that fails through the
         `Err(anyhow)` path reports `error_kind` but no `error.field`, while the
         same failure on the `Ok(CallToolResult::error_kind)` path reports both.
@@ -4025,6 +4081,36 @@ None. Each item below is independent of the others except where stated.
         exercise it? That number is how much coverage the matrix is currently
         hiding.
 
+  - [ ] P.6.9.20 — `the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
+        (`sourcing_and_manufacturing.rs:25`) asserts `stats["exists"] == false`
+        on the grounds that "no database is configured in this harness" — but
+        the harness configures `jlcpcb_db_path: None`, and the handler then
+        falls back to the machine-wide default (`resolve_db_path`,
+        `%APPDATA%\konnect\jlcpcb.db`). On a machine where that file exists the
+        test reads the real database and fails; it passed until one was
+        downloaded here on 2026-08-25 (`downloaded_at_unix 1787658362`,
+        1 581 parts). Nothing about the tool is wrong — the test asserts a fact
+        about the machine while claiming to assert one about the harness, the
+        same family as D113. Point the harness at a path inside its own tempdir
+        that deliberately does not exist, so "absent" is a property of the
+        fixture. Found while validating P.6.9.16, independent of it: reproduced
+        on a stashed tree.
+  - [ ] P.6.9.21 — `required_schema_honesty.rs` calls each handler with `{}`,
+        which is missing *every* required key at once, so it only ever proves
+        the **first** key that handler happens to check. A schema listing
+        `["board", "uuid"]` whose handler reads only `uuid` passes the pass
+        exactly like one that reads both. The class is real and wider than what
+        P.6.9.16 caught: measured in `pcb_routing.rs`, `"board"` appears in 33
+        tool schemas and is read by 5 handlers (`get_path(args, "board")` at
+        lines 267, 343, 495, 729, 809); `query_traces` and `get_nets_list` were
+        only caught because they check no other required key first. Reaching
+        the rest means calling with each required key omitted in turn, which
+        needs plausible values for the others — and a plausible-looking path
+        that does not exist makes a well-behaved handler answer `not_found`,
+        not `invalid_argument`, so the naive form drowns in false positives.
+        Measure that before committing to a shape; per-type placeholder values
+        and scoring only `invalid_argument`-on-the-omitted-key is the obvious
+        first try.
 ### Validation
 Each implemented item carries a test that is red before it and green after,
 and — where KiCad is the only honest oracle — a probe in

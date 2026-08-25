@@ -7,7 +7,7 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{drc_gate, get_path, ToolContext, ToolDef};
+use crate::tools::{drc_gate, get_path, invalid_arg, ToolContext, ToolDef};
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
     parser::parse_sexp,
@@ -101,7 +101,17 @@ pub fn tools() -> Vec<ToolDef> {
                         "default": "warning"
                     }
                 },
-                "required": ["schematic"]
+                // P.6.9.16: `schematic` alone was never the contract. A
+                // board-only review is intended and tested
+                // (`a_board_review_without_drc_evidence_cannot_look_good`),
+                // so listing `schematic` as required made the dispatch refuse
+                // a legitimate call. The real rule is the same disjunction
+                // `get_datasheet_url` publishes: one of the two, or both.
+                "required": [],
+                "anyOf": [
+                    { "required": ["schematic"] },
+                    { "required": ["board"] }
+                ]
             }),
             |args, ctx| async move { handle_run_design_review(args, ctx).await }
         ),
@@ -523,6 +533,23 @@ async fn handle_run_design_review(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
+    // P.6.9.16: both halves of this tool's contract were wrong, in opposite
+    // directions. `run_design_review_with` only *tests*
+    // `args["schematic"].is_string()` / `args["board"].is_string()`, so a call
+    // carrying neither quietly skipped every audit and came back "LOOKS GOOD"
+    // with nothing reviewed — reachable through `kicad_invoke`, whose batch
+    // entries skip `first_missing_required` (D131). Meanwhile the schema said
+    // `required: ["schematic"]`, which made the dispatch refuse a board-only
+    // review that `a_board_review_without_drc_evidence_cannot_look_good`
+    // proves is intended. The contract is `schematic` *or* `board`; the schema
+    // now says so via `anyOf`, and this guard closes the case that `anyOf`
+    // cannot reach on its own — a batch entry with neither.
+    if !args["schematic"].is_string() && !args["board"].is_string() {
+        return Ok(invalid_arg(
+            "schematic",
+            "a review needs something to review: pass 'schematic', 'board', or both",
+        ));
+    }
     // A review with no board in it never had anything to run DRC on, and must
     // come back exactly as it did before DRC entered the verdict.
     let drc = match get_path(args, "board") {

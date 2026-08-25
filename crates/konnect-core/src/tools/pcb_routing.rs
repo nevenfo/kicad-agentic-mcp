@@ -155,27 +155,36 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "query_traces",
-            "List trace segments on the board, optionally filtered by net and/or layer.",
+            "List trace segments on the board currently open in KiCAD, optionally filtered by \
+             net and/or layer.",
             json!({
                 "type": "object",
                 "properties": {
-                    "board":    { "type": "string" },
+                    // P.6.9.16: this reads the open KiCAD session over IPC, not
+                    // a file — `board` was never read by the handler and is
+                    // dropped rather than published unread (see `get_nets_list`
+                    // below for the same reasoning).
                     "net_name": { "type": "string", "description": "Filter by net (optional)" },
                     "layer":    { "type": "string", "description": "Filter by layer (optional)" }
                 },
-                "required": ["board"]
+                "required": []
             }),
             |args, ctx| async move { handle_query_traces(args, ctx).await }
         ),
         tool!(
             "get_nets_list",
-            "Return all nets defined on the PCB via KiCAD IPC.",
+            "Return all nets defined on the board currently open in KiCAD, via IPC. Operates on \
+             the live session, not on a file path.",
             json!({
                 "type": "object",
-                "properties": {
-                    "board": { "type": "string" }
-                },
-                "required": ["board"]
+                // P.6.9.16: `handle_get_nets_list` takes `_args` — it queries
+                // the open KiCAD session over IPC, never a file. A `board`
+                // property here would tell a caller it can pick which file
+                // gets queried, which is false; it is dropped from both
+                // `properties` and `required` rather than published and
+                // ignored.
+                "properties": {},
+                "required": []
             }),
             |args, ctx| async move { handle_get_nets_list(args, ctx).await }
         ),
