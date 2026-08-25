@@ -330,12 +330,16 @@ async fn validate_for_manufacturing_with(
         }));
     }
 
-    // Check layer count
-    let _layers = tree
-        .find("layers")
-        .map(|l| l.find_all("*"))
-        .unwrap_or_default();
-    let copper_layers = content.matches("signal)").count() + content.matches("signal \"").count();
+    // Check layer count.
+    //
+    // P.6.7.9: this used to count `signal)`/`signal "` substrings anywhere in
+    // the file — a board with `power`/`mixed`/`jumper` copper was undercounted
+    // (missed non-`signal` planes), and a board whose net names happened to
+    // contain the word "signal" was overcounted (matched outside the layers
+    // table entirely). `konnect_sexp::layers` reads the `(layers …)` table by
+    // shape and decides copper by the `.Cu` name suffix, which both boards
+    // actually carry.
+    let copper_layers = konnect_sexp::layers::copper(&konnect_sexp::layers::layers(&tree)).len();
     debug!(
         copper_layers = copper_layers,
         "[BETA] Detected copper layers"
@@ -453,9 +457,19 @@ async fn handle_estimate_cost(
     let fps = tree.find_all("footprint");
     let component_count = fps.len();
 
-    // Detect layers
+    // Detect layers.
+    //
+    // P.6.7.9: same substring-scan bug as `validate_for_manufacturing` —
+    // undercounted non-`signal` copper (`power`/`mixed`/`jumper`) and
+    // overcounted matches of the word "signal" outside the layers table
+    // (e.g. in a net name), which fed straight into the wrong pricing
+    // bracket below. Routed through the same `konnect_sexp::layers` reader.
+    // `.max(2)` stays: it is not compensating for miscounting anymore, it is
+    // a floor for the case the stack genuinely can't be read (no `(layers
+    // …)` block), where 0 would price as free rather than as the cheapest
+    // real board.
     let copper_layers = args["layers"].as_u64().unwrap_or_else(|| {
-        let count = content.matches("signal)").count() + content.matches("signal \"").count();
+        let count = konnect_sexp::layers::copper(&konnect_sexp::layers::layers(&tree)).len();
         (count as u64).max(2)
     }) as usize;
 

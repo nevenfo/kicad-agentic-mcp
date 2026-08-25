@@ -194,6 +194,49 @@ async fn the_dfm_check_shows_the_board_facts_behind_its_verdict() {
     );
 }
 
+/// P.6.7.9: `copper_layers` used to be a `content.matches("signal)")` /
+/// `matches("signal \"")` substring scan of the whole file, wrong in both
+/// directions — a plane marked `power`/`mixed`/`jumper` (KiCAD's other three
+/// copper kinds) was never counted, and a match anywhere else in the file
+/// (e.g. inside a net name) was. `unrouted_power_planes.kicad_pcb` carries
+/// both at once: `F.Cu`/`In1.Cu`/`In2.Cu`/`B.Cu` with the two inner layers
+/// marked `power`, plus a net literally named `TEST_signal)_PROBE`. The old
+/// probe read 3 (missed both `power` planes, then picked up one match from
+/// the net name); the real stack is 4.
+#[tokio::test]
+async fn copper_layer_count_is_read_from_the_stackup_not_guessed_from_the_word_signal() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("unrouted_power_planes.kicad_pcb")).to_string();
+
+    let validated = h
+        .json(
+            "validate_for_manufacturing",
+            json!({ "board": board, "fab_house": "jlcpcb" }),
+        )
+        .await;
+    assert_eq!(
+        validated["board_info"]["copper_layers"], 4,
+        "F.Cu, In1.Cu (power), In2.Cu (power), B.Cu are all copper: {validated}"
+    );
+}
+
+/// Same bug, second site: `estimate_cost`'s `layers` fallback drove the price
+/// bracket straight off the same substring scan, so a 4-layer board with
+/// power planes was quoted at the 2-layer rate.
+#[tokio::test]
+async fn cost_estimate_layer_fallback_is_read_from_the_stackup_not_guessed_from_the_word_signal() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("unrouted_power_planes.kicad_pcb")).to_string();
+
+    let estimated = h
+        .json("estimate_cost", json!({ "board": board, "quantity": 5 }))
+        .await;
+    assert_eq!(
+        estimated["board"]["copper_layers"], 4,
+        "no 'layers' argument was given — it must fall back to the real stack: {estimated}"
+    );
+}
+
 // ─── The last file-engine strays ─────────────────────────────────────────────
 
 /// The netlist summary is the cheap read of a sheet: what is on it, with pins.

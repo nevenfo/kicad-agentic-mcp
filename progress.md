@@ -4,9 +4,10 @@
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
-ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
+ouverte (les huit items d'origine et P.6.7.9 clos, P.6.7.10 et P.6.7.11
+ouvertes), P.6.10,
 P.6.9 (triage) et P.6.9.1 à P.6.9.23 closes — **tout le triage d'origine et
-toutes ses découvertes**. Restent P.6.7.9 à P.6.7.11, P.6.8 et P.6.11.
+toutes ses découvertes**. Restent P.6.7.10, P.6.7.11, P.6.8 et P.6.11.
 Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -15,47 +16,32 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.23 — les neuf `with_ipc(` non gardés hors de `pcb_routing.rs`, mesurés un
-par un plutôt que gardés en bloc. Ils se répartissent en trois :
+P.6.7.9 — `validate_for_manufacturing` comptait les couches de cuivre par
+sous-chaîne (`content.matches("signal)")` + `signal "`). KiCad marque le cuivre
+de **quatre** façons — `signal`, `power`, `mixed`, `jumper` — et la sonde
+attrapait aussi le mot n'importe où ailleurs dans le fichier.
 
-- **six vraies instances de P.6.9.22** : cinq dans `pcb_board.rs`
-  (`set_board_size`, `get_board_extents`, `add_board_outline`,
-  `add_board_text`, `import_svg_logo`) et une dans `pcb_export.rs`
-  (`refill_zones`, dont `KiCadIpcClient::refill_zones` appelle
-  `get_board_document()` en interne) ;
-- **trois déjà corrects** dans `pcb_components.rs`, par deux mécanismes
-  distincts : `place_array` et `align_components` portaient déjà la
-  vérification inline, `place_component` est gardé un niveau plus bas par
-  `place_footprint` qui appelle `find_open_board` lui-même.
+Mesuré sur le corpus de démos KiCad 10 **avant** d'écrire le test, comme le
+plan l'exigeait, et les deux directions sont réelles : `complex_hierarchy` 1
+contre 2, `One-Air-Max` 2 contre 4, `jetson-agx-thor-baseboard` 9 contre 10, et
+`multichannel_mixer-unrouted` **11 contre 2**.
 
-Aucun schéma ne manquait `board`.
-
-**Deux formes de garde, parce qu'une seule ne convient pas partout.**
-`guarded_ipc` répond `ipc_error_result` et `return` — juste là où il n'y a rien
-d'autre à tenter (`refill_zones`). Mais `pcb_board.rs` a un repli fichier
-délibéré, que ce `return` rendrait inatteignable : ces cinq portent donc la
-vérification **inline** dans la closure et laissent l'échec voyager comme
-valeur. `IpcFailure::allows_file_fallback()` fait alors exactement ce qu'il
-faut sans qu'on lui redemande : `BoardMismatch` rend `false` comme `Rejected`,
-les deux prouvant que KiCAD a répondu — éditer le fichier sous un éditeur
-vivant courrait contre lui.
-
-`get_board_extents` est la seule lecture des six et s'inverse : son repli est
-inconditionnel, donc un `BoardMismatch` retombe sur le calcul depuis le fichier
-réellement nommé. Avant, un KiCAD tenant un **autre** board répondait avec les
-extents de celui-là, annoncés `"source": "ipc"`.
-
-La garde est **généralisée**, pas copiée (leçon de D136) :
-`no_ipc_call_bypasses_the_guarded_macro_or_an_inline_board_check` balaie tout
-`src/tools` sauf le site de définition, avec une exception nommée et justifiée
-(`place_footprint(`).
+Second site trouvé par cette mesure, hors énoncé du plan : `handle_estimate_cost`
+porte la même sonde en repli, et là le compte choisit la **tranche de prix**.
+Les deux passent désormais par `konnect_sexp::layers`, qui décide par le suffixe
+`.Cu`. `.max(2)` est conservé mais change de rôle : plancher pour un board dont
+le stack ne se lit pas, non plus compensation d'un mauvais comptage.
 
 Validation :
-- garde généralisée : rouge d'abord, `total_violations left: 6, right: 0`,
-  nommant `pcb_board.rs` l.364, 475, 735, 823, 961 et `pcb_export.rs` l.629 ;
-  vert après
+- rouge d'abord sur les deux : `left: Number(3) right: 4` ; la moitié coût
+  affichait la conséquence — 3 tombait dans la branche `_ =>` et cotait
+  `pcb_fabrication: $30.00` là où la tranche 4 couches est $7.00
+- fixture `unrouted_power_planes.kicad_pcb` (dérivée de `unrouted.kicad_pcb`,
+  même version et même schéma d'ordinaux, D117), fausse dans les **deux** sens
+  à la fois ; **`kicad-cli` 10.0.3 la charge** — vérifié ici, l'oracle que D111
+  impose
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **56 suites, 1340 tests, 0 échec**
+  **56 suites, 1342 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
 - `the_committed_matrix_is_up_to_date` : PASS, matrice intacte
@@ -323,10 +309,9 @@ Aucun.
 
 ## NEXT ACTION
 
-P.6.9 est close en entier. Reprendre la première tâche ouverte de P.6.7 —
-P.6.7.9 — en relisant sa section dans `plan.md` (`rg -n "P\.6\.7\.9" plan.md`)
-pour sa preuve à reproduire d'abord et ses critères de validation, puis
-enchaîner P.6.7.10 et P.6.7.11. P.6.8 et P.6.11 suivent. P.6.11 a déjà son
-ancre : D117 — tout code qui alloue un id de layer doit le dériver du nom
-canonique sous la numérotation du board, jamais d'un intervalle fixe, et
-`konnect-ipc/src/client.rs:1314` développe encore `*.Cu` en `3..=34`.
+Implémenter P.6.7.10 — `export_bom` n'expose ni `--fields`, ni `--labels`, ni
+`--group-by`, que `kicad-cli sch export bom --help` offre pourtant (D118 : la
+CLI installée est l'autorité, pas un diff upstream ; et elle n'a **aucun**
+`--format`). Relire la section dans `plan.md` (`rg -n "P.6.7.10" plan.md`) pour
+sa preuve à reproduire d'abord et ses critères. P.6.7.6 a déjà posé
+`BomOptions` et un `bom_args` assertable sans KiCad : c'est le point d'entrée.

@@ -3192,16 +3192,38 @@ None. Each item below is independent of the others except where stated.
         and an unrouted one reported 0 nets instead of 4 — so the
         `net_count > 3 && track_count == 0` guard could never fire, and the
         last check before fabrication passed a board that was never routed.
-  - [ ] P.6.7.9 `validate_for_manufacturing` counts copper layers by substring
+  - [x] P.6.7.9 `validate_for_manufacturing` counted copper layers by substring
         too: `content.matches("signal)") + content.matches("signal \"")`
         (`manufacturing.rs`). Found while closing P.6.7.5, not in upstream's
         audit. KiCad marks copper with four kinds — `signal`, `power`, `mixed`,
-        `jumper` — so a board using `power` for a plane is undercounted, and
-        the probe also matches the word anywhere else in the file. The `.Cu`
-        suffix is the invariant, and `konnect_sexp::layers::copper` already
-        decides by it (P.6.6). The dead `let _layers = …` binding above it goes
-        at the same time. Measure the miscount on a demo board with a plane
-        before writing the test.
+        `jumper` — so a board using `power` for a plane was undercounted, and
+        the probe also matched the word anywhere else in the file. The `.Cu`
+        suffix is the invariant, and `konnect_sexp::layers` already decides by
+        it (P.6.6); `Layer::is_copper` was checked first to confirm it does.
+        Measured on the installed KiCad 10 demo corpus before writing the test,
+        and both directions are real: `complex_hierarchy` 1 against 2 (one
+        `power`), `One-Air-Max` 2 against 4 (two `power`),
+        `jetson-agx-thor-baseboard` 9 against 10 (one `jumper`), and
+        `multichannel_mixer-unrouted` **11 against 2** — the word counted all
+        over the file. The dead `let _layers = …` binding went at the same time.
+        Second site, outside this item's wording and found by that measurement:
+        `handle_estimate_cost` carries the same probe as its fallback when the
+        `layers` argument is absent, and there the count picks the **price**
+        bracket. Both are routed through `konnect_sexp::layers` now. `.max(2)`
+        stays but changes job: it is no longer compensating for a miscount, it
+        is the floor for a board whose `(layers …)` genuinely cannot be read,
+        where 0 would price as free.
+        Fixture `unrouted_power_planes.kicad_pcb`, derived from
+        `unrouted.kicad_pcb` so it keeps that file's version and its old
+        ordinal scheme (D117): `F.Cu` signal, `In1.Cu`/`In2.Cu` power, `B.Cu`
+        signal, plus a net named `TEST_signal)_PROBE` so the fixture is wrong
+        in *both* directions at once, as the real boards are. `kicad-cli`
+        10.0.3 loads it — the honest oracle, and the check D111 exists to
+        force.
+        Red before, on both: `left: Number(3) right: 4`. The cost half printed
+        the consequence in the open — 3 fell through to the `_ =>` pricing
+        branch and quoted `pcb_fabrication: $30.00` where the 4-layer bracket
+        is $7.00.
   - [x] P.6.7.6 #139 — `export_bom` ignores `exclude_dnp` and `format`, both
         advertised in its schema. Done: `BomOptions` and a `bom_args` the flag
         can be asserted against without KiCad; the handler reads `exclude_dnp`
