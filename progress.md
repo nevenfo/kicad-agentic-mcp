@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.6 closes. P.6.9.7 à P.6.9.14 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.7 closes. P.6.9.8 à P.6.9.15 restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,39 +15,55 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.6 — `edit_schematic_component` lit enfin le `fields` qu'il déclare. La
-carte est convertie en `Vec<(&str, String)>` avant la closure `apply`
-(`sch_components.rs:686-720`) par un helper `property_text` : string telle
-quelle, number et bool en texte — KiCAD stocke toute propriété en texte — et
-tout ce qui n'a pas de forme texte est refusé plutôt que stringifié en
-absurdité. Un `fields` présent mais non-objet est un `InvalidArgument`, pas un
-silence. `apply` prend un `reject` : `&[]` pour les arguments nommés,
-`RESERVED_PROPERTY_KEYS` pour la boucle `fields`, donc un `Reference` passé par
-la voie générique est refusé au lieu de désynchroniser `(instances …)` (D124).
-La boucle est placée après `datasheet` et avant `new_reference`, le rename
-devant rester dernier.
+P.6.9.7 — cinq voies d'écriture ne tournent plus sur des arguments requis
+substitués. `tools/mod.rs:438-461` porte `require_array` et `require_u64` à
+côté des deux qui existaient. `require_array` rend une `&[Value]` empruntée et
+non un `Vec` possédé : elle supprime le `.cloned()` de `create_footprint` et
+sert directement le `.iter()` d'`export_dxf`. Un tableau explicitement vide
+passe — « un footprint sans pad » est une réponse ; seule l'absence ou un
+mauvais type est refusée, car c'est là que l'appelant n'a rien dit.
+`require_u64` s'appuie sur `as_u64`, qui rejette déjà négatif, fractionnaire et
+chaîne.
 
-La garde est désormais `changed.is_empty()` seule, avec le motif
-`no editable field was given` quand `errors` est vide : elle exigeait un
-`errors` non vide pour se déclencher, ce qui laissait un appel ne passant que
-`fields` — et un appel sans aucun argument éditable — répondre
-`{"changes": []}` en succès. Voir D126. La réécriture par macro d'amont a été
-mesurée et non copiée : la boucle directe échouait en `E0499` (la closure garde
-l'emprunt d'`errors` vivant jusqu'à `new_reference`), et la passe de conversion
-préalable la résout sans macro.
+Les cinq sites sont routés strictement par la liste `required` de leur propre
+schéma, pas par ce qui semblait risqué : `create_footprint` (`library.rs:625`)
+prend `name` et `pads`, `create_symbol` (`:2297`) `name` et
+`reference_prefix`, `copy_routing_pattern` (`verification.rs:559`) les six
+coordonnées, `export_dxf` (`pcb_export.rs:523`) `layers`, et
+`place_component_array` (`pcb_components.rs:1485`) `count_x` seul — `count_y`
+porte `"default": 1` au schéma. Voir D127.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1270
-  tests, 0 échec** (1264 + 6 nouveaux, aucun test existant modifié)
-- rouge d'abord : les six échouent avant le correctif, dont
-  `a_fields_only_edit_writes_the_property_the_symbol_lacks`
-  (`left: Array [] right: Array [String("MPN → RC0805FR-074K7L (added)")]`) et
-  `an_edit_that_changes_nothing_is_a_failure`
-  (`an empty edit reported success: {"changes":[],"reference":"R1"}`)
+- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1283
+  tests, 0 échec, 33 ignorés** (1270 + 13 nouveaux, aucun test existant
+  modifié)
+- rouge d'abord : les cinq échouent avant le correctif, dont
+  `create_footprint_without_pads_leaves_the_target_file_byte_identical`
+  (`a call with no pads must be refused`) et
+  `copying_a_pattern_without_a_destination_is_refused_not_dropped_on_the_origin`
+  (`a copy with no destination must be refused`)
+
+Changement de contrat assumé : un appelant qui omettait `pads`, `layers`,
+`dest_x`/`dest_y`, `count_x`, `name` ou `reference_prefix` reçoit désormais
+`invalid_argument` au lieu d'une écriture silencieuse.
 
 ## Décisions actives
+
+- **D127** — la liste `required` du schéma d'un tool est l'autorité sur ce
+  qu'un handler doit exiger, pas l'intuition du risque. P.6.9.7 a durci
+  exactement ces clés-là : `count_y` porte `"default": 1` et reste optionnel
+  bien que voisin de `count_x`, qui est durci. Corollaire, découvert en
+  passant : quand schéma et handler divergent sur un défaut, c'est un défaut à
+  part entière — voir P.6.9.15 pour `spacing_y`.
+- **D128** — `docs/capability-matrix.md` est généré, et son scanner conserve la
+  source de preuve **lexicographiquement la plus petite**
+  (`capability/coverage.rs:93`). Ajouter un test unitaire dans `src/tools/…`
+  pour un tool jusque-là prouvé par un test d'intégration déplace donc sa ligne
+  d'evidence, et rend `the_committed_matrix_is_up_to_date` rouge. Régénérer
+  avec `KAM_UPDATE_MATRIX=1` ; ce n'est pas une régression de couverture tant
+  que le statut ne bouge pas.
 
 - **D126** — une garde « ne rien changer est un échec » qui exige *aussi* une
   erreur ne garde rien : elle ne se déclenche que là où un autre code a déjà
@@ -213,9 +229,16 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.7 — `6ed6cac` : cinq voies d'écriture tournent sur des
-arguments requis substitués, parce que rien n'impose `required` côté serveur.
-Cibles vérifiées : `require_str` / `require_f64` / `get_path`
-(`crates/konnect-core/src/tools/mod.rs:414-447`). Lire la section P.6.9.7 du
-plan pour les cinq sites exacts avant de commencer, et écrire le test rouge
-d'abord.
+Implémenter P.6.9.8 — `977f0c5` : `run_design_review` (`design_review.rs:522-625`)
+et `validate_for_manufacturing` (`manufacturing.rs:281-390`) répondent tous
+deux « ma carte est-elle prête ? » et **aucun** n'a jamais lancé la DRC ; le
+seul test de routage du second reste `net_count > 3 && track_count == 0`
+(`:351`), qui ne se déclenche que sur une carte sans aucune piste, si bien
+qu'une carte routée sauf un net répond `READY`. Lancer la DRC quand une carte
+est en jeu et replier erreurs, items non connectés et parité schéma dans les
+deux verdicts ; quand la DRC ne peut pas tourner, le verdict est
+INCOMPLETE / NOT READY nommant la preuve manquante, et le résumé DRC est
+`null` plutôt que mis à zéro. `DrcReport` et `missing_categories()` existent
+déjà depuis P.6.1 (voir `tools/cli.rs`). Les revues purement schéma restent
+inchangées. Séquencer contre le `#185` de P.6.8 pour qu'aucune des deux ne
+défasse l'autre.

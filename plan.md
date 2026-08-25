@@ -3561,7 +3561,7 @@ None. Each item below is independent of the others except where stated.
         (`left: Array [] right: Array [String("MPN → RC0805FR-074K7L (added)")]`)
         and `an_edit_that_changes_nothing_is_a_failure`
         (`an empty edit reported success: {"changes":[],"reference":"R1"}`).
-  - [ ] P.6.9.7 `6ed6cac` — five write paths run on substituted required
+  - [x] P.6.9.7 `6ed6cac` — five write paths run on substituted required
         arguments, because nothing enforces `required` server-side and the
         handlers read with `unwrap_or`: `create_footprint`
         (`library.rs:625-633`; `name` → "Footprint", `pads` → empty, then
@@ -3578,6 +3578,36 @@ None. Each item below is independent of the others except where stated.
         empty array stays accepted; only absence is refused. Assert the target
         file is byte-identical after a refused `create_footprint` — asserting
         the error alone would pass even if the write happened first.
+        Done. `tools/mod.rs:438-461` gained `require_array` and `require_u64`
+        beside the two that existed. `require_array` returns a borrowed
+        `&[Value]`, not an owned `Vec`: it removes `create_footprint`'s
+        `.cloned()` and feeds `export_dxf`'s `.iter()` directly. An explicitly
+        empty array passes — "a footprint with no pads" is an answer; only
+        absence or a non-array is refused, because that is the caller who never
+        said. `require_u64` leans on `serde_json::as_u64`, which already
+        rejects negative, fractional and string.
+        The five sites route strictly by their own schema's `required` list,
+        not by what looked risky: `create_footprint` (`library.rs:625`) takes
+        `name` and `pads`, `create_symbol` (`:2297`) `name` and
+        `reference_prefix`, `copy_routing_pattern` (`verification.rs:559`) all
+        six coordinates, `export_dxf` (`pcb_export.rs:523`) `layers`, and
+        `place_component_array` (`pcb_components.rs:1485`) `count_x` alone —
+        `count_y` carries `"default": 1` in the schema and stays optional.
+        `docs/capability-matrix.md` moved one line: the scanner keeps the
+        lexicographically smallest source (`capability/coverage.rs:93`), and
+        the new unit test in `verification.rs` sorts before the integration
+        test that had been proving `copy_routing_pattern`. Status `SUPPORTED`
+        unchanged; regenerated with `KAM_UPDATE_MATRIX=1`.
+        Red before, five tests, among them
+        `create_footprint_without_pads_leaves_the_target_file_byte_identical`
+        (panic `a call with no pads must be refused`) and
+        `copying_a_pattern_without_a_destination_is_refused_not_dropped_on_the_origin`
+        (panic `a copy with no destination must be refused`). The byte-identity
+        assertion is the point: asserting the error alone would pass even if
+        the write happened first.
+        Known contract change: a caller that omitted `pads`, `layers`,
+        `dest_x`/`dest_y`, `count_x`, `name` or `reference_prefix` now gets
+        `invalid_argument` instead of a silent write. That is the item.
   - [ ] P.6.9.8 `977f0c5` — `run_design_review` (`design_review.rs:522-625`)
         and `validate_for_manufacturing` (`manufacturing.rs:281-390`) both
         answer "is my board ready?" and neither has ever run DRC; the second's
@@ -3655,6 +3685,18 @@ None. Each item below is independent of the others except where stated.
         the shared helpers and the same `property_text` conversion. Proof to
         reproduce first: a batch spec with `fields: {"Qty": 2}` reports success
         and writes nothing.
+  - [ ] P.6.9.15 — `place_component_array`'s schema and handler disagree on
+        `spacing_y`. The schema documents `"spacing_y": { "default": 0 }`
+        (`pcb_components.rs:1030`); the handler reads
+        `args["spacing_y"].as_f64().unwrap_or(spacing_x)` (`:1511`). A caller
+        who trusts the published schema and omits `spacing_y` asks for a single
+        row and gets a square grid — every part of an N×M array placed at the
+        wrong y. Found while doing P.6.9.7 and deliberately left there: it is
+        an *optional* argument whose default is wrong, not a required one being
+        substituted, so it is a different defect. Decide which of the two is
+        right — measure what a row array is normally asked for — then make the
+        other match, and cover it with a test that places a 3×2 array without
+        `spacing_y` and asserts the y coordinates.
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,

@@ -11,7 +11,8 @@ use crate::tools::ipc_boundary::{ipc_error_result, ipc_error_result_with, with_i
 use crate::tools::library::{
     footprint_lib_nickname_for_dir, is_lib_id, resolve_footprint_path, FootprintPathError,
 };
-use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
+use crate::tools::{get_path, require_f64, require_str, require_u64, ToolContext, ToolDef};
+use crate::try_arg;
 use anyhow::Context;
 use konnect_sexp::writer::{
     apply_edits, find_balanced_block, find_block_starts, new_uuid, write_atomic,
@@ -1480,7 +1481,8 @@ async fn handle_place_array(
         Ok(v) => v,
         Err(e) => return Ok(e),
     };
-    let count_x = args["count_x"].as_u64().unwrap_or(1);
+    // `count_x` is `required` in the schema; `count_y` defaults to 1 there.
+    let count_x = try_arg!(require_u64(args, "count_x"));
     let count_y = args["count_y"].as_u64().unwrap_or(1);
     let Some(total_count) = count_x.checked_mul(count_y) else {
         return Ok(CallToolResult::error_kind(
@@ -2642,5 +2644,53 @@ mod field_placement_tests {
         let placement = extract_field_placement("(footprint \"bare\")");
         assert_eq!(placement.reference_at, None);
         assert_eq!(placement.value_at, None);
+    }
+
+    /// `count_x` is required by the schema, but the handler defaulted it to 1
+    /// — an agent that lost the field placed one column instead of hearing
+    /// about it.
+    #[tokio::test]
+    async fn placing_an_array_without_count_x_is_refused_not_reduced_to_one_column() {
+        use crate::router::ToolRouter;
+        use crate::tools::ServerConfig;
+        use std::sync::Arc;
+
+        let ctx = ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        );
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("board.kicad_pcb");
+        std::fs::write(&board, "(kicad_pcb (version 20240108))").unwrap();
+
+        let args = serde_json::json!({
+            "board": board.to_string_lossy(),
+            "footprint": "Resistor_SMD:R_0402",
+            "start_x": 10.0,
+            "start_y": 10.0,
+            "spacing_x": 2.0
+        });
+        let res = handle_place_array(&args, &ctx)
+            .await
+            .expect("the refusal is a result, not a transport error");
+        assert!(res.is_error);
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+        let body = match &res.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            _ => panic!(),
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["error"]["field"], "count_x");
     }
 }

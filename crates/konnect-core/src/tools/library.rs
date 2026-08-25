@@ -6,7 +6,7 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{get_path, require_str, ToolContext, ToolDef};
+use crate::tools::{get_path, require_array, require_str, ToolContext, ToolDef};
 use crate::try_arg;
 use konnect_sexp::parser::{parse_sexp, SexpNode};
 use konnect_sexp::writer::{find_balanced_block, find_block_starts, write_atomic};
@@ -627,13 +627,16 @@ async fn handle_create_footprint(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let output = get_path(args, "output")?;
-    let name = args["name"].as_str().unwrap_or("Footprint");
+    let name = try_arg!(require_str(args, "name"));
     let description = args["description"].as_str().unwrap_or("");
 
-    let pads_val = args["pads"].as_array().cloned().unwrap_or_default();
+    // `name` and `pads` are `required` in the schema. Defaulting them wrote a
+    // footprint called "Footprint" with no pads over whatever `output` already
+    // held — a destructive write standing in for the call the caller meant.
+    let pads_val = try_arg!(require_array(args, "pads"));
     let mut pad_geoms: Vec<PadGeom> = Vec::new();
     let mut pad_sexp = String::new();
-    for pad in &pads_val {
+    for pad in pads_val {
         let number = pad["number"].as_str().unwrap_or("1").to_string();
         let pad_type = pad["type"].as_str().unwrap_or("smd").to_string();
         let shape = pad["shape"].as_str().unwrap_or("rect");
@@ -2295,8 +2298,10 @@ async fn handle_create_symbol(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let lib_path = get_path(args, "library_path")?;
-    let name = args["name"].as_str().unwrap_or("Symbol");
-    let ref_prefix = args["reference_prefix"].as_str().unwrap_or("U");
+    // Both are `required` in the schema; the old defaults appended a symbol
+    // named "Symbol" with prefix "U" to the caller's library.
+    let name = try_arg!(require_str(args, "name"));
+    let ref_prefix = try_arg!(require_str(args, "reference_prefix"));
     let value_str = args["value"].as_str().unwrap_or(name);
     let show_names = args["show_pin_names"].as_bool().unwrap_or(true);
     let show_numbers = args["show_pin_numbers"].as_bool().unwrap_or(true);
@@ -4919,6 +4924,82 @@ mod tests {
         assert!(
             rc.contains("(name \"IN\" (effects (font (size 1.27 1.27))))"),
             "rectangle pin names keep the default 1.27 font:\n{rc}"
+        );
+    }
+
+    /// A `create_footprint` call that omits `pads` used to substitute an empty
+    /// pad list and a footprint named "Footprint", then `write_atomic` that
+    /// over whatever the `output` path already held. Asserting the refusal
+    /// alone would pass even if the write happened first, so the bytes of the
+    /// target file are what this pins.
+    #[tokio::test]
+    async fn create_footprint_without_pads_leaves_the_target_file_byte_identical() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("EXISTING.kicad_mod");
+        let before = "(footprint \"EXISTING\"
+	(version 20240108)
+)
+";
+        std::fs::write(&out, before).unwrap();
+
+        let args = json!({ "output": out.to_string_lossy() });
+        let res = handle_create_footprint(&args, &test_ctx()).await.unwrap();
+        assert!(res.is_error, "a call with no pads must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+
+        let after = std::fs::read(&out).unwrap();
+        assert_eq!(
+            after,
+            before.as_bytes(),
+            "the target file was rewritten by a call that was refused"
+        );
+    }
+
+    /// The refusal is about absence, not emptiness: a caller who asks for a
+    /// footprint with no pads gets one.
+    #[tokio::test]
+    async fn create_footprint_accepts_an_explicitly_empty_pad_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("NOPADS.kicad_mod");
+        let args = json!({
+            "output": out.to_string_lossy(),
+            "name": "NOPADS",
+            "pads": []
+        });
+        let res = handle_create_footprint(&args, &test_ctx()).await.unwrap();
+        assert!(
+            !res.is_error,
+            "an empty pad list is a value, not an omission"
+        );
+        let c = std::fs::read_to_string(&out).unwrap();
+        assert!(c.contains("(footprint \"NOPADS\""), "{c}");
+    }
+
+    /// Without `name` the tool used to write a symbol called "Symbol" with
+    /// reference prefix "U" — a library entry nothing asked for.
+    #[tokio::test]
+    async fn create_symbol_without_a_name_is_refused_not_named_symbol() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = tmp.path().join("test.kicad_sym");
+        let args = json!({
+            "library_path": lib.to_string_lossy(),
+            "reference_prefix": "U"
+        });
+        let res = handle_create_symbol(&args, &test_ctx()).await.unwrap();
+        assert!(res.is_error, "a nameless symbol must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+        assert!(
+            !lib.exists()
+                || !std::fs::read_to_string(&lib)
+                    .unwrap()
+                    .contains("\"Symbol\""),
+            "a symbol named 'Symbol' was written anyway"
         );
     }
 }

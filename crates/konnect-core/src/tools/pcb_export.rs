@@ -7,7 +7,8 @@
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
-use crate::tools::{get_path, ToolContext, ToolDef};
+use crate::tools::{get_path, require_array, ToolContext, ToolDef};
+use crate::try_arg;
 use serde_json::json;
 
 use super::cli;
@@ -516,14 +517,13 @@ async fn handle_export_dxf(
 ) -> anyhow::Result<CallToolResult> {
     let board = get_path(args, "board")?;
     let output_dir = get_path(args, "output_dir")?;
-    let layers: Vec<String> = args["layers"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    // `layers` is `required` in the schema, and an empty list makes
+    // `cli::export_dxf` omit `--layers` altogether, leaving the layer set to
+    // kicad-cli's own default. Absence is refused; an explicit `[]` is not.
+    let layers: Vec<String> = try_arg!(require_array(args, "layers"))
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
     let layer_refs: Vec<&str> = layers.iter().map(|s| s.as_str()).collect();
 
     tokio::fs::create_dir_all(&output_dir).await?;
@@ -760,6 +760,27 @@ mod new_export_format_tests {
         // kicad_cli is "" in test_ctx, so spawning must fail — but as a
         // returned error, not a panic.
         assert!(handle_export_dxf(&args, &ctx).await.is_err());
+    }
+
+    /// An absent `layers` used to become an empty list, and an empty list
+    /// makes `cli::export_dxf` omit `--layers` entirely — so kicad-cli picked
+    /// its own layer set and the caller got files they never asked for.
+    #[tokio::test]
+    async fn export_dxf_without_layers_is_refused_not_left_to_kicad_cli() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ctx = test_ctx();
+        let args = json!({
+            "board": dir.path().join("board.kicad_pcb").to_str().unwrap(),
+            "output_dir": dir.path().join("out").to_str().unwrap()
+        });
+        let res = handle_export_dxf(&args, &ctx)
+            .await
+            .expect("the refusal is a result, not a transport error");
+        assert!(res.is_error);
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
     }
 
     #[tokio::test]

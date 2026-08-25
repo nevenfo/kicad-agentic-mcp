@@ -435,6 +435,30 @@ pub fn opt_f64(args: &Value, key: &str) -> Option<f64> {
     args[key].as_f64()
 }
 
+/// Extract a required array argument. Returns a structured `InvalidArgument`
+/// error result if missing or not an array.
+///
+/// An explicitly empty array is a legitimate answer — "export no layers", "a
+/// footprint with no pads" — and is returned as an empty slice. Only absence
+/// (or a non-array) is refused, because that is the caller who never said.
+/// The borrowed slice, rather than an owned `Vec`, keeps the callers that only
+/// iterate from cloning the whole payload.
+pub fn require_array<'a>(args: &'a Value, key: &str) -> Result<&'a [Value], CallToolResult> {
+    args[key]
+        .as_array()
+        .map(|a| a.as_slice())
+        .ok_or_else(|| invalid_arg(key, "missing or not an array"))
+}
+
+/// Extract a required unsigned integer argument. Returns a structured
+/// `InvalidArgument` error result if missing, not a number, or negative /
+/// fractional — `serde_json`'s `as_u64` already rejects all three.
+pub fn require_u64(args: &Value, key: &str) -> Result<u64, CallToolResult> {
+    args[key]
+        .as_u64()
+        .ok_or_else(|| invalid_arg(key, "missing or not a non-negative integer"))
+}
+
 /// Extract a required path string and return it as a PathBuf, using
 /// `anyhow::Error`. Use this variant with `?` inside handlers that return
 /// `anyhow::Result`. The surrounding dispatch will stringify the error and
@@ -1747,6 +1771,85 @@ mod arg_helper_tests {
         let args = json!({ "name": "ok" });
         let v = require_str(&args, "name").expect("should parse");
         assert_eq!(v, "ok");
+    }
+
+    #[test]
+    fn require_array_present_returns_its_elements() {
+        let args = json!({ "layers": ["Edge.Cuts", "F.Cu"] });
+        let v = require_array(&args, "layers").expect("should parse");
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0], "Edge.Cuts");
+    }
+
+    /// An empty list is something the caller said, not something they omitted,
+    /// so it survives the check that absence does not.
+    #[test]
+    fn require_array_accepts_an_explicitly_empty_array() {
+        let args = json!({ "pads": [] });
+        let v = require_array(&args, "pads").expect("an empty array is a value");
+        assert!(v.is_empty());
+    }
+
+    #[test]
+    fn require_array_missing_produces_structured_invalid_argument() {
+        let args = json!({});
+        let err = require_array(&args, "pads").expect_err("should fail");
+        assert_eq!(
+            extract_error_kind(&err).as_deref(),
+            Some("invalid_argument")
+        );
+        let body = match &err.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            _ => panic!(),
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["error"]["field"], "pads");
+    }
+
+    #[test]
+    fn require_array_non_array_is_refused() {
+        let args = json!({ "pads": "1,2" });
+        let err = require_array(&args, "pads").expect_err("should fail");
+        assert_eq!(
+            extract_error_kind(&err).as_deref(),
+            Some("invalid_argument")
+        );
+    }
+
+    #[test]
+    fn require_u64_present_returns_value() {
+        let args = json!({ "count_x": 4 });
+        assert_eq!(require_u64(&args, "count_x").expect("should parse"), 4);
+    }
+
+    #[test]
+    fn require_u64_missing_produces_structured_invalid_argument() {
+        let args = json!({});
+        let err = require_u64(&args, "count_x").expect_err("should fail");
+        assert_eq!(
+            extract_error_kind(&err).as_deref(),
+            Some("invalid_argument")
+        );
+        let body = match &err.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            _ => panic!(),
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["error"]["field"], "count_x");
+    }
+
+    /// A negative or fractional count is not an unsigned integer, and guessing
+    /// one from it would be the substitution this helper exists to stop.
+    #[test]
+    fn require_u64_non_integer_is_refused() {
+        for bad in [json!("4"), json!(-1), json!(2.5)] {
+            let args = json!({ "count_x": bad });
+            let err = require_u64(&args, "count_x").expect_err("should fail");
+            assert_eq!(
+                extract_error_kind(&err).as_deref(),
+                Some("invalid_argument")
+            );
+        }
     }
 }
 

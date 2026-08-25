@@ -6,7 +6,8 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{get_path, require_str, ToolContext, ToolDef};
+use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
+use crate::try_arg;
 use konnect_sexp::writer::write_atomic;
 use serde_json::json;
 use tokio::task;
@@ -558,12 +559,14 @@ async fn handle_copy_routing_pattern(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let board = get_path(args, "board")?;
-    let src_x1 = args["src_x1"].as_f64().unwrap_or(0.0);
-    let src_y1 = args["src_y1"].as_f64().unwrap_or(0.0);
-    let src_x2 = args["src_x2"].as_f64().unwrap_or(0.0);
-    let src_y2 = args["src_y2"].as_f64().unwrap_or(0.0);
-    let dest_x = args["dest_x"].as_f64().unwrap_or(0.0);
-    let dest_y = args["dest_y"].as_f64().unwrap_or(0.0);
+    // All six are `required` in the schema. Defaulting them to 0.0 turned a
+    // missing destination into a copy dropped on the board origin.
+    let src_x1 = try_arg!(require_f64(args, "src_x1"));
+    let src_y1 = try_arg!(require_f64(args, "src_y1"));
+    let src_x2 = try_arg!(require_f64(args, "src_x2"));
+    let src_y2 = try_arg!(require_f64(args, "src_y2"));
+    let dest_x = try_arg!(require_f64(args, "dest_x"));
+    let dest_y = try_arg!(require_f64(args, "dest_y"));
 
     let dx = dest_x - src_x1;
     let dy = dest_y - src_y1;
@@ -900,4 +903,61 @@ fn find_footprint_position(
     let fp_y = fp_at.and_then(|a| a.get_f64(2)).unwrap_or(0.0);
 
     Ok((fp_x, fp_y))
+}
+
+#[cfg(test)]
+mod routing_pattern_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    const BOARD: &str = r#"(kicad_pcb (version 20240108) (generator pcbnew)
+  (net 0 "")
+  (net 1 "GND")
+  (segment (start 10 10) (end 12 10) (width 0.25) (layer "F.Cu") (net 1))
+)"#;
+
+    /// `dest_x`/`dest_y` defaulted to 0.0, so a caller who named a source
+    /// region but no destination got the whole pattern duplicated onto the
+    /// board origin — a silent write, reported as a success.
+    #[tokio::test]
+    async fn copying_a_pattern_without_a_destination_is_refused_not_dropped_on_the_origin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("board.kicad_pcb");
+        std::fs::write(&board, BOARD).unwrap();
+
+        let args = json!({
+            "board": board.to_string_lossy(),
+            "src_x1": 9.0, "src_y1": 9.0, "src_x2": 13.0, "src_y2": 13.0
+        });
+        let res = handle_copy_routing_pattern(&args, &test_ctx())
+            .await
+            .expect("the refusal is a result, not a transport error");
+        assert!(res.is_error, "a copy with no destination must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+        assert_eq!(
+            std::fs::read(&board).unwrap(),
+            BOARD.as_bytes(),
+            "the board was rewritten by a call that was refused"
+        );
+    }
 }
