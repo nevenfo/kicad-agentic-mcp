@@ -3,11 +3,11 @@
 ## Phase actuelle
 
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
-(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7
-est ouverte : les huit items d'origine (P.6.7.1 à P.6.7.8) sont clos,
-P.6.10 est close, P.6.7.9 à P.6.7.11 sont des découvertes ouvertes, P.6.8 à P.6.11
-restent. Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers
-`agentic/main`.
+(backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
+ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10 et
+P.6.9 (triage) closes. P.6.9.1 à P.6.9.12 sont les tâches issues du triage ;
+P.6.8 et P.6.11 restent. Branche de travail : `ai/P-schematic-fidelity`,
+PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
 
@@ -15,31 +15,42 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.10 — `parse_sexp` refuse une entrée qu'il n'a pas consommée comme **un**
-document, au lieu de fabriquer une racine implicite et de rendre `Ok`.
-L'erreur porte l'**offset** où la lecture s'est arrêtée. La retombée a été
-retirée entièrement, pas à moitié : ses deux moitiés ont été rendues
-inatteignables tour à tour et la suite relancée — rien n'en dépend, et tout
-site qui parse un fragment l'enveloppe déjà dans une racine explicite.
+P.6.9 — triage des 16 correctifs upstream partis directement sur `main`
+(annexe A de `docs/upstream-audit.md`), par la méthode de P.4 : diff amont, puis
+localisation du mécanisme dans ce fork par `rg`, verdict avec citation
+`file:line`. Résultat : **8 BACKPORT NOW, 4 LATER, 4 NOT APPLICABLE**, plus un
+ordre d'implémentation par conséquence. Les tâches correspondantes sont ouvertes
+en `P.6.9.1` … `P.6.9.12` dans `plan.md`.
 
-Deuxième partie : `conformance_test.rs` gagne `collect_boards` et un test de
-corpus sur les boards, et son lookup apprend l'install par utilisateur
-`%LOCALAPPDATA%` — l'omission derrière D113. Le corpus se trouve désormais sans
-`KICAD_DEMOS`, un `KICAD_DEMOS` explicite mais introuvable échoue au lieu de se
-sauter, et les comptes sont affichés et assertés.
+Mesures qui portent le classement :
+- `ff518c8` est **pire ici qu'en amont** : la table de `layer_from_name`
+  (`konnect-ipc/src/builders.rs:42-61`) est plus courte que celle qu'upstream a
+  corrigée, et les chemins graphic/text/footprint-instance envoient
+  `BL_UNDEFINED` là où le chemin pad le retire. `pcb_components.rs:353` lit les
+  graphics du vrai `.kicad_mod`, donc un footprint de librairie officielle avec
+  un enfant `Dwgs.User` fait planter l'éditeur ouvert.
+- Trois items sont **moins chers ici** parce que P.6 a déjà posé leur moitié
+  dure : `f2372ca` sur `konnect_sexp::net` (P.6.5), `977f0c5` sur `DrcReport`
+  (P.6.1), `de70351`/`8591707` sur `update_field`/`insert_property`.
+- Quatre sont **sans objet parce que le mécanisme est absent**, pas parce qu'il
+  serait mineur : aucun chemin de sync (`2904841`, `59d0ead`), aucun
+  `.ancestors()` dans l'arbre (`ec705c3`), aucun bloc de couverture de board
+  (`d5774b3`, dont le piège `find_all` a été balayé et ne se retrouve nulle
+  part ailleurs en production).
 
-Validation :
-- `cargo fmt --all -- --check` : PASS
-- `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, 50 suites, 0 échec
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, 10/10
-- conformance : **115/115 schémas, 18/19 boards**, le dix-neuvième étant le
-  fichier réellement malformé de D116, nommé dans `KNOWN_BAD_BOARDS`
-- preuve croisée dans les deux sens : avec l'ancien parser restauré, ce board
-  « parse » et le test de corpus échoue en le disant
+Validation : documentaire, aucun code touché. Chaque verdict est ancré par une
+citation vérifiée dans ce fork ; les numéros de ligne ont été relus après
+rédaction (`writer.rs:104`, `sch_components.rs:795`/`:825`/`:860`,
+`pcb_components.rs:1494`).
 
 ## Décisions actives
 
+- **D119** — le triage P.6.9 vaut aussi comme mesure d'écart : ce fork n'a ni
+  `pcb_sync.rs`, ni `apply_footprint_fields`, ni `update_pcb_from_schematic`, et
+  discrimine déjà les enfants d'un footprint par `type_url`
+  (`konnect-ipc/src/transform.rs:282-295`). Un item upstream touchant la sync
+  n'a donc pas de site ici ; si une telle voie est ajoutée un jour, reprendre
+  `2904841` puis `59d0ead`, dans cet ordre.
 - **D118** — `kicad-cli sch export bom` (10.0.3) n'a **aucune** option
   `--format` ; il expose `--fields`, `--labels`, `--group-by`, `--sort-field`,
   `--filter`, `--exclude-dnp` et des délimiteurs. Toute option annoncée par un
@@ -51,7 +62,10 @@ Validation :
   `In1.Cu`=4, `In2.Cu`=6. L'ancien schéma (`B.Cu`=31, internes 1..30) ne vaut
   que pour les fichiers plus vieux, dont notre fixture `unrouted.kicad_pcb`.
   Tout code qui alloue un id de layer doit le dériver du nom canonique sous la
-  numérotation du board, jamais d'un intervalle fixe — c'est P.6.11.
+  numérotation du board, jamais d'un intervalle fixe — c'est P.6.11. Voisin
+  mesuré pendant P.6.9 : `konnect-ipc/src/client.rs:1294` développe `*.Cu` en
+  `3..=34`, même hypothèse d'intervalle fixe, dans la fonction que P.6.9.1
+  touche.
 - **D116** — un board livré par KiCad 10 peut être réellement malformé :
   `demos/royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb` ferme sa racine
   à l'octet 14735 sur 3,6 Mo et finit 349 parenthèses fermantes en avance.
@@ -65,15 +79,12 @@ Validation :
   `SexpNode::Atom` en position 1, jamais par un numéro de version.
 - **D114** — `gh` résout par défaut vers le remote **upstream**
   `mixelpixx/Konnect`. Toute commande `gh` visant notre travail doit porter
-  `-R nevenfo/kicad-agentic-mcp`, sans quoi on lit les PR d'upstream (leur #10
-  est mergée et sans rapport avec la nôtre).
+  `-R nevenfo/kicad-agentic-mcp`, sans quoi on lit les PR d'upstream.
 - **D113** — *résolue par P.6.10 et conservée pour la leçon* : le lookup de
   `conformance_test` ignorait l'install `%LOCALAPPDATA%`, si bien que les tests
-  se sautaient **en silence** (« SKIP: no KiCAD demos found ») et que trois
-  tests « passed » en 0.00 s signifiaient zéro fichier vérifié. Le lookup
-  connaît désormais ce chemin, un `KICAD_DEMOS` explicite mais introuvable
-  échoue, et les comptes sont assertés. La leçon reste : un test qui peut se
-  sauter doit rendre son silence visible.
+  se sautaient **en silence**. Le lookup connaît désormais ce chemin, un
+  `KICAD_DEMOS` explicite mais introuvable échoue, et les comptes sont assertés.
+  La leçon reste : un test qui peut se sauter doit rendre son silence visible.
 - **D112** — mesures d'oracle de P.6.2 : le bloc `(netclass …)` inséré dans le
   board fait sortir `kicad-cli` en **code 3** ("Échec du chargement de la
   carte") sans écrire de rapport. Et un vrai `.kicad_pro` KiCad 10 porte
@@ -98,7 +109,7 @@ Validation :
   `BACKPORT NOW` sont P.6, seul `#174` a été backporté dans P.4.
 - **D108** — deux des correctifs les plus graves ont atterri directement sur
   `upstream/main` (`e7eeeac`, `9a56233`) : une énumération par `--merges` ne
-  peut pas les voir. Vaut pour le triage P.6.9.
+  peut pas les voir. C'est ce qui a motivé P.6.9, désormais close.
 - **D109** — aucun contenu portant des backslashes ne doit transiter par une
   heredoc : celle de ce shell les mange, même en `<<'EOF'`, et une heredoc
   Python les relit comme échappements, en silence. Tout contenu de ce genre
@@ -112,32 +123,32 @@ Aucun.
 
 ## Fichiers / zones utiles
 
-- `crates/konnect-sexp/src/layers.rs` — stackup lu par forme, noms canoniques.
-- `crates/konnect-sexp/src/net.rs` — accesseurs de nets des deux formes.
-- `crates/konnect-core/src/tools/pcb_board.rs` — `close_of_block`,
-  `entry_indent`, `handle_add_layer`, `handle_get_board_info`, module
-  `layers_block_tests`.
-- `crates/konnect-core/src/tools/cli.rs` — `ReportItem`, `parse_report_items`,
-  `ErcViolation`, `DrcViolation`, `DrcCategory`, `DrcReport`, `parse_erc_json`,
-  `parse_drc_json`, modules `erc_parse_tests` et `drc_parse_tests`.
-- `crates/konnect-core/src/evidence/validators.rs` — gate d'evidence, `location`
-  encore dérivé de `pos`.
-- `crates/konnect-sexp/src/schematic.rs` — `extract_power_symbol_labels`,
-  `extract_all_net_labels`, `LibPin::electrical_type`.
-- `crates/konnect-sexp/src/parser.rs` — `parse_sexp` l.89-111, la retombée
-  « implicit List » que P.6.10 doit traiter.
-- `crates/konnect-core/tests/cli_tools.rs` + `fixtures/unrouted.kicad_pcb`.
-- `docs/upstream-audit.md` — source des items P.6.7 à P.6.9.
+- `docs/upstream-audit.md` — annexe A : le triage P.6.9, avec pour chaque item
+  mécanisme amont, état dans ce fork (`file:line`), impact et coût.
+- `crates/konnect-ipc/src/builders.rs` — `layer_from_name` l.42-61, cible de
+  P.6.9.1 ; `crates/konnect-ipc/src/client.rs` — `build_graphic_child` l.1561,
+  chemin footprint l.1230-1400.
+- `crates/konnect-core/src/tools/pcb_routing.rs` + `pcb_board.rs` — les deux
+  `find_net_id` et le template de zone, cibles de P.6.9.2.
+- `crates/konnect-sexp/src/net.rs` — lecture des nets par forme (P.6.5), base
+  du write-side de P.6.9.2.
+- `crates/konnect-core/src/tools/mod.rs` — `project_name_for` l.452,
+  `ensure_root_uuid` l.497, `require_str`/`require_f64`/`get_path` l.414-447.
+- `crates/konnect-schematic-editor/src/sexp/writer.rs` — les trois causes du
+  reformatage (P.6.9.4).
+- `crates/konnect-core/src/tools/cli.rs` — `DrcReport`, base de P.6.9.8.
 - `.github/workflows/e2e-kicad.yml` — job gatant, un step par sonde.
 
 ## NEXT ACTION
 
-Implémenter P.6.9 — triage des 16 correctifs upstream partis directement sur
-`main` (annexe A de `docs/upstream-audit.md` : `f2372ca` nets de zone écrits en
-net 0, `e7b0c54` instances de feuilles filles, `f8a8db0` réécriture de toute la
-feuille à l'écriture, `de70351` texte de champ perdu au `bulk_move`, …). Les
-trier comme P.4 a trié les merges — état dans ce fork, impact, coût — **avant**
-d'en implémenter un seul ; voir D108 pour pourquoi une énumération par
-`--merges` ne peut pas les voir. Produire le classement dans
-`docs/upstream-audit.md`, puis ouvrir les tâches correspondantes dans `plan.md`.
-Ensuite seulement : P.6.11, P.6.7.9, P.6.7.10, P.6.8.
+Implémenter P.6.9.1 — `ff518c8` : `layer_from_name`
+(`crates/konnect-ipc/src/builders.rs:42-61`) doit couvrir tout layer sur lequel
+un footprint KiCad 10 peut légalement dessiner, par calcul et non par liste
+(attention : `BL_Rescue = 62` s'intercale entre `BL_User_9 = 61` et
+`BL_User_10 = 63`), et un `try_layer_from_name` doit refuser un nom sans
+représentation **avant** qu'un seul enfant ne soit construit — root, pads,
+graphics et textes. Rouge d'abord : un test qui montre qu'un enfant `Dwgs.User`
+part aujourd'hui en `BL_UNDEFINED` par `build_graphic_child`
+(`client.rs:1561`). Le chemin de mesure amont (KiCAD qui faute) n'est pas
+reproductible sans session GUI ; l'assertion porte donc sur ce qui est envoyé,
+et la limite doit être écrite dans la tâche.

@@ -25,8 +25,9 @@ complexity, and applicability proven by a `file:line` citation in this fork. Eve
 
 Two upstream fixes that are not merge commits surfaced while reading the same files and are
 included because they dominate their neighbours in value: `e7eeeac` (DRC report categories) and
-`9a56233` (netclasses written into the board). Appendix A lists the rest of upstream's
-direct-to-main fix commits, which this bounded audit did not triage.
+`9a56233` (netclasses written into the board). The rest of upstream's direct-to-main fix commits
+were left untriaged by this bounded audit and were triaged separately under P.6.9; Appendix A is
+that assessment, by the same method and with the same verdicts.
 
 ## Summary
 
@@ -526,28 +527,360 @@ would not apply as written in any case.
 
 ---
 
-## Appendix A — untriaged upstream fixes
+## Appendix A — direct-to-main fixes, triaged (P.6.9)
 
-This audit covered the merge list plus `e7eeeac` and `9a56233`. Upstream also landed the following
-non-merge fixes directly on `main` in the same range. Several are squarely inside the retained
-categories and none of them were checked against this fork. They are listed so the gap is on the
-record, not because they have been assessed.
-
-| Commit | Subject | Apparent category |
-|---|---|---|
-| `f2372ca` | `fix(pcb)`: write zone net references in the board's own format, not net 0 | connectivity / corruption |
-| `2904841` | `fix(sync)`: stop rewriting a footprint's graphics as phantom pads | corruption |
-| `e7b0c54` | `fix(sch)`: key a child sheet's instances to the root, not to itself | hierarchy / corruption |
-| `f8a8db0` | `fix(schematic)`: stop reformatting the whole sheet on every write | round-trip |
-| `de70351` | `fix(sch)`: annotate properties in place, and carry field text on `bulk_move` | data loss |
-| `8591707` | `fix(sch)`: make `edit_schematic_component` honour fields and rename properly | false success |
-| `977f0c5` | `fix(review)`: require DRC evidence before approving a board | false success |
-| `d5774b3` | `fix(review)`: count the pads that are actually there | wrong result |
-| `6693681` | `fix(library)`: report what `register_symbol_library` actually did | false success |
-| `ec705c3` | `fix(library)`: a table beside the file wins over an unrelated project above it | symbol resolution |
-| `ff518c8` | `fix(ipc)`: stop sending KiCAD a layer it crashes on | KiCad compatibility |
-| `59d0ead` | `fix(sync)`: only refuse the read-back mismatch that has no benign reading | false failure |
-| `791f95b`, `4536d10`, `6ed6cac`, `c6a6407` | enforce a tool's required arguments before its handler runs | false success |
-
+The main audit above covered the merge list plus `e7eeeac` and `9a56233`. Upstream landed the
+following non-merge fixes directly on `main` in the same range, where an enumeration by `--merges`
+cannot see them (D108). They were listed but not assessed. This appendix is that assessment, by the
+same method: read the upstream commit and its net diff, identify the exact faulty mechanism, locate
+it in this fork with `rg`, and conclude *still present* / *already fixed here* / *code absent*.
 `ac71ebe` (`konnect init --help` running the installer), `2404b60` and `8d7da09` (docs and skill
-examples) fall outside the retained categories.
+examples) fall outside the retained categories and are not classified.
+
+| Commit | Subject | Category | Verdict |
+|---|---|---|---|
+| `ff518c8` | an unmapped layer is sent to KiCAD, which faults on it | KiCad compatibility | **BACKPORT NOW** |
+| `f8a8db0` | every typed write reformats the whole sheet | round-trip | **BACKPORT NOW** |
+| `f2372ca` | zone net references written as net 0 | connectivity / corruption | **BACKPORT NOW** |
+| `e7b0c54` | a child sheet's instances keyed to itself | hierarchy / corruption | **BACKPORT NOW** |
+| `de70351` | annotation appended blind; `bulk_move` leaves field text behind | data loss / round-trip | **BACKPORT NOW** |
+| `8591707` (residual) | `edit_schematic_component` ignores `fields` | false success | **BACKPORT NOW** |
+| `977f0c5` | design review and the pre-fab gate approve without DRC | false success | **BACKPORT NOW** |
+| `6ed6cac` | five write paths run on substituted required arguments | false success / corruption | **BACKPORT NOW** |
+| `4536d10` | read-only and batch tools answer a question nobody asked | wrong result | LATER |
+| `791f95b` | nothing enforces `required` server-side | false success | LATER |
+| `c6a6407` | a missing path is a `handler_error`, not `invalid_argument` | error quality | LATER |
+| `6693681` | `register_symbol_library` reports a no-op as success | false success | LATER |
+| `2904841` | footprint graphics rewritten as phantom pads | corruption | NOT APPLICABLE |
+| `59d0ead` | the read-back guard refuses a benign divergence | false failure | NOT APPLICABLE |
+| `ec705c3` | an unrelated ancestor `.kicad_pro` captures library lookup | symbol resolution | NOT APPLICABLE |
+| `d5774b3` | board pad count structurally always 0 | wrong result | NOT APPLICABLE |
+
+Recommended order, by consequence: `ff518c8` (it destroys the user's unsaved session), then
+`f2372ca` and `e7b0c54` (both write a wrong file), then `f8a8db0` (the phase's own subject, and the
+largest), then `de70351`, `8591707`, `6ed6cac`, `977f0c5`.
+
+---
+
+### `ff518c8` — an unrepresentable layer is sent to KiCAD, which faults on it — **BACKPORT NOW**
+
+**Upstream mechanism.** `builders::layer_from_name` mapped every name it did not recognise to
+`BL_UNDEFINED` and sent it. KiCAD 10.0.5 does not validate a scalar layer field on an incoming
+item: it indexes its layer bitset with whatever arrives, so a footprint carrying `Dwgs.User`
+children faulted KiCAD at `0xc0000005` in `kicommon.dll` and took the session's unsaved board with
+it. Konnect saw an NNG receive timeout. The fix widens the table to every layer a KiCad 10
+footprint can legally draw on and adds `try_layer_from_name`, so `build_footprint_item` validates
+the root layer, every pad layer and every graphic layer before building a single child.
+
+**State in this fork.** Still present, and the table is *shorter* than upstream's was:
+`crates/konnect-ipc/src/builders.rs:42-61` knows fifteen names — no `Dwgs.User`, `Cmts.User`,
+`Eco1/2.User`, `F/B.Adhes`, `Margin`, `Rescue`, no `User.1`–`User.45`, and no inner copper past
+`In2.Cu` — with `_ => BlUndefined` as the fallback. The pad path drops the sentinel
+(`crates/konnect-ipc/src/client.rs:1305-1307`), exactly as upstream's did; the graphic and text
+paths pass it straight through (`crates/konnect-ipc/src/builders.rs:198` and `:374`, reached from
+`build_graphic_child`, `crates/konnect-ipc/src/client.rs:1561`), and so does the footprint
+instance's own layer (`crates/konnect-ipc/src/client.rs:1398`). That asymmetry is the bug, and it
+is here unchanged.
+
+**Impact.** The reaching path is ordinary use, not an edge: `handle_place_footprint` reads the
+graphics out of the real `.kicad_mod`
+(`crates/konnect-core/src/tools/pcb_components.rs:353`, `IpcGraphicDefinition`) and hands them to
+`place_footprint` (`crates/konnect-core/src/tools/pcb_components.rs:1170` and `:1818`), so any
+official-library footprint with a `Dwgs.User` outline crashes the editor the user has open. This is
+the only item in the set that destroys work the tool never touched.
+
+**Cost / risk.** Medium: a computed table (inner copper and user layers are contiguous except that
+`BL_Rescue = 62` sits between `BL_User_9 = 61` and `BL_User_10 = 63`) plus a fallible
+`try_layer_from_name` and validation at the three build sites. No behaviour change for a name that
+already mapped. Note `"*.Cu" => layers.extend(3..=34)`
+(`crates/konnect-ipc/src/client.rs:1294`) is the same fixed-interval assumption D117 condemns —
+P.6.11 territory, not this item's, but the two touch the same function.
+
+### `f8a8db0` — every typed write reformats the whole sheet — **BACKPORT NOW**
+
+**Upstream mechanism.** Three independent causes in the schematic-editor writer: two-space
+indentation where KiCad writes tabs; a node's closing paren collapsed onto its last child where
+KiCad puts it on its own line; and blank lines inserted before two dozen tag names, where KiCad's
+own 3712-line `complex_hierarchy` demo contains exactly one, at the end. Measured through the real
+server, `add_junction` changed 3151 of 3712 lines before the fix and 360 after.
+
+**State in this fork.** Still present, all three, unchanged:
+`crates/konnect-schematic-editor/src/sexp/writer.rs:3-24` is the 22-tag `BLANK_BEFORE` list,
+`:109-113` is `write_indent` pushing two spaces unconditionally, and `:104` closes every node with
+a bare `buf.push(')')`. No indent is sniffed at load. `Schematic::overwrite`
+(`crates/konnect-schematic-editor/src/schematic/mod.rs:163-165`) serialises the whole document
+through it, and so does `to_source` (`:172-174`).
+
+**Impact.** Roughly twenty production call sites reach `overwrite()` — `sch_components.rs` (seven),
+`sch_wiring.rs` (four), `sch_buses.rs` (three), `sch_hierarchy.rs`, `sch_batch.rs:506`, and the
+junction insertion in `tools/mod.rs:590` — so every `add_wire`, `add_schematic_component`, move or
+rotate on the typed path rewrites a KiCad-authored file end to end. The user's diff is unusable and
+their file no longer looks like KiCad wrote it. This is the exact subject of phase P.
+
+**Cost / risk.** The largest of the eight, and the only one whose blast radius is every existing
+byte-level assertion in the suite. Sniffing the indent unit at load and carrying it on `Schematic`
+is mechanical; the paren and blank-line changes alter output for every test that compares text.
+Land it on its own, with the demo-corpus measurement upstream used as the acceptance number. The
+residual upstream left open — KiCad packing several `(xy …)` onto one line inside `(pts …)`, at a
+width this does not try to guess — stays out of scope here too, and should be said so in the task.
+
+### `f2372ca` — zone net references written as net 0 — **BACKPORT NOW**
+
+**Upstream mechanism.** `add_zone` and `add_copper_pour` each carried a private `find_net_id` that
+resolved a net name to its numeric id by string offset. On a KiCad 10 board there is no net table
+and no ids, so both returned 0 and every zone was written `(net 0) (net_name "GND")` — attached to
+the unconnected pseudo-net, an electrically orphaned pour reported as success. The write-side
+counterpart of #142's read-side bug. The fix routes both through a shared `net_ref_for_write` that
+reuses the read-by-shape detection, refuses a net a legacy board does not declare instead of
+zeroing it, and emits plural `(layers …)` on KiCad 10.
+
+**State in this fork.** Still present, and still duplicated:
+`crates/konnect-core/src/tools/pcb_board.rs:113` and `crates/konnect-core/src/tools/pcb_routing.rs:52`
+are the two `find_net_id` copies, consumed at `pcb_board.rs:909`
+(`find_net_id(&content, &net_name).unwrap_or(0)`) and `pcb_routing.rs:546`. The zone template at
+`crates/konnect-core/src/tools/pcb_routing.rs:45` writes `(net {net_id}) (net_name "{net_name}")`
+with a singular `(layer …)`.
+
+**Impact.** A ground pour on any board KiCad 10 wrote — the common case — lands on net 0. Nothing
+in the response says so, and the fork's own DRC path will not necessarily catch it as an error the
+caller reads. Same silent-wrong shape P.6.4 and P.6.5 were about.
+
+**Cost / risk.** Low-to-medium, and lower here than upstream: the read-by-shape half already exists
+in this fork as `konnect_sexp::net` (P.6.5, D115), so this is a write-side sibling in the same
+module plus two deletions. The refusal path (an undeclared net on a legacy board) is the only
+behaviour change beyond the emitted tokens. Upstream's second half — refusing the write when KiCAD
+holds that very board open, so the edit is not discarded by KiCad's next save — depends on IPC
+classification and is worth a separate task, not this one.
+
+### `e7b0c54` — a child sheet's instances are keyed to itself — **BACKPORT NOW**
+
+**Upstream mechanism.** A symbol's `(instances (project "NAME" (path "/…")))` is where KiCad reads
+the designator, and both halves belong to the *root* sheet. Both were taken from the file being
+written into: the project name was that file's own stem and the path was that file's own uuid. On a
+root sheet these coincide; on a child sheet they name a project and a path KiCad matches against
+nothing, so every symbol placed on a sub-sheet reads as unannotated.
+
+**State in this fork.** Still present, with the same two derivations:
+`crates/konnect-core/src/tools/mod.rs:452-458` (`project_name_for` = the file's own stem) and
+`:497-506` (`ensure_root_uuid` = the loaded file's own uuid, used as the whole path). Reached from
+`sch_components.rs:492-493`, `sch_batch.rs:468-469` and `sch_wiring.rs:1754-1756`. `sch_hierarchy.rs`
+takes an explicit project name where the caller supplies one and falls back to the same stem
+(`:514`, `:666`, `:792`, `:944`, `:1027`).
+
+**Impact.** Every symbol added to a sub-sheet is invisible to annotation and to the netlist, while
+the tool reports success. Hierarchical designs are the ones where this fork's sheet tooling is
+otherwise strongest, which makes the silence worse.
+
+**Cost / risk.** Medium. Half the work exists here already: `owning_project_root`
+(`crates/konnect-core/src/tools/sch_export.rs:582`, P.6.7.8) finds the `.kicad_pro` a sheet belongs
+to — though only in the file's own directory, a bound P.6.7.8 stated deliberately and which this
+item may need to widen. What is missing is the depth-bounded walk from the root sheet that records
+each stepped-through `(sheet …)` uuid to build `"/<root>/<sheet>[/<sheet>…]"`, plus the fallback to
+today's behaviour for a loose `.kicad_sch`, which must stay. The Footprint half of upstream's #204
+is explicitly not in scope.
+
+### `de70351` — annotation appended blind, and `bulk_move` leaves field text behind — **BACKPORT NOW**
+
+**Upstream mechanism.** Two instances of one shape: a correct helper exists on the typed path and a
+second text-based implementation never got it. `add_component_annotation` appended a `(property …)`
+unconditionally, so annotating the same key twice left two fields with one name — eeschema shows
+both and edits the wrong one — at a hardcoded `(at 0 0 0)`, rendering it at the sheet origin. And
+`bulk_move` rewrote only the symbol's own `(at …)`; property coordinates are absolute in
+`.kicad_sch`, so Reference and Value text stayed put while the part moved away.
+
+**State in this fork.** Still present, both halves.
+`crates/konnect-core/src/tools/sch_components.rs:1432` appends unconditionally, with
+`(at 0 0 0)` and four-space indentation both hardcoded in the template at `:1477`, and no refusal of
+the reserved keys (`Reference`/`Value`/`Footprint`/`Datasheet`) — a `Reference` set this way would
+skip the instances rewrite and be invisible to the netlist.
+`crates/konnect-core/src/tools/sch_batch.rs:706` finds the first `(at ` in the symbol block
+(`:747-757`) and replaces that one only.
+
+**Impact.** Duplicate fields are a file the user has to repair by hand; annotations at the sheet
+origin pile up in the top-left corner (the #95 shape this fork has already fixed elsewhere); and a
+bulk move scatters every designator across the sheet.
+
+**Cost / risk.** Low-to-medium, and again cheaper here: the in-place branch already exists as
+`update_field` / `insert_property` / `FieldError`
+(`crates/konnect-core/src/tools/sch_components.rs:795`, `:825`, reached from the `apply` closure at `:690-706`), used by
+`edit_schematic_component`. This item lifts it into a shared helper and points the annotation
+handler at it. For `bulk_move`, each property anchor moves by the delta the symbol *actually* moved
+— the snapped one, not the requested one — with its rotation untouched, and property blocks must be
+located with a string-aware scan so a value containing `"(property"` cannot be mistaken for one.
+Keep it on the `SexpEdit` path: routing it through the typed model would import `f8a8db0`'s
+whole-file reserialisation.
+
+### `8591707` (residual) — `edit_schematic_component` declares `fields` and never reads it — **BACKPORT NOW**
+
+**Upstream mechanism.** Two defects, both reporting success: `new_reference` rewrote only the
+rendered `(property "Reference" …)` and not the `(reference …)` inside `(instances …)`, and
+`fields` had been in the schema since the tool shipped while the handler never read it — a call
+passing only `fields` produced an empty `changed` *and* an empty `errors`, so the "changed nothing"
+guard never fired and the tool returned `{"changes": []}` as success.
+
+**State in this fork.** Half already fixed here, independently: `update_instance_reference`
+(`crates/konnect-core/src/tools/sch_components.rs:860`, called at `:727`) rewrites the instances block, with the
+rename ordered last for a documented reason. The `fields` half is still present: the schema
+declares it (`crates/konnect-core/src/tools/sch_components.rs:92-95`) and the handler
+(`:666-770`) reads `value`, `footprint`, `datasheet` and `new_reference` only. The single other
+occurrence of the string is the `field: "fields"` label on an error (`:738`), which is not a read.
+
+**Impact.** Custom properties are silently dropped by the tool whose schema advertises them. The
+fork's own "a request that changed nothing is a failure" guard (`:734-746`) does not fire, because
+it requires a non-empty `errors`, and ignoring an argument produces none.
+
+**Cost / risk.** Low. `insert_property` and `update_field` already do the work; this is a loop over
+the object's keys, refusing the reserved names for the reason stated above. Upstream's macro
+rewrite of the apply helper may not be needed here — that was forced by their closure capturing
+`changed`/`errors`; measure before copying it.
+
+### `977f0c5` — the review and the pre-fab gate approve a board without DRC — **BACKPORT NOW**
+
+**Upstream mechanism.** `run_design_review` and `validate_for_manufacturing` both answer "is my
+board ready?" and neither had ever consulted KiCad's DRC. In a measured benchmark they returned
+`LOOKS GOOD — no critical issues found` and `READY`, both with zero issues, for a board with 25 DRC
+errors and an unrouted item. The fix runs DRC whenever a board is in scope, folds its errors,
+unconnected items and schematic-parity findings into the verdict, and — when DRC cannot run —
+returns INCOMPLETE / NOT READY naming the missing evidence rather than a positive verdict that
+silently means "clean except for what I did not check".
+
+**State in this fork.** Still present. `crates/konnect-core/src/tools/design_review.rs:522-625` runs
+four schematic audits and one DFM check and derives its verdict from their finding counts alone;
+`rg drc` over that file returns nothing. `crates/konnect-core/src/tools/manufacturing.rs:281-390`
+is the same: its only routing test remains `net_count > 3 && track_count == 0` (`:351`), which
+fires only on a board with *no* tracks at all, so a board routed except for one net passes. P.6.7.5
+corrected how those two numbers are counted, not what the predicate concludes — the fork's own
+comment at `manufacturing.rs:265` says as much.
+
+**Impact.** This is the same false success P.6.1 fixed one layer down, resurfacing at the layer an
+agent actually reads. `LOOKS GOOD` and `READY` is the exact language that authorises an order.
+
+**Cost / risk.** Medium, and materially cheaper here than upstream: P.6.1 already landed
+`DrcReport` with `all()`, `error_count()` and `missing_categories()` in
+`crates/konnect-core/src/tools/cli.rs`, which is the hard half — absent evidence is already
+distinguishable from a clean report. What remains is wiring it into both verdicts and defining the
+INCOMPLETE state. Two constraints: schematic-only reviews must stay unchanged (DRC is required when
+a board is in scope, not always), and the DRC summary must be null rather than zeroed when nothing
+ran. Overlaps P.6.8's #185 (approval on partial coverage) — same principle, different evidence;
+sequence them so the second does not undo the first.
+
+### `6ed6cac` — five write paths run on substituted required arguments — **BACKPORT NOW**
+
+**Upstream mechanism.** A schema says an argument is required, the handler reads it with
+`unwrap_or`, and nothing enforces `required` server-side, so an ordinary `tools/call` reaches the
+write with a substituted value. The worst was `create_footprint`: with `pads` omitted the pad loop
+never runs, so no courtyard, silkscreen, fab outline or pin-1 marker — and the result goes out
+through an unconditional replace. Measured, 805 bytes and 2 pads became 121 bytes and 0 pads, the
+footprint renamed to "Footprint", returning `{"success": true, "pad_count": 0}`.
+
+**State in this fork.** Still present at five sites, four of them upstream's:
+- `crates/konnect-core/src/tools/library.rs:625-633` — `create_footprint`: `name` defaults to
+  `"Footprint"`, `pads` to an empty array, and the file is written with `write_atomic`.
+- `crates/konnect-core/src/tools/library.rs:2293-2302` — `create_symbol`: `name` → `"Symbol"`,
+  `reference_prefix` → `"U"`.
+- `crates/konnect-core/src/tools/verification.rs:556-566` — `copy_routing_pattern`: six coordinates,
+  each defaulting to `0.0`; omitting only `dest_x`/`dest_y` duplicates the source region onto the
+  board origin and writes it.
+- `crates/konnect-core/src/tools/pcb_export.rs:513-527` — `export_dxf`: `layers` defaults to empty,
+  and P.6.7.7 deliberately passes no `--layers` at all for an empty list, so the flag vanishes and
+  kicad-cli applies its own layer set.
+- `crates/konnect-core/src/tools/pcb_components.rs:1483-1484` — `place_component_array`: `count_x`
+  and `count_y` default to `1`. This one is partly guarded here already — `require_str`/`require_f64`
+  cover `footprint`, `start_x`, `start_y` (`:1471-1483`) and the `== 0` check exists (`:1494`) — so
+  only the silent 1 remains.
+
+The root cause upstream named is also here: `crates/konnect-core/src/tools/mod.rs:414-441` has
+`require_str` and `require_f64` and no `require_array` or `require_u64`, so every array-typed and
+integer-typed required argument in this tree is hand-rolled.
+
+**Impact.** Each of these writes a file. `create_footprint` is destructive on an existing path.
+
+**Cost / risk.** Low per site, and the two new helpers are the item's real content. An explicitly
+empty array stays accepted — `[]` is a caller saying "operate on nothing" — and only an absent
+argument is refused. Assert byte-identity of the target after a refused `create_footprint`: asserting
+the error alone would pass even if the write happened first.
+
+---
+
+### LATER
+
+**`4536d10` — read-only and batch tools answer a question nobody asked.** Same root cause as
+`6ed6cac`, without a damaged file. Still present here: `search_symbols`
+(`crates/konnect-core/src/tools/library.rs:2807`), `search_footprints` (`:2960`) and
+`search_templates` (`crates/konnect-core/src/tools/templates.rs:287`) all default `query` to `""`,
+and `contains("")` is always true — so an omitted query returns *everything* up to the limit, and
+`search_templates` has no limit. `handle_suggest_alternatives`
+(`crates/konnect-core/src/tools/integration.rs:837-853`) defaults both `value` and `footprint` to
+`""`, becoming `LIKE '%%'` on both columns, and caches the result; it and `search_jlcpcb_parts`
+(`:616-630`) both check the database before the arguments, so a caller who forgot `query` is sent
+to download a 2.5M-part catalogue for a mistake that is deterministic and theirs to fix.
+`batch_add_wire` (`crates/konnect-core/src/tools/sch_wiring.rs:579-584`) defaults `wires` to empty
+and still re-serialises the file. **Next action:** bundle with `6ed6cac` if that item is already
+open in the same files; otherwise a table-driven pass over the thirteen tools, keeping `[]` and an
+explicit empty list accepted and asserted.
+
+**`791f95b` — nothing enforces `required` server-side.** Confirmed absent here: `rg required` over
+`crates/konnect-core/src/mcp/handler.rs` finds only a doc comment, and `execute_tool` (`:210`)
+turns absent arguments into `{}` exactly as upstream's did. This is the floor beneath the two
+items above. **Next action:** land it *after* them, never instead of them — added first, the guard
+fires before any handler runs and a per-tool test cannot distinguish a fixed handler from a broken
+one. Presence only; an explicit `null` counts as absent, because every `as_str()` read treats it
+that way and the two must agree.
+
+**`c6a6407` — a missing path is a `handler_error`.** Present: `get_path`
+(`crates/konnect-core/src/tools/mod.rs:442-447`) returns `anyhow::Result` so handlers can use `?`,
+and the dispatch stringifies it through the `handler_error` fallback
+(`crates/konnect-core/src/mcp/handler.rs:338`), while `require_str` returns a structured
+`InvalidArgument`. So whether a caller can tell "you forgot an argument" from "the tool tried and
+failed" depends on which helper the handler reached for first. **Next action:** attach a
+`MissingArgument` marker to the error chain and downcast at the dispatch — the same rule
+`konnect_ipc::TransportUnreachable` already follows, classify by type and never by matching message
+text. Changing the signature would touch every call site. A path that is present but unusable must
+stay a handler error.
+
+**`6693681` — `register_symbol_library` reports a no-op as success.** Present, and wider than
+upstream's: `register_in_lib_table` (`crates/konnect-core/src/tools/library.rs:1549-1583`) returns
+`Ok(())` the moment the nickname is found — "already registered, idempotent" — and *both* handlers,
+footprint (`:1355-1385`) and symbol (`:1442-1478`), report a bare `"success": true` with no state.
+Upstream had already fixed the footprint half under #205 before this commit; here neither half is
+fixed, so there is no asymmetry to repair, only one API to give a reported
+inserted/unchanged/updated state and a `replace_existing` policy that preserves the entry's own
+`options`/`descr`. **Next action:** do both halves in one pass through a single
+`register_in_lib_table_with_policy`, and check whether `tool-directory.md` describes the old
+contract before changing it.
+
+---
+
+### NOT APPLICABLE
+
+**`2904841` — footprint graphics rewritten as phantom pads.** The mechanism does not exist in this
+fork. There is no `pcb_sync.rs`, no `apply_footprint_fields` and no `update_pcb_from_schematic`;
+the decode-as-filter pattern the bug rests on (calling `Pad::decode` on every child of a footprint
+definition and skipping the failures, which proto3 makes silent) appears nowhere — a sweep for
+`decode(…).ok()` and `filter_map(… decode …)` across `crates/konnect-ipc/src` and
+`crates/konnect-core/src` returns nothing. This fork already discriminates on the type URL at every
+equivalent site: `crates/konnect-ipc/src/transform.rs:282-295` and
+`crates/konnect-ipc/src/client.rs:1810`, `:1823`, `:2041`. Worth re-checking if a sync path is ever
+added: the argument for a type check is the schema accident, not a bug already observed.
+
+**`59d0ead` — the read-back guard refuses a benign divergence.** It narrows a post-apply check that
+`2904841` introduced. This fork has no post-apply read-back comparison at all, so there is nothing
+to narrow. If the sync path above is ever built, take both commits together, in order.
+
+**`ec705c3` — an unrelated ancestor `.kicad_pro` captures library lookup.** The unbounded ancestor
+walk does not exist here: `rg '\.ancestors\(\)'` over the whole tree returns nothing, and there is
+no `project_root_for`. This fork resolves the project table from an explicit or configured
+`project_dir` (`crates/konnect-core/src/tools/library.rs:2621`, `:2823`), and `owning_project_root`
+(`crates/konnect-core/src/tools/sch_export.rs:582`) looks only in the file's own directory — a bound
+P.6.7.8 stated deliberately. The hermeticity failure upstream traced to a stray `.kicad_pro` in the
+system temp directory therefore cannot occur here for that reason. Note the trap itself, though:
+`e7b0c54` above will introduce an ancestor search, and it must be bounded when it does.
+
+**`d5774b3` — board pad count structurally always 0.** The code is absent: there is no
+`inspect_board_coverage` in this fork and `crates/konnect-core/src/tools/design_review.rs` counts no
+pads at all — its only `find_all("footprint")` calls (`:451`, `:1002`) ask the board root for a
+genuine direct child. The underlying trap is real and shared, since `SexpNode::find_all` is
+direct-children-only by design and P.6.7.4 hit the same edge from the other side; a sweep of every
+`find_all("pad")` and `find_all("property")` in this tree found them all correctly scoped to a
+footprint or symbol node, or inside tests. Nothing to backport; the lesson belongs wherever board
+coverage is eventually added.

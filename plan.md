@@ -3273,12 +3273,169 @@ None. Each item below is independent of the others except where stated.
 - [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
       carries its precise next action in `docs/upstream-audit.md`; re-read it
       rather than re-deriving. #271 depends on P.6.3.
-- [ ] P.6.9 Appendix A of `docs/upstream-audit.md` lists 16 further
-      direct-to-`main` upstream fix commits that are plainly in-category and
-      were never triaged (`f2372ca` zone nets written as net 0, `e7b0c54`
-      child-sheet instances, `f8a8db0` whole-sheet reformat on write,
-      `de70351` field text lost on `bulk_move`, …). Triage them the way P.4
-      triaged the merges, before implementing anything from the list.
+- [x] P.6.9 The 16 direct-to-`main` upstream fixes of Appendix A are triaged,
+      by P.4's method and against this fork's own code: **8 BACKPORT NOW, 4
+      LATER, 4 NOT APPLICABLE**, each verdict carrying a `file:line` citation
+      in `docs/upstream-audit.md`. The four that do not apply are excluded
+      because the mechanism is absent here, not because it was judged minor:
+      this fork has no sync path at all (`2904841`, `59d0ead`), no ancestor
+      walk for a `.kicad_pro` (`ec705c3`, and `rg '\.ancestors\(\)'` over the
+      tree returns nothing), and no board-coverage block (`d5774b3`, whose
+      `find_all` trap was swept for and found nowhere else). Three items are
+      cheaper here than upstream because P.6 already landed the half they rest
+      on — `f2372ca` on `konnect_sexp::net`, `977f0c5` on `DrcReport`,
+      `de70351`/`8591707` on `update_field`/`insert_property` — and one is
+      worse here than upstream's own starting point: `ff518c8`, whose layer
+      table is shorter in this fork than in the code upstream fixed. The order
+      below is by consequence and is not the table's order.
+  - [ ] P.6.9.1 `ff518c8` — `layer_from_name`
+        (`crates/konnect-ipc/src/builders.rs:42-61`) maps every unknown name to
+        `BL_UNDEFINED`, and the graphic, text and footprint-instance paths send
+        it (`builders.rs:198`, `:374`, `client.rs:1398`) where the pad path
+        drops it (`client.rs:1305-1307`). KiCAD indexes its layer bitset with
+        whatever arrives and faults at `0xc0000005`, taking the session's
+        unsaved board with it; Konnect sees only an NNG timeout. Reached by
+        placing any official-library footprint carrying a `Dwgs.User` child,
+        since `pcb_components.rs:353` reads the graphics out of the real
+        `.kicad_mod`. Widen the table by computation (`BL_Rescue = 62` sits
+        between `BL_User_9` and `BL_User_10`), add a fallible
+        `try_layer_from_name`, and validate the root, pad and graphic layers
+        before a single child is built. First: it is the only item that
+        destroys work the tool never touched.
+  - [ ] P.6.9.2 `f2372ca` — zone net references written as net 0. Two private
+        `find_net_id` copies resolve a net name by string offset
+        (`pcb_board.rs:113`/`:909`, `pcb_routing.rs:52`/`:546`) and a KiCad 10
+        board has no ids to find, so every pour is written
+        `(net 0) (net_name "GND")` onto the unconnected pseudo-net and reported
+        as success. Write-side counterpart of P.6.5's read-side fix, so the
+        shape detection to reuse is already in `konnect_sexp::net` (D115): add
+        the write-side sibling, emit plural `(layers …)` on KiCad 10, refuse a
+        net a legacy board does not declare instead of zeroing it, and delete
+        both copies. Upstream's second half — refusing the edit when KiCAD
+        holds that board open — is a separate task, not this one.
+  - [ ] P.6.9.3 `e7b0c54` — a child sheet's `(instances (project … (path …)))`
+        is keyed to the child instead of the root: `project_name_for`
+        (`tools/mod.rs:452`) returns the file's own stem and `ensure_root_uuid`
+        (`:497`) its own uuid, used as the whole path. Both are right on a root
+        sheet and name nothing KiCad matches on a sub-sheet, so every symbol
+        placed there reads as unannotated while the tool reports success. Sites:
+        `sch_components.rs:492`, `sch_batch.rs:468`, `sch_wiring.rs:1754`.
+        Resolve the sheet's real place in its project — nearest `.kicad_pro`,
+        its sibling root `.kicad_sch`, then a depth-bounded walk recording each
+        stepped-through `(sheet …)` uuid — reusing `owning_project_root`
+        (`sch_export.rs:582`, P.6.7.8) and widening its directory-only bound if
+        the measurement requires it. Anything unresolvable falls back to
+        today's standalone behaviour, which must stay tested.
+  - [ ] P.6.9.4 `f8a8db0` — every typed write reformats the whole sheet. The
+        writer indents two spaces where KiCad writes tabs
+        (`konnect-schematic-editor/src/sexp/writer.rs:109-113`), collapses each
+        closing paren onto the last child (`:104`), and inserts blank lines
+        before 22 tags (`:3-24`) where a KiCad sheet has one, at the end.
+        `Schematic::overwrite` (`schematic/mod.rs:163-165`) sends the whole
+        document through it, and ~20 production sites reach it, so a one-line
+        edit arrives as a few-thousand-line diff. Sniff the indent unit at load
+        and carry it on `Schematic`; fix the paren and the blank lines. The
+        largest item of the eight and the only one whose blast radius is every
+        byte-level assertion in the suite — land it alone, with upstream's
+        demo-corpus reduction as the acceptance number. KiCad's width-based
+        packing of `(xy …)` inside `(pts …)` stays out of scope, and the task
+        must say so rather than leave it looking forgotten.
+  - [ ] P.6.9.5 `de70351` — two text-path handlers never got the fix their
+        typed sibling has. `add_component_annotation`
+        (`sch_components.rs:1432`) appends a `(property …)` unconditionally, at
+        a hardcoded `(at 0 0 0)` and a hardcoded indent (`:1477`), so a repeated
+        key leaves two fields with one name and the text renders at the sheet
+        origin; and it does not refuse the reserved keys, so a `Reference` set
+        this way skips the instances rewrite. `bulk_move` (`sch_batch.rs:706`)
+        rewrites only the symbol's own `(at …)` (`:747-757`) while property
+        coordinates are absolute, so field text stays where the part used to
+        be. Lift the in-place branch out of `edit_schematic_component`
+        (`update_field` `:795`, `insert_property` `:825`) into a shared helper;
+        move each property anchor by the delta the symbol actually moved — the
+        snapped one — leaving its rotation alone, and locate property blocks
+        with a string-aware scan. Stay on the `SexpEdit` path: the typed model
+        would import P.6.9.4's reserialisation.
+  - [ ] P.6.9.6 `8591707` (residual half only) — `edit_schematic_component`
+        declares `fields` in its schema (`sch_components.rs:92-95`) and the
+        handler never reads it (`:666-770`), so a call passing only `fields`
+        returns `{"changes": []}` as a success: `changed` is empty, but so is
+        `errors`, and the fork's own "changed nothing is a failure" guard
+        (`:734-746`) requires a non-empty `errors` to fire. The `new_reference`
+        half of the upstream commit is already fixed here
+        (`update_instance_reference`, `:860`). Loop the object's keys through
+        the same helpers P.6.9.5 shares out, refusing the reserved names.
+        Measure before copying upstream's macro rewrite of the apply closure —
+        it was forced by their borrow shape, which may not be ours.
+  - [ ] P.6.9.7 `6ed6cac` — five write paths run on substituted required
+        arguments, because nothing enforces `required` server-side and the
+        handlers read with `unwrap_or`: `create_footprint`
+        (`library.rs:625-633`; `name` → "Footprint", `pads` → empty, then
+        `write_atomic` over the target), `create_symbol` (`:2293-2302`),
+        `copy_routing_pattern` (`verification.rs:556-566`; omitting only
+        `dest_x`/`dest_y` duplicates the source region onto the board origin),
+        `export_dxf` (`pcb_export.rs:513-527`; an empty `layers` makes P.6.7.7
+        pass no `--layers` at all, so kicad-cli picks its own set) and
+        `place_component_array` (`pcb_components.rs:1483-1484`, `count_x`/
+        `count_y` → 1, the rest already guarded). The root cause is that
+        `tools/mod.rs:414-441` has `require_str` and `require_f64` and no
+        `require_array`/`require_u64`, so every array- and integer-typed
+        required argument here is hand-rolled. Add both helpers. An explicitly
+        empty array stays accepted; only absence is refused. Assert the target
+        file is byte-identical after a refused `create_footprint` — asserting
+        the error alone would pass even if the write happened first.
+  - [ ] P.6.9.8 `977f0c5` — `run_design_review` (`design_review.rs:522-625`)
+        and `validate_for_manufacturing` (`manufacturing.rs:281-390`) both
+        answer "is my board ready?" and neither has ever run DRC; the second's
+        only routing test is still `net_count > 3 && track_count == 0`
+        (`:351`), which fires only on a board with no tracks at all, so a board
+        routed except for one net reads `READY`. P.6.7.5 corrected how those
+        numbers are counted, not what the predicate concludes. Run DRC when a
+        board is in scope and fold errors, unconnected items and
+        schematic-parity findings into both verdicts; when DRC cannot run, the
+        verdict is INCOMPLETE / NOT READY naming the missing evidence, and the
+        DRC summary is null rather than zeroed. `DrcReport` and
+        `missing_categories()` already exist from P.6.1, which is the hard
+        half. Schematic-only reviews stay unchanged. Sequence against P.6.8's
+        #185 so neither undoes the other.
+  - [ ] P.6.9.9 `4536d10` (LATER) — the read-only and batch half of the same
+        root cause as P.6.9.7: an omitted `query` becomes `""` and
+        `contains("")` is always true, so `search_symbols`
+        (`library.rs:2807`), `search_footprints` (`:2960`) and
+        `search_templates` (`templates.rs:287`, which has no limit) return
+        everything; `suggest_alternatives` (`integration.rs:837-853`) defaults
+        `value` and `footprint` to `""`, becomes `LIKE '%%'` on both columns
+        and caches the result; both JLCPCB handlers check the database before
+        the arguments, sending a caller who forgot `query` to download a
+        2.5M-part catalogue; and `batch_add_wire` (`sch_wiring.rs:579-584`)
+        re-serialises the file for a call that added nothing. Bundle with
+        P.6.9.7 if that item is already open in the same modules.
+  - [ ] P.6.9.10 `791f95b` (LATER) — nothing validates `required` at the
+        dispatch: `execute_tool` (`mcp/handler.rs:210`) turns absent arguments
+        into `{}`. This is the floor beneath P.6.9.7 and P.6.9.9 and must land
+        *after* them — added first it fires before any handler runs, and a
+        per-tool test could no longer tell a fixed handler from a broken one.
+        Presence only; an explicit `null` counts as absent.
+  - [ ] P.6.9.11 `c6a6407` (LATER) — `get_path` (`tools/mod.rs:442-447`)
+        returns `anyhow::Result` so handlers can use `?`, and the dispatch
+        stringifies it through the `handler_error` fallback
+        (`mcp/handler.rs:338`), while `require_str` returns a structured
+        `InvalidArgument`. Whether a caller can tell "you forgot an argument"
+        from "the tool tried and failed" therefore depends on which helper the
+        handler reached for first. Carry the distinction in the error chain and
+        downcast at the dispatch, as `konnect_ipc::TransportUnreachable`
+        already does — classify by type, never by matching message text. A path
+        that is present but unusable stays a handler error.
+  - [ ] P.6.9.12 `6693681` (LATER) — `register_in_lib_table`
+        (`library.rs:1549-1583`) returns `Ok(())` the moment the nickname
+        exists, and both handlers — footprint (`:1355-1385`) and symbol
+        (`:1442-1478`) — report a bare `"success": true`, so a no-op is
+        indistinguishable from a registration and a stale project URI cannot be
+        corrected at all. Upstream had already fixed the footprint half under
+        #205 before this commit; here neither half is fixed, so there is no
+        asymmetry to repair — one path reporting inserted/unchanged/updated,
+        with a `replace_existing` policy preserving the entry's own
+        `options`/`descr`. Check what `tool-directory.md` promises before
+        changing the contract.
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,
