@@ -221,6 +221,12 @@ pub const TWO_RESISTORS: &str = "bus_two_resistors.kicad_sch";
 /// filtering, so the oracle is the CSV it writes, not our own JSON.
 pub const TWO_RESISTORS_ONE_DNP: &str = "bus_two_resistors_dnp.kicad_sch";
 
+/// A real `Amplifier_Operational:LM2904` (dual op-amp) placed as `U1`, unit 1
+/// at x = 100 and unit 2 at x = 160 — two top-level `(symbol …)` blocks
+/// sharing one designator, each with its own uuid and its own copy of every
+/// property (P.6.8.1). Loads clean in KiCad 10; edited only through copies.
+pub const MULTIUNIT_LM2904: &str = "multiunit_lm2904.kicad_sch";
+
 /// A board with layers and nothing on them — the same skeleton
 /// `create_project` writes. Use it when the fixture's own `Edge.Cuts` outline
 /// would be measured together with whatever the test draws.

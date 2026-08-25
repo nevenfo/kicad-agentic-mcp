@@ -3436,10 +3436,51 @@ None. Each item below is independent of the others except where stated.
         new unit test is a lexicographically smaller evidence source for
         `get_component_nets` than `tests/nets_and_wires.rs`. Status unchanged
         (`PARTIAL`, `test`), so it is regenerated rather than fought.
-  - [ ] P.6.8.2 #179 edit half — `find_symbol_instance_block`
+  - [x] P.6.8.2 #179 edit half — `find_symbol_instance_block`
         (`tools/mod.rs:651`) and `sch_batch.rs:321`/`:330` return the first
         match only. Port `find_all_symbol_instance_blocks` / `field_value_ranges`
         as a separate change, after P.6.8.1.
+        Done, and the task turned out to need a design rather than a port:
+        the four operation families do **not** share a per-unit meaning.
+        Measured first, on P.6.8.1's fixture: desynchronise `Value` between the
+        two units and export the netlist, and KiCad reports the **first**
+        block's value — `CHANGED` when unit 1 was edited, the stale `LM2904`
+        when only unit 2 was. So editing the first block alone produced a
+        correct netlist *by accident* while leaving a file that contradicts
+        itself: every unit past the first still shows the old value in
+        eeschema, and every by-unit read — ours included — returns it. Not a
+        netlist defect, a file-consistency one, and the doc says so.
+        The four families: **property writes** by reference now touch every
+        unit (`edit_schematic_component`, `batch_edit`,
+        `add_component_annotation`, and `replace_component`'s `lib_id` — its
+        `unit` stays per block, being a per-unit fact); **deletes** by
+        reference remove every unit, since half a component is not a thing
+        KiCad can open; **geometry** by reference is **refused** on a
+        multi-unit symbol, naming the units and their uuids, because moving
+        U1A without U1B is legitimate — it is all eeschema ever does — while
+        silently picking the first is not; **reads** answer with the unit they
+        resolved, plus the sibling uuids for `get_schematic_component`.
+        That refusal is INV8's **first** clause, not a breach of its second:
+        an input with two meanings stays refused, and the second clause
+        governs widenings, where this is the withdrawal of an acceptance that
+        should not have been granted. The test that pinned the old behaviour
+        (`move_by_reference_still_addresses_the_first_unit`) was pinning the
+        defect; it is rewritten, not deleted, and carries that reasoning.
+        `find_all_symbol_instance_blocks` is the one definition of "an
+        instance block" and `find_symbol_instance_block` is now its `.next()`;
+        `symbol_block_uuid` likewise moved to `tools/mod.rs`, since the
+        single-symbol refusal and the batch one were reading uuids by two
+        copies of the same search (D136). Property edits are applied in
+        descending offset order, so an earlier block's range is never
+        invalidated by a later block's rewrite.
+        Red before, verified again after the fact: with the multi-block write
+        truncated to one block, `editing_value_by_reference_updates_every_unit`
+        fails and the other five stay green.
+        Stated bound: `bulk_move`, `batch_edit` and `add_component_annotation`
+        translate a `uuid` to a `reference` before acting — pre-existing, not
+        introduced here — so a uuid-addressed `bulk_move` on a multi-unit
+        symbol is refused with the rest. The refusal names
+        `move_schematic_component` with a `uuid`, which does reach one unit.
   - [ ] P.6.8.3 #271 — `find_orphan_items` counts wire endpoints and label
         positions and nothing else, so a wire ending on a pin is reported
         dangling and an unconnected pin is never reported at all: false

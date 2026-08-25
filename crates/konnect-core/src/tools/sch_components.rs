@@ -8,9 +8,9 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_f64, opt_str, require_f64, require_str,
-    set_symbol_property, SetPropertyError, SetPropertyOutcome, ToolContext, ToolDef,
-    RESERVED_PROPERTY_KEYS,
+    find_all_symbol_instance_blocks, find_symbol_instance_block, get_path, opt_f64, opt_str,
+    require_f64, require_str, set_symbol_property, set_symbol_property_on_all_units,
+    SetPropertyError, SetPropertyOutcome, ToolContext, ToolDef, RESERVED_PROPERTY_KEYS,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -408,6 +408,65 @@ impl ComponentTarget {
             })
             .map(|item| (item.start, item.end))
     }
+
+    /// The uuid of every placed unit sharing this target's designator, in
+    /// document order — for a "not found" or refusal message that names the
+    /// units a plain designator lookup would otherwise silently collapse to
+    /// one of.
+    fn sibling_unit_uuids(&self, content: &str) -> Vec<String> {
+        find_all_symbol_instance_blocks(content, &self.reference)
+            .iter()
+            .filter_map(|&(start, end)| crate::tools::symbol_block_uuid(&content[start..end]))
+            .collect()
+    }
+}
+
+/// Refuse a geometry call (move / rotate) addressed by `reference` when the
+/// symbol has more than one placed unit.
+///
+/// Moving or rotating one unit of a multi-unit symbol without the others is
+/// legitimate — it is the only thing eeschema itself does, since a symbol's
+/// units can sit anywhere on the sheet — so writing to "every unit" the way
+/// a property edit does (P.6.8.2) would be wrong here. But silently picking
+/// the first unit, as a plain designator lookup does, is wrong too: it moves
+/// a unit the caller never named and leaves the others exactly where they
+/// were, with no sign anything but `reference` was addressed. Refusing names
+/// the units and their uuids and says to address one by `uuid` instead.
+///
+/// A `uuid`-addressed target already names one specific unit and a
+/// single-unit symbol has nothing to disambiguate, so both are let through
+/// unchanged.
+fn refuse_ambiguous_multiunit_geometry(
+    content: &str,
+    target: &ComponentTarget,
+) -> Result<(), CallToolResult> {
+    if target.uuid.is_some() {
+        return Ok(());
+    }
+    let blocks = find_all_symbol_instance_blocks(content, &target.reference);
+    if blocks.len() <= 1 {
+        return Ok(());
+    }
+    let uuids: Vec<String> = blocks
+        .iter()
+        .filter_map(|&(start, end)| crate::tools::symbol_block_uuid(&content[start..end]))
+        .collect();
+    let reference = &target.reference;
+    Err(CallToolResult::error_kind(
+        ToolErrorKind::InvalidArgument {
+            field: "reference".to_string(),
+            reason: format!(
+                "'{reference}' has {} units ({}); address one unit by its 'uuid' instead of by 'reference'",
+                blocks.len(),
+                uuids.join(", ")
+            ),
+        },
+        format!(
+            "'{reference}' has {} placed units ({}); move/rotate needs one 'uuid', not a shared 'reference'",
+            blocks.len(),
+            uuids.join(", ")
+        ),
+    ))
 }
 
 /// The symbol a call addresses by `reference` or `uuid` — whichever it
@@ -415,7 +474,10 @@ impl ComponentTarget {
 ///
 /// A call carrying `reference` is resolved without reading anything: the
 /// existing path, its "not found" errors included, stays exactly what it was
-/// (INV8). Only a `uuid` call pays for a read.
+/// (INV8). Only a `uuid` call pays for a read *here* — the geometry handlers
+/// read on their own account afterwards, for
+/// [`refuse_ambiguous_multiunit_geometry`], which cannot answer without
+/// seeing the document.
 ///
 /// # Errors
 ///
@@ -652,13 +714,30 @@ async fn handle_delete_schematic_component(
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
-    match target
-        .index_in(&sch.symbols)
-        .and_then(|i| sch.symbols.remove_at(i))
-    {
-        Some(_) => {
+    // A reference-addressed delete drops every unit sharing that designator:
+    // leaving one behind is a half-deleted component. A uuid names one unit
+    // specifically and only that one is removed, matching `move`/`rotate`'s
+    // uuid path.
+    let deleted_units: Option<usize> = if target.uuid.is_some() {
+        target
+            .index_in(&sch.symbols)
+            .and_then(|i| sch.symbols.remove_at(i))
+            .map(|_| 1)
+    } else {
+        let before = sch.symbols.len();
+        sch.symbols
+            .retain(|s| s.reference() != Some(reference.as_str()));
+        let removed = before - sch.symbols.len();
+        (removed > 0).then_some(removed)
+    };
+
+    match deleted_units {
+        Some(units_deleted) => {
             sch.overwrite()?;
-            Ok(CallToolResult::json(&json!({ "deleted": reference })))
+            Ok(CallToolResult::json(&json!({
+                "deleted": reference,
+                "units_deleted": units_deleted
+            })))
         }
         None => Ok(component_not_found(
             &sch_path,
@@ -794,14 +873,28 @@ async fn handle_edit_schematic_component(
     }
 
     // Past the guard above, `changed` is never empty: something was written.
-    let (start, end) = target
-        .block_in(&expected)
-        .ok_or_else(|| anyhow::anyhow!("component '{reference}' not found"))?;
-    let item_id = symbol_block_item_id(&expected[start..end])?;
-    let command = SchematicCommand::replace_item_from_document(
+    //
+    // A reference-addressed target has every one of its units' properties
+    // rewritten in `content` above (P.6.8.2), so committing only the first
+    // unit's `ItemId` here would drop the other units' writes on the floor —
+    // present in `content`, never reaching disk. Every sibling unit's own
+    // `ItemId` (read from `expected`, before any edit) is committed in the
+    // same atomic change instead. A uuid-addressed target still names one.
+    let item_ids: Vec<ItemId> = if target.uuid.is_none() {
+        find_all_symbol_instance_blocks(&expected, &reference)
+            .iter()
+            .map(|&(s, e)| symbol_block_item_id(&expected[s..e]))
+            .collect::<anyhow::Result<Vec<_>>>()?
+    } else {
+        let (start, end) = target
+            .block_in(&expected)
+            .ok_or_else(|| anyhow::anyhow!("component '{reference}' not found"))?;
+        vec![symbol_block_item_id(&expected[start..end])?]
+    };
+    let command = SchematicCommand::replace_items_from_document(
         &expected,
         &content,
-        item_id,
+        item_ids,
         format!("Edit {reference}"),
     )?;
     commit_command(&sch_path, &command)?;
@@ -861,6 +954,13 @@ impl std::fmt::Display for FieldError {
 /// front: on the designator path a preceding call in the same batch (e.g. a
 /// rename) can have moved the block, and re-resolving by `target` here is
 /// what keeps every subsequent field call landing on the right bytes.
+///
+/// A designator-addressed target (`target.uuid.is_none()`) writes `field` to
+/// every unit sharing that designator, not just the first: `Value` /
+/// `Footprint` / `Datasheet` and any custom field belong to the component,
+/// not to one unit's placement (P.6.8.2, see
+/// [`set_symbol_property_on_all_units`]). A uuid-addressed target names one
+/// specific unit and only that one is written, unchanged from before.
 fn set_field(
     content: &str,
     target: &ComponentTarget,
@@ -868,6 +968,13 @@ fn set_field(
     value: &str,
     reject: &[&str],
 ) -> Result<(String, SetPropertyOutcome), FieldError> {
+    if target.uuid.is_none() {
+        if find_all_symbol_instance_blocks(content, &target.reference).is_empty() {
+            return Err(FieldError::SymbolNotFound(target.reference.clone()));
+        }
+        return set_symbol_property_on_all_units(content, &target.reference, field, value, reject)
+            .map_err(FieldError::Set);
+    }
     let (sym_start, sym_end) = target
         .block_in(content)
         .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
@@ -881,18 +988,47 @@ fn set_field(
 /// carry. Every entry is rewritten, because a symbol placed on several sheets
 /// has one per sheet and leaving any of them behind means KiCAD reports two
 /// different designators for the same symbol.
+///
+/// A designator-addressed target repoints every unit's own `instances`
+/// entry, not just the first block that carries `new_ref`: `set_field`
+/// already renamed the `Reference` property on every unit above, and leaving
+/// unit 2's `instances` entry pointed at `old_ref` would desync it from its
+/// own now-renamed property the same way the pre-P.6.8.2 single-block write
+/// did for `Value`. A uuid-addressed target still repoints only its one unit.
 fn update_instance_reference(
     content: &str,
     target: &ComponentTarget,
     new_ref: &str,
     old_ref: &str,
 ) -> Result<String, String> {
+    let needle = format!(r#"(reference "{old_ref}")"#);
+    let replacement = format!(r#"(reference "{new_ref}")"#);
+
+    if target.uuid.is_none() {
+        let mut blocks = find_all_symbol_instance_blocks(content, new_ref);
+        if blocks.is_empty() {
+            return Err(format!("symbol '{new_ref}' not found after the rename"));
+        }
+        blocks.sort_by_key(|b| std::cmp::Reverse(b.0));
+        let mut updated = content.to_string();
+        for (start, end) in blocks {
+            let block = &updated[start..end];
+            if !block.contains(&needle) {
+                continue;
+            }
+            updated = format!(
+                "{}{}{}",
+                &updated[..start],
+                block.replace(&needle, &replacement),
+                &updated[end..]
+            );
+        }
+        return Ok(updated);
+    }
+
     let (start, end) = target
         .block_by(content, new_ref)
         .ok_or_else(|| format!("symbol '{new_ref}' not found after the rename"))?;
-
-    let needle = format!(r#"(reference "{old_ref}")"#);
-    let replacement = format!(r#"(reference "{new_ref}")"#);
     let block = &content[start..end];
     if !block.contains(&needle) {
         // Nothing to repoint: a symbol with no instances block is already
@@ -917,6 +1053,11 @@ async fn handle_get_schematic_component(
         Err(e) => return Ok(*e),
     };
     let reference = target.reference.clone();
+    // A designator-addressed call resolves to the first unit's block
+    // (`find_symbol_instance_block`'s documented behaviour); the sibling
+    // uuids say so explicitly instead of leaving the caller to assume there
+    // is only one.
+    let sibling_units = target.sibling_unit_uuids(&read_consistent(&sch_path)?);
 
     let sch = cse::Schematic::load(&sch_path)?;
 
@@ -938,7 +1079,12 @@ async fn handle_get_schematic_component(
                 "rotation": rotation,
                 "mirror_x": mirror.contains('x'),
                 "mirror_y": mirror.contains('y'),
-                "uuid": sym.uuid
+                "uuid": sym.uuid,
+                "unit": sym.unit,
+                "sibling_unit_uuids": sibling_units
+                    .into_iter()
+                    .filter(|u| u != &sym.uuid)
+                    .collect::<Vec<_>>()
             })))
         }
         None => Ok(component_not_found(
@@ -996,6 +1142,10 @@ async fn handle_move_schematic_component(
         Err(e) => return Ok(*e),
     };
     let reference = target.reference.clone();
+    let guard_content = read_consistent(&sch_path)?;
+    if let Err(e) = refuse_ambiguous_multiunit_geometry(&guard_content, &target) {
+        return Ok(e);
+    }
     let new_x = match require_f64(args, "x") {
         Ok(v) => v,
         Err(e) => return Ok(e),
@@ -1033,6 +1183,10 @@ async fn handle_rotate_schematic_component(
         Err(e) => return Ok(*e),
     };
     let reference = target.reference.clone();
+    let guard_content = read_consistent(&sch_path)?;
+    if let Err(e) = refuse_ambiguous_multiunit_geometry(&guard_content, &target) {
+        return Ok(e);
+    }
     let rotation = match require_f64(args, "rotation") {
         Ok(v) => v,
         Err(e) => return Ok(e),
@@ -1320,6 +1474,11 @@ async fn handle_get_schematic_pin_locations(
         "component_x": inst.x,
         "component_y": inst.y,
         "rotation": inst.rotation,
+        // A designator-addressed call resolves to the first unit's block; this
+        // says which unit (and which uuid) the pins below actually belong to,
+        // since a multi-unit symbol's units sit at different positions.
+        "unit": inst.unit,
+        "uuid": inst.uuid,
         "pins": pins
     })))
 }
@@ -1473,6 +1632,7 @@ async fn handle_add_component_annotation(
     // Find the symbol block for this address. `reference` keeps its own lookup
     // and its own "not found" message (INV8); `uuid` goes through the shared
     // resolver, which hands back the exact unit's byte range.
+    let is_reference_addressed = opt_str(args, "reference").is_some();
     let (reference, sym_start, sym_end) = match opt_str(args, "reference") {
         Some(reference) => match find_symbol_instance_block(&content, reference) {
             Some((start, end)) => (reference.to_string(), start, end),
@@ -1514,7 +1674,25 @@ async fn handle_add_component_annotation(
     // named `key` — a second call with the same key must not leave two
     // fields of the same name — otherwise insert a new hidden one at the
     // symbol's own position.
-    let (new_content, outcome) =
+    //
+    // A reference-addressed call writes every unit of that designator, for
+    // the same reason `edit_schematic_component`'s `set_field` does
+    // (P.6.8.2): this custom property is a component-level fact, not a
+    // per-unit one. A uuid-addressed call still means one specific unit.
+    let (new_content, outcome) = if is_reference_addressed {
+        match set_symbol_property_on_all_units(&content, &reference, &key, &value, &[]) {
+            Ok(r) => r,
+            Err(why) => {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::InvalidArgument {
+                        field: "key".to_string(),
+                        reason: why.to_string(),
+                    },
+                    why.to_string(),
+                ))
+            }
+        }
+    } else {
         match set_symbol_property(&content, sym_start, sym_end, &key, &value, &[]) {
             Ok(r) => r,
             Err(why) => {
@@ -1526,19 +1704,28 @@ async fn handle_add_component_annotation(
                     why.to_string(),
                 ))
             }
-        };
-    // From the resolved block, not from a second lookup by `reference`: the
-    // units of a multi-unit symbol share a designator, and this call meant one
-    // of them.
-    let item_id = symbol_block_item_id(&expected[sym_start..sym_end])?;
+        }
+    };
+    // From the resolved blocks in `expected` (pre-edit), not from a second
+    // text search of `key` in `new_content`: the units of a multi-unit
+    // symbol share a designator, and only these are the ones this call
+    // meant to touch.
+    let item_ids: Vec<ItemId> = if is_reference_addressed {
+        find_all_symbol_instance_blocks(&expected, &reference)
+            .iter()
+            .map(|&(s, e)| symbol_block_item_id(&expected[s..e]))
+            .collect::<anyhow::Result<Vec<_>>>()?
+    } else {
+        vec![symbol_block_item_id(&expected[sym_start..sym_end])?]
+    };
     let verb = match outcome {
         SetPropertyOutcome::Updated => "Update",
         SetPropertyOutcome::Inserted => "Add",
     };
-    let command = SchematicCommand::replace_item_from_document(
+    let command = SchematicCommand::replace_items_from_document(
         &expected,
         &new_content,
-        item_id,
+        item_ids,
         format!("{verb} {key} property on {reference}"),
     )?;
     commit_command(&sch_path, &command)?;
@@ -1662,6 +1849,7 @@ async fn handle_replace_component(
     // Find the symbol block for this address. `reference` keeps its own lookup
     // and its own "not found" message (INV8); `uuid` goes through the shared
     // resolver, which hands back the exact unit's byte range.
+    let is_reference_addressed = opt_str(args, "reference").is_some();
     let (reference, sym_start, sym_end) = match opt_str(args, "reference") {
         Some(reference) => match find_symbol_instance_block(&content, reference) {
             Some((start, end)) => (reference.to_string(), start, end),
@@ -1762,6 +1950,36 @@ async fn handle_replace_component(
             }
             content = apply_edits(content, edits);
         }
+    }
+
+    // A reference-addressed replace repoints every sibling unit's `(lib_id
+    // …)` too, not just the primary block edited above: every unit of a
+    // multi-unit symbol is placed from the same library part, so leaving a
+    // sibling on `old_lib_id` would point it at a definition this call just
+    // replaced (P.6.8.2). `unit` is deliberately left alone on siblings — it
+    // selects *which* library unit each placed block shows and is a
+    // per-block fact, unlike `lib_id`. The already-updated primary block no
+    // longer contains `old_lib_id`'s text, so this pass never touches it
+    // twice.
+    if is_reference_addressed {
+        let mut sibling_edits = Vec::new();
+        for (s, e) in find_all_symbol_instance_blocks(&content, &reference) {
+            let block = &content[s..e];
+            if let Some(rel) = block.find(lib_id_pat) {
+                let abs = s + rel + lib_id_pat.len();
+                if let Some(close_rel) = content[abs..].find('"') {
+                    let old_here = &content[abs..abs + close_rel];
+                    if old_here == old_lib_id {
+                        sibling_edits.push(SexpEdit::replace(
+                            abs,
+                            abs + close_rel,
+                            new_lib_id.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+        content = apply_edits(content, sibling_edits);
     }
 
     // Ensure the new library symbol definition is present. Bail BEFORE writing:
@@ -3140,14 +3358,29 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn move_by_reference_still_addresses_the_first_unit() {
-        // INV8: the designator path means exactly what it always meant — the
-        // first symbol carrying it, which is unit 1 here.
+    async fn move_by_reference_on_a_multiunit_symbol_is_refused_not_silently_the_first_unit() {
+        // Superseded by P.6.8.2: this test used to assert INV8's "the
+        // designator means the first symbol carrying it" for a *geometry*
+        // call, moving unit 1 while silently leaving unit 2 exactly where it
+        // was. That is not a safe reading of a multi-unit `reference` — the
+        // caller never said "unit 1", and eeschema itself only ever moves
+        // one unit at a time by picking it directly, never by designator.
+        // INV8's own first clause is what decides it: an input with two
+        // meanings is genuine ambiguity and stays refused. Its second clause
+        // ("a widened acceptance must never turn a previously compiling input
+        // into a failure") governs widenings, and this is the opposite — an
+        // acceptance that should never have been granted. A
+        // reference-addressed geometry call on a multi-unit symbol is now
+        // refused, naming the units so the caller can retry with `uuid`; the
+        // uuid-addressed path (`move_by_uuid_moves_the_named_unit` above and
+        // `rotate_and_edit_by_uuid_reach_the_named_unit` below) is
+        // unaffected and still moves exactly the named unit.
         let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let ctx = test_ctx();
         let (path, u1, u2) = multi_unit_schematic(&dir, &ctx).await;
 
+        let before_1 = unit_state(&path, &u1, &ctx).await;
         let before_2 = unit_state(&path, &u2, &ctx).await;
         let moved = handle_move_schematic_component(
             &json!({ "schematic": path.display().to_string(), "reference": "U1", "x": 200.0, "y": 120.0 }),
@@ -3155,17 +3388,20 @@ pub(crate) mod tests {
         )
         .await
         .unwrap();
-        assert!(!moved.is_error, "{:?}", moved.content);
-
-        let after_1 = unit_state(&path, &u1, &ctx).await;
         assert!(
-            (after_1.0 - 200.0).abs() < 1.27 && (after_1.1 - 120.0).abs() < 1.27,
-            "the designator must still move unit 1, unit 1 is at {after_1:?}"
+            moved.is_error,
+            "a multi-unit reference move must be refused"
+        );
+
+        assert_eq!(
+            unit_state(&path, &u1, &ctx).await,
+            before_1,
+            "a refused move must not touch unit 1"
         );
         assert_eq!(
             unit_state(&path, &u2, &ctx).await,
             before_2,
-            "unit 2 must not have moved"
+            "a refused move must not touch unit 2"
         );
     }
 

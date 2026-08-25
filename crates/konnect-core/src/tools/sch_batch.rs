@@ -9,8 +9,9 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_str, require_f64, require_str, set_symbol_property,
-    symbol_property_at_spans, SetPropertyOutcome, ToolDef, RESERVED_PROPERTY_KEYS,
+    find_all_symbol_instance_blocks, find_symbol_instance_block, get_path, opt_str, require_f64,
+    require_str, set_symbol_property_on_all_units, symbol_property_at_spans, SetPropertyOutcome,
+    ToolDef, RESERVED_PROPERTY_KEYS,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -315,12 +316,20 @@ pub fn tools() -> Vec<ToolDef> {
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
-/// Find the `(symbol ...)` block for a reference designator, plus its leading
-/// whitespace so deletion leaves clean formatting.
-/// Returns `(block_start, block_end)` byte offsets in `content`.
-fn find_symbol_block(content: &str, reference: &str) -> Option<(usize, usize)> {
-    let (sym_start, _) = find_symbol_instance_block(content, reference)?;
-    find_block_with_leading_whitespace(content, sym_start)
+/// Find the `(symbol ...)` block for every unit of a reference designator,
+/// plus each block's leading whitespace so deletion leaves clean formatting.
+/// Returns `(block_start, block_end)` byte offset pairs in `content`.
+///
+/// Every unit, not just the first: deleting a component must drop every unit
+/// sharing its designator, or the surviving units are a half-deleted
+/// component (P.6.8.2). Used by `batch_delete` and `batch_delete_components`,
+/// whose deletes have always been reference-wide by contract, unlike
+/// `move`/`rotate`.
+fn find_all_symbol_blocks(content: &str, reference: &str) -> Vec<(usize, usize)> {
+    find_all_symbol_instance_blocks(content, reference)
+        .into_iter()
+        .filter_map(|(sym_start, _)| find_block_with_leading_whitespace(content, sym_start))
+        .collect()
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -662,14 +671,23 @@ async fn handle_batch_delete(
                 Some(r) => r,
                 None => continue,
             };
-            match find_symbol_block(&content, reference) {
-                Some((del_start, del_end)) => {
-                    if delete_ranges.insert((del_start, del_end)) {
-                        edits.push(SexpEdit::delete(del_start, del_end));
-                        deleted.push(reference.to_string());
-                    }
+            // Every unit of the designator, not just the first — a
+            // reference-addressed delete must not leave a half-deleted
+            // multi-unit component behind (P.6.8.2).
+            let blocks = find_all_symbol_blocks(&content, reference);
+            if blocks.is_empty() {
+                errors.push(format!("Component '{}' not found", reference));
+                continue;
+            }
+            let mut any_new = false;
+            for (del_start, del_end) in blocks {
+                if delete_ranges.insert((del_start, del_end)) {
+                    edits.push(SexpEdit::delete(del_start, del_end));
+                    any_new = true;
                 }
-                None => errors.push(format!("Component '{}' not found", reference)),
+            }
+            if any_new {
+                deleted.push(reference.to_string());
             }
         }
     }
@@ -789,6 +807,29 @@ async fn handle_bulk_move(
 
     for reference in &batch.references {
         let reference = reference.as_str();
+
+        // A multi-unit designator has no single "the" position to move by
+        // `reference` — moving unit 1 and leaving unit 2 behind (or vice
+        // versa) is legitimate on its own but silently picking the first
+        // unit here would move one the caller never named (P.6.8.2, see
+        // `refuse_ambiguous_multiunit_geometry` in sch_components.rs, whose
+        // uuid-addressed path this batch tool has no way to take). Refused,
+        // not guessed at.
+        let units = find_all_symbol_instance_blocks(&content, reference);
+        if units.len() > 1 {
+            let uuids: Vec<String> = units
+                .iter()
+                .filter_map(|&(s, e)| crate::tools::symbol_block_uuid(&content[s..e]))
+                .collect();
+            errors.push(format!(
+                "'{}' has {} units ({}); bulk_move cannot address one unit of a \
+                 multi-unit symbol — move it with move_schematic_component and a 'uuid'",
+                reference,
+                units.len(),
+                uuids.join(", ")
+            ));
+            continue;
+        }
 
         // Locate symbol block for this reference
         let (sym_start, sym_end) = match find_symbol_instance_block(&content, reference) {
@@ -1027,15 +1068,17 @@ async fn handle_batch_edit(
     let mut new_content = content;
     for pending in &mut pending_properties {
         for (field, value) in &pending.updates {
-            let block = find_symbol_instance_block(&new_content, &pending.reference);
-            let Some((sym_start, sym_end)) = block else {
+            // Every unit sharing `pending.reference`, not just the first
+            // (P.6.8.2): `Value`/`Footprint`/custom fields are the
+            // component's, not one unit's, and this is the same generic
+            // property path `edit_schematic_component`'s `set_field` uses.
+            if find_all_symbol_instance_blocks(&new_content, &pending.reference).is_empty() {
                 errors.push(format!("Component '{}' not found", pending.reference));
                 continue;
-            };
-            match set_symbol_property(
+            }
+            match set_symbol_property_on_all_units(
                 &new_content,
-                sym_start,
-                sym_end,
+                &pending.reference,
                 field,
                 value,
                 RESERVED_PROPERTY_KEYS,
@@ -1086,13 +1129,16 @@ async fn handle_batch_delete_components(
 
     for reference in &batch.references {
         let reference = reference.as_str();
-        match find_symbol_block(&content, reference) {
-            Some((del_start, del_end)) => {
-                edits.push(SexpEdit::delete(del_start, del_end));
-                deleted.push(reference.to_string());
-            }
-            None => errors.push(format!("Component '{}' not found", reference)),
+        // Every unit of the designator (P.6.8.2) — see `handle_batch_delete`.
+        let blocks = find_all_symbol_blocks(&content, reference);
+        if blocks.is_empty() {
+            errors.push(format!("Component '{}' not found", reference));
+            continue;
         }
+        for (del_start, del_end) in blocks {
+            edits.push(SexpEdit::delete(del_start, del_end));
+        }
+        deleted.push(reference.to_string());
     }
 
     let new_content = apply_edits(content, edits);

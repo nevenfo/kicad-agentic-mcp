@@ -855,8 +855,32 @@ pub(crate) fn positioned_property(
 /// a hand-authored library sets) but never a `lib_id`. Only placed instances
 /// have one, so that's the discriminator.
 pub fn find_symbol_instance_block(content: &str, reference: &str) -> Option<(usize, usize)> {
+    find_all_symbol_instance_blocks(content, reference)
+        .into_iter()
+        .next()
+}
+
+/// Every placed `(symbol …)` block whose Reference property is `reference`,
+/// in document order.
+///
+/// A multi-unit symbol (e.g. a quad op-amp) is written as one such block per
+/// unit, all sharing the same designator and each carrying its own uuid and
+/// its own copy of `Value`/`Footprint`/`Datasheet` (P.6.8.1 fixture
+/// `multiunit_lm2904.kicad_sch`). Measured on that fixture: editing `Value`
+/// on the first unit's block alone and exporting the netlist reports the
+/// edited value, but editing the *second* unit's block alone reports the
+/// stale one — KiCad's netlist export reads only the first block. A tool
+/// that also reads or writes only the first block therefore produces a
+/// correct netlist by accident while leaving a file that contradicts
+/// itself: every unit past the first still shows the old value in eeschema,
+/// and any by-unit read (this crate's included) returns it. This is the
+/// shared block-finder `find_symbol_instance_block` used to guess at with a
+/// single hit; the two must not diverge on what "an instance block" means
+/// (D136), so that one is now expressed in terms of this one.
+pub fn find_all_symbol_instance_blocks(content: &str, reference: &str) -> Vec<(usize, usize)> {
     let ref_search = format!(r#"(property "Reference" "{reference}""#);
     let mut from = 0usize;
+    let mut blocks = Vec::new();
 
     while let Some(rel) = content[from..].find(&ref_search) {
         let ref_pos = from + rel;
@@ -864,12 +888,26 @@ pub fn find_symbol_instance_block(content: &str, reference: &str) -> Option<(usi
             konnect_sexp::writer::find_enclosing_block(content, "symbol", ref_pos)
         {
             if content[start..end].contains("(lib_id ") {
-                return Some((start, end));
+                blocks.push((start, end));
             }
         }
         from = ref_pos + ref_search.len();
     }
-    None
+    blocks
+}
+
+/// The `(uuid "…")` of one such block, by plain text search.
+///
+/// Every message that has to name the units of a multi-unit symbol reads it
+/// the same way — the single-symbol refusal in `sch_components` and the
+/// per-entry one in `sch_batch` — and a second copy of this search is a second
+/// thing to drift (D136). Text rather than an [`ItemId`] because these
+/// messages are written *before* an edit, about blocks located by offset.
+pub(crate) fn symbol_block_uuid(block: &str) -> Option<String> {
+    const NEEDLE: &str = r#"(uuid ""#;
+    let start = block.find(NEEDLE)? + NEEDLE.len();
+    let end = start + block[start..].find('"')?;
+    Some(block[start..end].to_string())
 }
 
 // ─── Symbol property scanning (string-aware) ─────────────────────────────────
@@ -1174,6 +1212,55 @@ pub(crate) fn set_symbol_property(
         &content[site.insert_at..]
     );
     Ok((updated, SetPropertyOutcome::Inserted))
+}
+
+/// [`set_symbol_property`], applied to every unit of `reference` rather than
+/// just the block a plain search happens to land on first.
+///
+/// `Value` / `Footprint` / `Datasheet` and any custom field are properties of
+/// the *component*, not of one unit's placement — KiCad's own editor keeps
+/// them identical across every unit of a multi-unit symbol. Writing only the
+/// first block, as `find_symbol_instance_block` alone would, is the
+/// "accidentally correct netlist, self-contradicting file" defect documented
+/// on [`find_all_symbol_instance_blocks`]; this is how the reference-addressed
+/// edit paths (`edit_schematic_component`, `batch_edit`,
+/// `add_component_annotation`, `replace_component`'s `lib_id`) avoid it.
+///
+/// Edits are applied in descending start-offset order: rewriting a later
+/// block only shifts bytes after its own start, which never reaches an
+/// earlier block still waiting its turn, so every block's offset from the
+/// initial scan stays valid when its edit is finally applied — the same
+/// reasoning `handle_batch_edit` already relies on by re-searching after
+/// every write instead.
+///
+/// The returned outcome is the first unit's ([`SetPropertyOutcome::Inserted`]
+/// if the property was absent there, `Updated` otherwise) — what a caller
+/// reporting "added" vs. a plain change means by "the property".
+pub(crate) fn set_symbol_property_on_all_units(
+    content: &str,
+    reference: &str,
+    field: &str,
+    value: &str,
+    reject: &[&str],
+) -> Result<(String, SetPropertyOutcome), SetPropertyError> {
+    let mut blocks = find_all_symbol_instance_blocks(content, reference);
+    blocks.sort_by_key(|b| std::cmp::Reverse(b.0));
+
+    let mut new_content = content.to_string();
+    let mut outcomes: Vec<(usize, SetPropertyOutcome)> = Vec::new();
+    for (start, end) in blocks {
+        let (updated, outcome) =
+            set_symbol_property(&new_content, start, end, field, value, reject)?;
+        new_content = updated;
+        outcomes.push((start, outcome));
+    }
+    outcomes.sort_by_key(|(start, _)| *start);
+    let outcome = outcomes
+        .into_iter()
+        .next()
+        .map(|(_, o)| o)
+        .unwrap_or(SetPropertyOutcome::Updated);
+    Ok((new_content, outcome))
 }
 
 /// `(start, end, kind)` of a top-level schematic item's own block, resolved
