@@ -126,6 +126,12 @@ jobs:
       # itself, a token pcbnew's parser rejects on any modern board, so the
       # board no longer loaded. Only a real kicad-cli load proves the board
       # still opens after create_netclass/assign_net_to_class (P.6.2, 9a56233).
+      # A pour on a KiCad 10 board (no net table) names its net instead of
+      # numbering it, which is a different zone shape. If pcbnew rejected it,
+      # the board would stop loading rather than the pour failing (P.6.9.2).
+      - name: "A pour on a KiCad 10 board leaves it loadable (f2372ca)"
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_pour_on_a_kicad_10_board_still_loads_in_kicad_cli
+
       - name: "Netclass tools leave the board loadable by kicad-cli (9a56233)"
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture netclass_tools_leave_the_board_loadable_by_kicad_cli
 

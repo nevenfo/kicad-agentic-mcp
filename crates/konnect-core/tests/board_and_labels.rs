@@ -310,6 +310,159 @@ async fn a_copper_pour_carries_its_layer_and_its_net() {
     assert!(text.contains("GND"), "the pour is not tied to GND");
 }
 
+/// A KiCad 10 board keeps no net table and no ids: the pour names its net
+/// directly. Resolving an id by string offset returned 0 there, so every pour
+/// went out as `(net 0) (net_name "GND")` -- attached to the unconnected
+/// pseudo-net, an electrically orphaned pour reported as a success.
+///
+/// Oracle for both forms: KiCad's own demos. `pic_programmer` (20260206)
+/// writes `(zone (net "GND") ...)` with no `net_name`; `StickHub` (20250907)
+/// and `CM5_MINIMA_3` (20250513) write `(net <id>)` with the name in a
+/// sibling `(net_name ...)`.
+#[tokio::test]
+async fn a_pour_on_a_kicad_10_board_names_its_net_instead_of_numbering_it() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("kicad10_no_net_table.kicad_pcb")).to_string();
+
+    h.json(
+        "add_copper_pour",
+        json!({
+            "board": board,
+            "net_name": "GND",
+            "layer": "B.Cu",
+            "points": [
+                { "x": 100.0, "y": 100.0 },
+                { "x": 140.0, "y": 100.0 },
+                { "x": 140.0, "y": 130.0 },
+                { "x": 100.0, "y": 130.0 }
+            ]
+        }),
+    )
+    .await;
+
+    let text = std::fs::read_to_string(&board).expect("the board is readable");
+    let zone = &text[text.find("(zone").expect("a zone was written")..];
+    let head = &zone[..zone.len().min(120)];
+    assert!(
+        zone.contains(r#"(net "GND")"#),
+        "the pour must name its net the way this board does: {head}"
+    );
+    assert!(
+        !zone.contains("net_name"),
+        "a board with no net table carries no net_name sibling: {head}"
+    );
+    assert!(
+        !zone.contains("(net 0)"),
+        "net 0 is the unconnected pseudo-net: {head}"
+    );
+}
+
+/// The other form, unchanged: a board that keeps a table gets the id that
+/// table declares, with the name in a sibling node.
+#[tokio::test]
+async fn a_pour_on_a_board_with_a_net_table_gets_the_declared_id() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("unrouted.kicad_pcb")).to_string();
+
+    let out = h
+        .json(
+            "add_zone",
+            json!({
+                "board": board,
+                "net_name": "GND",
+                "layer": "F.Cu",
+                "points": [
+                    { "x": 10.0, "y": 10.0 },
+                    { "x": 50.0, "y": 10.0 },
+                    { "x": 50.0, "y": 40.0 },
+                    { "x": 10.0, "y": 40.0 }
+                ]
+            }),
+        )
+        .await;
+    assert_eq!(out["net_id"], json!(2), "GND is net 2 in that fixture");
+
+    let text = std::fs::read_to_string(&board).expect("the board is readable");
+    let zone = &text[text.find("(zone").expect("a zone was written")..];
+    let head = &zone[..zone.len().min(120)];
+    assert!(
+        zone.contains(r#"(net 2) (net_name "GND")"#),
+        "the legacy form is the id plus a net_name sibling: {head}"
+    );
+}
+
+/// A net the table does not declare has no id, and writing 0 would attach the
+/// pour to the unconnected pseudo-net. Refuse instead, and leave the file
+/// exactly as it was -- asserting the error alone would pass even if the write
+/// had already happened.
+#[tokio::test]
+async fn a_pour_on_an_undeclared_net_is_refused_and_writes_nothing() {
+    let h = Harness::new();
+    let path = h.fixture("unrouted.kicad_pcb");
+    let board = harness::as_str(&path).to_string();
+    let before = std::fs::read_to_string(&board).expect("the board is readable");
+
+    let result = h
+        .call(
+            "add_copper_pour",
+            json!({
+                "board": board,
+                "net_name": "SPI_CLK",
+                "layer": "F.Cu",
+                "points": [
+                    { "x": 10.0, "y": 10.0 },
+                    { "x": 50.0, "y": 10.0 },
+                    { "x": 50.0, "y": 40.0 }
+                ]
+            }),
+        )
+        .await
+        .expect("the refusal is a tool result, not a transport failure");
+    let body = harness::body(&result);
+    assert_eq!(body["error"]["kind"], json!("invalid_argument"));
+    assert_eq!(body["error"]["field"], json!("net_name"));
+    assert!(
+        body["error"]["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("add_net"),
+        "the refusal must name the way out: {body}"
+    );
+
+    let after = std::fs::read_to_string(&board).expect("the board is readable");
+    assert_eq!(before, after, "a refused pour must not touch the file");
+}
+
+/// The reverse bound on that refusal: a board with no table declares nothing,
+/// so a name it has never seen is not an error -- the name IS the reference,
+/// and KiCad creates the net on load.
+#[tokio::test]
+async fn a_kicad_10_board_accepts_a_pour_on_a_net_it_has_never_seen() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("kicad10_no_net_table.kicad_pcb")).to_string();
+
+    h.json(
+        "add_copper_pour",
+        json!({
+            "board": board,
+            "net_name": "SPI_CLK",
+            "layer": "F.Cu",
+            "points": [
+                { "x": 100.0, "y": 100.0 },
+                { "x": 140.0, "y": 100.0 },
+                { "x": 140.0, "y": 130.0 }
+            ]
+        }),
+    )
+    .await;
+
+    let text = std::fs::read_to_string(&board).expect("the board is readable");
+    assert!(
+        text.contains(r#"(net "SPI_CLK")"#),
+        "the pour names its net"
+    );
+}
+
 // ─── Templates ───────────────────────────────────────────────────────────────
 
 /// A template is a reference circuit with real component values, and asking for

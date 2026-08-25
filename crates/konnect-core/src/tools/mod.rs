@@ -446,6 +446,28 @@ pub fn get_path(args: &Value, key: &str) -> anyhow::Result<std::path::PathBuf> {
     Ok(std::path::PathBuf::from(s))
 }
 
+/// How a zone must name `net_name` on this board, or the tool error to return.
+///
+/// The two board forms disagree about more than the id — see
+/// [`konnect_sexp::net::NetRef::zone_tokens`] — and a net a legacy board does
+/// not declare is refused here rather than written as id 0. Id 0 is the
+/// unconnected pseudo-net: a pour attached to it is electrically orphaned, and
+/// the tool used to report that as a success.
+pub(crate) fn zone_net_ref(
+    tree: &konnect_sexp::SexpNode,
+    net_name: &str,
+) -> Result<konnect_sexp::net::NetRef, CallToolResult> {
+    konnect_sexp::net::net_ref_for_write(tree, net_name).map_err(|why| {
+        CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "net_name".to_string(),
+                reason: why.to_string(),
+            },
+            format!("Cannot place a zone on '{net_name}': {why}"),
+        )
+    })
+}
+
 /// Project name used in symbol/sheet `(instances (project "..." ...))` entries:
 /// the schematic's file stem, matching what eeschema writes when it saves a
 /// standalone root sheet.

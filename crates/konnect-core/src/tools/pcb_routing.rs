@@ -28,9 +28,10 @@ macro_rules! ipc {
 
 // ─── S-expression helpers ─────────────────────────────────────────────────────
 
+/// A copper pour, with its net reference written in whichever form the board
+/// itself uses — see [`konnect_sexp::net::NetRef::zone_tokens`].
 fn format_zone(
-    net_id: i32,
-    net_name: &str,
+    net_tokens: &str,
     layer: &str,
     clearance: f64,
     min_w: f64,
@@ -42,24 +43,11 @@ fn format_zone(
         .map(|(x, y)| format!("\n      (xy {x} {y})"))
         .collect();
     format!(
-        "\n  (zone (net {net_id}) (net_name \"{net_name}\") (layer \"{layer}\") (uuid \"{uuid}\")\n    \
+        "\n  (zone {net_tokens} (layer \"{layer}\") (uuid \"{uuid}\")\n    \
          (hatch edge 0.508)\n    (connect_pads (clearance {clearance}))\n    \
          (min_thickness {min_w})\n    (fill yes)\n    \
          (polygon (pts{pt_str}\n    ))\n  )"
     )
-}
-
-fn find_net_id(content: &str, net_name: &str) -> i32 {
-    let search = format!(r#" "{net_name}")"#);
-    if let Some(pos) = content.find(&search) {
-        let before = &content[..pos];
-        let net_pos = before.rfind("(net ").unwrap_or(0);
-        let num_str = &before[net_pos + 5..];
-        let num_end = num_str.find(' ').unwrap_or(0);
-        num_str[..num_end].parse().unwrap_or(0)
-    } else {
-        0
-    }
 }
 
 // ─── Tool definitions ─────────────────────────────────────────────────────────
@@ -543,8 +531,18 @@ async fn handle_add_copper_pour(
     }
 
     let content = std::fs::read_to_string(&board_path)?;
-    let net_id = find_net_id(&content, &net_name);
-    let zone_s = format_zone(net_id, &net_name, &layer, clearance, min_w, &pts);
+    let tree = konnect_sexp::parser::parse_sexp(&content)?;
+    let net_ref = match crate::tools::zone_net_ref(&tree, &net_name) {
+        Ok(r) => r,
+        Err(e) => return Ok(e),
+    };
+    let zone_s = format_zone(
+        &net_ref.zone_tokens(&net_name),
+        &layer,
+        clearance,
+        min_w,
+        &pts,
+    );
     let close = content.rfind(')').unwrap_or(content.len());
     let new_content = apply_edits(content, vec![SexpEdit::insert(close, zone_s)]);
     write_atomic(&board_path, &new_content)?;

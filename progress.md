@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 closes. P.6.9.2 à P.6.9.12 restent, dans l'ordre du
+P.6.9 (triage), P.6.9.1 et P.6.9.2 closes. P.6.9.3 à P.6.9.12 restent, dans l'ordre du
 triage ; P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
 PR #10 vers `agentic/main`.
 
@@ -15,44 +15,51 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.1 — un nom de layer que l'API ne sait pas représenter ne part plus vers
-KiCAD. `try_layer_from_name` **dérive** la correspondance au lieu de la lister :
-les noms de l'enum proto *sont* les noms KiCad, `.` remplacé par `_` derrière un
-préfixe `BL_`, donc `from_str_name` répond pour tout ce que le schéma connaît —
-cuivre interne jusqu'à `In30.Cu`, `User.1` à `User.45` par-dessus le trou
-`BL_Rescue = 62` — sans arithmétique à se tromper. Les trois sentinelles sont
-refusées par nom, et `build_footprint_item` contrôle le layer du footprint,
-ceux de chaque pad et de chaque graphic **avant** de construire le moindre
-enfant : en aval il n'y a pas d'erreur à rattraper, seulement un éditeur mort.
+P.6.9.2 — une zone écrit sa référence de net dans la forme du board qu'elle
+modifie. `konnect_sexp::net` gagne `NetRef`, `net_ref_for_write` et
+`NetRef::zone_tokens`, qui réutilisent le discriminant par forme de P.6.5 :
+lecture et écriture ne peuvent plus diverger. Les deux copies privées de
+`find_net_id` (résolution par offset de chaîne) sont supprimées.
 
-Mesure sur le corpus installé, pas une estimation : **915 des 15 433 footprints
-officiels (5,9 %)** nomment un layer que l'ancienne table de quinze entrées
-ignorait — `Dwgs.User`, `Cmts.User`, `F.Adhes`, `Margin`, `User.2` et tout le
-cuivre interne au-delà de `In2.Cu`. Cette mesure est devenue
-`crates/konnect-ipc/tests/layer_corpus_test.rs`, dans le job E2E gatant.
+Correction d'une hypothèse du triage, mesurée avant d'écrire : `(layer …)` vs
+`(layers …)` n'est **pas** une différence de forme de fichier mais de
+cardinalité (voir D121). Ce qui diffère, c'est le nœud net, et de plus que
+l'id.
 
-Le corpus complet a trouvé ce que l'échantillon avait manqué : `*.SilkS`, un
-quatrième wildcard de pad que personne n'avait développé (pads NPTH de
-`Connector_RJ` et `Heatsink`). Il était silencieusement retiré du pad ; avec la
-validation, il aurait fait échouer le placement entier. Il est développé sur les
-deux faces sérigraphie.
+Le refus est cadré : un board legacy qui ne déclare pas le net est refusé en
+nommant `add_net`, fichier vérifié byte-identique ; un board sans table ne
+déclare rien, donc un nom inconnu s'écrit tel quel et KiCad crée le net au
+chargement. Les deux sens sont testés. `add_zone` ne rapporte `net_id` que
+lorsqu'il en existe un.
+
+Nouvelle fixture `kicad10_no_net_table.kicad_pcb` (20260206, nets nommés sur
+les pads), vérifiée chargeable par kicad-cli 10.0.3 — 0 erreur, 0 non connecté
+— avant de servir d'oracle.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **51 suites, 1231
+- `cargo test --workspace --locked --lib --tests` : PASS, **51 suites, 1240
   tests, 0 échec**
-- corpus de layers : **15 433 footprints, 51 noms distincts**, 0 non
-  représentable, en 1,8 s
-- rouge d'abord, chaque moitié neutralisée tour à tour : table dérivée (4 tests
-  rouges), validation (1), expansion `*.SilkS` (1)
-- borne énoncée : **aucune sonde live**. La mesure amont est KiCAD qui faute à
-  `0xc0000005`, ce qui exige une session GUI avec l'API activée ; les assertions
-  portent donc sur ce qui sort du processus — le layer réellement émis et le
-  refus qui arrête un layer sans représentation.
+- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **11/11**, dont la nouvelle
+  (`a_pour_on_a_kicad_10_board_still_loads_in_kicad_cli`), ajoutée au job E2E
+- rouge d'abord : `net_ref_for_write` neutralisé au comportement zéro-ou-id
+  fait échouer trois des quatre tests d'intégration
+- borne énoncée : la sonde live prouve la validité du fichier, pas
+  l'attachement électrique — le DRC ne peut pas le montrer sur un net à une
+  seule pastille ; la preuve octet par octet vit dans les tests unitaires
 
 ## Décisions actives
 
+- **D121** — dans un `(zone …)`, `(layer "X")` et `(layers "A" "B")` ne
+  distinguent pas les versions de fichier mais la **cardinalité** : mesuré sur
+  les démos, `vme-wren` (20241229) écrit les deux formes, et `CM5_MINIMA_3`
+  (20250513) aussi. Ce qui distingue les formes, c'est le nœud net :
+  `pic_programmer` (20260206) écrit `(zone (net "GND") …)` **sans**
+  `net_name`, tandis que 20250907 et antérieurs écrivent `(net <id>)` avec le
+  nom dans un `(net_name …)` frère — et non `(net <id> "<nom>")`, qui est la
+  forme des pads. Le message de commit amont affirmait le contraire sur les
+  layers ; la mesure locale prime.
 - **D120** — l'enum `BoardLayer` de kiapi se nomme comme KiCad : `BL_` + le nom
   du layer avec `.` → `_` (`Dwgs.User` → `BL_Dwgs_User`, `User.10` →
   `BL_User_10`). Toute correspondance nom↔layer passe par `from_str_name`, pas
@@ -146,10 +153,11 @@ Aucun.
 
 - `docs/upstream-audit.md` — annexe A : le triage P.6.9, avec pour chaque item
   mécanisme amont, état dans ce fork (`file:line`), impact et coût.
-- `crates/konnect-core/src/tools/pcb_routing.rs` + `pcb_board.rs` — les deux
-  `find_net_id` (l.52/l.113) et le template de zone (l.45), cibles de P.6.9.2.
-- `crates/konnect-sexp/src/net.rs` — lecture des nets par forme (P.6.5), base
-  du write-side de P.6.9.2.
+- `crates/konnect-sexp/src/net.rs` — lecture **et** écriture des nets par forme
+  (`NetRef`, `net_ref_for_write`, `zone_tokens`) ; `tools/mod.rs::zone_net_ref`
+  est le point d'entrée des deux handlers de zone.
+- `crates/konnect-core/tests/fixtures/kicad10_no_net_table.kicad_pcb` — board
+  20260206 sans table de nets, chargeable par kicad-cli.
 - `crates/konnect-ipc/src/builders.rs` — `try_layer_from_name` / `layer_from_name` ;
   `crates/konnect-ipc/src/client.rs` — `check_layer`, `build_footprint_item`,
   `build_graphic_child`.
@@ -163,15 +171,21 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.2 — `f2372ca` : les deux copies privées de `find_net_id`
-(`pcb_board.rs:113` et `pcb_routing.rs:52`) résolvent un nom de net par offset
-de chaîne, et un board KiCad 10 n'a pas d'ids à trouver, donc chaque zone part
-en `(net 0) (net_name "GND")` sur le pseudo-net non connecté, rapportée comme un
-succès. Ajouter le pendant write-side dans `konnect_sexp::net` (la détection par
-forme y est déjà, D115) : `(net "<nom>")` sans `net_name` et `(layers …)`
-pluriel sur un board KiCad 10, la paire id + `net_name` et `(layer …)` singulier
-sur un board legacy avec l'id résolu depuis la table, et un **refus** nommant
-`add_net` quand un board legacy ne déclare pas le net, au lieu de le mettre à 0.
-Supprimer les deux copies. Rouge d'abord sur un board de chaque forme. La
-seconde moitié amont — refuser l'édition quand KiCAD tient ce board ouvert —
-n'est pas dans cette tâche.
+Implémenter P.6.9.3 — `e7b0c54` : sur une feuille fille, le bloc
+`(instances (project "NOM" (path "/…")))` d'un symbole est aujourd'hui
+construit à partir du fichier où l'on écrit — `project_name_for`
+(`tools/mod.rs:452`) rend le stem du fichier et `ensure_root_uuid` (`:497`)
+son propre uuid, utilisé comme chemin entier. Juste sur une racine, faux sur
+une fille : KiCad ne fait correspondre ni le projet ni le chemin, et tout
+symbole placé là se lit comme non annoté pendant que l'outil rapporte un
+succès. Sites d'écriture : `sch_components.rs:492`, `sch_batch.rs:468`,
+`sch_wiring.rs:1754`. Résoudre la vraie place de la feuille : `.kicad_pro` le
+plus proche pour le nom du projet, sa racine `.kicad_sch` sœur pour l'uuid de
+tête, puis une descente bornée en profondeur depuis cette racine qui enregistre
+l'uuid de chaque `(sheet …)` traversé, d'où `"/<root>/<sheet>[/<sheet>…]"`.
+`owning_project_root` (`sch_export.rs:582`, P.6.7.8) fait déjà la moitié
+« trouver le projet », mais ne regarde que le répertoire du fichier : élargir
+cette borne seulement si la mesure l'exige, et le dire. Tout ce qui ne se
+résout pas retombe sur le comportement autonome actuel, qui doit rester testé.
+Oracle disponible en local : la démo `complex_hierarchy` de KiCad 10, dont
+`ampli_ht.kicad_sch` est une fille non nommée d'après le projet.

@@ -492,6 +492,49 @@ async fn add_layer_leaves_the_board_loadable_by_kicad_cli() {
     );
 }
 
+/// A pour written on a KiCad 10 board (no net table, nets named on the item)
+/// must leave a file KiCad still opens. The zone node changed shape for that
+/// form -- `(net "GND")` with no `net_name` sibling -- and a shape pcbnew
+/// rejects would fail the load, not the pour.
+///
+/// Stated bound: this proves the file is still valid, not that the copper is
+/// electrically on GND. DRC cannot show the difference on a board whose GND
+/// has a single pad, and the byte-level proof lives in the unit tests.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn a_pour_on_a_kicad_10_board_still_loads_in_kicad_cli() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let board = h.fixture("kicad10_no_net_table.kicad_pcb");
+    let pcb = harness::as_str(&board).to_string();
+
+    h.json(
+        "add_copper_pour",
+        json!({
+            "board": pcb,
+            "net_name": "GND",
+            "layer": "B.Cu",
+            "points": [
+                { "x": 101.0, "y": 101.0 },
+                { "x": 139.0, "y": 101.0 },
+                { "x": 139.0, "y": 129.0 },
+                { "x": 101.0, "y": 129.0 }
+            ]
+        }),
+    )
+    .await;
+    let text = std::fs::read_to_string(&board).expect("the board is readable");
+    assert!(
+        text.contains(r#"(net "GND")"#) && text.contains("(zone"),
+        "the pour was not written, so the load below would prove nothing"
+    );
+
+    let report = h.json("run_drc", json!({ "board": pcb })).await;
+    assert!(
+        report["total_violations"].is_number(),
+        "kicad-cli could not load the board after add_copper_pour: {report}"
+    );
+}
+
 /// The manufacturing package is the pipeline end to end: Gerbers, drills and
 /// the assembly files in one directory.
 #[tokio::test]

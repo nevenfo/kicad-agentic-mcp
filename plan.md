@@ -3331,7 +3331,7 @@ None. Each item below is independent of the others except where stated.
         enabled, so the assertions are on what leaves this process — the
         layer actually emitted, and the refusal that stops an
         unrepresentable one.
-  - [ ] P.6.9.2 `f2372ca` — zone net references written as net 0. Two private
+  - [x] P.6.9.2 `f2372ca` — zone net references written as net 0. Two private
         `find_net_id` copies resolve a net name by string offset
         (`pcb_board.rs:113`/`:909`, `pcb_routing.rs:52`/`:546`) and a KiCad 10
         board has no ids to find, so every pour is written
@@ -3342,6 +3342,37 @@ None. Each item below is independent of the others except where stated.
         net a legacy board does not declare instead of zeroing it, and delete
         both copies. Upstream's second half — refusing the edit when KiCAD
         holds that board open — is a separate task, not this one.
+        Done, with one correction to this task's own text, measured on
+        KiCad's demos before writing anything: `(layer …)` versus
+        `(layers …)` is **not** a difference between the two file forms. It
+        is a matter of how many layers the zone covers — `vme-wren`
+        (20241229) writes both — so a single-layer pour, which is all these
+        tools can make, stays singular on every board. What does differ is
+        the net node, and by more than the id: `pic_programmer` (20260206)
+        writes `(zone (net "GND") …)` with **no** `net_name` sibling, while
+        `StickHub` (20250907) and `CM5_MINIMA_3` (20250513) write
+        `(net <id>)` with the name in a sibling `(net_name …)` — not
+        `(net <id> "<name>")`, which is the pad form. See D121.
+        `konnect_sexp::net` gained `NetRef`, `net_ref_for_write` and
+        `NetRef::zone_tokens`, sharing P.6.5's by-shape discriminant so read
+        and write cannot disagree; both `find_net_id` copies are gone; and
+        `add_zone` reports `net_id` only on a board that has one, since 0
+        named the unconnected pseudo-net as though the zone had landed there
+        on purpose.
+        The refusal is scoped to the form that can justify it: a legacy
+        board that does not declare the net is refused, naming `add_net`,
+        and the file is asserted byte-identical afterwards; a table-less
+        board declares nothing, so a name it has never seen is written as-is
+        and KiCad creates the net on load — both directions tested.
+        New fixture `kicad10_no_net_table.kicad_pcb`, a 20260206 board with
+        nets named on the pads, verified to load in kicad-cli 10.0.3 (0
+        errors, 0 unconnected) before being used as an oracle.
+        Red before: `net_ref_for_write` neutered to the old zero-or-id
+        behaviour fails three of the four integration tests.
+        Live probe added to the gating job: a pour on that board leaves a
+        file kicad-cli still opens. Its bound is stated in the test — it
+        proves file validity, not that the copper is electrically on GND,
+        which DRC cannot show on a net with a single pad.
   - [ ] P.6.9.3 `e7b0c54` — a child sheet's `(instances (project … (path …)))`
         is keyed to the child instead of the root: `project_name_for`
         (`tools/mod.rs:452`) returns the file's own stem and `ensure_root_uuid`
