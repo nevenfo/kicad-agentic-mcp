@@ -38,26 +38,50 @@ pub fn net(name: &str, code: i32) -> kiapi::board::types::Net {
     }
 }
 
-/// Map a layer name string to the BoardLayer enum value.
-pub fn layer_from_name(name: &str) -> kiapi::board::types::BoardLayer {
-    match name {
-        "F.Cu" => kiapi::board::types::BoardLayer::BlFCu,
-        "B.Cu" => kiapi::board::types::BoardLayer::BlBCu,
-        "In1.Cu" => kiapi::board::types::BoardLayer::BlIn1Cu,
-        "In2.Cu" => kiapi::board::types::BoardLayer::BlIn2Cu,
-        "F.SilkS" | "F.Silkscreen" => kiapi::board::types::BoardLayer::BlFSilkS,
-        "B.SilkS" | "B.Silkscreen" => kiapi::board::types::BoardLayer::BlBSilkS,
-        "F.Mask" => kiapi::board::types::BoardLayer::BlFMask,
-        "B.Mask" => kiapi::board::types::BoardLayer::BlBMask,
-        "F.Paste" => kiapi::board::types::BoardLayer::BlFPaste,
-        "B.Paste" => kiapi::board::types::BoardLayer::BlBPaste,
-        "F.CrtYd" | "F.Courtyard" => kiapi::board::types::BoardLayer::BlFCrtYd,
-        "B.CrtYd" | "B.Courtyard" => kiapi::board::types::BoardLayer::BlBCrtYd,
-        "F.Fab" => kiapi::board::types::BoardLayer::BlFFab,
-        "B.Fab" => kiapi::board::types::BoardLayer::BlBFab,
-        "Edge.Cuts" => kiapi::board::types::BoardLayer::BlEdgeCuts,
-        _ => kiapi::board::types::BoardLayer::BlUndefined,
+/// Map a KiCad layer name to its `BoardLayer`, or `None` when the name has no
+/// representation in the API enum.
+///
+/// The mapping is derived, not listed. The proto enum's own names *are* the
+/// KiCad names with `.` replaced by `_` behind a `BL_` prefix — `Dwgs.User` is
+/// `BL_Dwgs_User`, `In12.Cu` is `BL_In12_Cu`, `User.10` is `BL_User_10` — so
+/// `from_str_name` covers every layer the enum knows, including the inner
+/// copper and user runs a hand-written table forgets, and any layer a future
+/// KiCad adds to the schema. A list is what let `Dwgs.User` through as
+/// `BL_UNDEFINED` (P.6.9.1); deriving is what stops the next one.
+///
+/// The three sentinels are refused rather than returned: `BL_UNKNOWN`,
+/// `BL_UNDEFINED` and `BL_UNSELECTED` name the *absence* of a layer. KiCAD
+/// 10.0.5 does not validate a scalar layer field on an incoming item — it
+/// indexes its layer bitset with whatever arrives — so sending one faults the
+/// editor and discards the session's unsaved board. A name with no
+/// representation has to stop where it can still be reported.
+pub fn try_layer_from_name(name: &str) -> Option<kiapi::board::types::BoardLayer> {
+    use kiapi::board::types::BoardLayer;
+    // KiCad's own long-form spellings, which the UI and some tools use for the
+    // layers whose file token is abbreviated.
+    let canonical = match name {
+        "F.Silkscreen" => "F.SilkS",
+        "B.Silkscreen" => "B.SilkS",
+        "F.Courtyard" => "F.CrtYd",
+        "B.Courtyard" => "B.CrtYd",
+        "F.Adhesive" => "F.Adhes",
+        "B.Adhesive" => "B.Adhes",
+        other => other,
+    };
+    match BoardLayer::from_str_name(&format!("BL_{}", canonical.replace('.', "_"))) {
+        Some(BoardLayer::BlUnknown | BoardLayer::BlUndefined | BoardLayer::BlUnselected) => None,
+        other => other,
     }
+}
+
+/// Map a layer name string to the BoardLayer enum value, falling back to the
+/// `BL_UNDEFINED` sentinel.
+///
+/// Only for callers that filter the sentinel out afterwards. Anything that
+/// sends the result to KiCAD must go through [`try_layer_from_name`] and refuse
+/// what it cannot represent — see that function for why.
+pub fn layer_from_name(name: &str) -> kiapi::board::types::BoardLayer {
+    try_layer_from_name(name).unwrap_or(kiapi::board::types::BoardLayer::BlUndefined)
 }
 
 /// Build a Track protobuf message.
@@ -587,6 +611,103 @@ pub(crate) mod tests {
             BoardLayer::BlFCu as i32,
             "{what}: the single copper entry of a PST_NORMAL padstack must be \
              keyed to F_Cu (KiCad's ALL_LAYERS sentinel)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod layer_name_tests {
+    use super::*;
+    use kiapi::board::types::BoardLayer;
+
+    /// The three names measured in KiCad 10.0's own footprint libraries that
+    /// the old fifteen-entry table did not know. `Dwgs.User` is the one that
+    /// mattered: 435 occurrences across the installed libraries, and the
+    /// layer that faulted KiCAD.
+    #[test]
+    fn the_layers_official_footprints_actually_use_all_map() {
+        for (name, expected) in [
+            ("Dwgs.User", BoardLayer::BlDwgsUser),
+            ("Cmts.User", BoardLayer::BlCmtsUser),
+            ("F.Adhes", BoardLayer::BlFAdhes),
+            ("F.SilkS", BoardLayer::BlFSilkS),
+            ("F.Fab", BoardLayer::BlFFab),
+            ("F.CrtYd", BoardLayer::BlFCrtYd),
+            ("F.Cu", BoardLayer::BlFCu),
+            ("B.SilkS", BoardLayer::BlBSilkS),
+            ("Edge.Cuts", BoardLayer::BlEdgeCuts),
+            ("B.CrtYd", BoardLayer::BlBCrtYd),
+            ("B.Mask", BoardLayer::BlBMask),
+            ("F.Paste", BoardLayer::BlFPaste),
+        ] {
+            assert_eq!(try_layer_from_name(name), Some(expected), "{name}");
+        }
+    }
+
+    /// The two runs a hand-written table truncates. `Rescue = 62` sits inside
+    /// the user run, between `User.9` and `User.10`, which is exactly the kind
+    /// of detail arithmetic gets wrong and `from_str_name` cannot.
+    #[test]
+    fn inner_copper_and_user_layers_map_over_their_whole_range() {
+        for n in 1..=30 {
+            let name = format!("In{n}.Cu");
+            assert!(
+                try_layer_from_name(&name).is_some(),
+                "{name} must map — a board may have 32 copper layers"
+            );
+        }
+        for n in 1..=45 {
+            let name = format!("User.{n}");
+            assert!(try_layer_from_name(&name).is_some(), "{name} must map");
+        }
+        assert_eq!(try_layer_from_name("User.9"), Some(BoardLayer::BlUser9));
+        assert_eq!(try_layer_from_name("User.10"), Some(BoardLayer::BlUser10));
+        assert_eq!(try_layer_from_name("Rescue"), Some(BoardLayer::BlRescue));
+        assert_eq!(try_layer_from_name("In30.Cu"), Some(BoardLayer::BlIn30Cu));
+    }
+
+    /// Long-form spellings KiCad's UI uses for abbreviated file tokens.
+    #[test]
+    fn long_form_spellings_resolve_to_the_same_layer() {
+        for (long, short) in [
+            ("F.Silkscreen", "F.SilkS"),
+            ("B.Silkscreen", "B.SilkS"),
+            ("F.Courtyard", "F.CrtYd"),
+            ("B.Courtyard", "B.CrtYd"),
+            ("F.Adhesive", "F.Adhes"),
+            ("B.Adhesive", "B.Adhes"),
+        ] {
+            assert_eq!(
+                try_layer_from_name(long),
+                try_layer_from_name(short),
+                "{long} must mean {short}"
+            );
+        }
+    }
+
+    /// A name with no representation must come back as `None`, so a caller can
+    /// refuse it. Returning the sentinel is what sent KiCAD a layer it faults
+    /// on; the sentinels themselves must not be reachable by name either.
+    #[test]
+    fn unrepresentable_names_and_the_sentinels_are_refused() {
+        for name in [
+            "Nonsense.Layer",
+            "",
+            "In31.Cu",
+            "User.46",
+            "UNDEFINED",
+            "UNKNOWN",
+            "UNSELECTED",
+            "f.cu",
+        ] {
+            assert_eq!(try_layer_from_name(name), None, "{name:?} must not map");
+        }
+        // The lossy wrapper still answers, for the pad path that filters the
+        // sentinel out afterwards.
+        assert_eq!(
+            layer_from_name("Nonsense.Layer"),
+            BoardLayer::BlUndefined,
+            "the lossy wrapper keeps its old contract"
         );
     }
 }

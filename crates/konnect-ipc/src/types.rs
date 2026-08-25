@@ -92,6 +92,22 @@ pub enum IpcGraphicDefinition {
     },
 }
 
+impl IpcGraphicDefinition {
+    /// The KiCad layer name this graphic is drawn on. Every variant carries
+    /// one, and a caller that validates layers before building must be able to
+    /// ask for it without matching the variant.
+    pub fn layer(&self) -> &str {
+        match self {
+            Self::Line { layer, .. }
+            | Self::Rect { layer, .. }
+            | Self::Circle { layer, .. }
+            | Self::Arc { layer, .. }
+            | Self::Poly { layer, .. }
+            | Self::Text { layer, .. } => layer,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcTrack {
     pub net_name: String,

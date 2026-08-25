@@ -3288,7 +3288,7 @@ None. Each item below is independent of the others except where stated.
       worse here than upstream's own starting point: `ff518c8`, whose layer
       table is shorter in this fork than in the code upstream fixed. The order
       below is by consequence and is not the table's order.
-  - [ ] P.6.9.1 `ff518c8` — `layer_from_name`
+  - [x] P.6.9.1 `ff518c8` — `layer_from_name`
         (`crates/konnect-ipc/src/builders.rs:42-61`) maps every unknown name to
         `BL_UNDEFINED`, and the graphic, text and footprint-instance paths send
         it (`builders.rs:198`, `:374`, `client.rs:1398`) where the pad path
@@ -3302,6 +3302,35 @@ None. Each item below is independent of the others except where stated.
         `try_layer_from_name`, and validate the root, pad and graphic layers
         before a single child is built. First: it is the only item that
         destroys work the tool never touched.
+        Done, and not the way upstream did it: the mapping is derived
+        instead of listed. The proto enum's own names *are* the KiCad names
+        with `.` replaced by `_` behind a `BL_` prefix, so `from_str_name`
+        answers for every layer the schema knows — inner copper to
+        `In30.Cu`, `User.1` through `User.45` across the `BL_Rescue = 62`
+        gap, and whatever a future KiCad adds — with no arithmetic to get
+        wrong. `try_layer_from_name` refuses the three sentinels by name as
+        well, since `BL_UNDEFINED` is exactly what must never be sent, and
+        `build_footprint_item` checks the footprint's own layer, every pad
+        layer and every graphic layer before it builds a single child.
+        Measured over the installed corpus rather than estimated: **915 of
+        the 15,433 official footprints (5.9%) name a layer the old
+        fifteen-entry table did not know** — `Dwgs.User`, `Cmts.User`,
+        `F.Adhes`, `Margin`, `User.2`, and every inner copper layer past
+        `In2.Cu`. That measurement is now
+        `crates/konnect-ipc/tests/layer_corpus_test.rs`, in the gating E2E
+        job, so the next name KiCad adds fails a test instead of an editor.
+        The corpus found what the earlier sample had not: `*.SilkS`, a
+        fourth pad-layer wildcard nobody had expanded (NPTH pads in
+        `Connector_RJ` and `Heatsink`). It was silently dropped from the pad
+        before, and once layers are validated it would have failed the whole
+        placement instead, so it is expanded to both silkscreen sides here.
+        Red before, each half neutered in turn: the derived table (four
+        tests), the validation (one), the `*.SilkS` expansion (one).
+        Stated bound: no live probe. The upstream measurement is KiCAD
+        faulting at `0xc0000005`, which needs a GUI session with the API
+        enabled, so the assertions are on what leaves this process — the
+        layer actually emitted, and the refusal that stops an
+        unrepresentable one.
   - [ ] P.6.9.2 `f2372ca` — zone net references written as net 0. Two private
         `find_net_id` copies resolve a net name by string offset
         (`pcb_board.rs:113`/`:909`, `pcb_routing.rs:52`/`:546`) and a KiCad 10

@@ -1232,6 +1232,30 @@ impl KiCadIpcClient {
         let (library_nickname, entry_name) = lib_id
             .split_once(':')
             .context("footprint identifier must use Library:Footprint syntax")?;
+
+        // Every layer this footprint names is checked before a single child is
+        // built. Downstream there is no error to catch: KiCAD indexes its layer
+        // bitset with whatever arrives and faults on the sentinel, so an
+        // unrepresentable layer has to stop here, where it can still be
+        // reported (P.6.9.1). The pad path below already dropped the sentinel
+        // from its layer list; the graphic, text and instance paths passed it
+        // straight through, and that asymmetry was the bug.
+        check_layer(layer, &format!("footprint '{reference}'"))?;
+        for pad in pads {
+            for pad_layer in &pad.layers {
+                // The wildcards are expanded, not mapped, a few lines down.
+                if matches!(
+                    pad_layer.as_str(),
+                    "*.Cu" | "*.Mask" | "*.Paste" | "*.SilkS"
+                ) {
+                    continue;
+                }
+                check_layer(pad_layer, &format!("pad '{}' of '{reference}'", pad.number))?;
+            }
+        }
+        for graphic in graphics {
+            check_layer(graphic.layer(), &format!("a graphic of '{reference}'"))?;
+        }
         let text_field = |name: &str, text: &str, local: (f64, f64, f64), visible: bool| {
             // Field text positions come footprint-local from the library and
             // are transformed exactly like pads, so the placed part keeps the
@@ -1298,6 +1322,15 @@ impl KiCadIpcClient {
                         "*.Paste" => layers.extend([
                             kiapi::board::types::BoardLayer::BlFPaste as i32,
                             kiapi::board::types::BoardLayer::BlBPaste as i32,
+                        ]),
+                        // Rarer than the other three and just as real: NPTH
+                        // mounting pads in Connector_RJ and Heatsink carry it,
+                        // and it was the one wildcard nobody had expanded, so
+                        // the silkscreen ring was dropped from the pad
+                        // (measured over the 15,433 installed footprints).
+                        "*.SilkS" => layers.extend([
+                            kiapi::board::types::BoardLayer::BlFSilkS as i32,
+                            kiapi::board::types::BoardLayer::BlBSilkS as i32,
                         ]),
                         name => layers.push(crate::builders::layer_from_name(name) as i32),
                     }
@@ -1554,6 +1587,20 @@ fn readable_text_angle(deg: f64) -> f64 {
         angle -= 180.0;
     }
     angle
+}
+
+/// Refuse a layer name the API cannot represent, naming what carried it.
+///
+/// `where_` reads into the message as "… on <where_>", so it should name the
+/// item, not repeat the layer.
+fn check_layer(name: &str, where_: &str) -> Result<()> {
+    if crate::builders::try_layer_from_name(name).is_none() {
+        anyhow::bail!(
+            "layer '{name}' on {where_} has no representation in the KiCAD API; \
+             KiCAD would fault on it rather than reject it, so nothing was sent"
+        );
+    }
+    Ok(())
 }
 
 /// Transform one footprint-local graphic into an absolute-board-space child
@@ -2046,5 +2093,147 @@ mod footprint_graphics_tests {
                 &format!("build_footprint_item pad on {layer}"),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod footprint_layer_validation_tests {
+    use super::*;
+    use crate::types::{IpcFieldPlacement, IpcPadDefinition};
+    use prost::Message;
+
+    fn pad(layers: &[&str]) -> IpcPadDefinition {
+        IpcPadDefinition {
+            number: "1".to_string(),
+            pad_type: "smd".to_string(),
+            shape: "rect".to_string(),
+            x: 0.0,
+            y: 0.0,
+            rotation: 0.0,
+            size_x: 1.0,
+            size_y: 1.0,
+            drill_x: None,
+            drill_y: None,
+            drill_oval: false,
+            layers: layers.iter().map(|s| s.to_string()).collect(),
+            roundrect_ratio: 0.0,
+        }
+    }
+
+    fn line(layer: &str) -> IpcGraphicDefinition {
+        IpcGraphicDefinition::Line {
+            start: (0.0, 0.0),
+            end: (1.0, 0.0),
+            layer: layer.to_string(),
+            width: 0.12,
+        }
+    }
+
+    fn build(
+        pads: &[IpcPadDefinition],
+        graphics: &[IpcGraphicDefinition],
+        layer: &str,
+    ) -> Result<prost_types::Any> {
+        // build_footprint_item is pure — the socket path is never dialed.
+        KiCadIpcClient::new("tcp://never-dialed").build_footprint_item(
+            "Lib:Fp",
+            "U1",
+            "MCU",
+            pads,
+            graphics,
+            &IpcFieldPlacement::default(),
+            10.0,
+            10.0,
+            0.0,
+            layer,
+        )
+    }
+
+    /// The measured case: `Connector_USB:USB_C_Receptacle_…` and 105 other
+    /// footprints in KiCad 10.0's own libraries draw on `Dwgs.User`. It used to
+    /// go out as `BL_UNDEFINED`, which KiCAD indexes its layer bitset with.
+    #[test]
+    fn a_drawings_layer_graphic_goes_out_on_its_own_layer() {
+        let any = build(&[], &[line("Dwgs.User")], "F.Cu").expect("Dwgs.User is a real layer");
+        let fp = kiapi::board::types::FootprintInstance::decode(any.value.as_slice()).unwrap();
+        let shapes: Vec<_> = fp
+            .definition
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .filter(|a| a.type_url.ends_with("BoardGraphicShape"))
+            .map(|a| kiapi::board::types::BoardGraphicShape::decode(a.value.as_slice()).unwrap())
+            .collect();
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(
+            shapes[0].layer,
+            kiapi::board::types::BoardLayer::BlDwgsUser as i32,
+            "a Dwgs.User graphic must carry Dwgs.User, not the undefined sentinel"
+        );
+    }
+
+    /// An unrepresentable layer must stop the call, wherever it is carried:
+    /// downstream there is no error to catch, only a dead editor.
+    #[test]
+    fn an_unrepresentable_layer_is_refused_wherever_it_sits() {
+        for (what, result) in [
+            ("footprint layer", build(&[], &[], "Nonsense.Layer")),
+            (
+                "graphic layer",
+                build(&[], &[line("Nonsense.Layer")], "F.Cu"),
+            ),
+            ("pad layer", build(&[pad(&["Nonsense.Layer"])], &[], "F.Cu")),
+        ] {
+            let err = result
+                .expect_err(&format!("{what}: an unmappable layer must not be sent"))
+                .to_string();
+            assert!(
+                err.contains("Nonsense.Layer"),
+                "{what}: the error must name the layer, got {err:?}"
+            );
+        }
+    }
+
+    /// `*.SilkS` is the fourth wildcard, and the one nobody had expanded: NPTH
+    /// mounting pads in `Connector_RJ` and `Heatsink` carry it, so the pad lost
+    /// its silkscreen ring — and once layers are validated, an unexpanded
+    /// wildcard would have failed the whole placement instead.
+    #[test]
+    fn the_silkscreen_wildcard_expands_to_both_sides() {
+        let any = build(&[pad(&["*.Cu", "*.SilkS", "*.Mask"])], &[], "F.Cu")
+            .expect("an NPTH pad with a silkscreen ring must build");
+        let fp = kiapi::board::types::FootprintInstance::decode(any.value.as_slice()).unwrap();
+        let pad_any = fp
+            .definition
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .find(|a| a.type_url.ends_with("types.Pad"))
+            .expect("the pad");
+        let decoded = kiapi::board::types::Pad::decode(pad_any.value.as_slice()).unwrap();
+        let layers = &decoded.pad_stack.as_ref().unwrap().layers;
+        for expected in [
+            kiapi::board::types::BoardLayer::BlFSilkS,
+            kiapi::board::types::BoardLayer::BlBSilkS,
+        ] {
+            assert!(
+                layers.contains(&(expected as i32)),
+                "{expected:?} must survive the wildcard, got {layers:?}"
+            );
+        }
+    }
+
+    /// The reverse bound: everything a real footprint carries still builds,
+    /// including the pad-layer wildcards, which are expanded rather than mapped.
+    #[test]
+    fn ordinary_footprint_layers_still_build() {
+        build(
+            &[pad(&["F.Cu", "*.Mask", "*.Paste"])],
+            &[line("F.SilkS"), line("F.CrtYd"), line("Cmts.User")],
+            "F.Cu",
+        )
+        .expect("a footprint drawn on ordinary layers must still build");
     }
 }

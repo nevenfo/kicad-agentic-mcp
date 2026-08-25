@@ -81,6 +81,8 @@ jobs:
           "KICAD_CLI=$cli" | Out-File $env:GITHUB_ENV -Append
           $demos = Join-Path (Split-Path (Split-Path $cli)) "share\kicad\demos"
           if (Test-Path $demos) { "KICAD_DEMOS=$demos" | Out-File $env:GITHUB_ENV -Append }
+          $footprints = Join-Path (Split-Path (Split-Path $cli)) "share\kicad\footprints"
+          if (Test-Path $footprints) { "KICAD_FOOTPRINTS=$footprints" | Out-File $env:GITHUB_ENV -Append }
           & $cli --version
 
       - name: E2E design loop (create → wire → ERC → Gerber → DRC)
@@ -90,6 +92,14 @@ jobs:
 
       - name: Demo-corpus conformance (115+ eeschema-authored schematics)
         run: cargo test -p konnect-core --test conformance_test -- --nocapture
+
+      # Every layer KiCad's own footprints draw on must be representable in the
+      # IPC enum. A name that is not gets sent as the BL_UNDEFINED sentinel,
+      # which KiCAD indexes its layer bitset with and faults on, discarding the
+      # user's unsaved board (P.6.9.1). The corpus is the only oracle for which
+      # names occur, and it grows with every KiCad release.
+      - name: Footprint-library layer corpus (15k+ .kicad_mod)
+        run: cargo test -p konnect-ipc --test layer_corpus_test -- --nocapture
 
       # The two fidelity regressions whose oracle can only be KiCAD itself:
       # a `(paper "User" W H)` page this engine wrote must still load (#209),
