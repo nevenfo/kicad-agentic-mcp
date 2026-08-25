@@ -578,21 +578,59 @@ async fn run_design_review_with(
     };
 
     let mut all_findings: Vec<serde_json::Value> = Vec::new();
-    let mut audit_results = Vec::new();
+    // Each entry is (audit name, findings), where every finding already
+    // carries a "sheet" key naming the file it came from — a finding with no
+    // sheet key would be indistinguishable from one that was actually checked
+    // on every sheet.
+    let mut audit_results: Vec<(&str, Vec<serde_json::Value>)> = Vec::new();
 
-    // Run schematic audits
-    if args["schematic"].is_string() {
-        let decoupling = handle_audit_decoupling(args, ctx).await?;
-        audit_results.push(("decoupling", extract_findings(&decoupling)));
+    // P.6.8.4: a schematic with sub-sheets used to be audited on its root
+    // file alone — the four schematic audits never followed a `(sheet …)`
+    // reference, so a defect living only on a sub-sheet was invisible to
+    // `run_design_review` no matter how loud it was. Every reachable sheet
+    // gets its own pass now, and every sheet a `(sheet …)` reference named
+    // but this walk could not load is reported rather than silently skipped.
+    let mut sheets_reachable = 0usize;
+    let mut sheets_audited = 0usize;
+    let mut unaudited_sheets: Vec<serde_json::Value> = Vec::new();
+    if let Some(schematic_arg) = args["schematic"].as_str() {
+        let root = std::path::Path::new(schematic_arg);
+        let walk = super::reachable_sheets(root);
+        sheets_reachable = walk.sheets.len() + walk.unloadable.len();
+        sheets_audited = walk.sheets.len();
+        for (path, reason) in &walk.unloadable {
+            unaudited_sheets.push(json!({
+                "sheet": path.display().to_string(),
+                "reason": reason,
+            }));
+        }
 
-        let connections = handle_audit_connections(args, ctx).await?;
-        audit_results.push(("connections", extract_findings(&connections)));
+        let mut decoupling_findings = Vec::new();
+        let mut connections_findings = Vec::new();
+        let mut power_findings = Vec::new();
+        let mut bom_findings = Vec::new();
+        for sheet in &walk.sheets {
+            let sheet_label = sheet.display().to_string();
+            let mut sheet_args = args.clone();
+            sheet_args["schematic"] = json!(sheet_label);
 
-        let power = handle_audit_power_rails(args, ctx).await?;
-        audit_results.push(("power_rails", extract_findings(&power)));
+            let decoupling = handle_audit_decoupling(&sheet_args, ctx).await?;
+            decoupling_findings.extend(tag_with_sheet(extract_findings(&decoupling), &sheet_label));
 
-        let bom = handle_check_bom_health(args, ctx).await?;
-        audit_results.push(("bom_health", extract_findings(&bom)));
+            let connections = handle_audit_connections(&sheet_args, ctx).await?;
+            connections_findings
+                .extend(tag_with_sheet(extract_findings(&connections), &sheet_label));
+
+            let power = handle_audit_power_rails(&sheet_args, ctx).await?;
+            power_findings.extend(tag_with_sheet(extract_findings(&power), &sheet_label));
+
+            let bom = handle_check_bom_health(&sheet_args, ctx).await?;
+            bom_findings.extend(tag_with_sheet(extract_findings(&bom), &sheet_label));
+        }
+        audit_results.push(("decoupling", decoupling_findings));
+        audit_results.push(("connections", connections_findings));
+        audit_results.push(("power_rails", power_findings));
+        audit_results.push(("bom_health", bom_findings));
     }
 
     // Run PCB audits
@@ -673,16 +711,32 @@ async fn run_design_review_with(
     });
 
     let verdict = if error_count > 0 {
-        "NOT READY — critical issues must be fixed before manufacturing"
+        "NOT READY — critical issues must be fixed before manufacturing".to_string()
+    } else if !unaudited_sheets.is_empty() {
+        // Nothing found on the sheets that were audited — but at least one
+        // sheet this hierarchy references was never looked at, so absence of
+        // findings there proves nothing. Name it, the way `drc_incomplete`
+        // names the missing DRC pass below.
+        let names: Vec<String> = unaudited_sheets
+            .iter()
+            .map(|u| {
+                format!(
+                    "{} ({})",
+                    u["sheet"].as_str().unwrap_or("?"),
+                    u["reason"].as_str().unwrap_or("could not be loaded")
+                )
+            })
+            .collect();
+        format!("INCOMPLETE — sheet(s) not audited: {}", names.join(", "))
     } else if drc_incomplete {
         // Nothing found — but a pass of DRC never ran, so this review has not
         // seen the board the fab will see. "LOOKS GOOD" here would be a
         // clearance nobody earned.
-        "INCOMPLETE — DRC did not run, so the board is unverified"
+        "INCOMPLETE — DRC did not run, so the board is unverified".to_string()
     } else if warning_count > 0 {
-        "NEEDS ATTENTION — review warnings before manufacturing"
+        "NEEDS ATTENTION — review warnings before manufacturing".to_string()
     } else {
-        "LOOKS GOOD — no critical issues found"
+        "LOOKS GOOD — no critical issues found".to_string()
     };
 
     let mut review = json!({
@@ -693,6 +747,16 @@ async fn run_design_review_with(
         "severity_filter": severity_filter,
         "findings": all_findings
     });
+    if args["schematic"].is_string() {
+        // Reported next to `drc` for the same reason `drc_incomplete` earned
+        // a verdict of its own: a caller reading only `verdict` and `findings`
+        // must still be able to tell a clean sheet from one nobody checked.
+        review["schematic_coverage"] = json!({
+            "sheets_reachable": sheets_reachable,
+            "sheets_audited": sheets_audited,
+            "unaudited": unaudited_sheets,
+        });
+    }
     if drc.is_some() {
         // `null` when DRC could not run — never zeroed counters.
         review["drc"] = drc_summary;
@@ -1128,6 +1192,18 @@ fn find_design_rule_value(content: &str, rule_name: &str) -> Option<f64> {
     let after = &content[pos + pat.len()..];
     let end = after.find(')')?;
     after[..end].trim().parse().ok()
+}
+
+/// Stamp every finding with the sheet it was found on — the piece of context
+/// that turns "a decoupling cap is missing somewhere" into "on `power.kicad_sch`".
+fn tag_with_sheet(
+    mut findings: Vec<serde_json::Value>,
+    sheet_label: &str,
+) -> Vec<serde_json::Value> {
+    for f in &mut findings {
+        f["sheet"] = json!(sheet_label);
+    }
+    findings
 }
 
 fn extract_findings(result: &CallToolResult) -> Vec<serde_json::Value> {

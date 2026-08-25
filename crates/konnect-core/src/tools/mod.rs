@@ -681,6 +681,67 @@ fn collect_sheet_paths(
     visited.remove(&canonical(sheet));
 }
 
+/// Every file reachable from `root` by following `(sheet …)` references, plus
+/// every reference this walk could not follow.
+///
+/// The third walker of this repo's schematic hierarchy, after
+/// `sch_hierarchy::build_hierarchy_node` and `collect_sheet_paths` above —
+/// this one exists so `design_review`'s audits can be run once per reachable
+/// file instead of once on whatever single path a caller happened to pass, and
+/// so `sch_export::sheet_tree_contains` can ask the same question ("is this
+/// file in that tree?") without its own copy of the walk.
+pub(crate) struct SheetWalk {
+    /// Root first, then every child sheet in the order this walk first found
+    /// it. No duplicates, even for a sheet instantiated more than once.
+    pub sheets: Vec<std::path::PathBuf>,
+    /// A `(sheet …)` reference this walk could not follow, with why: the file
+    /// is missing, unreadable, or failed to parse. The path is the one the
+    /// referencing sheet named, not a resolved one — there is nothing to
+    /// resolve it against.
+    pub unloadable: Vec<(std::path::PathBuf, String)>,
+}
+
+/// Walk the schematic hierarchy rooted at `root`. See [`SheetWalk`].
+pub(crate) fn reachable_sheets(root: &std::path::Path) -> SheetWalk {
+    let mut sheets = Vec::new();
+    let mut unloadable = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    walk_reachable_sheets(root, 0, &mut visited, &mut sheets, &mut unloadable);
+    SheetWalk { sheets, unloadable }
+}
+
+fn walk_reachable_sheets(
+    file: &std::path::Path,
+    depth: usize,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+    sheets: &mut Vec<std::path::PathBuf>,
+    unloadable: &mut Vec<(std::path::PathBuf, String)>,
+) {
+    use crate::tools::sch_export::canonical;
+
+    if depth > crate::tools::sch_hierarchy::MAX_HIERARCHY_DEPTH {
+        return;
+    }
+    if !visited.insert(canonical(file)) {
+        return;
+    }
+    match konnect_schematic_editor::Schematic::load(file) {
+        Ok(sch) => {
+            sheets.push(file.to_path_buf());
+            let dir = file.parent().unwrap_or_else(|| std::path::Path::new("."));
+            for child_sheet in sch.sheets.iter() {
+                let child = dir.join(child_sheet.file());
+                walk_reachable_sheets(&child, depth + 1, visited, sheets, unloadable);
+            }
+        }
+        Err(e) => unloadable.push((file.to_path_buf(), e.to_string())),
+    }
+    // A file reached through one branch may sit under another as well, so it
+    // must not stay marked once this branch is done — same reasoning as
+    // `collect_sheet_paths`.
+    visited.remove(&canonical(file));
+}
+
 /// The project name and instance paths a symbol placed in `sch_path` must be
 /// written with.
 ///

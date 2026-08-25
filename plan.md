@@ -3520,13 +3520,39 @@ None. Each item below is independent of the others except where stated.
         `docs/capability-matrix.md` moves one line again (D128): the new test
         lives in `nets_and_wires.rs`, lexicographically ahead of
         `symbols_and_schematic.rs`. Status unchanged.
-  - [ ] P.6.8.4 #185 — `run_design_review` runs its four audits against the
+  - [x] P.6.8.4 #185 — `run_design_review` runs its four audits against the
         single `schematic` path and derives the verdict from finding counts, so
         "LOOKS GOOD" is what a caller gets when the audits inspected one sheet
         of twelve. Decide **first** whether the verdict belongs in
         `design_review` or in this fork's `evidence/` validators — upstream has
         no such layer — then port the coverage structs. Same principle as
         P.6.9.16, different evidence.
+        Decided, then done: **the verdict stays in `design_review`**, not in
+        `evidence/`. The precedent was already in the same function —
+        `drc_incomplete` turns a missing DRC pass into `INCOMPLETE` from
+        evidence the handler gathered — and `evidence/` serves the gating
+        validators, a different consumer. The coverage gap is the same shape of
+        fact, so it takes the same shape of answer.
+        The four schematic audits now run once per reachable sheet, every
+        finding carries the sheet it came from, and the review reports
+        `schematic_coverage` beside `drc`: sheets reachable, sheets audited,
+        and each sheet a `(sheet …)` reference named but could not load, with
+        the reason. A coverage gap makes the verdict
+        `INCOMPLETE — sheet(s) not audited: …`, **naming** them, and it sits
+        above warnings for the same reason `drc_incomplete` does: a warning
+        must not stand in front of a review that did not look.
+        No fourth walker: `reachable_sheets` is added once in `tools/mod.rs`
+        and `sch_export::sheet_tree_contains` is reduced to a call on it
+        (D136). That brings a stated widening — the walk includes the root, so
+        a target that *is* the root now answers true; its single caller,
+        `owning_project_root`, has already returned for that case before
+        asking, and P.6.7.8's tests hold unchanged.
+        No hierarchical fixture existed in this repo; four were built, with the
+        defect on a sub-sheet only, and `kicad-cli sch erc` accepts the root.
+        Red before: with the walk truncated to the root, the sub-sheet defect
+        goes back to `LOOKS GOOD` with an empty finding list, and the missing
+        sub-sheet stops being reported. Single-sheet reviews are unchanged —
+        the nine existing tests never moved.
   - [ ] P.6.8.5 #148 — the net-label stub direction defaults to `"right"`
         (`sch_wiring.rs:1975`), so connecting a left-edge pin drives the stub
         across the symbol body, over other pins, and the mid-segment-pin loop

@@ -8,7 +8,6 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{get_path, ToolContext, ToolDef};
-use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
@@ -20,7 +19,6 @@ use konnect_sexp::{
     },
 };
 use serde_json::json;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::cli;
@@ -671,8 +669,7 @@ fn owning_project_root(file: &Path) -> Option<PathBuf> {
     if same_file(&root, file) {
         return None;
     }
-    let mut visited = HashSet::new();
-    sheet_tree_contains(&root, file, 0, &mut visited).then_some(root)
+    sheet_tree_contains(&root, file).then_some(root)
 }
 
 /// The `<stem>.kicad_sch` beside the single `.kicad_pro` in `dir`. A directory
@@ -693,30 +690,19 @@ pub(crate) fn project_root_schematic(dir: &Path) -> Option<PathBuf> {
     sch.is_file().then_some(sch)
 }
 
-/// Whether `target` is reachable as a sheet from `root`. Depth and visited set
-/// guard the same way [`crate::tools::sch_hierarchy::build_hierarchy_node`]
-/// does: a sheet may reference a file that references it back.
-fn sheet_tree_contains(
-    root: &Path,
-    target: &Path,
-    depth: usize,
-    visited: &mut HashSet<PathBuf>,
-) -> bool {
-    if depth > crate::tools::sch_hierarchy::MAX_HIERARCHY_DEPTH {
-        return false;
-    }
-    let canon = canonical(root);
-    if !visited.insert(canon) {
-        return false;
-    }
-    let Ok(sch) = cse::Schematic::load(root) else {
-        return false;
-    };
-    let dir = root.parent().unwrap_or_else(|| Path::new("."));
-    sch.sheets.iter().any(|sheet| {
-        let child = dir.join(sheet.file());
-        same_file(&child, target) || sheet_tree_contains(&child, target, depth + 1, visited)
-    })
+/// Whether `target` is reachable as a sheet from `root` — the same question
+/// [`crate::tools::reachable_sheets`] answers for the whole tree at once, so
+/// this asks it rather than re-walking.
+///
+/// Note the widening this brought: the walk includes `root` itself, so a
+/// `target` that *is* the root now answers true where the old child-only
+/// recursion answered false. `owning_project_root`, the one caller, has
+/// already returned for that case (`same_file(&root, file)`) before asking.
+fn sheet_tree_contains(root: &Path, target: &Path) -> bool {
+    crate::tools::reachable_sheets(root)
+        .sheets
+        .iter()
+        .any(|sheet| same_file(sheet, target))
 }
 
 /// Path equality that survives `.\foo` versus `foo` and case-insensitive
