@@ -3887,7 +3887,7 @@ None. Each item below is independent of the others except where stated.
         (`left: 2 right: 1` — two `(property "Group"` after two calls) and
         `a_group_property_is_anchored_on_the_symbol_not_the_sheet_origin`
         (`left: "0 0 0"`).
-  - [ ] P.6.9.14 — `batch_edit_schematic_components` carries the same family
+  - [x] P.6.9.14 — `batch_edit_schematic_components` carries the same family
         of defect on `fields` that P.6.9.6 just closed on the single-component
         path, and was outside its scope. `sch_batch.rs:950-965` guards with
         `if let Some(new_val) = field_val.as_str()`, so a number or boolean
@@ -3902,6 +3902,38 @@ None. Each item below is independent of the others except where stated.
         the shared helpers and the same `property_text` conversion. Proof to
         reproduce first: a batch spec with `fields: {"Qty": 2}` reports success
         and writes nothing.
+        Done. The technical difficulty was not the diagnosis but reconciling
+        two write models: this handler accumulates `SexpEdit`s whose byte
+        ranges index the *original* content and are only correct applied at
+        once, while `set_symbol_property` returns an already-spliced document —
+        it must, since an insertion's position and indentation are read off the
+        symbol as it stands.
+        Resolved in two phases. Phase 1 is unchanged: the standard fields stay
+        offset edits applied in a single `apply_edits`. Phase 2 walks the
+        validated `(field, text)` pairs — parked per component in a new
+        `PendingProperties` — over the resulting string, re-locating the symbol
+        with `find_symbol_instance_block` before every write, exactly as
+        `set_field` does on the single-component path and for the same reason:
+        a previous insertion in the same batch has moved everything after it.
+        Every phase-1 offset stays valid, nothing is ever reserialised, and a
+        one-field edit is still a one-line diff (P.6.9.4).
+        `property_text` went `fn` → `pub(crate) fn` — matching
+        `place_one_component`, the file's only other exported neighbour —
+        rather than being duplicated, so both paths refuse the same values.
+        `RESERVED_PROPERTY_KEYS` is the `reject`, so `Reference` is turned away
+        before any write. A `fields` that is present but not an object is now
+        an error instead of being ignored.
+        Red before, four of the six: `a_batch_edit_writes_a_field_given_as_a_number`
+        (`{"errors":[],"updated":[],"updated_count":0}` — success, nothing
+        written), `a_batch_edit_adds_a_field_the_symbol_does_not_carry_yet`
+        (`errors: ["Field 'MPN' not found on 'R1'"]`) and
+        `a_batch_edit_refuses_to_rewrite_the_reference_property`
+        (`changes: ["Reference → R9"]`). The other two — in-place update, and
+        the one-line-diff bound — were green before and after, and stand as
+        non-regression guards.
+        Behaviour note: the `fields` path's error message changes shape
+        (`Field 'X' not found on 'R1'` → `'X' on 'R1': …`); no test or doc
+        asserted the old one.
   - [ ] P.6.9.15 — `place_component_array`'s schema and handler disagree on
         `spacing_y`. The schema documents `"spacing_y": { "default": 0 }`
         (`pcb_components.rs:1030`); the handler reads
@@ -3937,6 +3969,20 @@ None. Each item below is independent of the others except where stated.
         told which — the field P.6.9.11 just took care to carry all the way
         through `from_anyhow`. Proof to reproduce first: a `kicad_invoke` entry
         omitting a path argument answers `invalid_argument` with no `field`.
+  - [ ] P.6.9.18 — `batch_edit_schematic_components` still refuses `footprint`
+        on a symbol that carries no `Footprint` property, through the "standard
+        fields" loop that resolves by `field_value_range` (`sch_batch.rs`).
+        J.2.4.1 removed exactly that refusal from the single-component path,
+        because a part placed without a footprint has no such property at all
+        and assigning one is the most common edit after placement; P.6.9.14
+        fixed the `fields` half of this handler but left the standard-field
+        half, which is a separate loop. Found while doing P.6.9.14 and left
+        alone as out of scope. Proof to reproduce first: the fixture
+        `bus_two_resistors.kicad_sch` carries no `(property "Footprint" …)`,
+        and a spec `{"reference": "R1", "footprint": "R_0805"}` answers
+        `Field 'Footprint' not found on 'R1'`. Route the standard fields
+        through `set_symbol_property` as well, keeping `Reference` on its own
+        path — `new_reference` still has to rewrite `(instances …)` (D124).
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,

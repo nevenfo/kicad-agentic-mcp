@@ -6,7 +6,7 @@
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
 P.6.9 (triage) et P.6.9.1 à P.6.9.12 closes (tous les items du triage
-d'origine). P.6.9.14 à P.6.9.17, découverts en route, restent, dans
+d'origine). P.6.9.15 à P.6.9.18, découverts en route, restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -16,28 +16,40 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.13 — `handle_group_components` portait verbatim le défaut A de P.6.9.5,
-hors de son périmètre à l'époque. L'insertion faite à la main — repérer
-`(instances`, épisser une propriété `format!`ée avec ancre et indentation
-codées en dur — est remplacée par un seul appel à `set_symbol_property`, le
-helper partagé par P.6.9.5. `reject` est vide : la clé est le littéral
-`"Group"`, aucun nom fourni par l'appelant ne peut y heurter une clé réservée.
+P.6.9.14 — la voie batch traite `fields` comme la voie mono-composant. La
+difficulté n'était pas le diagnostic mais la conciliation de deux modèles
+d'écriture : ce handler accumule des `SexpEdit` dont les plages indexent le
+contenu **d'origine** et ne sont justes qu'appliquées d'un coup, tandis que
+`set_symbol_property` rend un document déjà splicé — il le doit, puisque la
+position et l'indentation d'une insertion se lisent sur le symbole tel qu'il
+est.
 
-Un effet induit traité : une entrée qui échoue est désormais une erreur par
-référence, donc `batch.unresolved` devient un `batch_errors` mutable que la
-boucle alimente, et le champ `errors` de la réponse rapporte les deux sortes au
-lieu des seules références non résolues.
+Résolu en deux phases. Phase 1 inchangée : les champs standard restent des
+édits d'offsets appliqués en un seul `apply_edits`. Phase 2 déroule les paires
+`(champ, texte)` validées — parquées par composant dans un
+`PendingProperties` — sur la chaîne résultante, en relocalisant le symbole par
+`find_symbol_instance_block` avant chaque écriture, exactement comme
+`set_field` sur la voie mono-composant et pour la même raison : une insertion
+précédente du même batch a décalé tout ce qui la suit. Tous les offsets de
+phase 1 restent valides, rien n'est jamais resérialisé, et une édition d'un
+champ reste un diff d'une ligne (P.6.9.4).
+
+`property_text` est passé `pub(crate)` — comme `place_one_component`, seul
+autre voisin exporté du fichier — au lieu d'être dupliqué, si bien que les deux
+voies refusent les mêmes valeurs. `RESERVED_PROPERTY_KEYS` sert de `reject`,
+donc `Reference` est écarté avant toute écriture.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1326
-  tests, 0 échec** (1324 + 2 nouveaux, aucun test existant modifié)
-- rouge d'abord :
-  `regrouping_a_component_updates_its_group_rather_than_adding_a_second`
-  (`left: 2 right: 1`, deux `(property "Group"` après deux appels) et
-  `a_group_property_is_anchored_on_the_symbol_not_the_sheet_origin`
-  (`left: "0 0 0"`)
+- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1332
+  tests, 0 échec** (1326 + 6 nouveaux, aucun test existant modifié)
+- rouge d'abord : quatre des six, dont
+  `a_batch_edit_writes_a_field_given_as_a_number`
+  (`{"errors":[],"updated":[],"updated_count":0}` — succès, rien d'écrit) et
+  `a_batch_edit_refuses_to_rewrite_the_reference_property`
+  (`changes: ["Reference → R9"]`). Les deux autres étaient verts avant comme
+  après et bornent la non-régression, dont le diff d'exactement une ligne
 
 ## Décisions actives
 
@@ -244,12 +256,11 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.14 — `batch_edit_schematic_components` porte la même famille
-de défaut sur `fields` que P.6.9.6 a close sur la voie mono-composant :
-`sch_batch.rs:950-965` garde par `if let Some(new_val) = field_val.as_str()`,
-donc une valeur number ou bool est **silencieusement ignorée** ; il résout par
-`field_value_range` au lieu de `set_symbol_property`, donc une clé absente
-échoue en `Field 'X' not found on 'R1'` au lieu d'être insérée ; et il n'oppose
-aucun rejet à `Reference` (D124). Router par les helpers partagés et la même
-conversion `property_text` que P.6.9.6. Rouge d'abord : un spec de batch avec
-`fields: {"Qty": 2}` répond succès et n'écrit rien.
+Implémenter P.6.9.15 — `place_component_array` : son schéma publie
+`"spacing_y": { "default": 0 }` (`pcb_components.rs:1030`) alors que le handler
+lit `args["spacing_y"].as_f64().unwrap_or(spacing_x)` (`:1511`). Qui croit le
+schéma demande une ligne et obtient une grille carrée : toutes les pièces d'un
+tableau N×M sont placées au mauvais y. Décider lequel des deux a raison — en
+mesurant ce qu'un tableau en ligne demande normalement — puis aligner l'autre,
+et couvrir par un test qui place un 3×2 sans `spacing_y` et assère les
+coordonnées y. Rouge d'abord.

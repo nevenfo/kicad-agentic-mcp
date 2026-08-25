@@ -482,6 +482,197 @@ async fn a_batch_edit_applies_every_edit_in_it() {
     assert!(text.contains("\"2k2\""), "R2's edit was not applied");
 }
 
+/// A batch spec's `fields` map is the same generic property path
+/// `edit_schematic_component` got in P.6.9.6, and it has to behave the same
+/// way here: KiCAD stores every property as text, so a JSON number is written
+/// as its text form instead of being dropped for not being a string.
+#[tokio::test]
+async fn a_batch_edit_writes_a_field_given_as_a_number() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+
+    let result = h
+        .json(
+            "batch_edit_schematic_components",
+            json!({
+                "schematic": sch,
+                "edits": [ { "reference": "R1", "fields": { "Qty": 2 } } ]
+            }),
+        )
+        .await;
+
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        text.contains(r#"(property "Qty" "2""#),
+        "a numeric field value must be written as its text form: {result}"
+    );
+}
+
+/// A value with no single-line text form cannot become a property, and saying
+/// so beats writing nothing while the batch reports success.
+#[tokio::test]
+async fn a_batch_edit_refuses_a_field_value_with_no_text_form() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+    let before = std::fs::read_to_string(&sch).expect("the schematic is readable");
+
+    let result = h
+        .json(
+            "batch_edit_schematic_components",
+            json!({
+                "schematic": sch,
+                "edits": [ { "reference": "R1", "fields": {
+                    "Spec": { "nested": 1 },
+                    "Tags": ["a", "b"],
+                    "Empty": null
+                } } ]
+            }),
+        )
+        .await;
+
+    let errors = result["errors"].to_string();
+    for key in ["Spec", "Tags", "Empty"] {
+        assert!(
+            errors.contains(key),
+            "'{key}' has no text form and must be reported, not ignored: {result}"
+        );
+    }
+    assert_eq!(
+        before,
+        std::fs::read_to_string(&sch).expect("the schematic is readable"),
+        "a refused value must leave the sheet alone"
+    );
+}
+
+/// J.2.4.1 removed "the symbol does not carry this field yet" as a reason to
+/// refuse an edit on the single-component path; the batch path refused it too.
+#[tokio::test]
+async fn a_batch_edit_adds_a_field_the_symbol_does_not_carry_yet() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+
+    let result = h
+        .json(
+            "batch_edit_schematic_components",
+            json!({
+                "schematic": sch,
+                "edits": [ { "reference": "R1", "fields": { "MPN": "RC0805FR-0710KL" } } ]
+            }),
+        )
+        .await;
+
+    assert!(
+        !result["errors"].to_string().contains("not found"),
+        "a missing property is created, not refused: {result}"
+    );
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        text.contains(r#"(property "MPN" "RC0805FR-0710KL""#),
+        "the new property was not inserted: {result}"
+    );
+}
+
+/// A key the symbol already carries is rewritten where it stands: a second
+/// `(property "Value" …)` on the same symbol is a schematic KiCAD reads
+/// differently from the one that was asked for.
+#[tokio::test]
+async fn a_batch_edit_updates_an_existing_field_in_place_without_duplicating_it() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+    let before = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    let value_properties = before.matches(r#"(property "Value""#).count();
+
+    h.json(
+        "batch_edit_schematic_components",
+        json!({
+            "schematic": sch,
+            "edits": [ { "reference": "R1", "fields": { "Value": "22k" } } ]
+        }),
+    )
+    .await;
+
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert_eq!(
+        text.matches(r#""22k""#).count(),
+        1,
+        "the update must land once, in place"
+    );
+    assert_eq!(
+        text.matches(r#"(property "Value""#).count(),
+        value_properties,
+        "updating a field must not add a second one"
+    );
+}
+
+/// D124: `Reference` is the one property stored twice — as a property and
+/// inside `(instances …)` — so the generic `fields` path, which rewrites only
+/// the property, must not touch it at all.
+#[tokio::test]
+async fn a_batch_edit_refuses_to_rewrite_the_reference_property() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+    let before = std::fs::read_to_string(&sch).expect("the schematic is readable");
+
+    let result = h
+        .json(
+            "batch_edit_schematic_components",
+            json!({
+                "schematic": sch,
+                "edits": [ { "reference": "R1", "fields": { "Reference": "R9" } } ]
+            }),
+        )
+        .await;
+
+    assert!(
+        result["errors"].to_string().contains("Reference"),
+        "renaming through 'fields' must be refused out loud: {result}"
+    );
+    assert_eq!(
+        before,
+        std::fs::read_to_string(&sch).expect("the schematic is readable"),
+        "a refused rename must write nothing"
+    );
+}
+
+/// P.6.9.4's rule, on this path: one field on one component is one line of
+/// diff, not a reserialised document.
+#[tokio::test]
+async fn a_batch_edit_of_one_field_changes_one_line_of_the_sheet() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+    let before = std::fs::read_to_string(&sch).expect("the schematic is readable");
+
+    h.json(
+        "batch_edit_schematic_components",
+        json!({
+            "schematic": sch,
+            "edits": [ { "reference": "R1", "fields": { "Value": "22k" } } ]
+        }),
+    )
+    .await;
+
+    let after = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    let before_lines: Vec<&str> = before.lines().collect();
+    let after_lines: Vec<&str> = after.lines().collect();
+    assert_eq!(
+        before_lines.len(),
+        after_lines.len(),
+        "an in-place value edit changes no line count"
+    );
+    let differing: Vec<usize> = before_lines
+        .iter()
+        .zip(&after_lines)
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(
+        differing.len(),
+        1,
+        "exactly the edited property line differs, got lines {differing:?}"
+    );
+}
+
 /// The batch delete empties the sheet of exactly what it was given.
 #[tokio::test]
 async fn a_batch_delete_removes_every_reference_it_is_given() {

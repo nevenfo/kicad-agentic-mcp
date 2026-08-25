@@ -9,8 +9,8 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_str, require_f64, require_str,
-    symbol_property_at_spans, ToolDef,
+    find_symbol_instance_block, get_path, opt_str, require_f64, require_str, set_symbol_property,
+    symbol_property_at_spans, SetPropertyOutcome, ToolDef, RESERVED_PROPERTY_KEYS,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -876,6 +876,18 @@ async fn handle_bulk_move(
     })))
 }
 
+/// One batch entry's free-form `fields` work, deferred until the offset-based
+/// edits of the same call have been applied: `set_symbol_property` rewrites a
+/// document rather than describing a byte range, so it cannot share a pass
+/// with `SexpEdit` offsets taken against the original content.
+struct PendingProperties {
+    reference: String,
+    /// `(field, stored text)` pairs that survived [`property_text`].
+    updates: Vec<(String, String)>,
+    /// What this component has changed so far, standard fields included.
+    changes: Vec<String>,
+}
+
 async fn handle_batch_edit(
     args: &serde_json::Value,
     _ctx: &crate::tools::ToolContext,
@@ -899,6 +911,9 @@ async fn handle_batch_edit(
     let mut file_edits: Vec<SexpEdit> = Vec::new();
     let mut changed: Vec<serde_json::Value> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
+    // What each spec's `fields` map asks for, held back until the offset-based
+    // edits above have been applied (see the two-phase note below).
+    let mut pending_properties: Vec<PendingProperties> = Vec::new();
 
     // One index for the whole batch, consulted only by the entries that
     // carry a `uuid` (D.4.1.6); `reference` entries never reach it.
@@ -946,33 +961,85 @@ async fn handle_batch_edit(
             }
         }
 
-        // Arbitrary extra fields from "fields" object
-        if let Some(fields_obj) = edit_spec["fields"].as_object() {
-            for (field_name, field_val) in fields_obj {
-                if let Some(new_val) = field_val.as_str() {
-                    match field_value_range(&content, reference, field_name) {
-                        Some((start, end)) => {
-                            file_edits.push(SexpEdit::replace(start, end, new_val.to_string()));
-                            component_changes.push(format!("{} → {}", field_name, new_val));
-                        }
+        // Arbitrary extra fields from "fields". This is the same generic
+        // property path `edit_schematic_component` has, so it answers the same
+        // way (P.6.9.14): a number or a boolean is stored as its text form,
+        // anything with no text form is refused out loud rather than silently
+        // dropped, a key the symbol does not carry yet is inserted rather than
+        // refused (J.2.4.1), and `Reference` is refused outright because its
+        // designator lives in `(instances …)` too and this path would only
+        // rewrite the property half of it (D124).
+        let mut updates: Vec<(String, String)> = Vec::new();
+        match edit_spec.get("fields") {
+            None | Some(serde_json::Value::Null) => {}
+            Some(serde_json::Value::Object(map)) => {
+                for (key, raw) in map {
+                    match crate::tools::sch_components::property_text(raw) {
+                        Some(text) => updates.push((key.clone(), text)),
                         None => errors.push(format!(
-                            "Field '{}' not found on '{}'",
-                            field_name, reference
+                            "'{}' on '{}': value must be a string, number or boolean",
+                            key, reference
                         )),
                     }
                 }
             }
+            Some(_) => errors.push(format!(
+                "'fields' on '{}' must be an object of key:value pairs",
+                reference
+            )),
         }
 
-        if !component_changes.is_empty() {
+        pending_properties.push(PendingProperties {
+            reference: reference.to_string(),
+            updates,
+            changes: component_changes,
+        });
+    }
+
+    // Two phases, because the two writers speak different languages: the
+    // standard fields above are byte ranges into the *original* content and
+    // are only correct as a batch applied at once, while `set_symbol_property`
+    // returns an already-spliced document (it has to: an insertion's position
+    // and indentation are read off the symbol as it stands). Applying the
+    // offset edits first, then walking the property updates over the growing
+    // string — re-locating the symbol on every write, exactly as `set_field`
+    // does on the single-component path — keeps every offset valid without
+    // ever reserialising the document, so a one-field edit is still a
+    // one-line diff (P.6.9.4).
+    let mut new_content = apply_edits(content, file_edits);
+    for pending in &mut pending_properties {
+        for (field, value) in &pending.updates {
+            let block = find_symbol_instance_block(&new_content, &pending.reference);
+            let Some((sym_start, sym_end)) = block else {
+                errors.push(format!("Component '{}' not found", pending.reference));
+                continue;
+            };
+            match set_symbol_property(
+                &new_content,
+                sym_start,
+                sym_end,
+                field,
+                value,
+                RESERVED_PROPERTY_KEYS,
+            ) {
+                Ok((updated, outcome)) => {
+                    new_content = updated;
+                    pending.changes.push(match outcome {
+                        SetPropertyOutcome::Updated => format!("{} → {}", field, value),
+                        SetPropertyOutcome::Inserted => format!("{} → {} (added)", field, value),
+                    });
+                }
+                Err(why) => errors.push(format!("'{}' on '{}': {why}", field, pending.reference)),
+            }
+        }
+        if !pending.changes.is_empty() {
             changed.push(json!({
-                "reference": reference,
-                "changes": component_changes
+                "reference": pending.reference,
+                "changes": pending.changes
             }));
         }
     }
 
-    let new_content = apply_edits(content, file_edits);
     write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
 
     Ok(CallToolResult::json(&json!({

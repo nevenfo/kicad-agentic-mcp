@@ -819,7 +819,11 @@ async fn handle_edit_schematic_component(
 /// The text KiCAD would store for a JSON property value: a string as-is, a
 /// number or boolean as its text form, nothing at all for `null`, an object or
 /// an array, which have no single-line text form a property could hold.
-fn property_text(value: &serde_json::Value) -> Option<String> {
+///
+/// Shared with `batch_edit_schematic_components` (P.6.9.14): the batch path's
+/// `fields` map is the same generic property path and has to accept, and
+/// refuse, exactly the same values.
+pub(crate) fn property_text(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => Some(s.clone()),
         serde_json::Value::Number(n) => Some(n.to_string()),
