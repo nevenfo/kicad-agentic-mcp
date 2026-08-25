@@ -9,22 +9,22 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
+use crate::tools::ipc_boundary::guarded_ipc as ipc;
 use crate::tools::{get_path, opt_f64, require_f64, require_str, ToolContext, ToolDef};
 use konnect_sexp::writer::{apply_edits, new_uuid, write_atomic, SexpEdit};
 use serde_json::json;
 
 // ─── IPC helper ───────────────────────────────────────────────────────────────
-
-macro_rules! ipc {
-    ($ctx:expr, |$c:ident| $body:expr) => {{
-        let addr = $ctx.config.ipc_address.clone();
-        match with_ipc(addr, move |$c| $body).await? {
-            Ok(v) => v,
-            Err(failure) => return Ok(ipc_error_result(&failure)),
-        }
-    }};
-}
+//
+// P.6.9.22: this file used to define its own, unguarded, two-argument `ipc!`
+// — no `board` read, no `ensure_board_is_active` check, so every one of its
+// eight handlers routed onto whichever board KiCAD happened to have open
+// first rather than the one their own schema's `board` argument named. It
+// now shares `pcb_components.rs`'s guarded three-argument macro from
+// `ipc_boundary::guarded_ipc` — see that macro's doc comment for the full
+// history and for `no_ipc_call_bypasses_the_guarded_macro` in
+// `required_schema_static_honesty.rs`, the test that keeps a future handler
+// here from being written next to this path again.
 
 // ─── S-expression helpers ─────────────────────────────────────────────────────
 
@@ -160,31 +160,40 @@ pub fn tools() -> Vec<ToolDef> {
             json!({
                 "type": "object",
                 "properties": {
-                    // P.6.9.16: this reads the open KiCAD session over IPC, not
-                    // a file — `board` was never read by the handler and is
-                    // dropped rather than published unread (see `get_nets_list`
-                    // below for the same reasoning).
+                    // P.6.9.16 dropped `board` here, reasoning that this reads
+                    // the open KiCAD session over IPC rather than a file, so
+                    // an unread `board` would be published and ignored. That
+                    // described the bug as the intent: `pcb_routing.rs`'s
+                    // `ipc!` at the time never resolved a board at all, so
+                    // every handler in this file — including this one —
+                    // silently targeted whichever board KiCAD happened to
+                    // have open first (`find_open_board`'s doc comment records
+                    // the live symptom). P.6.9.22 restores `board` here and
+                    // has the handler honor it through the shared, guarded
+                    // `ipc!` (`ipc_boundary::guarded_ipc`), which confirms
+                    // KiCAD actually holds the named board before answering.
+                    "board":    { "type": "string" },
                     "net_name": { "type": "string", "description": "Filter by net (optional)" },
                     "layer":    { "type": "string", "description": "Filter by layer (optional)" }
                 },
-                "required": []
+                "required": ["board"]
             }),
             |args, ctx| async move { handle_query_traces(args, ctx).await }
         ),
         tool!(
             "get_nets_list",
-            "Return all nets defined on the board currently open in KiCAD, via IPC. Operates on \
-             the live session, not on a file path.",
+            "Return all nets defined on the given board, currently open in KiCAD, via IPC.",
             json!({
                 "type": "object",
-                // P.6.9.16: `handle_get_nets_list` takes `_args` — it queries
-                // the open KiCAD session over IPC, never a file. A `board`
-                // property here would tell a caller it can pick which file
-                // gets queried, which is false; it is dropped from both
-                // `properties` and `required` rather than published and
-                // ignored.
-                "properties": {},
-                "required": []
+                // See `query_traces` above for the same reversal, on the same
+                // reasoning: P.6.9.16 dropped `board` because the handler
+                // took `_args`; P.6.9.22 restores it because the real reason
+                // the handler ignored `board` was the unguarded `ipc!` this
+                // file used to define, not that the query is board-agnostic.
+                "properties": {
+                    "board": { "type": "string" }
+                },
+                "required": ["board"]
             }),
             |args, ctx| async move { handle_get_nets_list(args, ctx).await }
         ),
@@ -337,7 +346,7 @@ async fn handle_route_trace(
 
     let net_ipc = net_name.clone();
     let layer_ipc = layer.clone();
-    ipc!(ctx, |c| c
+    ipc!(ctx, args, |c| c
         .add_track(&net_ipc, &layer_ipc, width, x1, y1, x2, y2));
     Ok(CallToolResult::json(&json!({
         "net": net_name, "layer": layer, "width": width,
@@ -388,7 +397,7 @@ async fn handle_route_pad_to_pad(
 
     if (x1 - x2).abs() < 0.01 || (y1 - y2).abs() < 0.01 {
         // Already axis-aligned: single segment
-        ipc!(ctx, |c| c
+        ipc!(ctx, args, |c| c
             .add_track(&net_ipc, &layer_ipc, width, x1, y1, x2, y2));
     } else {
         // L-bend: horizontal then vertical
@@ -398,7 +407,7 @@ async fn handle_route_pad_to_pad(
         let net_b = net_name.clone();
         let layer_a = layer.clone();
         let layer_b = layer.clone();
-        ipc!(ctx, |c| {
+        ipc!(ctx, args, |c| {
             c.add_tracks(&[
                 konnect_ipc::TrackSpec {
                     net_name: net_a.clone(),
@@ -491,7 +500,7 @@ async fn handle_add_via(
     let pad_size = args["pad_size"].as_f64().unwrap_or(0.8);
 
     let net_ipc = net_name.clone();
-    ipc!(ctx, |c| c.add_via(&net_ipc, x, y, drill, pad_size));
+    ipc!(ctx, args, |c| c.add_via(&net_ipc, x, y, drill, pad_size));
     Ok(CallToolResult::json(
         &json!({ "net": net_name, "x": x, "y": y, "drill": drill, "pad_size": pad_size }),
     ))
@@ -571,7 +580,7 @@ async fn handle_delete_trace(
     };
 
     let uuid_ipc = uuid.clone();
-    ipc!(ctx, |c| c.delete_track(&uuid_ipc));
+    ipc!(ctx, args, |c| c.delete_track(&uuid_ipc));
     Ok(CallToolResult::json(&json!({ "deleted_uuid": uuid })))
 }
 
@@ -582,7 +591,8 @@ async fn handle_query_traces(
     let net = args["net_name"].as_str().map(String::from);
     let layer = args["layer"].as_str().map(String::from);
 
-    let tracks = ipc!(ctx, |c| { c.get_tracks(net.as_deref(), layer.as_deref()) });
+    let tracks = ipc!(ctx, args, |c| c
+        .get_tracks(net.as_deref(), layer.as_deref()));
 
     let items: Vec<serde_json::Value> = tracks
         .iter()
@@ -601,10 +611,10 @@ async fn handle_query_traces(
 }
 
 async fn handle_get_nets_list(
-    _args: &serde_json::Value,
+    args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
-    let nets = ipc!(ctx, |c| c.get_nets());
+    let nets = ipc!(ctx, args, |c| c.get_nets());
     let items: Vec<serde_json::Value> = nets
         .iter()
         .map(|n| json!({ "name": n.name, "netcode": n.netcode }))
@@ -651,7 +661,7 @@ async fn handle_modify_trace(
     let uuid_ipc = uuid.clone();
     let net_ipc = net_name.clone();
     let layer_ipc = layer.clone();
-    ipc!(ctx, |c| c.replace_track(
+    ipc!(ctx, args, |c| c.replace_track(
         &uuid_ipc,
         &konnect_ipc::TrackSpec {
             net_name: net_ipc.clone(),
@@ -944,7 +954,7 @@ async fn handle_route_diff_pair(
     let np_ipc = net_pos.clone();
     let nn_ipc = net_neg.clone();
     let layer_ipc = layer.clone();
-    ipc!(ctx, |c| {
+    ipc!(ctx, args, |c| {
         c.add_tracks(&[
             konnect_ipc::TrackSpec {
                 net_name: np_ipc.clone(),

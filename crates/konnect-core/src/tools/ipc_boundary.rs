@@ -100,3 +100,39 @@ pub(crate) fn ipc_error_result_with(
         ),
     }
 }
+
+/// The one `ipc!` a handler may reach for: resolves `board` from `$args` and
+/// confirms — via [`KiCadIpcClient::ensure_board_is_active`] — that the live
+/// KiCAD session actually holds that board before `$body` runs against it.
+///
+/// P.6.9.22: this used to be two copies, `pcb_components.rs`'s (guarded, this
+/// shape) and `pcb_routing.rs`'s own two-argument `ipc!` that skipped the
+/// guard and the `board` read entirely, falling through to
+/// [`KiCadIpcClient::get_open_documents`]'s first entry
+/// (`get_board_document`, private to `konnect-ipc`) — silently routing onto
+/// whichever board KiCAD happened to have open first, not the one `board`
+/// named. `find_open_board`'s own doc comment records the live symptom: "with
+/// the user's own project focused and the target board open behind it,
+/// first-document targeting either fails or, worse, would mutate the wrong
+/// board." Six of the eight `pcb_routing.rs` handlers that used the unguarded
+/// form write copper. One definition now, so a second copy cannot diverge
+/// from it silently again — see
+/// `required_schema_static_honesty::no_ipc_call_bypasses_the_guarded_macro`
+/// for the guard that keeps a future handler from being written next to this
+/// path instead of through it.
+macro_rules! guarded_ipc {
+    ($ctx:expr, $args:expr, |$c:ident| $body:expr) => {{
+        let addr = $ctx.config.ipc_address.clone();
+        let requested_board = $crate::tools::get_path($args, "board")?;
+        match $crate::tools::ipc_boundary::with_ipc(addr, move |$c| {
+            $c.ensure_board_is_active(&requested_board)?;
+            $body
+        })
+        .await?
+        {
+            Ok(v) => v,
+            Err(failure) => return Ok($crate::tools::ipc_boundary::ipc_error_result(&failure)),
+        }
+    }};
+}
+pub(crate) use guarded_ipc;

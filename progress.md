@@ -5,9 +5,9 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.20 closes — tout le triage d'origine et ses
-découvertes, sauf P.6.9.21 (découverte pendant P.6.9.16). Restent P.6.9.21,
-P.6.8 et P.6.11. Branche de travail : `ai/P-schematic-fidelity`,
+P.6.9 (triage) et P.6.9.1 à P.6.9.22 closes — tout le triage d'origine et
+toutes ses découvertes sauf une. Reste P.6.9.23, découverte pendant P.6.9.22 ;
+puis P.6.8 et P.6.11. Branche de travail : `ai/P-schematic-fidelity`,
 PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -16,39 +16,47 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.19 — l'item supposait que les 24 tools dont le handler ne s'appelle pas
-`handle_<tool>` lisaient `NOT_TESTED` alors qu'un test les exerce, et demandait
-le chiffre réel d'abord. Mesuré : la couverture cachée est **zéro**. 22 des 24
-sont déjà `SUPPORTED`/`PARTIAL`/`EXTERNAL_TOOL` parce qu'un test nomme le tool
-en chaîne — l'autre critère du scan, insensible au mismatch de handler. Les
-deux restants (`route_differential_pair`, `open_schematic_viewer`) n'ont
-réellement aucun test : leur `NOT_TESTED` est exact, pas caché.
+P.6.9.21 puis P.6.9.22, dans le même commit — l'instrument et le défaut qu'il a
+trouvé.
 
-Ce qui rend le mismatch inoffensif n'est ni la chance ni le nommage, mais la
-convention de test du dépôt : `tests/harness/mod.rs` passe par `ToolRouter` par
-nom plutôt que d'appeler un handler privé, délibérément. L'exposition restante
-est étroite et actuellement vide : un tool prouvé **uniquement** par un test
-unitaire appelant son handler lirait `NOT_TESTED`.
+**P.6.9.21** : la forme proposée par le plan (omettre chaque clé requise à tour
+de rôle, valeurs bidons pour les autres) a été écartée **sur mesure** et non
+essayée : un chemin plausible mais inexistant fait répondre `file_not_found` à
+un handler correct avant qu'il regarde la clé omise, donc « ne l'exige pas » et
+« l'exige après une autre vérification » sont indiscernables. Fait autrement :
+`required_schema_static_honesty.rs` compare la liste `required` au **corps du
+handler**, sans rien exécuter. 193 tools, 416 clés, 19 par indirection, 5
+menteurs. Sa limite, écrite dans ses docs : il prouve qu'une clé est **lue**,
+pas qu'elle est **honorée**.
 
-Donc **pas de renommage** : delta de matrice nul, et un des 24 ne peut pas être
-renommé — `handle_get_pin_connections` sert `get_pin_connections` **et**
-`get_pin_net_name` (`sch_analysis.rs:83,95`). Une table d'alias achète le même
-rien en ajoutant une liste écrite à la main à tenir à jour.
+**P.6.9.22** : les 5 menteurs n'étaient pas 5 schémas négligents mais **une
+garde manquante**. `pcb_components.rs` définissait un `ipc!` qui résout `board`
+et appelle `ensure_board_is_active` ; `pcb_routing.rs` en définissait un
+**second**, sans garde, retombant sur `get_board_document()` — le **premier**
+document ouvert. Six des huit handlers concernés gravent du cuivre. Le code le
+documentait déjà : `find_open_board` existe pour ça, sur constat live, « would
+mutate the wrong board ». Une seule définition désormais,
+`ipc_boundary::guarded_ipc`, dans le module dont c'est la raison d'être.
 
-Ce que la mesure a rendu corrigible, c'est le préambule de la matrice, qui
-affirmait que le scan ne se trompe que dans un sens. D133 l'avait déjà réfuté.
-Le préambule (`capability/render.rs`) énonce désormais les deux directions,
-nomme la convention `ToolRouter` qui garde le sous-comptage vide, et dit à un
-futur auteur de test de casser un nom de tool qu'il mentionne sans l'appeler.
+Revirement assumé sur P.6.9.16 : j'avais retiré `board` de `query_traces` et
+`get_nets_list` en concluant qu'ils lisaient la session ouverte — je décrivais
+le défaut comme une intention. `board` est restauré dans les deux, `required`
+compris, et honoré.
 
 Validation :
-- `cargo test -p konnect-core --locked --test capability_matrix` : PASS,
-  14 tests ; matrice régénérée, **aucun statut ni pourcentage changé** — le
-  diff porte sur le seul préambule
+- `required_schema_static_honesty` : PASS — 193 tools, 416 clés required,
+  19 par indirection, **0 menteur**
+- `no_ipc_call_bypasses_the_guarded_macro_in_pcb_routing` : rouge d'abord
+  (`left: 1, right: 0`), vert après
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **55 suites, 1338 tests, 0 échec**
+  **56 suites, 1340 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
+- `the_committed_matrix_is_up_to_date` : PASS, `docs/capability-matrix.md`
+  intact
+
+Preuve structurelle de bout en bout : le comportement demande un KiCAD vivant
+avec deux boards ouverts, et `e2e-kicad.yml` n'a aucune sonde de routage.
 
 ## Décisions actives
 
@@ -296,15 +304,14 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.21 — `required_schema_honesty.rs` appelle chaque handler avec
-`{}`, ce qui manque **toutes** les clés `required` d'un coup et ne prouve donc
-que la **première** que le handler vérifie. Mesuré : dans `pcb_routing.rs`,
-`"board"` apparaît dans 33 schémas de tools et n'est lu que par 5 handlers
-(`get_path(args, "board")` l.267, 343, 495, 729, 809) ; `query_traces` et
-`get_nets_list` n'ont été attrapés que parce qu'ils ne vérifient aucune autre
-clé requise avant. Atteindre le reste demande d'appeler avec chaque clé requise
-omise à tour de rôle, donc des valeurs plausibles pour les autres — et un
-chemin plausible mais inexistant fait répondre `not_found` à un handler correct,
-pas `invalid_argument`, ce qui noie la forme naïve sous les faux positifs.
-Mesurer ça avant de figer une forme ; premier essai évident : valeurs
-bidons par type, et ne scorer que `invalid_argument` sur la clé omise.
+Implémenter P.6.9.23 — la même forme non gardée survit hors de
+`pcb_routing.rs` : neuf `with_ipc(` directs qu'aucun macro ne garde, dans
+`pcb_board.rs` (`set_board_size`, `get_board_extents`, `add_board_outline`,
+`add_board_text`, `import_svg_logo`), `pcb_export.rs` (`refill_zones`) et
+`pcb_components.rs` (`place_component`, `place_array`, `align_components`).
+Huit des neuf écrivent. Mesurer un par un avant de conclure : certains appels
+de `pcb_components.rs` sont la voie de repli fichier délibérée, qui lit `board`
+pour ses propres raisons et vérifie peut-être déjà. Pour chacun : `board`
+est-il résolu, et `ensure_board_is_active` est-il atteint avant toute
+écriture ? Puis étendre la garde `no_ipc_call_bypasses_the_guarded_macro` à
+chaque fichier qui passe la mesure, pour que la classe reste fermée.

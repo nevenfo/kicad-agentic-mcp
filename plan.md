@@ -4178,22 +4178,90 @@ None. Each item below is independent of the others except where stated.
         machine's: {"exists":false,"note":"Run download_jlcpcb_database to fetch
         the parts database"}`. Found while validating P.6.9.16 and independent
         of it — reproduced on a stashed tree.
-  - [ ] P.6.9.21 — `required_schema_honesty.rs` calls each handler with `{}`,
+  - [x] P.6.9.21 — `required_schema_honesty.rs` calls each handler with `{}`,
         which is missing *every* required key at once, so it only ever proves
         the **first** key that handler happens to check. A schema listing
-        `["board", "uuid"]` whose handler reads only `uuid` passes the pass
+        `["board", "uuid"]` whose handler reads only `uuid` passes that pass
         exactly like one that reads both. The class is real and wider than what
         P.6.9.16 caught: measured in `pcb_routing.rs`, `"board"` appears in 33
-        tool schemas and is read by 5 handlers (`get_path(args, "board")` at
-        lines 267, 343, 495, 729, 809); `query_traces` and `get_nets_list` were
-        only caught because they check no other required key first. Reaching
-        the rest means calling with each required key omitted in turn, which
-        needs plausible values for the others — and a plausible-looking path
-        that does not exist makes a well-behaved handler answer `not_found`,
-        not `invalid_argument`, so the naive form drowns in false positives.
-        Measure that before committing to a shape; per-type placeholder values
-        and scoring only `invalid_argument`-on-the-omitted-key is the obvious
-        first try.
+        tool schemas and is read by 5 handlers.
+        The shape this item floated — omit each required key in turn, filling
+        the others with placeholder values — was rejected on measurement rather
+        than tried: a plausible-looking path that does not exist makes a
+        perfectly correct handler answer `file_not_found` before it ever looks
+        at the omitted key, so "does not require it" and "requires it after
+        some other check" are indistinguishable. The only unambiguous signal
+        would be a *success* despite a missing key, and almost nothing succeeds
+        on placeholder values. Near-zero yield, massive false positives.
+        Done instead as `required_schema_static_honesty.rs`: a key the schema
+        declares `required` and the handler's body never reads is a lie with no
+        execution needed and no dangerous false positive. It reads the handler
+        body out of `src/tools/*.rs` — the handler is located through the
+        `tool!` block, never by assuming `handle_<tool>` (P.6.9.19) — and looks
+        for each required key in the argument-reading forms this codebase
+        actually uses. Precedent for scanning our own sources: the coverage
+        scanner does it already.
+        Measured: 193 tools, 416 required keys, 19 resolved only through one
+        level of indirection (the `ipc!` macro, and `handle_add_bus`'s loop
+        over a literal `[x1, y1, x2, y2]`), 0 handlers unmapped. Five liars,
+        all in `pcb_routing.rs` — see P.6.9.22, which is what they turned out
+        to be.
+        The limit, written into the test's own docs: it proves a key is
+        **read**, not that it is **honoured**. `route_pad_to_pad` reads `board`
+        with `get_path` to find its pads in the file, so the scan clears it,
+        and then routed over IPC without checking that KiCAD holds that board —
+        it could read A's pads and lay copper on B. That case is what the guard
+        in P.6.9.22 closes instead.
+  - [x] P.6.9.22 — the five keys P.6.9.21 found were not five careless schemas.
+        They were one missing guard, and the worst defect of this phase.
+        `pcb_components.rs` defined an `ipc!` macro that resolves `board` from
+        the arguments and calls `ensure_board_is_active` before the body runs.
+        `pcb_routing.rs` defined a *second* `ipc!`, two-argument, that read no
+        `board` and checked nothing, falling through to `get_board_document()`
+        — KiCAD's **first** open document. So a caller naming a board in a
+        schema that requires it had the request executed against whatever board
+        happened to be in front. Six of the eight handlers on that path write
+        copper: vias, traces, differential pairs.
+        This is not inference. `find_open_board` exists precisely for it, and
+        its doc comment records the live symptom: "with the user's own project
+        focused and the target board open behind it, first-document targeting
+        either fails or, worse, would mutate the wrong board." The guard was
+        written, and one file stayed beside it.
+        One definition now — `ipc_boundary::guarded_ipc`, in the module whose
+        whole premise is that this boundary is typed once and no handler
+        re-derives it — imported `as ipc` by both files. Two copies are what
+        let one diverge.
+        Reverses P.6.9.16 on two tools, deliberately. I had dropped `board`
+        from `query_traces` and `get_nets_list`, concluding they query the open
+        session rather than a file. That described the defect as if it were the
+        intent: the handlers ignored `board` because their macro never resolved
+        one, not because a caller naming a board meant nothing. `board` is
+        restored to both schemas, `required` included, and now honoured. The
+        comments I left there are rewritten to say so, reversal included.
+        Guard that closes the class rather than the eight sites:
+        `no_ipc_call_bypasses_the_guarded_macro_in_pcb_routing` requires zero
+        textual `with_ipc(` in `pcb_routing.rs`. Red before at `left: 1, right:
+        0`, green after. It is what would have caught `route_pad_to_pad`, whose
+        `board` *is* read and was never honoured, and what catches a future
+        handler written next to the path instead of through it.
+        Proof is structural throughout: the behaviour needs a live KiCAD with
+        two boards open, and `e2e-kicad.yml` has no routing probe to hang one
+        on.
+  - [ ] P.6.9.23 — the same unguarded shape survives outside `pcb_routing.rs`:
+        nine direct `with_ipc(` calls that no macro guards, in
+        `pcb_board.rs` (`set_board_size`, `get_board_extents`,
+        `add_board_outline`, `add_board_text`, `import_svg_logo`),
+        `pcb_export.rs` (`refill_zones`) and `pcb_components.rs`
+        (`place_component`, `place_array`, `align_components`). Eight of the
+        nine write. Whether each is a real instance of P.6.9.22 has to be
+        measured one at a time rather than assumed: some of the
+        `pcb_components.rs` calls are the deliberate file-fallback path, which
+        reads `board` for its own reasons and may or may not check that KiCAD
+        holds it. Measure first — for each, is `board` resolved, and is
+        `ensure_board_is_active` reached before anything is written? Then
+        extend the `no_ipc_call_bypasses_the_guarded_macro` guard to every file
+        that survives the pass, so the class stays closed rather than closed
+        once.
 ### Validation
 Each implemented item carries a test that is red before it and green after,
 and — where KiCad is the only honest oracle — a probe in

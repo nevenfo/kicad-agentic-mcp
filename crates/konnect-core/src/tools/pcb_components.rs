@@ -7,7 +7,7 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::ipc_boundary::{ipc_error_result, ipc_error_result_with, with_ipc};
+use crate::tools::ipc_boundary::{guarded_ipc as ipc, ipc_error_result_with, with_ipc};
 use crate::tools::library::{
     footprint_lib_nickname_for_dir, is_lib_id, resolve_footprint_path, FootprintPathError,
 };
@@ -23,22 +23,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 // ─── IPC helper ───────────────────────────────────────────────────────────────
-
-macro_rules! ipc {
-    ($ctx:expr, $args:expr, |$c:ident| $body:expr) => {{
-        let addr = $ctx.config.ipc_address.clone();
-        let requested_board = get_path($args, "board")?;
-        match with_ipc(addr, move |$c| {
-            $c.ensure_board_is_active(&requested_board)?;
-            $body
-        })
-        .await?
-        {
-            Ok(v) => v,
-            Err(failure) => return Ok(ipc_error_result(&failure)),
-        }
-    }};
-}
+//
+// P.6.9.22: `ipc!` used to be defined here, board-guarded. It now lives once,
+// shared with `pcb_routing.rs`, in `ipc_boundary::guarded_ipc` — see that
+// macro's doc comment for why two copies is what let one of them diverge.
 
 // ─── Footprint-library resolution ───────────────────────────────────────────
 

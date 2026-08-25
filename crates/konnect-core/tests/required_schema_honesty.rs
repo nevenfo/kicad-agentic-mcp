@@ -53,15 +53,19 @@
 //! * a `required` list naming more than one key: `{}` is missing every key
 //!   at once, so it only ever proves the *first* one the handler happens to
 //!   check — a schema listing `["board", "uuid"]` whose handler only ever
-//!   reads `uuid` passes this pass exactly like one that reads both. Measured
-//!   in `pcb_routing.rs`: `"board"` appears in 33 tool schemas there, either
-//!   in `properties` or `required`, and is actually read by only 5 handlers
-//!   (`get_path(args, "board")` at lines 267, 343, 495, 729, 809). The class
-//!   this pass caught for `query_traces` and `get_nets_list` (P.6.9.16) is
-//!   therefore narrower than the class that exists — those two happened to
-//!   check no other required key first. A schema with `board` unread but
-//!   listed *after* another, checked key in `required` would not be caught
-//!   by this pass at all.
+//!   reads `uuid` passes this pass exactly like one that reads both. This is
+//!   the class `required_schema_static_honesty.rs` (P.6.9.21) exists to
+//!   close, by checking every required key rather than only the first one
+//!   `{}` can prove: it measured `pcb_routing.rs`'s eight IPC handlers
+//!   naming `board` as required but routing through a file-local `ipc!` that
+//!   never read it, six of them writing copper on whichever board KiCAD
+//!   happened to have open first (fixed by P.6.9.22, alongside restoring
+//!   `board` to `query_traces` and `get_nets_list`'s schemas — P.6.9.16 had
+//!   dropped it from both, reasoning the handlers queried the open session
+//!   rather than a file, when the real reason they never read it was the
+//!   unguarded macro). A schema with a required key unread but listed after
+//!   another, checked key in `required` is still not caught by *this* pass —
+//!   see `required_schema_static_honesty.rs` for the one that is.
 //!
 //! Not cheap by construction any more: calling a handler directly forgoes
 //! dispatch's before-the-handler refusal, so a handler that does I/O, spawns
