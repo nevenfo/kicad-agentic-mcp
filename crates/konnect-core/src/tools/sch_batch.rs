@@ -323,22 +323,6 @@ fn find_symbol_block(content: &str, reference: &str) -> Option<(usize, usize)> {
     find_block_with_leading_whitespace(content, sym_start)
 }
 
-/// Return `(val_start, val_end)` byte offsets in `content` for the *value* portion
-/// of a `(property "FieldName" "VALUE" ...)` node within the symbol identified by
-/// `reference`. Only the bytes inside the opening quote are included (i.e. the
-/// replacement does NOT need to include surrounding quotes).
-fn field_value_range(content: &str, reference: &str, field: &str) -> Option<(usize, usize)> {
-    let (sym_start, sym_end) = find_symbol_instance_block(content, reference)?;
-    let sym_block = &content[sym_start..sym_end];
-
-    let field_search = format!(r#"(property "{field}" ""#);
-    let field_rel = sym_block.find(&field_search)?;
-    let val_start = sym_start + field_rel + field_search.len();
-    // find the closing quote of the current value
-    let val_end = val_start + content[val_start..].find('"')?;
-    Some((val_start, val_end))
-}
-
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 async fn handle_batch_connect_to_net(
@@ -876,15 +860,19 @@ async fn handle_bulk_move(
     })))
 }
 
-/// One batch entry's free-form `fields` work, deferred until the offset-based
-/// edits of the same call have been applied: `set_symbol_property` rewrites a
-/// document rather than describing a byte range, so it cannot share a pass
-/// with `SexpEdit` offsets taken against the original content.
+/// One batch entry's field work: both the standard fields ("value",
+/// "footprint") and the free-form `fields` map, all routed through
+/// `set_symbol_property` (P.6.9.18).
 struct PendingProperties {
     reference: String,
-    /// `(field, stored text)` pairs that survived [`property_text`].
+    /// `(field, stored text)` pairs, standard fields first, then `fields`
+    /// map entries in their given order — so a spec naming the same key
+    /// both ways (e.g. `"footprint"` and `fields.Footprint`) has the
+    /// `fields` entry win, matching `edit_schematic_component`'s order of
+    /// named argument then `fields` map (P.6.9.18).
     updates: Vec<(String, String)>,
-    /// What this component has changed so far, standard fields included.
+    /// What this component changed, filled in as `updates` is applied. Every
+    /// field write lands here now, standard fields included (P.6.9.18).
     changes: Vec<String>,
 }
 
@@ -908,11 +896,10 @@ async fn handle_batch_edit(
 
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
-    let mut file_edits: Vec<SexpEdit> = Vec::new();
     let mut changed: Vec<serde_json::Value> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
-    // What each spec's `fields` map asks for, held back until the offset-based
-    // edits above have been applied (see the two-phase note below).
+    // Every spec's field writes (standard fields and `fields` map alike),
+    // applied once the whole batch has been walked and validated.
     let mut pending_properties: Vec<PendingProperties> = Vec::new();
 
     // One index for the whole batch, consulted only by the entries that
@@ -946,18 +933,21 @@ async fn handle_batch_edit(
             }
         };
 
-        let mut component_changes: Vec<String> = Vec::new();
-
-        // Standard fields
+        // Standard fields ("value", "footprint") now go through the same
+        // `updates` vector as "fields" below (P.6.9.18): they used to be
+        // resolved as byte ranges via `field_value_range` and refused outright
+        // when the property did not exist, which made a bare-placed symbol
+        // (no `Footprint` property at all) unable to receive one through
+        // batch edit — exactly the case J.2.4.1 fixed on the single-component
+        // path via `set_symbol_property`'s insert-when-missing behaviour.
+        // Pushed first, so a `fields.Footprint` on the same spec is applied
+        // after and wins, mirroring `edit_schematic_component`'s order
+        // (named argument, then the `fields` map, last write wins — see
+        // l.757-765 of sch_components.rs).
+        let mut updates: Vec<(String, String)> = Vec::new();
         for (field, key) in &[("Value", "value"), ("Footprint", "footprint")] {
             if let Some(new_val) = edit_spec[key].as_str() {
-                match field_value_range(&content, reference, field) {
-                    Some((start, end)) => {
-                        file_edits.push(SexpEdit::replace(start, end, new_val.to_string()));
-                        component_changes.push(format!("{} → {}", field, new_val));
-                    }
-                    None => errors.push(format!("Field '{}' not found on '{}'", field, reference)),
-                }
+                updates.push((field.to_string(), new_val.to_string()));
             }
         }
 
@@ -969,7 +959,6 @@ async fn handle_batch_edit(
         // refused (J.2.4.1), and `Reference` is refused outright because its
         // designator lives in `(instances …)` too and this path would only
         // rewrite the property half of it (D124).
-        let mut updates: Vec<(String, String)> = Vec::new();
         match edit_spec.get("fields") {
             None | Some(serde_json::Value::Null) => {}
             Some(serde_json::Value::Object(map)) => {
@@ -992,21 +981,23 @@ async fn handle_batch_edit(
         pending_properties.push(PendingProperties {
             reference: reference.to_string(),
             updates,
-            changes: component_changes,
+            changes: Vec::new(),
         });
     }
 
-    // Two phases, because the two writers speak different languages: the
-    // standard fields above are byte ranges into the *original* content and
-    // are only correct as a batch applied at once, while `set_symbol_property`
-    // returns an already-spliced document (it has to: an insertion's position
-    // and indentation are read off the symbol as it stands). Applying the
-    // offset edits first, then walking the property updates over the growing
-    // string — re-locating the symbol on every write, exactly as `set_field`
-    // does on the single-component path — keeps every offset valid without
-    // ever reserialising the document, so a one-field edit is still a
-    // one-line diff (P.6.9.4).
-    let mut new_content = apply_edits(content, file_edits);
+    // A single pass now: standard fields ("value", "footprint") and the
+    // `fields` map both end up in the same `updates` vector and are both
+    // written through `set_symbol_property`, which re-locates the symbol
+    // by reference on every call and returns an already-spliced document —
+    // exactly what `set_field` does on the single-component path. There is
+    // no offset-based phase left to run first (P.6.9.18 removed the last one,
+    // which used to resolve "value"/"footprint" as byte ranges via
+    // `field_value_range` and refuse them outright when the property did not
+    // exist yet). Walking `updates` over the growing string keeps every
+    // insertion's position and indentation correct without ever
+    // reserialising the document, so a one-field edit is still a one-line
+    // diff (P.6.9.4).
+    let mut new_content = content;
     for pending in &mut pending_properties {
         for (field, value) in &pending.updates {
             let block = find_symbol_instance_block(&new_content, &pending.reference);

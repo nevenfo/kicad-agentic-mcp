@@ -4070,20 +4070,40 @@ None. Each item below is independent of the others except where stated.
         "invalid_argument","index":0,"ok":false,"tool":"audit_decoupling",
         "transient":"none"}` — the message carried the name in prose, and
         nothing structured did.
-  - [ ] P.6.9.18 — `batch_edit_schematic_components` still refuses `footprint`
-        on a symbol that carries no `Footprint` property, through the "standard
-        fields" loop that resolves by `field_value_range` (`sch_batch.rs`).
+  - [x] P.6.9.18 — `batch_edit_schematic_components` still refused `footprint`
+        on a symbol carrying no `Footprint` property, through the "standard
+        fields" loop that resolved by `field_value_range` (`sch_batch.rs`).
         J.2.4.1 removed exactly that refusal from the single-component path,
         because a part placed without a footprint has no such property at all
         and assigning one is the most common edit after placement; P.6.9.14
         fixed the `fields` half of this handler but left the standard-field
-        half, which is a separate loop. Found while doing P.6.9.14 and left
-        alone as out of scope. Proof to reproduce first: the fixture
-        `bus_two_resistors.kicad_sch` carries no `(property "Footprint" …)`,
-        and a spec `{"reference": "R1", "footprint": "R_0805"}` answers
-        `Field 'Footprint' not found on 'R1'`. Route the standard fields
-        through `set_symbol_property` as well, keeping `Reference` on its own
-        path — `new_reference` still has to rewrite `(instances …)` (D124).
+        half, which was a separate loop. Found while doing P.6.9.14 and left
+        alone then as out of scope.
+        Fixed by routing `value` and `footprint` into the same `updates` vector
+        the `fields` map uses, written through `set_symbol_property`, which
+        inserts a property the symbol does not carry yet instead of refusing.
+        `Reference` keeps its own path — `new_reference` still has to rewrite
+        `(instances …)` (D124), and the generic property path would only do
+        half the job.
+        Collision rule, taken from the single-component path rather than
+        invented: `edit_schematic_component` applies its named `value` /
+        `footprint` / `datasheet` arguments first and its `fields` map second
+        (`sch_components.rs:754-763`), so the map wins there. The batch pushes
+        standard fields into `updates` before the map for the same result, and
+        a test freezes it — a spec naming the same property both ways is no
+        longer left to iteration order.
+        Falls out of the fix: `field_value_range` had no caller left and is
+        gone, and with it the last offset-based edit in this handler, so the
+        two-phase split it forced is gone too. Everything is one pass over
+        `updates` now, each write re-locating the symbol by reference against
+        the growing string, exactly as `set_field` does on the single path — a
+        one-field edit is still a one-line diff (P.6.9.4).
+        Red before: `{"errors":["Field 'Footprint' not found on 'R1'"],
+        "updated":[],"updated_count":0}` on the fixture `bus_two_resistors`,
+        which carries no `(property "Footprint" …)`. Two tests added, both
+        integration (no D128 evidence shift):
+        `a_batch_edit_sets_a_footprint_the_symbol_does_not_carry_yet` and
+        `a_batch_edit_resolves_a_footprint_collision_the_same_way_the_single_component_path_does`.
   - [ ] P.6.9.19 — the capability scanner recognises a tool by `"<tool>"` or
         `handle_<tool>` (`capability/coverage.rs:210`), and **24 of the 198
         registered tools have a handler whose name does not match their own**:

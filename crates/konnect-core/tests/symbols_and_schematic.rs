@@ -604,6 +604,68 @@ async fn a_batch_edit_updates_an_existing_field_in_place_without_duplicating_it(
     );
 }
 
+/// P.6.9.18: the "standard fields" loop (`value`/`footprint`) used to resolve
+/// its target as a byte range and refuse the edit outright when the property
+/// did not exist — unlike the `fields` map right below it, which J.2.4.1 and
+/// P.6.9.14 already made insert-when-missing. A symbol placed without a
+/// footprint has no `Footprint` property at all, so this was the batch path
+/// refusing the single most common edit after placement.
+#[tokio::test]
+async fn a_batch_edit_sets_a_footprint_the_symbol_does_not_carry_yet() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+
+    let result = h
+        .json(
+            "batch_edit_schematic_components",
+            json!({
+                "schematic": sch,
+                "edits": [ { "reference": "R1", "footprint": "R_0805" } ]
+            }),
+        )
+        .await;
+
+    assert!(
+        !result["errors"].to_string().contains("not found"),
+        "a missing Footprint property is created, not refused: {result}"
+    );
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        text.contains(r#"(property "Footprint" "R_0805""#),
+        "the new Footprint property was not inserted: {result}"
+    );
+}
+
+/// A spec naming the same property both ways is not left to iteration order:
+/// `edit_schematic_component` applies its named `footprint` argument before
+/// its `fields` map (sch_components.rs, l.757-765), so the `fields` entry
+/// wins there. The batch path pushes standard fields into the same `updates`
+/// vector before the `fields` map for the same reason (P.6.9.18).
+#[tokio::test]
+async fn a_batch_edit_resolves_a_footprint_collision_the_same_way_the_single_component_path_does() {
+    let h = Harness::new();
+    let sch = sheet(&h).await;
+
+    h.json(
+        "batch_edit_schematic_components",
+        json!({
+            "schematic": sch,
+            "edits": [ { "reference": "R1", "footprint": "A", "fields": { "Footprint": "B" } } ]
+        }),
+    )
+    .await;
+
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        text.contains(r#"(property "Footprint" "B""#),
+        "the 'fields' entry must win over the named 'footprint' argument, as it does on the single-component path: {text}"
+    );
+    assert!(
+        !text.contains(r#"(property "Footprint" "A""#),
+        "the named argument must not be the one left standing: {text}"
+    );
+}
+
 /// D124: `Reference` is the one property stored twice — as a property and
 /// inside `(instances …)` — so the generic `fields` path, which rewrites only
 /// the property, must not touch it at all.

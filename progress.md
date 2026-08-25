@@ -5,9 +5,8 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage), P.6.9.1 à P.6.9.17 et P.6.9.20 closes. Restent, dans l'ordre du
-triage : P.6.9.18 et P.6.9.19, plus P.6.9.21 découverte pendant P.6.9.16 ;
-P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
+P.6.9 (triage), P.6.9.1 à P.6.9.18 et P.6.9.20 closes. Restent : P.6.9.19, plus
+P.6.9.21 découverte pendant P.6.9.16 ; P.6.8 et P.6.11 aussi. Branche de travail : `ai/P-schematic-fidelity`,
 PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -16,33 +15,34 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.17 — une entrée de `kicad_invoke` qui échouait par la voie `Err(anyhow)`
-disait `error_kind: invalid_argument` sans nommer l'argument, alors que la même
-panne par la voie `Ok` le nommait. Mécanisme : la voie `Ok` rend le corps
-structuré entier du handler sous `result`, donc les champs du variant voyagent
-gratuitement ; la voie `Err` résume en `error_kind` + `transient` + `error` et
-ne gardait que le discriminant. Le choix de la voie est un détail
-d'implémentation du handler (`get_path` rend `anyhow::Result`, `require_str`
-un `CallToolResult`), donc l'appelant de batch ne peut pas savoir d'avance
-s'il sera renseigné — et c'est ici que ça compte le plus, les entrées de batch
-sautant la validation `required` du dispatch (D131).
+P.6.9.18 — la moitié « champs standard » de `batch_edit_schematic_components`
+refusait encore `footprint` sur un symbole sans propriété `Footprint`, par une
+boucle séparée qui résolvait `value`/`footprint` en plages d'octets via
+`field_value_range`. J.2.4.1 avait retiré ce refus du chemin mono-composant ;
+P.6.9.14 avait corrigé la moitié `fields`, pas celle-ci. Les deux champs
+passent désormais par le même vecteur `updates`, donc par
+`set_symbol_property`, qui insère au lieu de refuser.
 
-`ToolErrorKind::field()` extrait le champ (`Option<&str>`, `None` pour tout
-kind qui ne parle pas d'un argument) ; la passerelle l'émet en `error_field`,
-à plat comme `error_kind` à côté. Même classe corrigée dans la foulée :
-l'entrée sans clé `tool`, seul refus assemblé à la main, nomme désormais
-`tool` — c'est le seul qui ne peut même pas dire de quel tool il parle.
+Règle de collision reprise du chemin mono-composant plutôt qu'inventée :
+`edit_schematic_component` applique ses arguments nommés puis sa map `fields`
+(`sch_components.rs:754-763`), donc `fields` gagne ; le batch pousse les champs
+standard avant la map pour le même résultat, et un test le fige.
+
+Conséquence : `field_value_range` n'avait plus d'appelant et disparaît, avec la
+dernière édition par offsets de ce handler — donc aussi la découpe en deux
+phases qu'elle imposait. Une seule passe reste, chaque écriture relocalisant le
+symbole par référence, comme `set_field` sur le chemin mono-composant : une
+édition d'un champ reste un diff d'une ligne (P.6.9.4).
 
 Validation :
-- `cargo test -p konnect-core --locked --test required_args` : PASS, 9 tests
+- `cargo test -p konnect-core --locked --test symbols_and_schematic` : PASS,
+  27 tests, 1 ignoré (kicad-cli)
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **55 suites, 1336 tests, 0 échec**
+  **55 suites, 1338 tests, 0 échec**
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- rouge d'abord : `an entry told its argument is invalid must be told which
-  one: {"error":"Missing required argument: 'schematic'","error_kind":
-  "invalid_argument","index":0,"ok":false,"tool":"audit_decoupling",
-  "transient":"none"}`
+- rouge d'abord : `{"errors":["Field 'Footprint' not found on 'R1'"],
+  "updated":[],"updated_count":0}`
 
 ## Décisions actives
 
@@ -287,13 +287,15 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.18 — `batch_edit_schematic_components` refuse encore
-`footprint` sur un symbole sans propriété `Footprint`, par la boucle des
-« champs standard » qui résout via `field_value_range` (`sch_batch.rs`) ;
-J.2.4.1 avait retiré exactement ce refus du chemin mono-composant, et P.6.9.14
-n'a corrigé que la moitié `fields`. Preuve à reproduire d'abord : la fixture
-`bus_two_resistors.kicad_sch` ne porte aucun `(property "Footprint" …)`, et un
-spec `{"reference": "R1", "footprint": "R_0805"}` répond
-`Field 'Footprint' not found on 'R1'`. Router les champs standard par
-`set_symbol_property`, en gardant `Reference` sur son propre chemin —
-`new_reference` doit toujours réécrire `(instances …)` (D124).
+Implémenter P.6.9.19 — le scanner de couverture reconnaît un tool par
+`"<tool>"` ou `handle_<tool>` (`capability/coverage.rs:210`), et 24 des 198
+tools enregistrés ont un handler dont le nom diffère du leur
+(`place_component_array` → `handle_place_array`, `batch_edit_schematic_components`
+→ `handle_batch_edit`, `route_differential_pair` → `handle_route_diff_pair`,
+`list_schematic_wires` → `handle_list_wires`, et vingt autres). Mesurer d'abord
+l'effet réel : pour chacun des 24, un test l'exerce-t-il déjà ? Ce nombre est
+la couverture que la matrice cache aujourd'hui. Deux sorties possibles —
+renommer les 24 handlers en `handle_<tool>`, ou donner une table d'alias au
+scan ; le renommage est celui qui garde la convention auto-portante. Tenir
+compte de D133 : le scanner produit aussi des faux positifs, et une passe sur
+ce sujet devrait traiter les deux directions.
