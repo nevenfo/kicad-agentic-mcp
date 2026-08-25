@@ -140,7 +140,12 @@ pub fn tools() -> Vec<ToolDef> {
                         "description": "Scope: 'global' or 'project'",
                         "default": "project"
                     },
-                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" }
+                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" },
+                    "replace_existing": {
+                        "type": "boolean",
+                        "description": "If the nickname is already registered with a different URI, correct that entry's URI in place, keeping its options and descr. Without it such a call is refused and nothing is written.",
+                        "default": false
+                    }
                 },
                 "required": ["library_path", "nickname"]
             }),
@@ -257,7 +262,12 @@ pub fn tools() -> Vec<ToolDef> {
                         "description": "Scope: 'global' or 'project'",
                         "default": "project"
                     },
-                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" }
+                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" },
+                    "replace_existing": {
+                        "type": "boolean",
+                        "description": "If the nickname is already registered with a different URI, correct that entry's URI in place, keeping its options and descr. Without it such a call is refused and nothing is written.",
+                        "default": false
+                    }
                 },
                 "required": ["library_path", "nickname"]
             }),
@@ -1355,6 +1365,56 @@ fn extract_sexp_string(block: &str, key: &str) -> Option<String> {
     Some(block[start..end].to_string())
 }
 
+/// The `replace_existing` policy, defaulting to `false`.
+///
+/// False is the conservative reading of the old behaviour: a registration used
+/// to touch nothing when the nickname was present, so a default of `true`
+/// would turn every repeat call into a silent rewrite of someone else's entry.
+/// Correcting a stale URI is an explicit request, and the refusal that comes
+/// without it names the flag.
+fn replace_existing(args: &serde_json::Value) -> bool {
+    args["replace_existing"].as_bool().unwrap_or(false)
+}
+
+/// The one place a [`LibTableRegistration`] becomes an agent-facing answer,
+/// shared by the footprint and symbol registrars so the two report the same
+/// vocabulary for the same outcome.
+fn registration_result(
+    outcome: &LibTableRegistration,
+    nickname: &str,
+    scope: &str,
+    table_path: &Path,
+    requested_uri: &str,
+) -> CallToolResult {
+    let table = table_path.to_str().unwrap_or("");
+    if let LibTableRegistration::UriConflict { existing_uri } = outcome {
+        return CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "replace_existing".to_string(),
+                reason: "nickname already registered with a different URI".to_string(),
+            },
+            format!(
+                "'{nickname}' is already registered in {table} as '{existing_uri}', not \
+                 '{requested_uri}'. Nothing was written — pass replace_existing: true to \
+                 correct the URI in place, or register under another nickname."
+            ),
+        );
+    }
+
+    let mut body = json!({
+        "success": true,
+        "result": outcome.as_str(),
+        "nickname": nickname,
+        "scope": scope,
+        "table": table,
+        "uri": requested_uri
+    });
+    if let LibTableRegistration::Updated { previous_uri } = outcome {
+        body["previous_uri"] = json!(previous_uri);
+    }
+    CallToolResult::text(serde_json::to_string(&body).unwrap())
+}
+
 async fn handle_register_footprint_library(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -1380,22 +1440,22 @@ async fn handle_register_footprint_library(
         ));
     };
 
-    register_in_lib_table(
+    let requested_uri = lib_path.to_str().unwrap_or("");
+    let outcome = register_in_lib_table(
         &table_path,
         nickname,
-        lib_path.to_str().unwrap_or(""),
+        requested_uri,
         "KiCad",
+        replace_existing(args),
     )
     .await?;
 
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "success": true,
-            "nickname": nickname,
-            "scope": scope,
-            "table": table_path.to_str().unwrap_or("")
-        }))
-        .unwrap(),
+    Ok(registration_result(
+        &outcome,
+        nickname,
+        scope,
+        &table_path,
+        requested_uri,
     ))
 }
 
@@ -1467,22 +1527,22 @@ async fn handle_register_symbol_library(
         ));
     };
 
-    register_in_lib_table(
+    let requested_uri = lib_path.to_str().unwrap_or("");
+    let outcome = register_in_lib_table(
         &table_path,
         nickname,
-        lib_path.to_str().unwrap_or(""),
+        requested_uri,
         "KiCad",
+        replace_existing(args),
     )
     .await?;
 
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "success": true,
-            "nickname": nickname,
-            "scope": scope,
-            "table": table_path.to_str().unwrap_or("")
-        }))
-        .unwrap(),
+    Ok(registration_result(
+        &outcome,
+        nickname,
+        scope,
+        &table_path,
+        requested_uri,
     ))
 }
 
@@ -1547,14 +1607,73 @@ fn table_root_element(table_path: &Path) -> &'static str {
     }
 }
 
-/// Insert a new `(lib ...)` entry into a lib-table file (fp-lib-table or sym-lib-table).
+/// What a call to [`register_in_lib_table`] did to the table.
+///
+/// P.6.9.12: the function used to return `()`, so "wrote the entry" and "found
+/// the nickname and did nothing" reached the caller as the same bare
+/// `"success": true`. A no-op was indistinguishable from a registration, and a
+/// stale URI could not be corrected at all — re-registering hit the early
+/// return and reported success without touching the table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LibTableRegistration {
+    /// The nickname was not in the table; the entry was appended.
+    Inserted,
+    /// The nickname was already registered against this exact URI. The file
+    /// is not rewritten, so it stays byte-identical.
+    Unchanged,
+    /// The nickname was registered against a different URI and
+    /// `replace_existing` allowed correcting it in place.
+    Updated { previous_uri: String },
+    /// The nickname was registered against a different URI and
+    /// `replace_existing` was not set. Nothing was written.
+    UriConflict { existing_uri: String },
+}
+
+impl LibTableRegistration {
+    /// The word the tool reports.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Inserted => "inserted",
+            Self::Unchanged => "unchanged",
+            Self::Updated { .. } => "updated",
+            Self::UriConflict { .. } => "uri_conflict",
+        }
+    }
+}
+
+/// Byte range of the `(lib …)` block in `content` whose `(name …)` is
+/// `nickname`.
+///
+/// Not `content.contains("(name \"X\")")`, which is what this replaced: that
+/// is a substring test over the whole file, so any entry whose `descr` quotes
+/// the text made `X` look registered. [`find_block_starts`] skips quoted
+/// strings and matches whole tags, and [`find_balanced_block`] closes the
+/// entry by nesting depth — the same pair [`parse_lib_table`] already reads
+/// these tables with, rather than a second parser for the same file.
+fn find_lib_entry(content: &str, nickname: &str) -> Option<(usize, usize)> {
+    find_block_starts(content, "lib")
+        .into_iter()
+        .filter_map(|start| find_balanced_block(content, start))
+        .find(|&(block_start, block_end)| {
+            extract_sexp_string(&content[block_start..block_end], "name").as_deref()
+                == Some(nickname)
+        })
+}
+
+/// Insert a new `(lib ...)` entry into a lib-table file (fp-lib-table or sym-lib-table),
+/// or correct an existing entry's URI when `replace_existing` is set.
 /// Creates the file with minimal scaffolding if it doesn't exist.
+///
+/// An update rewrites the `(uri …)` sub-block and nothing else, so the entry's
+/// own `options` and `descr` — whatever the user or KiCad put there — survive
+/// the correction.
 async fn register_in_lib_table(
     table_path: &Path,
     nickname: &str,
     uri: &str,
     lib_type: &str,
-) -> anyhow::Result<()> {
+    replace_existing: bool,
+) -> anyhow::Result<LibTableRegistration> {
     let content = if table_path.exists() {
         tokio::fs::read_to_string(table_path).await?
     } else {
@@ -1564,25 +1683,60 @@ async fn register_in_lib_table(
         format!("({}\n  (version 7)\n)\n", table_root_element(table_path))
     };
 
-    // Check if nickname already registered
-    if content.contains(&format!("(name \"{}\")", nickname)) {
-        return Ok(()); // already registered, idempotent
-    }
-
-    // Find closing paren of the root expression
-    let insert_pos = content.rfind(')').unwrap_or(content.len());
-    let entry = format!(
-        "\n  (lib (name \"{}\") (type \"{}\") (uri \"{}\") (options \"\") (descr \"\"))",
-        nickname, lib_type, uri
-    );
-
-    let new_content = format!("{}{}\n)", &content[..insert_pos], entry);
+    let (new_content, outcome) = match find_lib_entry(&content, nickname) {
+        Some((entry_start, entry_end)) => {
+            let entry = &content[entry_start..entry_end];
+            let existing_uri = extract_sexp_string(entry, "uri").unwrap_or_default();
+            if existing_uri == uri {
+                return Ok(LibTableRegistration::Unchanged);
+            }
+            if !replace_existing {
+                return Ok(LibTableRegistration::UriConflict { existing_uri });
+            }
+            // Replace only the (uri …) sub-block, keeping the rest of the
+            // entry — an entry with no uri at all gets one before its closing
+            // paren.
+            let (uri_start, uri_end) = find_block_starts(entry, "uri")
+                .into_iter()
+                .find_map(|start| find_balanced_block(entry, start))
+                .unwrap_or((entry.len() - 1, entry.len() - 1));
+            let rewritten = format!(
+                "{}(uri \"{}\"){}",
+                &entry[..uri_start],
+                uri,
+                &entry[uri_end..]
+            );
+            (
+                format!(
+                    "{}{}{}",
+                    &content[..entry_start],
+                    rewritten,
+                    &content[entry_end..]
+                ),
+                LibTableRegistration::Updated {
+                    previous_uri: existing_uri,
+                },
+            )
+        }
+        None => {
+            // Find closing paren of the root expression
+            let insert_pos = content.rfind(')').unwrap_or(content.len());
+            let entry = format!(
+                "\n  (lib (name \"{}\") (type \"{}\") (uri \"{}\") (options \"\") (descr \"\"))",
+                nickname, lib_type, uri
+            );
+            (
+                format!("{}{}\n)", &content[..insert_pos], entry),
+                LibTableRegistration::Inserted,
+            )
+        }
+    };
 
     if let Some(parent) = table_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
     write_atomic(table_path, &new_content)?;
-    Ok(())
+    Ok(outcome)
 }
 
 // ─── Symbol library tools ─────────────────────────────────────────────────────
@@ -3655,7 +3809,7 @@ mod tests {
     async fn registering_a_symbol_library_scaffolds_a_sym_root() {
         let tmp = tempfile::tempdir().unwrap();
         let table = tmp.path().join("sym-lib-table");
-        register_in_lib_table(&table, "MySyms", "${KIPRJMOD}/my.kicad_sym", "KiCad")
+        register_in_lib_table(&table, "MySyms", "${KIPRJMOD}/my.kicad_sym", "KiCad", false)
             .await
             .unwrap();
         let content = std::fs::read_to_string(&table).unwrap();

@@ -3810,7 +3810,7 @@ None. Each item below is independent of the others except where stated.
         `ToolErrorKind::HandlerError` literally, which the debt scanner counts;
         rewritten as a negative assertion (`!matches!(…, InvalidArgument{..})`)
         so the guard is identical and the debt ceiling was **not** raised.
-  - [ ] P.6.9.12 `6693681` (LATER) — `register_in_lib_table`
+  - [x] P.6.9.12 `6693681` (LATER) — `register_in_lib_table`
         (`library.rs:1549-1583`) returns `Ok(())` the moment the nickname
         exists, and both handlers — footprint (`:1355-1385`) and symbol
         (`:1442-1478`) — report a bare `"success": true`, so a no-op is
@@ -3821,6 +3821,49 @@ None. Each item below is independent of the others except where stated.
         with a `replace_existing` policy preserving the entry's own
         `options`/`descr`. Check what `tool-directory.md` promises before
         changing the contract.
+        Done, one path for both halves.
+        `enum LibTableRegistration { Inserted, Unchanged, Updated{previous_uri},
+        UriConflict{existing_uri} }` is returned by `register_in_lib_table`
+        (fifth parameter `replace_existing`), and a single shared
+        `registration_result(…)` converts it for both handlers:
+        `{"success", "result": "inserted|unchanged|updated", "nickname",
+        "scope", "table", "uri"}`, plus `previous_uri` on an update.
+        `UriConflict` answers `InvalidArgument { field: "replace_existing" }`
+        naming the existing URI, the requested one and the remedy — a call that
+        needs re-parameterising is exactly what `InvalidArgument` means, and no
+        `HandlerError` literal was written (the debt scanner counts those).
+        `replace_existing` defaults to **false**, and the default is the
+        argument: the old behaviour touched nothing, so defaulting to `true`
+        would turn every repeated call into a silent rewrite of someone else's
+        entry. Correcting a URI is an explicit request, and the refusal names
+        the flag that grants it.
+        Lookup no longer uses `content.contains("(name \"X\")")` over the
+        whole file — a substring test that a `descr` quoting the nickname was
+        enough to fool. `find_lib_entry` reuses `find_block_starts` +
+        `find_balanced_block` from `konnect_sexp::writer`, the same pair
+        `parse_lib_table` already uses on these tables in this very file, so no
+        second parser was written. An update rewrites the located `(uri …)`
+        sub-block and nothing else, so the entry's own `options`/`descr` and
+        its formatting survive; `unchanged` returns before any `write_atomic`,
+        which is what makes the file byte-identical.
+        Both schemas gained `replace_existing` (boolean, default false) and
+        both `tool-directory.md` lines (l.304, l.309) now state the `result`
+        vocabulary and the policy.
+        Red before, five tests, each looping over both tools:
+        `a_first_registration_reports_inserted` (`left: Null right: "inserted"`),
+        `a_different_uri_without_replace_existing_is_refused`
+        (`register_footprint_library answered success for a URI it did not write`)
+        and `a_nickname_quoted_inside_a_descr_is_not_a_registration`
+        (`mistook a quoted nickname in a descr for a registration`). The
+        `updated` fixture carries a non-empty `(options "hand-written")` and
+        `(descr "the caller's own note")`, without which the preservation
+        assertion would prove nothing.
+        One existing test took the new argument
+        (`registering_a_symbol_library_scaffolds_a_sym_root`); its assertions
+        are unchanged, and no test asserted the bare `"success": true`.
+        Contract change: the body gains `result`/`uri`, and a nickname
+        registered against a different URI is now refused where it used to
+        answer success.
   - [ ] P.6.9.13 — `handle_group_components` (`sch_components.rs:1553-1562`)
         has P.6.9.5's defect A verbatim and was outside its scope: it inserts
         `(property "Group" …)` unconditionally, at a hardcoded `(at 0 0 0)` and

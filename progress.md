@@ -5,7 +5,8 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.11 closes. P.6.9.12 à P.6.9.17 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.12 closes (tous les items du triage
+d'origine). P.6.9.13 à P.6.9.17, découverts en route, restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,44 +16,43 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.11 — un seul vocabulaire d'erreur, quel que soit le helper saisi. La
-mesure est venue d'abord, P.6.9.10 pouvant avoir vidé l'item : passe statique
-sur les 202 `tool!(…)` — nom → `required` de premier niveau → clés `get_path`
-du handler, callees suivis d'un niveau — **zéro** site encore atteignable par
-`tools/call`, les deux candidats bruts étant déjà gardés.
+P.6.9.12 — une inscription en lib-table dit enfin ce qu'elle a fait.
+`enum LibTableRegistration { Inserted, Unchanged, Updated{previous_uri},
+UriConflict{existing_uri} }` est rendu par `register_in_lib_table` (5e
+paramètre `replace_existing`), et un unique `registration_result(…)` le
+convertit pour les deux handlers, footprint et symbole, à l'identique.
+`UriConflict` sort en `InvalidArgument { field: "replace_existing" }` nommant
+l'URI existante, celle demandée et le remède — un appel qu'il faut
+reparamétrer est exactement ce que veut dire `InvalidArgument`.
 
-L'item n'était pourtant pas sans objet : `handle_kicad_invoke` appelle
-`(def.handler)(&call_args, …)` **sans** `first_missing_required` — l'exemption
-enveloppe-seule que P.6.9.10 a délibérément choisie et figée dans
-`the_gateway_envelope_is_checked_but_not_its_entries`. Les **172** sites
-`get_path` sont donc observables par la passerelle, où une entrée sans sa clé
-de chemin répondait `handler_error` quand une entrée sans argument `require_*`
-répondait `invalid_argument`. Voir D131.
+`replace_existing` vaut **false** par défaut, et le défaut est l'argument :
+l'ancien comportement ne touchait à rien, donc un défaut `true` transformerait
+chaque appel répété en réécriture silencieuse de l'entrée d'autrui.
 
-`MissingArgument { key }` vit dans `mcp/error.rs` à côté de
-`TransportUnreachable`/`BoardNotOpen`, et est lu par une passe de downcast dans
-`ToolErrorKind::from_anyhow`, **avant** les passes `io::Error`/`Conflict` : une
-requête incomplète n'est jamais allée assez loin pour produire l'échec io que
-la passe suivante cherche. Aucun texte de message n'est matché nulle part.
-« Présent mais inutilisable » n'est pas reclassifié : `get_path` ne teste
-aucune existence, donc un mauvais chemin reste `Io { code: "not_found" }`.
+Le repérage n'est plus un `content.contains("(name \"X\")")` sur tout le
+fichier — un test de sous-chaîne qu'un `descr` citant le nickname suffisait à
+tromper. `find_lib_entry` réutilise `find_block_starts` + `find_balanced_block`
+de `konnect_sexp::writer`, la paire dont `parse_lib_table` se sert déjà sur ces
+tables dans ce même fichier : aucun second parseur. Une mise à jour ne réécrit
+que le sous-bloc `(uri …)` localisé, donc les `options`/`descr` de l'entrée
+survivent ; `unchanged` retourne avant tout `write_atomic`, d'où l'égalité
+octet à octet.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1319
-  tests, 0 échec** (1313 + 6 nouveaux, aucun test existant modifié)
-- rouge d'abord :
-  `an_absent_path_argument_is_an_invalid_argument_like_any_other`
-  (`missing_path_argument.rs:85`) —
-  `left: String("handler_error") right: "invalid_argument"`
+- `cargo test --workspace --locked --lib --tests` : PASS, **54 suites, 1324
+  tests, 0 échec** (1319 + 5 nouveaux ; un test existant a pris le nouvel
+  argument, assertions inchangées)
+- rouge d'abord : cinq tests, chacun bouclant sur les deux tools, dont
+  `a_different_uri_without_replace_existing_is_refused`
+  (`register_footprint_library answered success for a URI it did not write`)
+  et `a_nickname_quoted_inside_a_descr_is_not_a_registration`
 
-Deux effets de bord traités et non maquillés : `docs/capability-matrix.md`
-déplace une ligne de preuve (D128, déplacement et non gain) ; et
-`error_catalog_debt.rs` est passé de 2 à 3 parce que le nouveau test unitaire
-écrivait `ToolErrorKind::HandlerError` littéralement, que le scanner compte
-comme dette — réécrit en assertion négative, la garde est identique et le
-plafond de dette n'a **pas** été relevé.
+Contrat : le corps gagne `result`/`uri`, et un nickname inscrit contre une
+autre URI est désormais refusé là où l'appel répondait succès. Les deux lignes
+de `tool-directory.md` (l.304, l.309) le disent, et les deux schémas portent
+`replace_existing`.
 
 ## Décisions actives
 
@@ -259,8 +259,12 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.12 — `6693681` (LATER) : `register_in_lib_table`. Lire la
-section P.6.9.12 du plan pour le mécanisme exact et les ancres avant de
-commencer. C'est le dernier item `LATER` du triage P.6.9 ; restent ensuite
-P.6.9.13 à P.6.9.17 (tous découverts en cours de route), puis P.6.8 et P.6.11.
-Test rouge d'abord.
+Implémenter P.6.9.13 — `handle_group_components` (`sch_components.rs`) porte
+verbatim le défaut A de P.6.9.5, qui était hors de son périmètre : il insère
+`(property "Group" …)` sans condition, à un `(at 0 0 0)` et une indentation
+codés en dur. Grouper deux fois le même composant laisse donc deux propriétés
+`Group`, le texte s'affiche à l'origine de la feuille, et l'indentation est
+fausse sur toute feuille écrite par eeschema. Le helper existe déjà : router
+par `set_symbol_property` (`tools/mod.rs`) comme les deux autres voies.
+Rouge d'abord : deux appels `group_components` nommant le même composant
+donnent deux propriétés `Group`.

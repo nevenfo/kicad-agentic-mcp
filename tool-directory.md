@@ -301,12 +301,12 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 |------|-------------|
 | `create_footprint` | Create a new footprint (`.kicad_mod`) file from a pad layout description. |
 | `edit_footprint_pad` | Edit the size, shape, or position of a pad in an existing `.kicad_mod`. |
-| `register_footprint_library` | Register a local footprint library directory in the KiCAD global or project library table. |
+| `register_footprint_library` | Register a local footprint library directory in the KiCAD global or project library table. Answers `result`: `inserted`, `unchanged`, or `updated`. A nickname already registered against a different URI is refused unless `replace_existing` is set, which corrects the URI in place and keeps the entry's `options` and `descr`. |
 | `list_footprint_libraries` | List all registered footprint libraries (global and/or project). |
 | `create_symbol` | Create a new KiCAD schematic symbol and append it to a `.kicad_sym` library. |
 | `delete_symbol` | Delete a symbol definition from a `.kicad_sym` library. |
 | `list_symbols_in_library` | List all symbol names defined in a `.kicad_sym` library file. |
-| `register_symbol_library` | Register a `.kicad_sym` library file in the KiCAD global or project symbol table. |
+| `register_symbol_library` | Register a `.kicad_sym` library file in the KiCAD global or project symbol table. Same `result` vocabulary and `replace_existing` policy as `register_footprint_library`. |
 | `list_symbol_libraries` | List all registered symbol libraries (global and/or project). |
 | `search_symbols` | Search for symbols across all registered libraries by name or keyword. |
 | `list_library_footprints` | List all footprints in a specific registered library (`.pretty` directory). |
