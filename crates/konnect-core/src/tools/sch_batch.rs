@@ -9,7 +9,8 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_str, require_f64, require_str, ToolDef,
+    find_symbol_instance_block, get_path, opt_str, require_f64, require_str,
+    symbol_property_at_spans, ToolDef,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -701,6 +702,54 @@ fn is_deletable_schematic_item(block: &str) -> bool {
     )
 }
 
+/// Byte range of the symbol's own `(at x y rot)` coordinate text (not a
+/// property's) inside `content[sym_start..sym_end]` — the first `(at ` in
+/// the block, since a symbol's non-property children always precede its
+/// first `(property …)`.
+///
+/// A block this malformed should not occur in practice: `sym_start..sym_end`
+/// always comes from a balanced-block finder, so the block's own text always
+/// ends in `)`, guaranteeing a `(at ` found inside it is eventually followed
+/// by one. But the scan does not rely on that guarantee to avoid panicking:
+/// before this, `close_rel` defaulted to 0 on a missing `)`, so `at_end`
+/// came out less than `at_abs` and slicing `content[at_abs..at_end]` panicked.
+fn symbol_own_at_span(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+) -> Result<(usize, usize), String> {
+    let sym_block = &content[sym_start..sym_end];
+    let at_pat = "(at ";
+    let at_rel = sym_block
+        .find(at_pat)
+        .ok_or_else(|| "No (at) in symbol".to_string())?;
+    let at_abs = sym_start + at_rel + at_pat.len();
+    let close_rel = sym_block[at_rel..]
+        .find(')')
+        .ok_or_else(|| "Unterminated (at) in symbol".to_string())?;
+    let at_end = sym_start + at_rel + close_rel;
+    Ok((at_abs, at_end))
+}
+
+/// Round a millimetre coordinate to the precision KiCAD actually writes,
+/// so adding a delta does not leak binary-float noise into the file.
+///
+/// The symbol's own anchor is protected by `snap_point`; a property anchor is
+/// a plain addition, and `139.7 → 144.78` moves a field at `241.3` to
+/// `246.38000000000002` and one at `3.556` to `8.636000000000013`. Writing
+/// that is the same class of damage P.6.9.4 removed — a byte changing for no
+/// reason the caller asked for.
+///
+/// Six decimals, measured: across 126 933 `(at …)` coordinates in the KiCad 10
+/// demo schematics, every one but a single value carries at most **four**
+/// decimals. The exception, `59.209102362204725`, is an inch conversion rather
+/// than float noise, and six decimals moves it by 0.4 nm — under KiCAD's own
+/// 1 nm internal resolution. Addition noise, meanwhile, shows up around the
+/// thirteenth decimal. Six separates the two with room on both sides.
+fn mm(value: f64) -> f64 {
+    (value * 1e6).round() / 1e6
+}
+
 async fn handle_bulk_move(
     args: &serde_json::Value,
     _ctx: &crate::tools::ToolContext,
@@ -739,19 +788,14 @@ async fn handle_bulk_move(
             }
         };
 
-        // Find first (at X Y [ROT]) inside this symbol block
-        let sym_block = &content[sym_start..sym_end];
-        let at_pat = "(at ";
-        let at_rel = match sym_block.find(at_pat) {
-            Some(r) => r,
-            None => {
-                errors.push(format!("No (at) in symbol '{}'", reference));
+        // Find the symbol's own (at X Y [ROT]) inside this symbol block.
+        let (at_abs, at_end) = match symbol_own_at_span(&content, sym_start, sym_end) {
+            Ok(r) => r,
+            Err(why) => {
+                errors.push(format!("{why} '{}'", reference));
                 continue;
             }
         };
-        let at_abs = sym_start + at_rel + at_pat.len();
-        let close_rel = sym_block[at_rel..].find(')').unwrap_or(0);
-        let at_end = sym_start + at_rel + close_rel;
 
         let at_str = &content[at_abs..at_end];
         let parts: Vec<&str> = at_str.split_whitespace().collect();
@@ -774,6 +818,46 @@ async fn handle_bulk_move(
             at_end,
             format!("{new_x} {new_y} {rot}"),
         ));
+
+        // Every field's text carries its own absolute `(at …)`; moving only
+        // the symbol's own anchor above leaves field text sitting where the
+        // symbol used to be. Shift each by the delta actually applied to the
+        // symbol — after `snap_point`, not the raw `dx`/`dy` — and leave its
+        // rotation alone: a hidden field's `(at … 0)` does not track the
+        // symbol's own rotation (measured on KiCad's demo schematics; see
+        // `symbol_insertion_site`'s doc comment).
+        let applied_dx = new_x - x;
+        let applied_dy = new_y - y;
+        // A move that snapped back to where the symbol already was must not
+        // rewrite a single field byte: an edit that changes nothing still
+        // shows up in the file (a `(at x y)` with no rotation would come back
+        // as `(at x y 0)`), which is the reformatting P.6.9.4 just removed.
+        let symbol_actually_moved = applied_dx != 0.0 || applied_dy != 0.0;
+        for (val_start, val_end) in symbol_property_at_spans(&content, sym_start, sym_end) {
+            if !symbol_actually_moved {
+                break;
+            }
+            let field_at = &content[val_start..val_end];
+            let field_parts: Vec<&str> = field_at.split_whitespace().collect();
+            let fx = field_parts
+                .first()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let fy = field_parts
+                .get(1)
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let f_rot = field_parts
+                .get(2)
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            edits.push(SexpEdit::replace(
+                val_start,
+                val_end,
+                format!("{} {} {f_rot}", mm(fx + applied_dx), mm(fy + applied_dy)),
+            ));
+        }
+
         moved.push(json!({
             "reference": reference,
             "old_x": x, "old_y": y,
@@ -1732,5 +1816,240 @@ mod midwire_pin_tests {
                 "with_junction={with_junction}: {body}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod bulk_move_property_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::{ServerConfig, ToolContext};
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    const DEVICE_R: &str = "    (symbol \"Device:R\"\n      (property \"Reference\" \"R\" (at 0 0 0))\n      (property \"Value\" \"R\" (at 0 0 0))\n    )\n";
+
+    fn seeded_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("move.kicad_sch");
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n{DEVICE_R}  )\n)\n"
+            ),
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    /// Byte range (relative to `content`) of the coordinate text inside the
+    /// `(at …)` of the direct-child property named `field` on symbol
+    /// `reference`, for asserting on where a field's text ended up.
+    fn property_at_text<'a>(content: &'a str, reference: &str, field: &str) -> &'a str {
+        let (start, end) = find_symbol_instance_block(content, reference).expect("symbol");
+        let prop = crate::tools::find_symbol_property(content, start, end, field)
+            .unwrap_or_else(|| panic!("{field} property"));
+        // find_symbol_property gives the *value* span; walk forward to this
+        // property's own `(at …)` instead.
+        let spans = crate::tools::symbol_property_at_spans(content, start, end);
+        let value_line_end = content[prop.value_end..]
+            .find('\n')
+            .map(|o| prop.value_end + o)
+            .unwrap_or(prop.value_end);
+        spans
+            .into_iter()
+            .find(|&(s, _)| s > prop.value_end && s < value_line_end + 200)
+            .map(|(s, e)| &content[s..e])
+            .unwrap_or_else(|| panic!("{field} has no (at …) child"))
+    }
+
+    /// Before the fix, `handle_bulk_move` rewrote only the symbol's own `(at
+    /// …)`; every property's field text — which carries its own absolute
+    /// `(at x y rot)` — stayed where the symbol used to be.
+    #[tokio::test]
+    async fn bulk_move_shifts_property_anchors_by_the_snapped_delta() {
+        let (_d, path) = seeded_schematic();
+        handle_batch_place_components(
+            &json!({
+                "schematic": path.display().to_string(),
+                "components": [
+                    { "lib_id": "Device:R", "x": 100.3, "y": 100.3, "reference": "R1" }
+                ]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        let before = std::fs::read_to_string(&path).unwrap();
+        let value_before = property_at_text(&before, "R1", "Value");
+        let value_before_xy: Vec<f64> = value_before
+            .split_whitespace()
+            .take(2)
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let value_rot_before = value_before.split_whitespace().nth(2).unwrap().to_string();
+
+        let sch = cse::Schematic::load(&path).unwrap();
+        let sym = sch.symbols.by_reference("R1").unwrap();
+        let (sym_x_before, sym_y_before) = sym.position();
+
+        let result = handle_bulk_move(
+            &json!({ "schematic": path.display().to_string(), "references": ["R1"], "dx": 5.0, "dy": 5.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let sch = cse::Schematic::load(&path).unwrap();
+        let sym = sch.symbols.by_reference("R1").unwrap();
+        let (sym_x_after, sym_y_after) = sym.position();
+        let applied_dx = sym_x_after - sym_x_before;
+        let applied_dy = sym_y_after - sym_y_before;
+        // Grid-snapped, so not exactly (5.0, 5.0) — the point of using the
+        // *applied* delta rather than the raw dx/dy.
+        assert_ne!((applied_dx, applied_dy), (0.0, 0.0));
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        let value_after = property_at_text(&after, "R1", "Value");
+        let value_after_xy: Vec<f64> = value_after
+            .split_whitespace()
+            .take(2)
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let value_rot_after = value_after.split_whitespace().nth(2).unwrap().to_string();
+
+        assert!(
+            (value_after_xy[0] - (value_before_xy[0] + applied_dx)).abs() < 1e-6,
+            "Value field x must move by the applied delta: before={value_before_xy:?} after={value_after_xy:?} applied_dx={applied_dx}"
+        );
+        assert!(
+            (value_after_xy[1] - (value_before_xy[1] + applied_dy)).abs() < 1e-6,
+            "Value field y must move by the applied delta"
+        );
+        assert_eq!(
+            value_rot_after, value_rot_before,
+            "a field's own rotation must not change on a move"
+        );
+        assert_ne!(
+            (sym_x_before, sym_y_before),
+            (0.0, 0.0),
+            "sanity: symbol actually has a nonzero starting position"
+        );
+    }
+
+    /// A symbol block whose `(at` is never closed with `)` must produce an
+    /// error, not panic on a slice with `end < start`.
+    ///
+    /// `symbol_own_at_span` is exercised directly (not through
+    /// `handle_bulk_move`) because reaching this from the handler would
+    /// require a `sym_start..sym_end` range whose text has no `)` at all —
+    /// impossible for a range `find_symbol_instance_block` itself hands
+    /// back, since that range always comes from a balanced-block finder and
+    /// therefore always ends in `)`. The scan must not rely on that
+    /// guarantee to stay panic-free, which is exactly what this proves.
+    #[test]
+    fn symbol_own_at_span_reports_unterminated_at_instead_of_panicking() {
+        let content = "(symbol\n  (lib_id \"Device:R\")\n  (at 10 10 0";
+        let result = symbol_own_at_span(content, 0, content.len());
+        assert!(
+            matches!(&result, Err(msg) if msg.contains("Unterminated")),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn symbol_own_at_span_finds_the_symbols_own_at_not_a_propertys() {
+        let content = "(symbol\n  (lib_id \"Device:R\")\n  (at 10 10 90)\n  (property \"Reference\" \"R1\"\n    (at 12 8 0)\n  )\n)";
+        let (start, end) = symbol_own_at_span(content, 0, content.len()).unwrap();
+        assert_eq!(&content[start..end], "10 10 90");
+    }
+
+    /// A property anchor is moved by a plain addition, so unlike the symbol's
+    /// own anchor it is not protected by `snap_point`. Adding the applied
+    /// delta to a field at 241.3 yields `246.38000000000002` in binary
+    /// floating point, and writing that puts noise in the file for a byte the
+    /// caller never asked to change — the class of damage P.6.9.4 removed.
+    #[tokio::test]
+    async fn bulk_move_does_not_leak_float_noise_into_property_anchors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("noise.kicad_sch");
+        // Written by hand rather than placed through the handler: the noise
+        // only appears for particular coordinate/delta pairs, and the point
+        // of this test is to pin one of them rather than hope placement
+        // happens to produce one. 139.7 + 5 snaps to 144.78, an applied
+        // delta of 5.0800000000000125.
+        let sheet = "(kicad_sch\n\t(version 20250114)\n\t(generator \"konnect\")\n\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n\t(paper \"A4\")\n\t(lib_symbols\n\t)\n\t(symbol\n\t\t(lib_id \"Device:R\")\n\t\t(at 139.7 100.33 0)\n\t\t(unit 1)\n\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")\n\t\t(property \"Reference\" \"R1\"\n\t\t\t(at 241.3 3.556 0)\n\t\t)\n\t\t(property \"Value\" \"10k\"\n\t\t\t(at 100.33 241.3 0)\n\t\t)\n\t)\n)\n";
+        std::fs::write(&path, sheet).unwrap();
+
+        let result = handle_bulk_move(
+            &json!({ "schematic": path.display().to_string(), "references": ["R1"], "dx": 5.0, "dy": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        let noisy: Vec<&str> = after
+            .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+            .filter(|tok| {
+                tok.split_once('.').is_some_and(|(_, frac)| {
+                    frac.len() > 6 && frac.chars().all(|c| c.is_ascii_digit())
+                })
+            })
+            .collect();
+        assert!(
+            noisy.is_empty(),
+            "float noise written into the sheet: {noisy:?}\n{after}"
+        );
+        // And the move itself still happened, so the assertion above is not
+        // passing because nothing was written.
+        assert!(
+            after.contains("(at 144.78 100.33 0)"),
+            "the symbol did not move as expected:\n{after}"
+        );
+    }
+
+    /// A move that snaps back to the symbol's current position must leave the
+    /// file byte-identical: an edit that changes nothing still shows up, since
+    /// a `(at x y)` with no rotation would be rewritten as `(at x y 0)`.
+    #[tokio::test]
+    async fn a_move_that_snaps_to_a_standstill_rewrites_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("standstill.kicad_sch");
+        let sheet = "(kicad_sch\n\t(version 20250114)\n\t(generator \"konnect\")\n\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n\t(paper \"A4\")\n\t(lib_symbols\n\t)\n\t(symbol\n\t\t(lib_id \"Device:R\")\n\t\t(at 139.7 100.33 0)\n\t\t(unit 1)\n\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")\n\t\t(property \"Reference\" \"R1\"\n\t\t\t(at 241.3 3.556)\n\t\t)\n\t)\n)\n";
+        std::fs::write(&path, sheet).unwrap();
+
+        // Well under half a grid step, so `snap_point` returns the symbol
+        // where it already is.
+        let result = handle_bulk_move(
+            &json!({ "schematic": path.display().to_string(), "references": ["R1"], "dx": 0.1, "dy": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            after, sheet,
+            "a standstill move rewrote the sheet instead of leaving it alone"
+        );
     }
 }

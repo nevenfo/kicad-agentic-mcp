@@ -8,8 +8,9 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_f64, opt_str, require_f64, require_str, ToolContext,
-    ToolDef,
+    find_symbol_instance_block, get_path, opt_f64, opt_str, require_f64, require_str,
+    set_symbol_property, SetPropertyError, SetPropertyOutcome, ToolContext, ToolDef,
+    RESERVED_PROPERTY_KEYS,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -690,23 +691,21 @@ async fn handle_edit_schematic_component(
     // made the tool unable to do the single most common edit after placement
     // (J.2.4.1). A missing property is now created, exactly as
     // `add_component_annotation` creates one.
-    let mut apply = |content: &mut String, field: &str, new_val: &str| match update_field(
-        content, &target, field, new_val,
-    ) {
-        Ok(updated) => {
-            *content = updated;
-            changed.push(format!("{} → {}", field, new_val));
-        }
-        Err(FieldError::MissingProperty) => {
-            match insert_property(content, &target, field, new_val) {
-                Ok(updated) => {
-                    *content = updated;
-                    changed.push(format!("{} → {} (added)", field, new_val));
-                }
-                Err(why) => errors.push(format!("{field}: {why}")),
+    let mut apply = |content: &mut String, field: &str, new_val: &str| {
+        // `reject: &[]` — these are exactly the fields this handler is meant
+        // to set this way, `Reference` included: it goes through
+        // `update_instance_reference` right after, not through the reject
+        // list, which exists for `add_component_annotation`'s free-form keys.
+        match set_field(content, &target, field, new_val, &[]) {
+            Ok((updated, outcome)) => {
+                *content = updated;
+                changed.push(match outcome {
+                    SetPropertyOutcome::Updated => format!("{} → {}", field, new_val),
+                    SetPropertyOutcome::Inserted => format!("{} → {} (added)", field, new_val),
+                });
             }
+            Err(why) => errors.push(format!("{field}: {why}")),
         }
-        Err(other) => errors.push(format!("{field}: {other}")),
     };
 
     // On the designator path every field is located by looking the symbol up
@@ -774,13 +773,10 @@ async fn handle_edit_schematic_component(
     Ok(CallToolResult::json(&result))
 }
 
-/// Why a property edit could not be applied. Separated from a plain string so
-/// the caller can tell "the symbol has no such property" — which is fixable by
-/// adding one — from a failure that is not.
+/// Why a property edit could not be applied.
 enum FieldError {
     SymbolNotFound(String),
-    MissingProperty,
-    Malformed(String),
+    Set(SetPropertyError),
 }
 
 impl std::fmt::Display for FieldError {
@@ -789,69 +785,34 @@ impl std::fmt::Display for FieldError {
             FieldError::SymbolNotFound(reference) => {
                 write!(f, "symbol '{reference}' not found in this schematic")
             }
-            FieldError::MissingProperty => write!(f, "the symbol has no such property"),
-            FieldError::Malformed(field) => write!(f, "'{field}' property is malformed"),
+            FieldError::Set(e) => write!(f, "{e}"),
         }
     }
 }
 
-/// Replace the value of a property the symbol already carries.
-fn update_field(
-    content: &str,
-    target: &ComponentTarget,
-    field: &str,
-    new_val: &str,
-) -> Result<String, FieldError> {
-    let (sym_start, sym_end) = target
-        .block_in(content)
-        .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
-    let sym_block = &content[sym_start..sym_end];
-    let field_search = format!(r#"(property "{field}" ""#);
-    let field_offset = sym_block
-        .find(&field_search)
-        .map(|o| sym_start + o + field_search.len())
-        .ok_or(FieldError::MissingProperty)?;
-    let val_end = content[field_offset..]
-        .find('"')
-        .map(|o| field_offset + o)
-        .ok_or_else(|| FieldError::Malformed(field.to_string()))?;
-    Ok(format!(
-        "{}{}{}",
-        &content[..field_offset],
-        new_val,
-        &content[val_end..]
-    ))
-}
-
-/// Add a property the symbol does not carry yet, hidden and at the origin —
-/// the same shape `add_component_annotation` writes, so a field added by
-/// either tool looks the same in the file.
-fn insert_property(
+/// Set a property on the addressed symbol: update it in place if it already
+/// has one, insert a new hidden one at the symbol's own position otherwise
+/// ([`set_symbol_property`]). `reject` is the keys this call refuses to
+/// touch even if the symbol already carries one — empty for the
+/// `edit_schematic_component` fields, which are exactly the fields meant to
+/// be set this way; [`RESERVED_PROPERTY_KEYS`] for `add_component_annotation`,
+/// which is not.
+///
+/// Locates the symbol fresh in `content` every call rather than once up
+/// front: on the designator path a preceding call in the same batch (e.g. a
+/// rename) can have moved the block, and re-resolving by `target` here is
+/// what keeps every subsequent field call landing on the right bytes.
+fn set_field(
     content: &str,
     target: &ComponentTarget,
     field: &str,
     value: &str,
-) -> Result<String, FieldError> {
+    reject: &[&str],
+) -> Result<(String, SetPropertyOutcome), FieldError> {
     let (sym_start, sym_end) = target
         .block_in(content)
         .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
-    let sym_block = &content[sym_start..sym_end];
-    // Before `instances` if there is one, otherwise before the block's close.
-    let insert_rel = sym_block
-        .find("(instances")
-        .or_else(|| sym_block.rfind(')'))
-        .ok_or_else(|| FieldError::Malformed(field.to_string()))?;
-    let insert_abs = sym_start + insert_rel;
-
-    let property = format!(
-        "(property \"{field}\" \"{value}\"\n      (at 0 0 0)\n      (effects (font (size 1.27 1.27)) (hide yes))\n    )\n    "
-    );
-    Ok(format!(
-        "{}{}{}",
-        &content[..insert_abs],
-        property,
-        &content[insert_abs..]
-    ))
+    set_symbol_property(content, sym_start, sym_end, field, value, reject).map_err(FieldError::Set)
 }
 
 /// Point a renamed symbol's `instances` entries at its new designator.
@@ -1470,34 +1431,68 @@ async fn handle_add_component_annotation(
         },
     };
 
-    // Find the position just before (instances in the symbol block, or before closing paren
-    let sym_block = &content[sym_start..sym_end];
-    let insert_rel = sym_block
-        .find("(instances")
-        .unwrap_or(sym_block.rfind(')').unwrap_or(sym_block.len() - 1));
-    let insert_abs = sym_start + insert_rel;
+    // `Reference` is refused — and it alone. Its designator lives twice in
+    // the file, in the property and in `(instances …)`, and only
+    // `edit_schematic_component`'s `new_reference` path repoints the second
+    // one; setting it here would leave KiCAD reading the stale designator.
+    // `Value` / `Footprint` / `Datasheet` have a dedicated argument there too
+    // but carry no such second copy, so writing one through this tool is
+    // legitimate — the BOM audit already does exactly that with `Footprint`.
+    // See `RESERVED_PROPERTY_KEYS`.
+    if RESERVED_PROPERTY_KEYS.contains(&key.as_str()) {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "key".to_string(),
+                reason: format!(
+                    "'{key}' is a reserved property; use edit_schematic_component to change it"
+                ),
+            },
+            format!("'{key}' is a reserved property; use edit_schematic_component to change it"),
+        ));
+    }
 
-    // Build the property S-expression
-    let prop_sexp = format!(
-        "    (property \"{key}\" \"{value}\"\n      (at 0 0 0)\n      (effects (font (size 1.27 1.27)) (hide yes))\n    )\n    "
-    );
-
-    let new_content = apply_edits(content, vec![SexpEdit::insert(insert_abs, prop_sexp)]);
+    // Update the existing property in place if the symbol already has one
+    // named `key` — a second call with the same key must not leave two
+    // fields of the same name — otherwise insert a new hidden one at the
+    // symbol's own position.
+    let (new_content, outcome) =
+        match set_symbol_property(&content, sym_start, sym_end, &key, &value, &[]) {
+            Ok(r) => r,
+            Err(why) => {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::InvalidArgument {
+                        field: "key".to_string(),
+                        reason: why.to_string(),
+                    },
+                    why.to_string(),
+                ))
+            }
+        };
     // From the resolved block, not from a second lookup by `reference`: the
     // units of a multi-unit symbol share a designator, and this call meant one
     // of them.
     let item_id = symbol_block_item_id(&expected[sym_start..sym_end])?;
+    let verb = match outcome {
+        SetPropertyOutcome::Updated => "Update",
+        SetPropertyOutcome::Inserted => "Add",
+    };
     let command = SchematicCommand::replace_item_from_document(
         &expected,
         &new_content,
         item_id,
-        format!("Add {key} property to {reference}"),
+        format!("{verb} {key} property on {reference}"),
     )?;
     commit_command(&sch_path, &command)?;
 
+    // `added_property` keeps its historical name — nothing in this repo reads
+    // it, but it is part of a published tool's answer. What it can no longer
+    // do is imply a creation that did not happen: this call now updates a
+    // property the symbol already had instead of duplicating it, so `created`
+    // says which of the two occurred.
     Ok(CallToolResult::json(&json!({
         "reference": reference,
         "added_property": key,
+        "created": matches!(outcome, SetPropertyOutcome::Inserted),
         "value": value
     })))
 }
@@ -3037,5 +3032,172 @@ pub(crate) mod tests {
             .map(|c| c["uuid"].as_str().unwrap())
             .collect();
         assert_eq!(remaining, vec![u1.as_str()], "unit 2 is the one deleted");
+    }
+
+    // ─── P.6.9.5: add_component_annotation dedup / reserved keys ───────────
+
+    /// Two calls with the same key must leave exactly one property of that
+    /// name, not two — the bug being that `handle_add_component_annotation`
+    /// used to insert unconditionally, with no lookup for an existing one.
+    #[tokio::test]
+    async fn add_annotation_same_key_twice_yields_one_property() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dup.kicad_sch");
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        handle_add_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "lib_id": "Device:R", "x": 100.0, "y": 80.0, "reference": "R1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        for (value, expect_created) in [("RC0805-first", true), ("RC0805-second", false)] {
+            let r = handle_add_component_annotation(
+                &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": "MPN", "value": value }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert!(!r.is_error, "{:?}", r.content);
+            // The answer must say which of the two happened: the second call
+            // updated a property that already existed, and reporting that as
+            // a creation is how a caller ends up believing it has two.
+            let text = format!("{:?}", r.content);
+            assert!(
+                text.contains(&format!(r#"created\":{expect_created}"#)),
+                "expected created={expect_created} for {value}: {text}"
+            );
+        }
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            content.matches("(property \"MPN\" ").count(),
+            1,
+            "two calls with the same key must leave one property, not two:\n{content}"
+        );
+        assert!(
+            content.contains("(property \"MPN\" \"RC0805-second\""),
+            "the second call's value must win"
+        );
+    }
+
+    /// `Reference` has a dedicated, invariant-preserving path
+    /// (`edit_schematic_component`'s `new_reference`, which also repoints
+    /// `(instances …)`); `add_component_annotation` must refuse it rather
+    /// than write around that path. `Value`/`Footprint`/`Datasheet` carry no
+    /// such invariant and are not reserved — setting them through this tool
+    /// is exactly what `design_review.rs`'s BOM audit test already relies
+    /// on, unchanged by this fix.
+    #[tokio::test]
+    async fn add_annotation_refuses_reserved_keys() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reserved.kicad_sch");
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        handle_add_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "lib_id": "Device:R", "x": 100.0, "y": 80.0, "reference": "R1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        for key in ["Reference"] {
+            let r = handle_add_component_annotation(
+                &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": key, "value": "X" }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert!(r.is_error, "'{key}' must be refused, not silently accepted");
+            assert_eq!(
+                error_body(&r)["kind"],
+                json!("invalid_argument"),
+                "key={key}"
+            );
+            assert_eq!(error_body(&r)["field"], json!("key"), "key={key}");
+        }
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "a refused key must not touch the file"
+        );
+
+        // Value/Footprint/Datasheet are not reserved: they must still work.
+        let r = handle_add_component_annotation(
+            &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": "Footprint", "value": "Resistor_SMD:R_0603_1608Metric" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !r.is_error,
+            "Footprint must not be reserved: {:?}",
+            r.content
+        );
+    }
+
+    /// A property inserted into an eeschema-style, tab-indented schematic
+    /// must itself be tab-indented, not the crate's own hard-coded
+    /// two/six-space literal.
+    #[tokio::test]
+    async fn add_annotation_matches_tab_indentation_of_the_file() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tabs.kicad_sch");
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        handle_add_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "lib_id": "Device:R", "x": 100.0, "y": 80.0, "reference": "R1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // Re-tab the file this crate wrote (two-space indent) into the shape
+        // eeschema itself writes (tabs, one per nesting level, P.6.9.4),
+        // without changing its structure.
+        let original = std::fs::read_to_string(&path).unwrap();
+        let retabbed: String = original
+            .lines()
+            .map(|line| {
+                let spaces = line.len() - line.trim_start_matches(' ').len();
+                format!(
+                    "{}{}\n",
+                    "\t".repeat(spaces / 2),
+                    line.trim_start_matches(' ')
+                )
+            })
+            .collect();
+        std::fs::write(&path, &retabbed).unwrap();
+
+        let r = handle_add_component_annotation(
+            &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": "MPN", "value": "RC0805" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!r.is_error, "{:?}", r.content);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let idx = content
+            .find("(property \"MPN\" \"RC0805\"")
+            .expect("inserted property");
+        let line_start = content[..idx].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert!(
+            !content[line_start..idx].is_empty()
+                && content[line_start..idx].chars().all(|c| c == '\t'),
+            "inserted property must be tab-indented to match the file: {:?}",
+            &content[line_start..idx]
+        );
     }
 }

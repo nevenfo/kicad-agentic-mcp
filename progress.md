@@ -5,7 +5,7 @@
 **P — Schematic round-trip fidelity.** P.1 à P.5 closes le 2026-08-24. P.6
 (backlog de correctness upstream) est ouverte : P.6.1 à P.6.6 closes, P.6.7 est
 ouverte (les huit items d'origine clos, P.6.7.9 à P.6.7.11 ouvertes), P.6.10,
-P.6.9 (triage) et P.6.9.1 à P.6.9.4 closes. P.6.9.5 à P.6.9.12 restent, dans
+P.6.9 (triage) et P.6.9.1 à P.6.9.5 closes. P.6.9.6 à P.6.9.13 restent, dans
 l'ordre du triage ; P.6.8 et P.6.11 aussi. Branche de travail :
 `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
@@ -15,37 +15,60 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-P.6.9.4 — le writer typé ne reformate plus la feuille.
-`WriteStyle { indent, crlf }` est reniflé depuis `original_source` dans
-`Schematic::from_sexp` et porté sur `Schematic` ; `save`/`to_source` passent
-par `write_styled`, `write` garde le défaut (tabulation, LF) pour les six
-sites qui sérialisent un fragment hors fichier. `BLANK_BEFORE` supprimé,
-fermante seule sur sa ligne à l'indentation du parent.
+P.6.9.5 — les deux handlers du chemin texte alignés sur leur frère typé.
+`tools/mod.rs` porte les scanners partagés (`symbol_property_blocks`,
+`quoted_string_after`, `find_symbol_property`, `symbol_property_at_spans`,
+`symbol_insertion_site`, `set_symbol_property`), tous par profondeur
+d'imbrication et état de guillemet via `find_direct_child_blocks`, jamais par
+sous-chaîne. `update_field`/`insert_property` fusionnés dans `set_field`.
+`add_component_annotation` met à jour au lieu de dupliquer, refuse
+`Reference`, ancre la propriété sur la position du symbole et lit
+l'indentation d'un frère existant. `bulk_move` déplace chaque ancre de
+propriété du delta appliqué après snap.
 
-Quatrième cause trouvée par la mesure et absente de l'énoncé : les feuilles de
-démo KiCad 10 livrées par l'installeur Windows sont en **CRLF** (voir D123).
+Clés réservées réduites à **`Reference` seul** : c'est la seule stockée deux
+fois — propriété **et** `(instances …)`. Voir D124.
 
-Mesure sur huit feuilles de démo, une par projet, `add_junction` puis
-`to_source`, comptée en insertions+suppressions sur LCS : avant
-170,71 %–175,97 % ; après 3,18 %–17,22 %. Borne du test à 25 %.
+Deux défauts introduits par le correctif, corrigés avec la tâche :
+l'ancre de propriété est une addition simple, donc non couverte par
+`snap_point` — un champ à 241,3 sortait en `246.38000000000002` ; les
+coordonnées passent désormais par `mm()` (6 décimales, justifié par mesure).
+Et un déplacement qui snappait au surplace réécrivait quand même chaque
+champ, transformant `(at x y)` en `(at x y 0)` ; il n'écrit plus rien.
+`add_component_annotation` répondait aussi `added_property` après une mise à
+jour : un champ `created` dit lequel des deux a eu lieu.
 
 Validation :
 - `cargo fmt --all -- --check` : PASS
 - `cargo clippy --workspace --locked --all-targets -- -D warnings` : PASS, 0
-- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1249
+- `cargo test --workspace --locked --lib --tests` : PASS, **52 suites, 1264
   tests, 0 échec**
-- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **13/13** (une de plus)
-- rouge d'abord : la mesure échoue dès `CM5.kicad_sch` (175,97 %) ; le sniff
-  neutralisé fait échouer les tests CRLF et unité d'indentation, pas ceux de
-  la fermante ni des lignes blanches
-- résidu caractérisé, pas supposé : round-trip à vide de `ecc83-pp.kicad_sch`
-  = 315 lignes sur 3545, toutes soit un `(xy …)` non empaqueté (hors
-  périmètre, documenté dans le writer), soit les deux lignes de
-  `(embedded_fonts no)` qui se déplacent — ordre des enfants de `to_sexp`, pas
-  le writer. Rien de perdu ni dupliqué.
+- sondes live `cli_tools` avec `KICAD_CLI` : PASS, **13/13**
+- rouge d'abord : deux appels même clé laissent deux `(property "MPN" …)` ;
+  une valeur sosie déraille `find_symbol_property` ; `bulk_move` ne déplace
+  que le symbole ; `symbol_own_at_span` sur un `(at` non fermé panique
+  (`byte range starts at 36 but ends at 32`) ; sans `mm()` ni la garde de
+  surplace, le fichier reçoit `246.38000000000002` et `105.41000000000001`
 
 ## Décisions actives
 
+- **D124** — `Reference` est la **seule** propriété réservée d'un symbole :
+  c'est la seule stockée deux fois, dans la propriété **et** dans
+  `(instances …)`, donc la seule qu'une voie générique d'écriture de
+  propriété puisse désynchroniser. `Value`/`Footprint`/`Datasheet` ont un
+  argument dédié sur `edit_schematic_component` mais aucune seconde copie —
+  les écrire par `add_component_annotation` est légitime, et l'audit BOM le
+  fait. Une liste à quatre clés casse
+  `the_bom_audit_finds_missing_footprints_and_lets_go_when_they_are_assigned` :
+  le test avait raison, la liste avait tort.
+- **D125** — précision des coordonnées de schéma, mesurée sur 126 933 valeurs
+  `(at …)` du corpus de démos : toutes portent au plus **4 décimales**, sauf
+  `59.209102362204725`, qui est une conversion depuis les pouces et non du
+  bruit. Le bruit d'addition binaire apparaît vers la **13e** décimale. Tout
+  code qui calcule une coordonnée par addition — et non par `snap_point`, qui
+  arrondit — doit arrondir à **6 décimales** : cela sépare les deux avec de
+  la marge des deux côtés et déplace au pire de 0,4 nm, sous la résolution
+  interne de 1 nm de KiCAD.
 - **D123** — les feuilles de démo KiCad 10 livrées par l'installeur Windows
   sont toutes en **CRLF**. Un writer qui émet du LF y reproduit exactement le
   symptôme que P.6.9.4 corrige — tout le document dans le diff — par un autre
@@ -186,18 +209,16 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.9.5 — `de70351` : deux handlers du chemin texte n'ont jamais
-reçu le correctif que leur frère typé a. `add_component_annotation`
-(`sch_components.rs:1432`) ajoute une `(property …)` sans condition, à un
-`(at 0 0 0)` et une indentation codés en dur (`:1477`) — donc une clé répétée
-laisse deux champs de même nom et le texte s'affiche à l'origine de la feuille
-— et il ne refuse pas les clés réservées, si bien qu'un `Reference` posé par
-cette voie saute la réécriture des instances. `bulk_move` (`sch_batch.rs:706`)
-ne réécrit que le `(at …)` du symbole (`:747-757`) alors que les coordonnées
-de propriété sont absolues, donc le texte des champs reste où la pièce était.
-Sortir la branche in-place d'`edit_schematic_component` (`update_field` `:795`,
-`insert_property` `:825`) dans un helper partagé ; déplacer chaque ancre de
-propriété du delta réellement appliqué au symbole — celui après snap — en
-laissant sa rotation, et localiser les blocs de propriété par un scan
-conscient des chaînes. Rester sur la voie `SexpEdit` : le modèle typé
-importerait la resérialisation de P.6.9.4.
+Implémenter P.6.9.6 — `8591707`, moitié résiduelle : `edit_schematic_component`
+déclare `fields` dans son schéma (`sch_components.rs:92-95`) et le handler ne
+le lit jamais (`:666-770`), donc un appel ne passant que `fields` renvoie
+`{"changes": []}` comme un succès — `changed` est vide, `errors` aussi, et la
+garde « ne rien changer est un échec » du fork (`:734-746`) exige un `errors`
+non vide pour se déclencher. La moitié `new_reference` du commit amont est
+déjà corrigée ici (`update_instance_reference`, `:860`). Boucler les clés de
+l'objet à travers les helpers partagés par P.6.9.5 (`set_field`,
+`set_symbol_property` dans `tools/mod.rs`), en refusant `Reference` (D124).
+Mesurer avant de copier la réécriture par macro de la closure d'application
+amont : elle était imposée par leur forme d'emprunt, pas forcément la nôtre.
+Rouge d'abord : un appel ne passant que `fields` doit échouer aujourd'hui à
+écrire quoi que ce soit tout en répondant succès.

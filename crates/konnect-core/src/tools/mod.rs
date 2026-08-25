@@ -814,6 +814,310 @@ pub fn find_symbol_instance_block(content: &str, reference: &str) -> Option<(usi
     None
 }
 
+// ─── Symbol property scanning (string-aware) ─────────────────────────────────
+//
+// Shared by `sch_components` (single-symbol property edits) and `sch_batch`
+// (bulk move, which must drag each property's own `(at …)` along with the
+// symbol). A naive `find("(property \"")` is fooled by a property *value*
+// that happens to contain that literal text; these walk the tree by nesting
+// depth and quote/escape state instead, the same technique
+// `konnect_sexp::writer::find_direct_child_blocks` already uses for top-level
+// schematic items.
+
+/// Property keys that carry an invariant a generic "add a custom property"
+/// call would break.
+///
+/// `Reference` is the only one: `edit_schematic_component`'s
+/// `new_reference` argument routes a `Reference` change through
+/// `sch_components::update_instance_reference`, which repoints the symbol's
+/// `(instances …)` entries — the designator KiCAD's own netlist export
+/// actually reads — to match. Writing `Reference` through this generic path
+/// instead would leave `(instances …)` pointing at the stale designator, so
+/// it is refused. `Value` / `Footprint` / `Datasheet` carry no such
+/// invariant — they are ordinary properties like any custom key, and
+/// `add_component_annotation` setting one is exactly how
+/// `the_bom_audit_finds_missing_footprints_and_lets_go_when_they_are_assigned`
+/// (design_review.rs) already uses it — so they are not in this list.
+pub(crate) const RESERVED_PROPERTY_KEYS: &[&str] = &["Reference"];
+
+/// Direct-child `(property …)` blocks of the symbol at `sym_block` (which
+/// must itself start with `(symbol`), by nesting depth rather than text
+/// search.
+pub(crate) fn symbol_property_blocks(sym_block: &str) -> Vec<(usize, usize)> {
+    konnect_sexp::writer::find_direct_child_blocks(sym_block, "symbol")
+        .into_iter()
+        .filter(|&(s, e)| sym_block[s..e].starts_with("(property "))
+        .collect()
+}
+
+/// Byte range (relative to `s`), exclusive of the surrounding quotes, of the
+/// first quoted string found at or after `from`. Honors backslash escapes,
+/// so a value like `"a \"quoted\" word"` is not cut short at the escaped
+/// quote.
+pub(crate) fn quoted_string_after(s: &str, from: usize) -> Option<(usize, usize)> {
+    let rel_open = s.get(from..)?.find('"')?;
+    let open = from + rel_open;
+    let bytes = s.as_bytes();
+    let mut i = open + 1;
+    let mut escape = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if escape {
+            escape = false;
+        } else if b == b'\\' {
+            escape = true;
+        } else if b == b'"' {
+            return Some((open + 1, i));
+        }
+        i += 1;
+    }
+    None
+}
+
+/// An existing `(property "<key>" "<value>" …)` block located inside a
+/// symbol, with byte ranges relative to the same `content` the symbol was
+/// found in.
+pub(crate) struct SymbolProperty {
+    pub value_start: usize,
+    pub value_end: usize,
+}
+
+/// The direct-child property of the symbol at `content[sym_start..sym_end]`
+/// whose key is exactly `field`, if it has one. String-aware: a property
+/// whose *value* contains the literal text `(property "` is not mistaken for
+/// a second property, because candidates come from
+/// [`symbol_property_blocks`] (depth-based) and the key comparison is on the
+/// quote/escape-aware extracted text, not a substring match.
+pub(crate) fn find_symbol_property(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+    field: &str,
+) -> Option<SymbolProperty> {
+    let sym_block = &content[sym_start..sym_end];
+    for (p_start, p_end) in symbol_property_blocks(sym_block) {
+        let block = &sym_block[p_start..p_end];
+        let (key_s, key_e) = quoted_string_after(block, 0)?;
+        if &block[key_s..key_e] != field {
+            continue;
+        }
+        let (val_s, val_e) = quoted_string_after(block, key_e + 1)?;
+        return Some(SymbolProperty {
+            value_start: sym_start + p_start + val_s,
+            value_end: sym_start + p_start + val_e,
+        });
+    }
+    None
+}
+
+/// Byte range (in `content`) of the coordinate text inside each `(at x y
+/// rot)` that is a direct child of a `(property …)` under the symbol at
+/// `content[sym_start..sym_end]` — one entry per property that has one
+/// (every property eeschema or this crate writes does).
+///
+/// For bulk-move: a symbol's field text carries its own absolute `(at …)`,
+/// so moving only the symbol's own anchor leaves every field's text sitting
+/// where the symbol used to be.
+pub(crate) fn symbol_property_at_spans(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+) -> Vec<(usize, usize)> {
+    let sym_block = &content[sym_start..sym_end];
+    let mut out = Vec::new();
+    for (p_start, p_end) in symbol_property_blocks(sym_block) {
+        let prop_block = &sym_block[p_start..p_end];
+        for (a_start, a_end) in
+            konnect_sexp::writer::find_direct_child_blocks(prop_block, "property")
+        {
+            let at_block = &prop_block[a_start..a_end];
+            if let Some(rest) = at_block.strip_prefix("(at ") {
+                let coord_len = rest.len().saturating_sub(1); // drop the closing ')'
+                let coord_abs_start = sym_start + p_start + a_start + 4;
+                out.push((coord_abs_start, coord_abs_start + coord_len));
+            }
+        }
+    }
+    out
+}
+
+/// Where to insert a property the symbol at `content[sym_start..sym_end]`
+/// does not carry yet.
+pub(crate) struct SymbolInsertionSite {
+    /// Byte offset in `content` to insert the new property's text at.
+    pub insert_at: usize,
+    /// Indentation for the new `(property …)` line, read off an existing
+    /// direct child of the symbol so it matches the file's own style: tabs
+    /// on a file eeschema saved, this crate's own two-space indent on one
+    /// this crate wrote (P.6.9.4).
+    pub indent: String,
+    /// Indentation for the property's own children (`(at …)`, `(effects
+    /// …)`), one nesting level deeper than `indent`.
+    pub child_indent: String,
+    /// The symbol's own position — `(x, y)` from its own `(at x y rot)`,
+    /// the anchor a new hidden property should use.
+    ///
+    /// Measured on `CM5.kicad_sch` (KiCad 10 demos): a hidden custom
+    /// property nothing else has repositioned (`Description` on the `GND`
+    /// power symbol at `(at 139.7 241.3 0)`, and again on a *rotated*
+    /// connector symbol at `(at 119.38 238.76 270)`) is written at
+    /// `(at <symbol-x> <symbol-y> 0)` — the symbol's own (x, y), rotation
+    /// always 0 regardless of the symbol's own rotation. The origin
+    /// `(at 0 0 0)` this code used to write unconditionally only matches
+    /// that by coincidence when a symbol happens to sit at the origin.
+    pub anchor: (f64, f64),
+}
+
+/// Compute [`SymbolInsertionSite`] for the symbol at
+/// `content[sym_start..sym_end]`. `None` only for a symbol block malformed
+/// enough to carry no `(at …)` of its own, which should not occur for an
+/// already-placed symbol.
+pub(crate) fn symbol_insertion_site(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+) -> Option<SymbolInsertionSite> {
+    let sym_block = &content[sym_start..sym_end];
+    let children = konnect_sexp::writer::find_direct_child_blocks(sym_block, "symbol");
+
+    // The symbol's own `(at x y rot)` is a direct child that comes before any
+    // `(property …)`, so the first one found is it, not a property's.
+    let (at_s, at_e) = children
+        .iter()
+        .find(|&&(s, e)| sym_block[s..e].starts_with("(at "))
+        .copied()?;
+    let at_text = &sym_block[at_s + 4..at_e.saturating_sub(1)];
+    let mut parts = at_text.split_whitespace();
+    let x: f64 = parts.next()?.parse().ok()?;
+    let y: f64 = parts.next()?.parse().ok()?;
+
+    let indent_of = |abs_pos: usize| -> String {
+        let line_start = content[..abs_pos].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        content[line_start..abs_pos]
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect()
+    };
+    // Indentation of an existing direct child, so the inserted line matches
+    // this file's own style; a symbol block with no children to measure
+    // (should not happen for a placed symbol) falls back to a tab, the shape
+    // eeschema itself writes.
+    let indent = children
+        .last()
+        .map(|&(s, _)| indent_of(sym_start + s))
+        .unwrap_or_else(|| "\t".to_string());
+    // One nesting level deeper, measured from an existing property's own
+    // `(at …)` line if there is one; otherwise `indent` plus one more unit of
+    // whatever it is already made of.
+    let child_indent = symbol_property_blocks(sym_block)
+        .first()
+        .and_then(|&(p_s, p_e)| {
+            let prop_block = &sym_block[p_s..p_e];
+            konnect_sexp::writer::find_direct_child_blocks(prop_block, "property")
+                .first()
+                .map(|&(c_s, _)| indent_of(sym_start + p_s + c_s))
+        })
+        .unwrap_or_else(|| {
+            let unit = if indent.starts_with('\t') { "\t" } else { "  " };
+            format!("{indent}{unit}")
+        });
+
+    let insert_at = sym_block
+        .find("(instances")
+        .or_else(|| sym_block.rfind(')'))
+        .map(|rel| sym_start + rel)?;
+
+    Some(SymbolInsertionSite {
+        insert_at,
+        indent,
+        child_indent,
+        anchor: (x, y),
+    })
+}
+
+/// Why [`set_symbol_property`] could not apply a change.
+#[derive(Debug)]
+pub(crate) enum SetPropertyError {
+    /// `field` is in the caller's reject-list (typically
+    /// [`RESERVED_PROPERTY_KEYS`]).
+    Reserved(String),
+    /// The symbol block has no `(at …)` of its own to insert a new property
+    /// relative to — too malformed to edit safely.
+    Malformed,
+}
+
+impl std::fmt::Display for SetPropertyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SetPropertyError::Reserved(field) => write!(
+                f,
+                "'{field}' is a reserved property; use edit_schematic_component to change it"
+            ),
+            SetPropertyError::Malformed => {
+                write!(f, "symbol block is too malformed to add a property to")
+            }
+        }
+    }
+}
+
+/// Whether [`set_symbol_property`] updated a property the symbol already had
+/// or inserted a new one.
+#[derive(Debug)]
+pub(crate) enum SetPropertyOutcome {
+    Updated,
+    Inserted,
+}
+
+/// Set property `field` on the symbol at `content[sym_start..sym_end]` to
+/// `value`: update it in place if the symbol already carries one, otherwise
+/// insert a new hidden one at the symbol's own position ([`symbol_insertion_site`]).
+///
+/// `reject` is checked first and unconditionally — including against a
+/// property the symbol already has — so a caller that must not touch a given
+/// key (e.g. `Reference`, whose designator lives in `(instances …)` too and
+/// needs its own update path) cannot do so through this generic entry point
+/// at all.
+pub(crate) fn set_symbol_property(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+    field: &str,
+    value: &str,
+    reject: &[&str],
+) -> Result<(String, SetPropertyOutcome), SetPropertyError> {
+    if reject.contains(&field) {
+        return Err(SetPropertyError::Reserved(field.to_string()));
+    }
+    if let Some(prop) = find_symbol_property(content, sym_start, sym_end, field) {
+        let updated = format!(
+            "{}{}{}",
+            &content[..prop.value_start],
+            value,
+            &content[prop.value_end..]
+        );
+        return Ok((updated, SetPropertyOutcome::Updated));
+    }
+    let site =
+        symbol_insertion_site(content, sym_start, sym_end).ok_or(SetPropertyError::Malformed)?;
+    let (ax, ay) = site.anchor;
+    let indent = &site.indent;
+    let child = &site.child_indent;
+    let property = format!(
+        "{indent}(property \"{field}\" \"{value}\"\n\
+         {child}(at {ax} {ay} 0)\n\
+         {child}(effects (font (size 1.27 1.27)) (hide yes))\n\
+         {indent})\n\
+         {indent}"
+    );
+    let updated = format!(
+        "{}{}{}",
+        &content[..site.insert_at],
+        property,
+        &content[site.insert_at..]
+    );
+    Ok((updated, SetPropertyOutcome::Inserted))
+}
+
 /// `(start, end, kind)` of a top-level schematic item's own block, resolved
 /// by UUID via the canonical index in `konnect_sexp::command`, for the
 /// text-editing tool paths.
@@ -1285,6 +1589,122 @@ mod symbol_block_tests {
         // "R1" must not match the R12 instance.
         let sch = "(kicad_sch\n\t(symbol\n\t\t(lib_id \"Device:R\")\n\t\t(property \"Reference\" \"R12\"\n\t\t\t(at 1 1 0)\n\t\t)\n\t)\n)\n";
         assert!(find_symbol_instance_block(sch, "R1").is_none());
+    }
+}
+
+#[cfg(test)]
+mod symbol_property_tests {
+    use super::*;
+
+    /// A placed instance, tab-indented like eeschema writes one (P.6.9.4),
+    /// with a `Note` property whose *value* contains the literal text
+    /// `(property "Sku" "` — the exact pattern a naive `str::find` for
+    /// `(property "Sku" "` would be fooled by — quoted with the escaped-quote
+    /// shape KiCad itself uses (measured on `CM5.kicad_sch`'s `Description`
+    /// property, which carries an escaped `"GND"` the same way).
+    const TAB_INDENTED: &str = "(kicad_sch\n\t(symbol\n\t\t(lib_id \"Device:R\")\n\t\t(at 100 80 0)\n\t\t(uuid \"u1\")\n\t\t(property \"Reference\" \"R1\"\n\t\t\t(at 102 78 0)\n\t\t\t(effects (font (size 1.27 1.27)))\n\t\t)\n\t\t(property \"Value\" \"10k\"\n\t\t\t(at 102 82 0)\n\t\t\t(effects (font (size 1.27 1.27)))\n\t\t)\n\t\t(property \"Note\" \"has (property \\\"Sku\\\" \\\"nested\"\n\t\t\t(at 100 80 0)\n\t\t\t(hide yes)\n\t\t\t(effects (font (size 1.27 1.27)))\n\t\t)\n\t\t(instances\n\t\t\t(project \"p\" (path \"/root\" (reference \"R1\") (unit 1)))\n\t\t)\n\t)\n)\n";
+
+    const SPACE_INDENTED: &str = "(kicad_sch\n  (symbol\n    (lib_id \"Device:R\")\n    (at 100 80 0)\n    (uuid \"u1\")\n    (property \"Reference\" \"R1\"\n      (at 102 78 0)\n      (effects (font (size 1.27 1.27)))\n    )\n    (property \"Value\" \"10k\"\n      (at 102 82 0)\n      (effects (font (size 1.27 1.27)))\n    )\n    (instances\n      (project \"p\" (path \"/root\" (reference \"R1\") (unit 1)))\n    )\n  )\n)\n";
+
+    fn sym_range(content: &str) -> (usize, usize) {
+        find_symbol_instance_block(content, "R1").expect("R1 block")
+    }
+
+    #[test]
+    fn find_symbol_property_is_not_derailed_by_a_lookalike_value() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        // Before the fix, a naive `find("(property \"Sku\" \"")` would match
+        // inside `Note`'s value and report a phantom `Sku` property.
+        assert!(
+            find_symbol_property(TAB_INDENTED, start, end, "Sku").is_none(),
+            "the lookalike text inside Note's value must not be found as a real property"
+        );
+        // The real property must still be found correctly despite the decoy.
+        let value = find_symbol_property(TAB_INDENTED, start, end, "Value").expect("Value");
+        assert_eq!(&TAB_INDENTED[value.value_start..value.value_end], "10k");
+    }
+
+    #[test]
+    fn quoted_string_after_honors_escaped_quotes() {
+        let s = r#""a \"quoted\" word""#;
+        let (start, end) = quoted_string_after(s, 0).expect("span");
+        assert_eq!(&s[start..end], r#"a \"quoted\" word"#);
+    }
+
+    #[test]
+    fn set_symbol_property_updates_existing_value_in_place() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let (updated, outcome) =
+            set_symbol_property(TAB_INDENTED, start, end, "Value", "4k7", &[]).expect("update");
+        assert!(matches!(outcome, SetPropertyOutcome::Updated));
+        assert_eq!(
+            updated.matches("(property \"Value\" ").count(),
+            1,
+            "still exactly one Value property"
+        );
+        assert!(updated.contains("(property \"Value\" \"4k7\""));
+        // The decoy text in Note survives untouched.
+        assert!(updated.contains(r#"has (property \"Sku\" \"nested"#));
+    }
+
+    #[test]
+    fn set_symbol_property_inserts_missing_property_with_matching_indentation() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let (updated, outcome) =
+            set_symbol_property(TAB_INDENTED, start, end, "MPN", "RC0805", &[]).expect("insert");
+        assert!(matches!(outcome, SetPropertyOutcome::Inserted));
+        let idx = updated
+            .find("(property \"MPN\" \"RC0805\"")
+            .expect("inserted property");
+        let line_start = updated[..idx].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert!(
+            updated[line_start..idx].chars().all(|c| c == '\t'),
+            "inserted property must be tab-indented to match the surrounding tab-indented block: {:?}",
+            &updated[line_start..idx]
+        );
+        // Anchor is the symbol's own position (100 80), not the origin.
+        assert!(
+            updated.contains("(at 100 80 0)\n\t\t\t(effects"),
+            "new hidden property must anchor at the symbol's own position: {updated}"
+        );
+    }
+
+    #[test]
+    fn set_symbol_property_inserts_missing_property_with_space_indentation() {
+        let (start, end) = sym_range(SPACE_INDENTED);
+        let (updated, _) =
+            set_symbol_property(SPACE_INDENTED, start, end, "MPN", "RC0805", &[]).expect("insert");
+        let idx = updated
+            .find("(property \"MPN\" \"RC0805\"")
+            .expect("inserted property");
+        let line_start = updated[..idx].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert!(
+            !updated[line_start..idx].contains('\t'),
+            "a space-indented file must not gain a tab-indented insertion: {:?}",
+            &updated[line_start..idx]
+        );
+    }
+
+    #[test]
+    fn set_symbol_property_refuses_reserved_keys() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let err = set_symbol_property(TAB_INDENTED, start, end, "Reference", "R9", &["Reference"])
+            .unwrap_err();
+        assert!(matches!(err, SetPropertyError::Reserved(_)));
+    }
+
+    #[test]
+    fn symbol_property_at_spans_finds_every_property_anchor() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let spans = symbol_property_at_spans(TAB_INDENTED, start, end);
+        // Reference, Value, Note: three properties, three anchors, and the
+        // decoy `(property "Sku" "...` text inside Note's value must not
+        // contribute a fourth.
+        assert_eq!(spans.len(), 3, "{spans:?}");
+        let texts: Vec<&str> = spans.iter().map(|&(s, e)| &TAB_INDENTED[s..e]).collect();
+        assert!(texts.contains(&"102 78 0"));
+        assert!(texts.contains(&"102 82 0"));
+        assert!(texts.contains(&"100 80 0"));
     }
 }
 

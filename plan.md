@@ -3464,7 +3464,7 @@ None. Each item below is independent of the others except where stated.
         edit, is still a sheet KiCAD loads and builds a netlist from. The
         conformance suite measures how little the new shape disturbs; only
         KiCAD can say the shape is legal.
-  - [ ] P.6.9.5 `de70351` — two text-path handlers never got the fix their
+  - [x] P.6.9.5 `de70351` — two text-path handlers never got the fix their
         typed sibling has. `add_component_annotation`
         (`sch_components.rs:1432`) appends a `(property …)` unconditionally, at
         a hardcoded `(at 0 0 0)` and a hardcoded indent (`:1477`), so a repeated
@@ -3479,6 +3479,47 @@ None. Each item below is independent of the others except where stated.
         snapped one — leaving its rotation alone, and locate property blocks
         with a string-aware scan. Stay on the `SexpEdit` path: the typed model
         would import P.6.9.4's reserialisation.
+        Done. `tools/mod.rs` gained the shared scanners — `symbol_property_blocks`,
+        `quoted_string_after`, `find_symbol_property`, `symbol_property_at_spans`,
+        `symbol_insertion_site`, `set_symbol_property` — all walking by nesting
+        depth and quote/escape state through `find_direct_child_blocks`, never
+        by substring. `update_field`/`insert_property` collapsed into `set_field`
+        over the same helper, so both paths update-or-insert identically and
+        the naive `find` that a property *value* containing `(property "` could
+        derail is gone.
+        Reserved keys are **`Reference` alone**, and the narrowing is the
+        finding, not a concession: it is the only key stored twice — in the
+        property *and* in `(instances …)` — so it is the only one this generic
+        path can desynchronise. `Value`/`Footprint`/`Datasheet` have a dedicated
+        argument on `edit_schematic_component` but no second copy, and the BOM
+        audit legitimately sets `Footprint` through this tool. A four-key list
+        broke `the_bom_audit_finds_missing_footprints_and_lets_go_when_they_are_assigned`;
+        the test was right and the list was wrong.
+        Anchor for a new property, measured on `CM5.kicad_sch` rather than
+        assumed: a hidden `Description` on a symbol at `(at 139.7 241.3 0)` is
+        written at `(at 139.7 241.3 0)`, and on a symbol rotated 270° at
+        `(at 119.38 238.76 270)` it is written at `(at 119.38 238.76 0)` — the
+        symbol's own (x, y), rotation always 0. `(at 0 0 0)` was right only for
+        a symbol that happened to sit at the origin. Indentation is read off an
+        existing sibling, so a tab-indented sheet stays tab-indented (P.6.9.4).
+        Two defects the fix introduced, caught in review and fixed with the
+        task: the property anchor is a plain addition, so unlike the symbol's
+        own anchor it is not covered by `snap_point`, and a field at 241.3 came
+        out as `246.38000000000002` — float noise written into a file, the
+        exact damage P.6.9.4 removed. Coordinates now go through `mm()`,
+        rounding to six decimals: measured across 126 933 `(at …)` values in
+        the demo corpus, every one but `59.209102362204725` (an inch
+        conversion, not noise) carries at most four decimals, while addition
+        noise appears around the thirteenth. And a move that snapped back to a
+        standstill still rewrote every field, turning `(at x y)` into
+        `(at x y 0)`; it now writes nothing. `add_component_annotation` also
+        answered `added_property` after *updating* one, so a `created` flag now
+        says which of the two happened.
+        Red before: two same-key calls leave two `(property "MPN" …)`; a
+        lookalike value derails `find_symbol_property`; `bulk_move` moves only
+        the symbol; `symbol_own_at_span` on an unterminated `(at` panics with
+        `byte range starts at 36 but ends at 32`; the noise and standstill
+        tests fail against the unrounded, unguarded write.
   - [ ] P.6.9.6 `8591707` (residual half only) — `edit_schematic_component`
         declares `fields` in its schema (`sch_components.rs:92-95`) and the
         handler never reads it (`:666-770`), so a call passing only `fields`
@@ -3560,6 +3601,15 @@ None. Each item below is independent of the others except where stated.
         with a `replace_existing` policy preserving the entry's own
         `options`/`descr`. Check what `tool-directory.md` promises before
         changing the contract.
+  - [ ] P.6.9.13 — `handle_group_components` (`sch_components.rs:1553-1562`)
+        has P.6.9.5's defect A verbatim and was outside its scope: it inserts
+        `(property "Group" …)` unconditionally, at a hardcoded `(at 0 0 0)` and
+        a hardcoded two-space indent, so grouping the same component twice
+        leaves two `Group` properties, the text renders at the sheet origin,
+        and the indentation is wrong for every eeschema-authored sheet. The
+        helper it needs already exists — route it through `set_symbol_property`
+        like the other two. Proof to reproduce first: two `group_components`
+        calls naming the same component yield two `Group` properties.
 
 ### Validation
 Each implemented item carries a test that is red before it and green after,
