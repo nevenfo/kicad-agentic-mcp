@@ -40,26 +40,16 @@ that teach Claude KiCAD conventions out of the box.
 </tr>
 </table>
 
-The starting board, the prompt and the setup steps are committed in
-[`examples/demo/`](examples/demo/), so this is reproducible rather than
-illustrative. Both images are `kicad-cli` renders of the board file, same frame,
-same zoom — the left one before the prompt, the right one after it.
+One prompt, on the starting board committed in [`examples/demo/`](examples/demo/)
+— reproducible, not illustrative. **KiCad's verdict, not ours:** 5 unconnected
+items before, **0** after, 11 track segments, no errors; run twice from the same
+state, same circuit both times, different coordinates.
 
-**KiCad's verdict on the result, not ours:** 5 unconnected items before, **0**
-after; 11 track segments; silkscreen warnings and no errors. Run twice from the
-same starting state, and it reproduced — same circuit, same verdict, different
-coordinates.
-
-**Two numbers, because they measure two different things.** The board changes
-themselves — both placements, eleven traces, the saves — land in **under a
-second**: 0.69 s and 0.77 s of Konnect time across the two runs, the slowest
-single write 0.07 s. The prompt, end to end, took **6 to 7 minutes** (377 s and
-424 s), because that is how long the model takes to look, decide and route one
-segment per turn. The product is fast; the conversation is not, and quoting only
-the first number would be quoting the flattering half.
-
-The full runs — what was called, in what order, and where the time went — are in
-[`docs/launch/demo-run-2.md`](docs/launch/demo-run-2.md) and
+**Two numbers, because they measure two different things:** the board changes
+land in **under a second** (0.69 s and 0.77 s of Konnect time), while the prompt
+around them takes **6 to 7 minutes**, because the model routes one segment per
+turn. Both runs, per call, are in
+[`demo-run-2.md`](docs/launch/demo-run-2.md) and
 [`demo-run-3.md`](docs/launch/demo-run-3.md).
 
 ## Quick start

@@ -5641,19 +5641,36 @@ R.4 and R.5 closed, and real feedback received — or an explicit finding that
 none arrived, which is itself evidence.
 
 ### Tâches
-- [ ] R.6.1 The promotion criteria are written **before** the feedback is read:
+- [x] R.6.1 The promotion criteria are written **before** the feedback is read:
       what evidence would promote each named candidate — Dependabot hygiene,
       macOS signing, the official PCM submission, symbol/footprint authoring,
       KiCad 11 / plan item I.1, Linux QA. Criteria written after the data are
-      not criteria
-- [ ] R.6.2 The R.1 friction list, the R.3 demo result and the R.5 tally are
-      summarised into one page a decision can be made from
-- [ ] R.6.3 The gate is presented to the user with a recommendation and its
-      evidence. The user decides; R does not open the next phase
-- [ ] R.6.4 If no feedback arrived, the gate says so and the decision is made on
+      not criteria. Eleven candidates, one criterion each, in
+      `docs/launch/decision-gate.md` § 4 — the six named here plus R.6.5's four
+      and *reach* itself. The order of writing is stated in the document rather
+      than assumed: the tally was read first and is **empty**, and an empty
+      tally can select nothing, so no criterion could have been fitted to it
+- [x] R.6.2 The R.1 friction list, the R.3 demo result and the R.5 tally are
+      summarised into one page a decision can be made from. One page,
+      `docs/launch/decision-gate.md`: eleven frictions with their disposition
+      today, three demo runs with what each one bought, and the tally
+- [x] R.6.3 The gate is presented to the user with a recommendation and its
+      evidence. The user decides; R does not open the next phase.
+      **Recommendation: publish, then decide the rest with data.** Nine of the
+      eleven criteria name a first-run report, an outside download or an outside
+      install — inputs no further engineering can produce. Order: ship v1.1.1,
+      apply the metadata and post the kit, re-open the gate when the tally stops
+      being zero. Explicitly **not** recommended: opening a PCB-capability phase
+      on run 1's five defects
+- [x] R.6.4 If no feedback arrived, the gate says so and the decision is made on
       the R.1 friction list alone — an empty tally is a finding about reach, not
-      a reason to postpone the decision
-- [ ] R.6.5 **Opened by R.3 and R.9.** The candidates the demo produced are
+      a reason to postpone the decision. **None arrived**: 0 stars, 0 forks, 0
+      outside issues, 0 first-run reports, 2 downloads and both the
+      maintainer's. The gate says so in its first section, and says the one
+      thing that follows from it — the project has never been announced
+      anywhere, so zero reach produced zero feedback whatever the software is
+      like. The tally is evidence about distribution, not about demand
+- [x] R.6.5 **Opened by R.3 and R.9.** The candidates the demo produced are
       named alongside the ones R.6.1 already lists, each with the artefact that
       found it: **nets on a board** (F-13, R.9.4 — no tool creates or assigns
       one, and no *Update PCB from Schematic* equivalent exists), **a route
@@ -5925,12 +5942,71 @@ Every one of F-13…F-17 is either fixed with a test that would have caught it, 
 recorded with the reason it waits and the phase it waits for. No defect leaves R
 unclassified.
 
+## R.10 — v1.1.1, the release R decided to ship — OPENED BY R.7.7
+
+### Objectif
+Four discovery fixes and one packaging fix reach a user only through a new
+artefact. R.7.7's decision was **one v1.1.1 at the end of R**, not a release per
+finding. This lot is that release, and nothing else travels in it.
+
+### Dépendances
+R.9 closed (its fixes are in the tree, gate green). R.4's kit assumes this
+release has happened: every draft's install path is the config-free one.
+
+### Invariants
+- **Scope is closed.** R.7, R.8, R.9.1, R.9.2 and F-03. No opportunistic fix
+  rides along; a defect found while releasing is recorded, not fixed in the tag.
+- **D144** — the real-KiCad E2E is run by hand **before** the tag, never after.
+- **D146** — any public figure this release does not re-measure is either
+  re-measured on the published artefact or explicitly dated to the version that
+  did measure it.
+- **INV-R1** — what is verified at the end is the **published** artefact, not
+  the local build that produced it.
+
+### Tâches
+- [ ] R.10.1 **F-03**, and only the half that is safe: `packaging/metadata.json`
+      gains this fork's author and homepage, so the Plugin Manager stops sending
+      a first user to the upstream issue tracker. The `identifier`
+      (`com.github.mixelpixx.konnect`) is **kept**: it is the install directory
+      name, and it appears in the README, both example configs, the demo harness
+      and every existing install. Renaming it would break all of them to fix a
+      cosmetic string, and the reason is written down where the file is
+- [ ] R.10.2 Version bump to 1.1.1 — workspace `Cargo.toml`, the viewer crate,
+      `Cargo.lock` — and nothing else claims a version by hand
+- [ ] R.10.3 `RELEASE_NOTES.md` is rewritten as the **body of v1.1.1** (D143),
+      not appended to: what changed for a user (the two discovery chains, the
+      GUI binary, the undeclared stackup, the PCM metadata), what did not
+      (no new tool, no changed signature), and which figures still belong to
+      v1.0.0
+- [ ] R.10.4 Every sentence that documents the manual steps as *required* is
+      updated where it lives — `README.md`'s status block and Quick start,
+      `docs/TROUBLESHOOTING.md`, `examples/*.json`. A release that removes a
+      manual step and leaves the documentation demanding it has not removed it
+- [ ] R.10.5 The gate is green on the release commit, and the real-KiCad E2E is
+      run **by hand before the tag** (D144)
+- [ ] R.10.6 Tag, push, and the release workflow's seven assets are checked for
+      presence and size on the release page itself
+- [ ] R.10.7 **The published artefact is installed and walked** on this machine
+      with **no `konnect-settings.json` at all**: PCM install from the published
+      zip, KiCad API on, one PCB tool and one `kicad-cli`-backed check answering
+      without either path configured by hand. That is the claim v1.1.1 exists to
+      make, and R.1's walk is what it is measured against
+
+### Validation
+A user who downloads v1.1.1 and follows the Quick start reaches a KiCad-verified
+result without editing a configuration file, on this machine, proved on the
+published artefact. `RELEASE_NOTES.md` describes v1.1.1 and no other version.
+Nothing outside the closed scope changed between v1.1.0 and the tag.
+
 ## Critères de sortie de la phase R
 
-- [ ] A stranger's path from the release page to a KiCad-verified first task is
-      walked, measured, and written down (R.1)
-- [ ] The README answers *what, what it costs, how to start* in its first screen
-      (R.2)
+- [x] A stranger's path from the release page to a KiCad-verified first task is
+      walked, measured, and written down (R.1) — `docs/launch/first-run-walk.md`,
+      eleven frictions, detours included
+- [x] The README answers *what, what it costs, how to start* in its first screen
+      (R.2). R.3.6's before/after pair was added above the Quick start and then
+      **compressed** to keep that true: the images and four lines, with the
+      per-call numbers left to the run documents
 - [x] ~~One demo, under 40 s~~, verified by KiCad, reproducible from a committed
       starting state (R.3). **Amended by R.3.10**, on the user's decision and on
       three measured runs: the demo is verified by KiCad and reproduces from the
@@ -5939,6 +6015,8 @@ unclassified.
       seven minutes of conversation. The 40 s was written before anything had
       been run, and is struck rather than quietly re-aimed
 - [x] A launch kit the user can publish without rewriting (R.4)
-- [ ] A feedback route that yields the five metrics without a follow-up question
-      (R.5)
-- [ ] A written decision for the next phase, with its evidence (R.6)
+- [x] A feedback route that yields the five metrics without a follow-up question
+      (R.5) — three issue forms, `docs/adoption.md`, and the baseline it tallies
+      against
+- [x] A written decision for the next phase, with its evidence (R.6) — written
+      and put to the user; the phase it opens is the user's to open
