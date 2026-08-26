@@ -2,21 +2,19 @@
 
 ## Phase actuelle
 
-**P — Schematic round-trip fidelity.** P.1 à P.6 sont closes et leurs preuves
-inchangées. P.7 a rouvert la phase : la CI sur le commit exact de la clôture
-(`8aeaff7`) était **rouge sur les trois OS** alors que la suite locale était
-verte. Branche `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`,
-non fusionnée.
+**P — Schematic round-trip fidelity : DONE.** P.1 à P.6 sont closes et leurs
+preuves inchangées. P.7 avait rouvert la phase — la CI sur le commit exact de
+la clôture (`8aeaff7`) était **rouge sur les trois OS** alors que la suite
+locale était verte — et est close à son tour. Aucune case ouverte ne reste.
+Branche `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`, non fusionnée.
 
 ## Tâche actuelle
 
-**P.7** — implémentée et verte localement dans les deux environnements ; en
-attente de la seule preuve qui manque, un run CI vert sur le commit poussé.
+Aucune en cours.
 
 ## Dernière tâche validée
 
-**P.6.8.9** — le snap de grille ne déplace plus un point qui **est** une pin
-(D139). Trois items P.7 sont écrits et prouvés localement, pas encore cochés :
+**P.7** — la suite se prouve désormais sur une machine sans KiCad :
 
 - **P.7.1** — `a_component_placed_on_a_child_sheet_is_written_with_the_roots_path`
   plaçait `Device:R` dans un enfant issu de `blank_schematic_template()`, dont
@@ -33,6 +31,9 @@ attente de la seule preuve qui manque, un run CI vert sur le commit poussé.
   s'arrêtait au premier binaire rouge et ne disait rien des onze suivants.
 
 Validation :
+- run CI `32937415695` sur `1ff991b` : **Check & Test vert sur ubuntu, macos et
+  windows**, là où le même workflow sur `8aeaff7` (run `32936272573`) tombait
+  sur les trois. C'est la preuve que P.7 attendait
 - portée **mesurée**, pas supposée : suite complète avec `ProgramFiles`,
   `ProgramFiles(x86)`, `LOCALAPPDATA`, `APPDATA` et les trois
   `KICAD<major>_SYMBOL_DIR` pointés sur un dossier vide — toutes les racines
@@ -246,9 +247,13 @@ Aucun.
 
 ## NEXT ACTION
 
-Attendre le run CI du commit P.7 poussé sur `ai/P-schematic-fidelity` et
-vérifier que **Check & Test** passe au vert sur les trois OS. Si vert : cocher
-P.7.1, P.7.2 et P.7.3 dans `plan.md`, puis demander à l'utilisateur la
-décision restée ouverte — fusionner la PR #10 vers `agentic/main` ou ouvrir
-une phase suivante. Si rouge : lire le nouveau log, qui nomme maintenant tous
-les binaires en échec (P.7.3), et traiter le premier écart mesuré.
+Aucune tâche de plan ouverte. Reste une vérification en cours et **une
+décision de l'utilisateur**, dans cet ordre :
+
+1. Lire le run E2E `32937438691`, déclenché à la main sur
+   `ai/P-schematic-fidelity` (`gh workflow run e2e-kicad.yml -R
+   nevenfo/kicad-agentic-mcp`, D114) : il ne tourne pas par PR, et ses deux
+   steps ajoutés en P.6.8.8 et P.6.8.9 n'avaient encore jamais tourné en CI.
+2. Puis demander la décision restée ouverte — fusionner la PR #10 vers
+   `agentic/main` ou ouvrir une phase suivante. Rien ne doit être implémenté
+   avant ce choix.
