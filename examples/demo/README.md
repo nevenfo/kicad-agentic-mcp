@@ -1,21 +1,33 @@
 # The canonical demo
 
 One task, under 40 seconds, and the result appears **in KiCad's own canvas** —
-not in a terminal. The AI places a subcircuit's footprints on the open board and
-routes them; pcbnew redraws as it happens, and the changes land in KiCad's undo
-stack like any other edit.
+not in a terminal. The AI arranges a subcircuit on the open board and routes it;
+pcbnew redraws as it happens, and the changes land in KiCad's undo stack like any
+other edit.
 
 This is the demo the project's launch material shows. It is committed here so
 anyone can repeat it from the same starting point and get the same end state.
 
 ## Starting point
 
-`konnect-demo.kicad_pcb` — an **empty 60 × 45 mm board**: four `gr_line`
-segments on `Edge.Cuts` and nothing else. 739 bytes. KiCad's own DRC reports
-*0 violations, 0 unconnected items* on it.
+A real project, not a blank file:
 
-Do not edit it in place. Copy the folder somewhere else and run the demo on the
-copy, so the committed pre-state stays the pre-state.
+| File | What is in it |
+|---|---|
+| `konnect-demo.kicad_sch` | `U1` AP1117-33 regulator, `C1` and `C2` 10 µF, footprints assigned, nets `VIN`, `VOUT`, `GND`, two `PWR_FLAG`s. **ERC: 0 errors, 0 warnings** |
+| `konnect-demo.kicad_pcb` | a 60 × 45 mm board carrying the three footprints **imported from that schematic and left in a heap**, with their nets. **DRC: 5 missing connections**, 1 silkscreen-clearance warning |
+| `konnect-demo.kicad_pro` | the project that ties them together |
+
+The five missing connections are the point. They are what the demo closes.
+
+**Why a schematic ships with a PCB demo:** a KiCad board has nets only because a
+schematic gave it some. Routing addresses nets, so a board that never came from
+a schematic cannot be routed — by Konnect or by anything else. This is not a
+detail of the demo; it is how KiCad works, and pretending otherwise produces a
+demo that cannot finish.
+
+Do not edit these files in place. Copy the folder somewhere else and run the demo
+on the copy, so the committed pre-state stays the pre-state.
 
 ## Setup, once, off the clock
 
@@ -46,17 +58,16 @@ Both become unnecessary in the next release, which finds them itself.
 
 Ask for it in one turn, exactly this:
 
-> This board is empty. Add a 3.3 V LDO regulator with its input and output
-> capacitors, place the capacitors within 5 mm of the regulator's pins, route
-> VIN, VOUT and GND between them, and run DRC when you are done.
+> These three footprints were just imported from the schematic and are sitting
+> in a heap. Place C1 and C2 within 5 mm of the regulator U1, route VIN, VOUT
+> and GND, and run DRC when you are done.
 
 ## What you should see
 
 In the KiCad window, without touching it:
 
-- three footprints appear on the board — a regulator and two capacitors —
-  positioned, not dumped at the origin;
-- copper traces connect them;
+- the two capacitors move out of the heap and settle beside the regulator;
+- copper traces appear between them, on the nets the schematic named;
 - KiCad's undo (Ctrl+Z) walks the changes back, because they arrived through
   KiCad's own API rather than by rewriting the file underneath it.
 
@@ -68,14 +79,22 @@ A check that could not run is reported as an error, never as a clean board.
 From the folder you ran the demo in:
 
 ```bash
-kicad-cli pcb drc --exit-code-violations --format json -o drc.json konnect-demo.kicad_pcb
+kicad-cli pcb drc --format json -o drc.json konnect-demo.kicad_pcb
 ```
 
-KiCad, not Konnect and not the model, decides whether the board is sound.
+The pre-state reports **5 missing connections**. A finished run reports **0**.
+KiCad, not Konnect and not the model, decides that.
 
 ## Reproducing
 
-Start again from the committed `konnect-demo.kicad_pcb` and issue the same
-prompt. The end state should match: same three parts, same nets connected. A
-model will not place them at identical coordinates twice — what has to match is
-the circuit, not the pixels.
+Start again from the committed files and issue the same prompt. What has to match
+is the circuit, not the pixels: same three parts, same three nets connected, same
+DRC verdict. A model will not place a capacitor at identical coordinates twice.
+
+## If you rebuild the pre-state yourself
+
+The board was produced by KiCad's own *Update PCB from Schematic*, which is
+available **only when the PCB editor was launched from the KiCad project
+manager**. Started standalone, pcbnew refuses with *cannot update the PCB because
+the PCB editor is open in standalone mode*. Konnect has no equivalent tool, which
+is why this step is setup rather than part of the demo.

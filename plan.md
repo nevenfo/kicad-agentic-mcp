@@ -5370,6 +5370,31 @@ Cost of the choice, stated rather than hidden: the demo needs the KiCad API on
 and `ipc_address` configured (F-12). That is one line of setup, off-camera and
 documented — it is not inside the 40 s.
 
+### Amended by R.3.8, on run 1's evidence — 2026-08-26
+
+The choice above holds: the live PCB edit is still the only candidate where
+KiCad itself redraws, and the rejected candidates are rejected for the same
+reasons. What did **not** hold is an assumption inside it — that a board can be
+routed at all. It cannot, unless it already carries a netlist, and nothing in
+the tool surface puts one there (F-13).
+
+So the demo keeps its transport and changes its **pre-state and its task**,
+decided by the user on 2026-08-26:
+
+- **The pre-state carries its own netlist.** A real project — schematic with
+  `U1` AP1117-33, `C1`/`C2` 10 µF, footprints assigned, nets `VIN`, `VOUT`,
+  `GND`, ERC clean — pushed onto the board once through KiCad's own *Update PCB
+  from Schematic*. The board therefore starts with three footprints in a heap
+  and three real nets.
+- **The task is what a layout engineer actually does with that**: place the two
+  capacitors near the regulator, route the three nets, run DRC. Nothing is
+  created; what exists is arranged and connected. That is one batched
+  `kicad_invoke` plus a check — inside the four turns run 1 measured the budget
+  to be worth.
+- **The setup cost rises and is stated**: the demo now ships a schematic as well
+  as a board, and the sentence that says why is the honest one — *a PCB has nets
+  only because a schematic gave it some*.
+
 ### Tâches
 - [x] R.3.1 The task is **chosen and justified in writing** against three
       criteria: visually unambiguous in KiCad's own canvas, under 40 s wall
