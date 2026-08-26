@@ -5001,19 +5001,19 @@ without opening the plan.
 `rg '1\.0\.0'` over the tree returns only historical references (plan, decisions,
 progress, upstream audit), never a statement about the shipping version.
 
-## Q.3 — Every gate green on the commit that gets tagged
+## Q.3 — Every gate green on the commit that gets tagged — DONE
 
 ### Objectif
 The tag lands on a commit already proven, so the release workflow confirms
 rather than discovers.
 
 ### Tâches
-- [ ] Q.3.1 Local gate on the release commit: `cargo fmt --all -- --check`,
+- [x] Q.3.1 Local gate on the release commit: `cargo fmt --all -- --check`,
       `cargo clippy --workspace --locked --all-targets -- -D warnings`,
       `cargo test --workspace --locked --lib --tests --no-fail-fast`
-- [ ] Q.3.2 CI green on the pushed commit, all three OSes plus the
+- [x] Q.3.2 CI green on the pushed commit, all three OSes plus the
       `Schematic viewer` job
-- [ ] Q.3.3 The **gating E2E dispatched by hand** on the release commit and
+- [x] Q.3.3 The **gating E2E dispatched by hand** on the release commit and
       green: `gh workflow run e2e-kicad.yml -R nevenfo/kicad-agentic-mcp --ref
       <branch>`. It has no per-PR trigger, its last green run is `32939555970`
       on `6ae15c2`, and `release.yml` needs it. Running it after the tag would
