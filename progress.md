@@ -17,10 +17,15 @@ reste ouverte, **R.1.4**, faute de preuve GUI.
 
 ## Tâche actuelle
 
-**R.1.4 — voir le plugin là où le README le promet** : PCB Editor → *Tools →
-External Plugins* → entrée « Konnect ». Deux tentatives interrompues par un
-dialogue UAC/secure desktop sans rapport avec KiCad ; consigné **non prouvé**,
-jamais coché sur une supposition (INV-R2).
+**R.1.11 — vérifier le plugin là où KiCad le montre réellement.** R.1.4 posait
+la mauvaise question : le README envoie vers *Tools → External Plugins*, qui est
+le mécanisme des anciens Action Plugins SWIG, alors que le `plugin.json` de
+Konnect déclare un plugin **IPC API** (`runtime.type: "exec"`). KiCad expose
+ceux-là comme **bouton de barre d'outils** de l'éditeur de PCB et sous
+*Preferences → Plugins*, et ils restent **inertes tant que l'API n'est pas
+activée** — or KiCad la livre désactivée (`api.enable_server: false`, mesuré
+dans `kicad_common.json`). R.1.4 reste ouverte et non prouvée (INV-R2), trois
+tentatives ayant été interrompues par un dialogue UAC étranger à KiCad.
 
 ## Dernière tâche validée
 
@@ -44,8 +49,11 @@ jamais coché sur une supposition (INV-R2).
 - Verdict de KiCad obtenu **à la main** : `kicad-cli sch erc` → *0 violation*,
   exit 0. Le serveur, lui, n'a pas pu le produire (voir R.7).
 
-Huit frictions consignées et classées (INV-R3) : F-01 produit, F-02 doc,
-F-03 UX, F-04 packaging, F-05 doc, F-06 doc, F-07 produit, F-08 UX.
+Neuf frictions consignées et classées (INV-R3) : F-01 produit, F-02 doc,
+F-03 UX, F-04 packaging, F-05 doc, F-06 doc, F-07 produit, F-08 UX, **F-09 doc**
+— l'étape de vérification du README nomme le mauvais menu et tait l'activation
+de l'API. F-10 reste **non tranché** : l'ancien Action Plugin SWIG apparaît-il
+ou non dans *Tools → External Plugins* ; c'est R.1.11 qui le règle.
 
 ## Décisions actives
 
@@ -83,12 +91,14 @@ F-03 UX, F-04 packaging, F-05 doc, F-06 doc, F-07 produit, F-08 UX.
 
 ## Blocage actif
 
-**R.1.4 uniquement, et il est environnemental.** Un dialogue UAC/secure desktop
-étranger à KiCad a interrompu deux fois l'accès à *Tools → External Plugins*.
-Faits déjà établis autrement : le plugin est bien déployé sur le disque, son
-`plugin.json` déclare l'action `start-server` avec `show-button: true` et le
-scope `pcb`. Prochaine tentative : rouvrir Pcbnew sur le projet
-`r1-walk-test` une fois le bureau libre. N'empêche aucun autre lot d'avancer.
+**R.1.4 / R.1.11 uniquement, et il est environnemental.** Un dialogue UAC /
+secure desktop étranger à KiCad a interrompu trois fois l'accès à l'interface de
+Pcbnew. Faits déjà établis autrement : le plugin est déployé sur le disque, il
+est enregistré dans l'`installed_packages.json` de KiCad en version 1.1.0, et
+son `plugin.json` déclare l'action `start-server` avec `show-button: true` et le
+scope `pcb`. Prochaine tentative : activer l'API dans *Preferences → Plugins*
+puis relever bouton de barre d'outils, liste des plugins et menu *External
+Plugins*. N'empêche aucun autre lot d'avancer.
 
 ## Fichiers / zones utiles
 

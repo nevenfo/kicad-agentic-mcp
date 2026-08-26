@@ -5239,7 +5239,15 @@ above, which is consumed by R.1.3.
       Content Manager → *Install from File* → restart KiCad — and the
       installed-plugin path is read **from disk**, not assumed from the README
 - [ ] R.1.4 KiCad shows the plugin where the README says it will: PCB Editor →
-      *Tools → External Plugins* → **Konnect**
+      *Tools → External Plugins* → **Konnect**. Blocked three times by a UAC
+      secure-desktop dialog; left unproven rather than assumed (INV-R2). R.1.11
+      supersedes the question it was asking
+- [ ] R.1.11 The plugin is verified where KiCad **actually** surfaces an IPC API
+      plugin — a PCB-editor toolbar button and *Preferences → Plugins* — with
+      *Enable KiCad API* switched on first, since KiCad ships it off. Opened by
+      R.1.4's finding that the README names the wrong menu (F-09), and it also
+      settles F-10: whether the legacy SWIG Action Plugin appears under
+      *Tools → External Plugins* at all
 - [x] R.1.5 An MCP client is pointed at the installed binary using only what the
       README gives, and the connection is proved by a real handshake: the
       starter kit lists, and the tool count matches what the README claims
