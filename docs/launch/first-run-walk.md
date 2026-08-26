@@ -214,6 +214,7 @@ to change.
 | **F-04** | packaging | Seven assets, **no checksum file**. A download cannot be verified without rebuilding | `.github/workflows/release.yml` |
 | **F-05** | documentation | The install-verification step (*PCB Editor → Tools → External Plugins*) is impossible before a project exists: pcbnew refuses to open without one | `README.md` Installation |
 | **F-09** | **documentation** | KiCad ships *Activer l'API KiCad* **off**, and every PCB tool in this project needs it. The README names the switch once, at line 163, inside a **macOS** snippet; its *Requirements* line says only "(IPC API)" | `README.md` Requirements, `README.md:163` |
+| **F-12** | **configuration** | Every PCB tool needs `ipc_address`, and nothing derives it. The default reads `KICAD_API_SOCKET`, which only exists when KiCad launches the plugin itself — a standalone MCP client has no such variable, so the user must copy the `ipc://` path out of KiCad's preferences by hand. The path is deterministic on Windows (`%LOCALAPPDATA%\Temp\kicad\api.sock`) and is the same shape of gap R.7 closed for `kicad-cli`. The error message is excellent and gives the exact remedy, which is why this is friction and not a wall — but it also links `github.com/mixelpixx/Konnect`, the **upstream** repository, from inside the product | `crates/konnect/src/config.rs` `default_ipc_address()`, and the error text |
 | **F-11** | packaging | `plugin.json` declares an IPC API action with `show-button: true`, scope `pcb`. No such toolbar button appears in KiCad 10 — API off, API on, or after a restart. Only the legacy SWIG entry works. A manifest declaring a surface it does not get | `plugin/plugin.json` |
 | **F-06** | documentation | `kicad_invoke` takes `calls: [{tool, args}]`, not `{name, arguments}`. Nothing a first-time reader sees says so before the error does | `README.md` / `tool-directory.md` |
 | **F-07** | product | `apply_template`'s description claims it wires the components. It places them and returns the connections as work still to do | `crates/konnect-core/src/tools/templates.rs` |
@@ -267,3 +268,14 @@ installation, first use or the demo.
   proves the path, not the experience. A model-driven run is the subject of the
   canonical demo (R.3).
 - The plugin's own settings dialog and its *start server* button.
+
+## Addendum — the live PCB path, measured for R.3
+
+Not part of the first-run walk, established while choosing the canonical demo.
+
+With `ipc_address` set explicitly (F-12), the IPC path to a running KiCad works
+and is fast. `get_component_list` answers from the live board, and two
+`place_component` calls landed **two 0805 footprints on the open board in
+176 ms**, each replying `"source": "ipc"` — the write went to the running
+pcbnew, not to the file. This is what makes a demo possible in which **KiCad's
+own canvas** changes rather than a terminal scrolling.

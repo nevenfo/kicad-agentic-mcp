@@ -5325,8 +5325,42 @@ be the only thing on screen.
 ### Dépendances
 R.1 closed — the demo runs on the installed, published binary (INV-R1).
 
+### The task, chosen — R.3.1
+**A live PCB edit over the IPC API, watched in KiCad's own canvas.** The AI
+places a subcircuit's footprints on an open board and routes them; pcbnew
+redraws as it happens, and KiCad's undo stack holds the result.
+
+Measured before choosing, not assumed: with `ipc_address` set, two
+`place_component` calls put two 0805 footprints on the running board in
+**176 ms**, each replying `"source": "ipc"`. The write reached pcbnew, not the
+file.
+
+Against the three criteria: it is the only candidate where **KiCad itself
+redraws** — every other path changes a file that something else then has to
+show; two footprints snapping into place and a trace appearing between them is
+not something a text editor does; and the tool time is milliseconds, so the
+40 s budget is spent on the model, not on the server.
+
+Rejected, with the reason:
+
+- **`apply_template ldo_3v3` into a schematic** — the fastest and simplest
+  (108 ms, R.1 step 7, no IPC at all), but `apply_template` **places without
+  wiring** (F-07), so the picture is a scatter of symbols rather than a circuit,
+  and eeschema does not redraw a file changed underneath it. It would need the
+  bundled viewer, which is not KiCad.
+- **The live schematic viewer refreshing as the AI edits** — genuinely
+  impressive and it is the "watch it happen" feature, but the window is
+  Konnect's own. The brief says the result must appear in KiCad.
+- **JLCPCB part search** — real value, no visual.
+- **A full manufacturing export** — the output is a folder of Gerbers. Nothing
+  to watch.
+
+Cost of the choice, stated rather than hidden: the demo needs the KiCad API on
+and `ipc_address` configured (F-12). That is one line of setup, off-camera and
+documented — it is not inside the 40 s.
+
 ### Tâches
-- [ ] R.3.1 The task is **chosen and justified in writing** against three
+- [x] R.3.1 The task is **chosen and justified in writing** against three
       criteria: visually unambiguous in KiCad's own canvas, under 40 s wall
       clock end to end, and impossible to mistake for something a text editor
       could have done. Rejected candidates are named with the reason

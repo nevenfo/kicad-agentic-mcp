@@ -16,9 +16,15 @@ n'est pas un travail mais une **décision utilisateur**.
 
 ## Tâche actuelle
 
-**R.3 — la démo canonique.** R.2 est close : le README ouvre désormais sur un
-Quick Start en cinq étapes, dont chaque affirmation factuelle a été mesurée en
-R.1, et les quatre frictions de documentation sont corrigées à leur source.
+**R.3 — la démo canonique.** R.2 est close, et **R.3.1 est tranchée** : la démo
+est une **édition PCB live par l'API IPC, regardée dans le canevas de KiCad**.
+Mesuré avant de choisir : deux `place_component` posent deux empreintes 0805 sur
+le board ouvert en **176 ms**, chacune répondant `"source": "ipc"` — l'écriture
+atteint pcbnew, pas le fichier. Candidats écartés et raisons dans `plan.md`.
+
+Reste R.3.2 à R.3.7 : projet de départ committé, consigne, exécution chronométrée
+et capture. **L'exécution pilotée par un modèle consomme du quota** et attend une
+décision de l'utilisateur.
 
 En attente d'une décision utilisateur, **R.7.7** : la correction de la
 découverte de `kicad-cli` n'atteint un utilisateur que par un nouvel artefact, et
@@ -134,14 +140,17 @@ Aucun.
 - F-07 : la description d'`apply_template` affirme câbler les composants ; elle
   les place et rend la liste des connexions à faire. **Produit non bloquant**,
   laissé tel quel par R.
+- Le board `r1-walk-test.kicad_pcb` ouvert dans KiCad porte deux empreintes 0805
+  posées par IPC pendant la mesure de R.3.1, **non enregistrées**. Projet jetable ;
+  ne pas le confondre avec le projet de départ que R.3.2 committera.
 - L'API KiCad est activée sur cette machine depuis R.1.11 (case *Activer l'API
   KiCad*, socket `ipc://…\Temp\kicad\api.sock`). L'état initial ne l'avait pas.
 
 ## NEXT ACTION
 
-Lancer **R.3.1** : choisir et justifier par écrit la tâche de démo, contre ses
-trois critères — visuellement non ambiguë dans le canevas de KiCad, moins de
-40 s de bout en bout, impossible à confondre avec ce qu'un éditeur de texte
-ferait — en nommant les candidats écartés et pourquoi. Ce choix tranche aussi la
-seule affirmation non prouvée du Quick Start : son étape 5 est écrite comme une
-consigne à un modèle, et aucun modèle ne l'a encore exécutée.
+Trois décisions utilisateur attendent, aucune ne bloque les autres lots :
+**R.7.7** (une v1.1.1 ou non), **F-12** (dériver `ipc_address` comme R.7 l'a fait
+pour `kicad-cli`, ou le laisser en configuration manuelle documentée), et le
+**budget** de l'exécution pilotée par modèle de R.3.4. En attendant, préparer
+**R.3.2** et **R.3.3** : le board de départ committé sous `examples/` et la
+consigne exacte, tous deux vérifiables sans dépense.
