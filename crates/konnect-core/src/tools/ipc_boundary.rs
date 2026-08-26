@@ -75,8 +75,16 @@ pub(crate) fn ipc_error_result_with(
                     code,
                     detail: failure.message().to_string(),
                 },
+                // The address now resolves on its own (config -> KICAD_API_SOCKET
+                // -> platform default), so `not_configured` has become rare and
+                // this is the message a first-time user actually meets. It has to
+                // carry the fix that the old `not_configured` text used to give:
+                // KiCad ships the API switched off, and a running KiCad with the
+                // board open still refuses the connection until it is enabled.
                 decorate(&format!(
-                    "KiCAD must be running with the board loaded (IPC error: {})",
+                    "KiCAD must be running with the board loaded, and its API \
+                     switched on: Preferences > Plugins > 'Enable KiCad API', \
+                     then restart KiCAD. It ships disabled. (IPC error: {})",
                     failure.message()
                 )),
             )

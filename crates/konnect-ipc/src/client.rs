@@ -276,15 +276,18 @@ impl KiCadIpcClient {
         if self.socket_path.is_empty() {
             return Err(
                 anyhow::Error::new(TransportUnreachable::NotConfigured).context(
-                "KiCAD IPC socket path not configured. To fix: \
-                 (1) in KiCAD, enable Edit > Preferences > Plugins > 'Enable KiCad API' \
-                 and copy the listed ipc:// address; \
-                 (2) paste it into the 'IPC Socket' field of the Konnect settings dialog \
+                    "KiCAD IPC socket path not configured. Konnect could not resolve an \
+                 ipc_address (configured value, KICAD_API_SOCKET, and the platform \
+                 default all came up empty -- unusual; this normally only happens \
+                 if the server was built without the platform default). To fix: \
+                 (1) in KiCAD, enable Edit > Preferences > Plugins > 'Enable KiCad API'; \
+                 (2) if the listed ipc:// address differs from the platform default, \
+                 paste it into the 'IPC Socket' field of the Konnect settings dialog \
                  (Tools > External Plugins > Konnect) and save; \
                  (3) restart the AI client so the server rereads settings. \
                  Alternatively set ipc_socket_path in konnect-settings.json or launch \
                  via KiCAD (which sets KICAD_API_SOCKET). \
-                 Full guide: https://github.com/mixelpixx/Konnect/blob/main/docs/TROUBLESHOOTING.md",
+                 Full guide: docs/TROUBLESHOOTING.md in this repository.",
                 ),
             );
         }

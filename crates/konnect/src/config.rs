@@ -63,6 +63,23 @@ pub struct Config {
     pub mode: kam_state::OperatingMode,
 }
 
+/// Which tier resolved `ipc_address` — logged once at startup, the same way
+/// [`crate::install::KicadCliSource`] is, so a user can tell whether the
+/// server picked a real config value, the env var KiCAD sets when it
+/// launches the plugin itself, or guessed the platform default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpcAddressSource {
+    /// An explicit non-empty `ipc_address` from the config file — never
+    /// replaced, exactly like a configured `kicad_cli` value.
+    Configured,
+    /// The `KICAD_API_SOCKET` environment variable, set by KiCad itself when
+    /// it launches the plugin (or by the invoking process otherwise).
+    EnvVar,
+    /// The compiled-in per-platform default: `<temp_dir>\kicad\api.sock` on
+    /// Windows, `/tmp/kicad/api.sock` on macOS/Linux.
+    PlatformDefault,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TransportMode {
@@ -93,6 +110,36 @@ fn default_ipc_address() -> String {
     std::env::var("KICAD_API_SOCKET").unwrap_or_default()
 }
 
+/// The socket path KiCad opens when nothing else says otherwise, so a
+/// standalone MCP client (Claude Desktop/Code — the launch path the README
+/// documents) still gets a working `ipc_address` without the user copying
+/// one out of KiCad's Preferences dialog by hand. KiCad only ever sets
+/// `KICAD_API_SOCKET` itself, when *it* launches the plugin — a client
+/// spawning `konnect` standalone never inherits it.
+///
+/// Windows: `<std::env::temp_dir()>\kicad\api.sock`. This is *constructed*,
+/// never checked with an existence test — on Windows an `ipc://` address is
+/// an NNG named pipe, not a filesystem entry, so `%LOCALAPPDATA%\Temp\kicad\`
+/// stays empty even while KiCad is listening on it.
+///
+/// macOS: `/tmp/kicad/api.sock` — matching what `README.md` documents.
+/// This is deliberately *not* `std::env::temp_dir()`, which on macOS
+/// resolves to `$TMPDIR` (a per-user directory under `/var/folders/...`),
+/// not `/tmp`.
+///
+/// Linux: `/tmp/kicad/api.sock`.
+fn platform_default_ipc_address() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let socket = std::env::temp_dir().join("kicad").join("api.sock");
+        format!("ipc://{}", socket.display())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "ipc:///tmp/kicad/api.sock".to_string()
+    }
+}
+
 fn default_http_address() -> String {
     "127.0.0.1:3000".to_string()
 }
@@ -106,8 +153,20 @@ fn default_local_llm_model() -> String {
 }
 
 impl Config {
-    /// Load config from the default search path.
+    /// Load config from the default search path. Used by the `cdylib`/`rlib`
+    /// target (`ffi.rs`, KiCAD's own plugin loader), which doesn't need the
+    /// resolution-source log line the `bin` target's `main.rs` prints via
+    /// [`Self::load_with_ipc_source`] — `config.rs` is compiled once per
+    /// target, so this is genuinely unused from the `bin` target's own POV.
+    #[allow(dead_code)]
     pub fn load() -> Result<Self> {
+        Self::load_with_ipc_source().map(|(config, _source)| config)
+    }
+
+    /// Same as [`Self::load`], but also returns which tier resolved
+    /// `ipc_address` — for the one-time startup log line, mirroring
+    /// `install::resolve_binary`'s `KicadCliSource`.
+    pub fn load_with_ipc_source() -> Result<(Self, IpcAddressSource)> {
         let mut config_paths = vec![
             PathBuf::from("konnect.toml"),
             PathBuf::from("settings.json"),
@@ -124,25 +183,43 @@ impl Config {
         }
 
         let mut config = config.unwrap_or_default();
-        config.apply_env_fallbacks()?;
-        Ok(config)
+        let source = config.apply_env_fallbacks()?;
+        Ok((config, source))
     }
 
-    /// Env var wins over an unset/blank ipc_address either way. Must run on
-    /// every load path — including `--config <file>`, which is how KiCAD
-    /// itself launches the server (with KICAD_API_SOCKET in the environment).
+    /// Resolve `ipc_address`, first-found-wins: an explicit configured value
+    /// (never replaced), then `KICAD_API_SOCKET`, then the compiled-in
+    /// per-platform default (see [`platform_default_ipc_address`]). Must run
+    /// on every load path — including `--config <file>`, which is how KiCAD
+    /// itself launches the server (with `KICAD_API_SOCKET` in the
+    /// environment).
     ///
     /// Returns `Err` only for `KONNECT_MODE` (plan.md D.8): an unrecognised
     /// mode is an explicit startup failure, never a silent fallback to the
     /// unrestricted `write` default — see `kam_state::OperatingMode::from_str`.
-    pub fn apply_env_fallbacks(&mut self) -> Result<()> {
-        if self.ipc_address.is_empty() {
-            if let Ok(sock) = std::env::var("KICAD_API_SOCKET") {
-                if !sock.is_empty() {
-                    self.ipc_address = sock;
-                }
+    pub fn apply_env_fallbacks(&mut self) -> Result<IpcAddressSource> {
+        let env_socket = std::env::var("KICAD_API_SOCKET")
+            .ok()
+            .filter(|s| !s.is_empty());
+
+        let ipc_address_source = if !self.ipc_address.is_empty() {
+            // Non-empty already: either an explicit config value, or the
+            // env var was already folded in by `default_ipc_address()` (the
+            // serde default, for a field entirely absent from the file).
+            // Value equality disambiguates for logging only -- the value
+            // itself is never touched either way.
+            match &env_socket {
+                Some(sock) if sock == &self.ipc_address => IpcAddressSource::EnvVar,
+                _ => IpcAddressSource::Configured,
             }
-        }
+        } else if let Some(sock) = env_socket {
+            self.ipc_address = sock;
+            IpcAddressSource::EnvVar
+        } else {
+            self.ipc_address = platform_default_ipc_address();
+            IpcAddressSource::PlatformDefault
+        };
+
         if self.local_llm_base_url.as_deref().is_none_or(str::is_empty) {
             self.local_llm_base_url = std::env::var("KONNECT_LOCAL_LLM_BASE_URL")
                 .ok()
@@ -164,7 +241,7 @@ impl Config {
                     .map_err(|e| anyhow::anyhow!("KONNECT_MODE: {e}"))?;
             }
         }
-        Ok(())
+        Ok(ipc_address_source)
     }
 
     /// Build the optional loopback-only local provider for Agent mode.
@@ -346,12 +423,22 @@ mod tests {
         assert_eq!(c.log_level, "info"); // untouched default
     }
 
-    // Mutates the process-wide env var, so these two run serially.
+    // Mutates process-wide env vars, so env-touching tests run serially.
     static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A panic in one env-mutating test (e.g. a failed `assert_eq!` while
+    /// holding the lock) must not poison the mutex for every test after it —
+    /// that turns one red test into every remaining one in the file (D145).
+    /// Same pattern as `konnect-schematic-editor::library::env_lock`.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_GUARD
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn empty_ipc_address_falls_back_to_env_var_when_no_config_found() {
-        let _guard = ENV_GUARD.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("KICAD_API_SOCKET", "ipc://env-fallback.sock");
         let c = Config::default();
         assert_eq!(c.ipc_address, "ipc://env-fallback.sock");
@@ -362,7 +449,7 @@ mod tests {
     fn explicit_empty_ipc_address_in_config_file_does_not_block_env_var() {
         // A present-but-blank field must not out-rank the env var the way
         // a merely-missing field would (#39).
-        let _guard = ENV_GUARD.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("KICAD_API_SOCKET", "ipc://env-wins.sock");
 
         let f = write_temp("json", r#"{"ipc_socket_path": ""}"#);
@@ -378,6 +465,49 @@ mod tests {
         c.apply_env_fallbacks().unwrap();
         assert_eq!(c.ipc_address, "ipc://file-wins.sock");
 
+        std::env::remove_var("KICAD_API_SOCKET");
+    }
+
+    #[test]
+    fn empty_ipc_address_and_no_env_var_falls_back_to_platform_default() {
+        let _guard = env_lock();
+        std::env::remove_var("KICAD_API_SOCKET");
+        let mut c = Config {
+            ipc_address: String::new(),
+            ..Config::default()
+        };
+        let source = c.apply_env_fallbacks().unwrap();
+        assert_eq!(source, IpcAddressSource::PlatformDefault);
+        assert!(!c.ipc_address.is_empty(), "must not stay blank");
+        assert_eq!(c.ipc_address, platform_default_ipc_address());
+        assert!(c.ipc_address.starts_with("ipc://"));
+    }
+
+    #[test]
+    fn explicit_configured_ipc_address_is_never_replaced() {
+        let _guard = env_lock();
+        std::env::set_var("KICAD_API_SOCKET", "ipc://env-should-lose.sock");
+        let mut c = Config {
+            ipc_address: "ipc://explicit-config-value.sock".to_string(),
+            ..Config::default()
+        };
+        let source = c.apply_env_fallbacks().unwrap();
+        assert_eq!(source, IpcAddressSource::Configured);
+        assert_eq!(c.ipc_address, "ipc://explicit-config-value.sock");
+        std::env::remove_var("KICAD_API_SOCKET");
+    }
+
+    #[test]
+    fn env_var_wins_over_platform_default() {
+        let _guard = env_lock();
+        std::env::set_var("KICAD_API_SOCKET", "ipc://env-wins-over-default.sock");
+        let mut c = Config {
+            ipc_address: String::new(),
+            ..Config::default()
+        };
+        let source = c.apply_env_fallbacks().unwrap();
+        assert_eq!(source, IpcAddressSource::EnvVar);
+        assert_eq!(c.ipc_address, "ipc://env-wins-over-default.sock");
         std::env::remove_var("KICAD_API_SOCKET");
     }
 
@@ -412,7 +542,7 @@ mod tests {
 
     #[test]
     fn konnect_mode_env_var_sets_mode() {
-        let _guard = ENV_GUARD.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("KONNECT_MODE", "read-only");
         let mut c = Config::default();
         c.apply_env_fallbacks().unwrap();
@@ -422,7 +552,7 @@ mod tests {
 
     #[test]
     fn unset_konnect_mode_defaults_to_write() {
-        let _guard = ENV_GUARD.lock().unwrap();
+        let _guard = env_lock();
         std::env::remove_var("KONNECT_MODE");
         let mut c = Config::default();
         c.apply_env_fallbacks().unwrap();
@@ -431,7 +561,7 @@ mod tests {
 
     #[test]
     fn unknown_konnect_mode_is_a_startup_error() {
-        let _guard = ENV_GUARD.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("KONNECT_MODE", "yolo");
         let mut c = Config::default();
         let result = c.apply_env_fallbacks();

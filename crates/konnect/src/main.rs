@@ -56,14 +56,14 @@ async fn main() -> Result<()> {
         .and_then(|pos| args.get(pos + 1))
         .map(std::path::PathBuf::from);
 
-    let config = if let Some(ref path) = config_path {
+    let (config, ipc_address_source) = if let Some(ref path) = config_path {
         // KiCAD launches the server this way (with KICAD_API_SOCKET set), so
         // the env fallback for a blank ipc_address must apply here too (#39).
         let mut c = Config::load_from(path)?;
-        c.apply_env_fallbacks()?;
-        c
+        let source = c.apply_env_fallbacks()?;
+        (c, source)
     } else {
-        Config::load()?
+        Config::load_with_ipc_source()?
     };
 
     // ─── Initialize tracing (stderr only — stdout is MCP protocol) ──
@@ -76,6 +76,27 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Konnect v{} starting", env!("CARGO_PKG_VERSION"));
+
+    match ipc_address_source {
+        config::IpcAddressSource::Configured => {
+            info!(
+                "ipc_address: using configured value as-is -> {}",
+                config.ipc_address
+            );
+        }
+        config::IpcAddressSource::EnvVar => {
+            info!(
+                "ipc_address: resolved from KICAD_API_SOCKET -> {}",
+                config.ipc_address
+            );
+        }
+        config::IpcAddressSource::PlatformDefault => {
+            info!(
+                "ipc_address: using platform default -> {}",
+                config.ipc_address
+            );
+        }
+    }
 
     // Resolve kicad_cli/kicad_binary against the machine when the config
     // left them at a bare name (no explicit override). An explicit config

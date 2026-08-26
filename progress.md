@@ -14,9 +14,19 @@ Branche : `ai/R-launch-adoption`, ouverte sur `90d0928`.
 près** : le seul défaut produit bloquant est corrigé et prouvé. Reste R.7.7, qui
 n'est pas un travail mais une **décision utilisateur**.
 
+## Décisions utilisateur du 2026-08-26
+
+- **Aucune release avant la clôture de R.** Les corrections de R.7 et R.8
+  partiront dans une **seule v1.1.1** en fin de phase, pas une release par
+  trouvaille. Le README dit franchement que v1.1.0 exige les étapes manuelles.
+- **F-12 est corrigé** (lot R.8), même traitement que R.7.
+- **Budget démo : une prise.** Toute dépense supplémentaire repasse par
+  l'utilisateur.
+
 ## Tâche actuelle
 
-**R.3 — la démo canonique.** R.2 est close, et **R.3.1 est tranchée** : la démo
+**R.3.4 — la prise unique.** R.8 est close et validée par le principal.
+**R.3.1 est tranchée** : la démo
 est une **édition PCB live par l'API IPC, regardée dans le canevas de KiCad**.
 Mesuré avant de choisir : deux `place_component` posent deux empreintes 0805 sur
 le board ouvert en **176 ms**, chacune répondant `"source": "ipc"` — l'écriture

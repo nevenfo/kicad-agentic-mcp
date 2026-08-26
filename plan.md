@@ -5254,7 +5254,7 @@ above, which is consumed by R.1.3.
       **nowhere** — API off, API on, or after a restart (F-11). *Preferences →
       Plugins* in KiCad 10 is a single API page with no plugin list; enabling
       « Activer l'API KiCad » and restarting yields
-      `Écoute à ipc://…\Temp\kicadpi.sock`, the socket every PCB tool needs
+      `Écoute à ipc://…\Temp\kicad\api.sock`, the socket every PCB tool needs
       and that KiCad ships switched off (F-09)
 - [x] R.1.5 An MCP client is pointed at the installed binary using only what the
       README gives, and the connection is proved by a real handshake: the
@@ -5602,25 +5602,36 @@ and answers in 176 ms. The transport is sound; only its address is missing.
   filesystem existence check.
 
 ### Tâches
-- [ ] R.8.1 A failing test first, on the observable: with `ipc_address` empty and
+- [x] R.8.1 A failing test first, on the observable: with `ipc_address` empty and
       `KICAD_API_SOCKET` unset, resolution yields the platform's default socket
       address instead of an empty string
-- [ ] R.8.2 The chain, first hit wins, logged once at startup like R.7's:
+- [x] R.8.2 The chain, first hit wins, logged once at startup like R.7's:
       explicit `ipc_address` → `KICAD_API_SOCKET` → the platform default
-- [ ] R.8.3 The platform default is right on all three: Windows
+- [x] R.8.3 The platform default is right on all three: Windows
       `<std::env::temp_dir()>\kicad\api.sock`, constructed and not existence-
       checked; macOS `/tmp/kicad/api.sock`, which is what `README.md` already
       documents and is **not** what `temp_dir()` returns there; Linux
       `/tmp/kicad/api.sock`
-- [ ] R.8.4 The `not_configured` error text stops linking
+- [x] R.8.4 The `not_configured` error text stops linking
       `github.com/mixelpixx/Konnect` and points at this repository's
       `docs/TROUBLESHOOTING.md`. Its three-step remedy is good and is kept
-- [ ] R.8.5 The gate is green on the changed tree: `fmt`, `clippy -D warnings`,
+- [x] R.8.5 The gate is green on the changed tree: `fmt`, `clippy -D warnings`,
       the full suite
-- [ ] R.8.6 End to end on this machine, with `ipc_address` configured **nowhere**
+- [x] R.8.6 End to end on this machine, with `ipc_address` configured **nowhere**
       and `KICAD_API_SOCKET` unset: a PCB tool reaches the running KiCad and
       replies `"source": "ipc"`. And the negative case — KiCad not listening —
-      still fails with the actionable message
+      still fails with the actionable message. Re-run by the principal:
+      `ipc_address: using platform default -> ipc://…\Temp\kicad\api.sock`,
+      then `get_component_list` answering `ok` with the two footprints R.3.1
+      left on that board
+- [x] R.8.7 **Found in review of R.8.2, fixed there.** Deriving the address makes
+      `not_configured` nearly unreachable — which is the point — but that path
+      carried the only guidance for the commonest beginner failure. What a user
+      now meets is the *unreachable* message, and it named the address without
+      naming the fix: KiCad ships the API **off**, and a running KiCad with the
+      board open still refuses the connection until it is switched on. The
+      sentence moved to `crates/konnect-core/src/tools/ipc_boundary.rs`, where a
+      first-time user actually reads it
 
 ### Validation
 A user who follows the README's Quick start, enables the KiCad API and opens a
