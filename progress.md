@@ -10,22 +10,15 @@ d'addons officiel sauf blocage réel de R.
 
 Branche : `ai/R-launch-adoption`, ouverte sur `90d0928`.
 
-**R.1 est walké** : release → installation → connexion MCP → projet KiCad réel →
-première tâche → verdict de KiCad. Le compte rendu complet, avec la liste de
-frictions classée, est `docs/launch/first-run-walk.md`. Une seule case de R.1
-reste ouverte, **R.1.4**, faute de preuve GUI.
+**R.1 est close** : release → installation → connexion MCP → projet KiCad réel →
+première tâche → verdict de KiCad, onze cases cochées sur preuve. Le compte
+rendu complet, avec la liste de frictions classée, est
+`docs/launch/first-run-walk.md`.
 
 ## Tâche actuelle
 
-**R.1.11 — vérifier le plugin là où KiCad le montre réellement.** R.1.4 posait
-la mauvaise question : le README envoie vers *Tools → External Plugins*, qui est
-le mécanisme des anciens Action Plugins SWIG, alors que le `plugin.json` de
-Konnect déclare un plugin **IPC API** (`runtime.type: "exec"`). KiCad expose
-ceux-là comme **bouton de barre d'outils** de l'éditeur de PCB et sous
-*Preferences → Plugins*, et ils restent **inertes tant que l'API n'est pas
-activée** — or KiCad la livre désactivée (`api.enable_server: false`, mesuré
-dans `kicad_common.json`). R.1.4 reste ouverte et non prouvée (INV-R2), trois
-tentatives ayant été interrompues par un dialogue UAC étranger à KiCad.
+**R.7 — la découverte de `kicad-cli`**, seul défaut satisfaisant l'exception de
+la phase. Implémentation déléguée, validation finale au principal.
 
 ## Dernière tâche validée
 
@@ -49,11 +42,24 @@ tentatives ayant été interrompues par un dialogue UAC étranger à KiCad.
 - Verdict de KiCad obtenu **à la main** : `kicad-cli sch erc` → *0 violation*,
   exit 0. Le serveur, lui, n'a pas pu le produire (voir R.7).
 
-Neuf frictions consignées et classées (INV-R3) : F-01 produit, F-02 doc,
-F-03 UX, F-04 packaging, F-05 doc, F-06 doc, F-07 produit, F-08 UX, **F-09 doc**
-— l'étape de vérification du README nomme le mauvais menu et tait l'activation
-de l'API. F-10 reste **non tranché** : l'ancien Action Plugin SWIG apparaît-il
-ou non dans *Tools → External Plugins* ; c'est R.1.11 qui le règle.
+- Dans KiCad : **« Konnect » est bien présent** dans *Outils → Plugins
+  Externes*, et **avant** toute activation de l'API — c'est l'ancien Action
+  Plugin SWIG, encore chargé en KiCad 10 (suppression prévue pour KiCad 11).
+  L'étape de vérification du README fonctionne donc telle qu'elle est écrite.
+- Ce qui n'apparaît nulle part, en revanche, c'est le **bouton de barre
+  d'outils** que `plugin.json` déclare (`show-button: true`, scope `pcb`) : ni
+  API désactivée, ni activée, ni après redémarrage complet.
+- *Preferences → Plugins* en KiCad 10 est une simple page **API KiCad** sans
+  liste de plugins. Case « **Activer l'API KiCad** », **décochée** à la
+  livraison ; une fois cochée et KiCad redémarré, la page affiche
+  `Écoute à ipc://…\Temp\kicadpi.sock` — la socket dont dépend chaque outil
+  PCB.
+
+Dix frictions consignées et classées (INV-R3) : F-01 produit, F-02 doc,
+F-03 UX, F-04 packaging, F-05 doc, F-06 doc, F-07 produit, F-08 UX, F-09 doc
+(l'API livrée désactivée n'est nommée que dans un bloc macOS), F-11 packaging
+(bouton déclaré, jamais rendu). F-10 est **résolue et n'est pas un défaut** :
+l'Action Plugin SWIG se charge bien.
 
 ## Décisions actives
 
@@ -91,19 +97,15 @@ ou non dans *Tools → External Plugins* ; c'est R.1.11 qui le règle.
 
 ## Blocage actif
 
-**R.1.4 / R.1.11 uniquement, et il est environnemental.** Un dialogue UAC /
-secure desktop étranger à KiCad a interrompu trois fois l'accès à l'interface de
-Pcbnew. Faits déjà établis autrement : le plugin est déployé sur le disque, il
-est enregistré dans l'`installed_packages.json` de KiCad en version 1.1.0, et
-son `plugin.json` déclare l'action `start-server` avec `show-button: true` et le
-scope `pcb`. Prochaine tentative : activer l'API dans *Preferences → Plugins*
-puis relever bouton de barre d'outils, liste des plugins et menu *External
-Plugins*. N'empêche aucun autre lot d'avancer.
+Aucun.
 
 ## Fichiers / zones utiles
 
 - `plan.md` § *Phase R* (l. 5135) — R.1 à R.6, plus **R.7** ouvert par R.1.
-- `docs/launch/first-run-walk.md` — le parcours, les preuves, les huit frictions.
+- `docs/launch/first-run-walk.md` — le parcours, les preuves, les dix frictions.
+- `plugin/plugin.json` — déclare une action IPC API `show-button: true` que KiCad
+  10 ne rend jamais (F-11). Le seul chemin qui fonctionne est l'Action Plugin
+  SWIG d'`__init__.py`, déprécié et supprimé en KiCad 11.
 - `crates/konnect/src/config.rs:75` `default_kicad_cli()` — le nom nu résolu par
   `PATH`. Cœur de R.7.
 - `crates/konnect/src/install.rs:402` `detect_kicad()` — liste Windows sans
@@ -133,8 +135,8 @@ Plugins*. N'empêche aucun autre lot d'avancer.
 
 ## NEXT ACTION
 
-Ouvrir **R.7.1** : écrire d'abord le test qui échoue — `kicad_cli` non
-configuré, aucun `kicad-cli` sur `PATH`, une installation KiCad sous préfixe par
-utilisateur doit être trouvée — avant de toucher à la résolution dans
-`crates/konnect/src/config.rs`. R.1.4 se reprend dès que le bureau est libre et
-ne bloque rien.
+Valider **R.7** au principal : relire le diff de la chaîne de résolution de
+`kicad_cli`, relancer le gate (`fmt`, `clippy -D warnings`, la suite complète),
+et exiger la preuve de bout en bout — un `kicad_invoke` avec `verify:"auto"`
+qui rend un verdict ERC de KiCad, sans `kicad_cli` configuré nulle part. Ensuite
+seulement, R.2 réécrit le Quick Start à partir des dix frictions.

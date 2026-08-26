@@ -82,46 +82,57 @@ one inside the published zip (same sha256), and answers `konnect 1.1.0`.
 
 ### 4 — Plugin visible inside KiCad
 
-**The README sends the user to the wrong menu.** `README.md:126` says:
+**The README's verification step works.** `README.md:126` sends the reader to
+*PCB Editor → Tools → External Plugins*, and the submenu there reads:
 
-> Verify: open the **PCB Editor** → **Tools → External Plugins** → you should
-> see **Konnect**.
+```
+Rafraîchir Plugins · Ouvrir le Répertoire des Plugins · Konnect
+```
 
-That menu is KiCad's *legacy SWIG Action Plugin* mechanism. What this package
-declares in `plugin.json` — `runtime.type: "exec"`, one action with
-`show-button: true` and scope `pcb` — is an **IPC API plugin**, and KiCad
-surfaces those as a **toolbar button in the PCB editor** and under
-*Preferences → Plugins*, not in *Tools → External Plugins*
-([KiCad dev-docs, IPC API for add-on developers](https://dev-docs.kicad.org/en/apis-and-binding/ipc-api/for-addon-developers/index.html)).
+`Konnect` is present **before** the KiCad API is enabled, because that menu is
+KiCad's legacy SWIG Action Plugin mechanism and the package ships one
+(`__init__.py`). SWIG bindings are deprecated since KiCad 9 but still loaded in
+KiCad 10; removal is planned for KiCad 11
+([dev-docs](https://dev-docs.kicad.org/en/apis-and-binding/pcbnew/index.html)),
+which is a dependency worth knowing about, not a defect today.
 
-Worse, an IPC API plugin is **inert until the API is switched on**, and KiCad
-ships with it off. Measured in KiCad's own configuration on this machine,
-before any change:
+Two things the walk did establish that the README does not say.
+
+**The declared toolbar button never appears.** `plugin.json` declares an IPC API
+action — `runtime.type: "exec"`, `show-button: true`, scope `pcb`. KiCad surfaces
+IPC API actions as PCB-editor toolbar buttons
+([dev-docs](https://dev-docs.kicad.org/en/apis-and-binding/ipc-api/for-addon-developers/index.html)).
+No such button exists here: not before enabling the API, not after enabling it,
+and not after a full KiCad restart. Only the SWIG entry works. The manifest
+declares a surface KiCad does not give it.
+
+**The KiCad API ships off, and the README says so only to macOS readers.**
+Measured before any change:
 
 ```
 ~/AppData/Roaming/kicad/10.0/kicad_common.json
   "api": { "enable_server": false, "interpreter_path": "…\\bin\\pythonw.exe" }
 ```
 
-The README does mention *Preferences → Plugins → "Enable KiCad API"* — once, at
-line 163, inside a **macOS** configuration snippet. A Windows user following the
-installation section never meets it, looks in the menu the README named, finds
-nothing, and concludes the install failed. The package **is** registered: KiCad's
-`installed_packages.json` carries `com.github.mixelpixx.konnect`, version
-`1.1.0`, with its install timestamp.
+*Preferences → Plugins* in KiCad 10 is a single **API KiCad** page — there is no
+plugin list on it. Its checkbox reads « **Activer l'API KiCad** », unchecked, and
+under it: *« L'API KiCad n'est pas activée ; les plugins Python externes ne
+seront pas disponibles »*. Checking it flips the line to « Trouvé Python
+3.11.5 » with no restart prompt; after a restart the page reads:
 
-Whether the legacy `__init__.py` Action Plugin *also* appears under *Tools →
-External Plugins* is **unresolved**. One attempt reported no `Konnect` entry
-there but could not screenshot it, and two further attempts were interrupted by
-a Windows UAC secure-desktop dialog unrelated to KiCad. SWIG Action Plugins are
-deprecated but still loaded in KiCad 10 (removal is planned for KiCad 11), so
-the entry ought to be there. Recorded as **unproven**, not as passed, and not as
-failed.
+```
+Écoute à ipc://C:\Users\FlowUP\AppData\Local\Temp\kicad\api.sock
+```
 
-A third friction point surfaced on the way: **pcbnew refuses to open at all
-without a project** — *« Créer (ou ouvrir) un projet pour modifier un pcb. »* A
-user who has just installed KiCad has no project yet, so even the corrected
-verification step needs one first.
+Every PCB tool in this project needs that socket. The README mentions the switch
+exactly once — line 163, inside a **macOS** configuration snippet — and its
+*Requirements* section only says PCB tools need "KiCAD running with the target
+board open (IPC API)", never that the API is off until the user turns it on.
+
+A further friction surfaced on the way: **pcbnew refuses to open at all without
+a project** — *« Créer (ou ouvrir) un projet pour modifier un pcb. »* A user who
+has just installed KiCad has no project yet, so the verification step needs one
+first and the README does not mention it.
 
 ### 5 — MCP connection
 
@@ -202,8 +213,8 @@ to change.
 | **F-03** | UX | The Plugin Manager shows author `mixelpixx` and homepage `github.com/mixelpixx/Konnect` — the upstream project. A user looking for this fork's issue tracker leaves for another repository | `packaging/metadata.json` |
 | **F-04** | packaging | Seven assets, **no checksum file**. A download cannot be verified without rebuilding | `.github/workflows/release.yml` |
 | **F-05** | documentation | The install-verification step (*PCB Editor → Tools → External Plugins*) is impossible before a project exists: pcbnew refuses to open without one | `README.md` Installation |
-| **F-09** | **documentation** | The install-verification step names the **wrong menu**. An IPC API plugin surfaces as a PCB-editor toolbar button and under *Preferences → Plugins* — never in *Tools → External Plugins* — and it stays inert until *Enable KiCad API* is checked, which KiCad ships **off**. The README says so once, inside a macOS snippet | `README.md:126`, `README.md:163` |
-| **F-10** | *unresolved* | Whether the legacy SWIG Action Plugin from `__init__.py` appears under *Tools → External Plugins* is not established — one negative observation without a capture, two attempts blocked by UAC. Not a finding yet | plan item R.1.11 |
+| **F-09** | **documentation** | KiCad ships *Activer l'API KiCad* **off**, and every PCB tool in this project needs it. The README names the switch once, at line 163, inside a **macOS** snippet; its *Requirements* line says only "(IPC API)" | `README.md` Requirements, `README.md:163` |
+| **F-11** | packaging | `plugin.json` declares an IPC API action with `show-button: true`, scope `pcb`. No such toolbar button appears in KiCad 10 — API off, API on, or after a restart. Only the legacy SWIG entry works. A manifest declaring a surface it does not get | `plugin/plugin.json` |
 | **F-06** | documentation | `kicad_invoke` takes `calls: [{tool, args}]`, not `{name, arguments}`. Nothing a first-time reader sees says so before the error does | `README.md` / `tool-directory.md` |
 | **F-07** | product | `apply_template`'s description claims it wires the components. It places them and returns the connections as work still to do | `crates/konnect-core/src/tools/templates.rs` |
 | **F-08** | UX | The PCM install fires on file selection while *Apply Pending Changes* stays greyed out and empty — no confirmation step where a user expects one | KiCad's own UI; documentation only |
