@@ -2840,7 +2840,7 @@ documents send a reader to another repository's releases.
 ### Validation
 There is no Phase P. Nothing in this phase added a capability.
 
-# Phase P — Schematic round-trip fidelity — P.1..P.6 DONE, P.7 in flight
+# Phase P — Schematic round-trip fidelity — DONE
 
 Opened 2026-08-24 by an explicit user request after V1 closure. Phase O said
 there is no Phase P; that statement described the V1 scope, and the user has
@@ -4758,7 +4758,7 @@ and — where KiCad is the only honest oracle — a probe in
 `schematic_fidelity_live.rs` or its PCB equivalent, inside the gating E2E job.
 No item is closed on "the existing suite still passes".
 
-## P.7 — The suite must prove itself on CI's machine, not this one
+## P.7 — The suite must prove itself on CI's machine, not this one — DONE
 
 ### Objectif
 P.6 closed with `cargo test --workspace` green here and the PR pushed. The
@@ -4812,7 +4812,7 @@ changes.
       of scope. Added `--no-fail-fast`, matching the command this project
       already uses locally.
 
-- [ ] P.7.4 — the gating E2E was red for the same reason, one layer out. It is
+- [x] P.7.4 — the gating E2E was red for the same reason, one layer out. It is
       not a per-PR job, so `conformance_test`'s board half — added in this
       phase — had never run in CI at all; the run dispatched by hand on this
       branch is its first. It failed on
@@ -4840,7 +4840,7 @@ changes.
       `numbering_detection_explains_every_layer_entry_in_the_demo_corpus` loses
       its by-name skip too: it already skipped anything that fails to parse.
 
-- [ ] P.7.5 — with the conformance step green, the next E2E run reached the
+- [x] P.7.5 — with the conformance step green, the next E2E run reached the
       probes behind it — none of which had ever run in CI either — and
       `a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable` failed on
       its opening guard, `before["total"] == 0`, with 40 violations. All 40
@@ -4865,7 +4865,7 @@ changes.
       resolves its config through the Windows shell API, not the environment
       variable. So this fix is proved by CI and by nothing else, which is
       exactly what a gating E2E job is for.
-- [ ] P.7.6 — the E2E workflow hid the same way `ci.yml` did. Its probes are
+- [x] P.7.6 — the E2E workflow hid the same way `ci.yml` did. Its probes are
       twelve separate `cargo test` steps, so a red one stops the job and says
       nothing about the eleven behind it: two full runs were spent finding one
       defect each, in order, when both were visible from the start. Every probe
@@ -4890,6 +4890,11 @@ changes.
   **6 passed**, the corpus reporting 18/19 boards parsed and one malformed
   with D116's own numbers.
 - the gating E2E, dispatched by hand on this branch (it has no per-PR
-  trigger), green through the conformance step and every probe behind it.
+  trigger): run `32939555970` on `6ae15c2` is **green on every step** — the
+  design loop, conformance, the layer corpus, all nine probes, the IPC wedge
+  and the PCM package, with nothing skipped but "upload artifacts on failure".
   It is the only oracle for P.7.4 and P.7.5: which KiCad ships a demo, and
   whether that KiCad has ever been launched, are not observable from here.
+  Runs `32937438691` and `32938428303` are the two red ones it replaces.
+- the PR checks on the same commit: green on all three OSes, plus Clippy,
+  Format, PCM packaging and the schematic viewer (run `32939559816`).

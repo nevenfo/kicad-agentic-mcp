@@ -2,16 +2,21 @@
 
 ## Phase actuelle
 
-**P — Schematic round-trip fidelity.** P.1 à P.6 sont closes et leurs preuves
-inchangées. P.7 a rouvert la phase : la suite locale et la suite CI ne
-mesuraient pas la même machine. P.7.1 à P.7.3 sont validées ; P.7.4 est
-implémentée et verte localement, en attente du run E2E.
+**P — Schematic round-trip fidelity : DONE.** P.1 à P.6 sont closes et leurs
+preuves inchangées. P.7 avait rouvert la phase — la suite locale et la suite CI
+ne mesuraient pas la même machine — et est close à son tour, ses six items
+compris. Aucune case ouverte ne reste.
 Branche `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`, non fusionnée.
 
 ## Tâche actuelle
 
-**P.7.4 à P.7.6**, implémentées et poussées, en attente du run E2E qui est leur
-seule preuve :
+Aucune en cours.
+
+## Dernière tâche validée
+
+**P.7 — la suite se prouve désormais sur la machine de CI, pas sur celle-ci.**
+
+**P.7.4 à P.7.6** :
 
 - **P.7.4** — le job E2E gatant ne tourne pas par PR, donc la moitié « boards »
   de `conformance_test`, ajoutée dans cette phase, n'avait **jamais** tourné en
@@ -35,9 +40,7 @@ seule preuve :
   défaut chacun. Chaque sonde porte désormais
   `if: always() && steps.kicad.outcome == 'success'`.
 
-## Dernière tâche validée
-
-**P.7.1 à P.7.3** — la suite se prouve désormais sur une machine sans KiCad :
+**P.7.1 à P.7.3** — une machine sans KiCad du tout :
 
 - **P.7.1** — `a_component_placed_on_a_child_sheet_is_written_with_the_roots_path`
   plaçait `Device:R` dans un enfant issu de `blank_schematic_template()`, dont
@@ -54,9 +57,16 @@ seule preuve :
   s'arrêtait au premier binaire rouge et ne disait rien des onze suivants.
 
 Validation :
+- **E2E gatant `32939555970` sur `6ae15c2` : vert sur tous ses steps** — boucle
+  de conception, conformance, corpus de layers, les neuf sondes, le wedge IPC
+  et le paquet PCM ; rien de sauté sauf « upload artifacts on failure ». C'est
+  le seul oracle de P.7.4 et P.7.5. Les runs `32937438691` et `32938428303`
+  sont les deux rouges qu'il remplace
+- checks de PR sur le même commit : verts sur les trois OS, plus Clippy,
+  Format, PCM et le viewer (run `32939559816`)
 - run CI `32937415695` sur `1ff991b` : **Check & Test vert sur ubuntu, macos et
   windows**, là où le même workflow sur `8aeaff7` (run `32936272573`) tombait
-  sur les trois. C'est la preuve que P.7 attendait
+  sur les trois. C'est la preuve que P.7.1 à P.7.3 attendaient
 - portée **mesurée**, pas supposée : suite complète avec `ProgramFiles`,
   `ProgramFiles(x86)`, `LOCALAPPDATA`, `APPDATA` et les trois
   `KICAD<major>_SYMBOL_DIR` pointés sur un dossier vide — toutes les racines
@@ -291,10 +301,11 @@ Aucun.
 
 ## NEXT ACTION
 
-Relancer le job E2E gatant sur `ai/P-schematic-fidelity` (`gh workflow run
-e2e-kicad.yml -R nevenfo/kicad-agentic-mcp --ref ai/P-schematic-fidelity`,
-D114). Grâce à P.7.6 ce run exécute **toutes** les sondes même après un rouge,
-donc il rapporte d'un coup ce qui reste à corriger au lieu d'un défaut par run.
-Si vert : cocher P.7.4, P.7.5 et P.7.6, puis demander à l'utilisateur la
-décision restée ouverte — fusionner la PR #10 vers `agentic/main` ou ouvrir une
-phase suivante. Si rouge : traiter les écarts que ce seul run aura nommés.
+Aucune tâche de plan ouverte : la phase P est terminée, P.7 comprise, et toutes
+ses preuves sont vertes — y compris le job E2E gatant, qui n'avait jamais
+tourné sur cette branche avant aujourd'hui. La prochaine action demande une
+**décision de l'utilisateur** : fusionner la PR #10
+(`ai/P-schematic-fidelity` → `agentic/main`, 62 commits d'avance, à jour et
+poussée, checks verts) ou ouvrir une phase suivante. Rien ne doit être
+implémenté avant ce choix. Si la fusion est décidée : `gh -R
+nevenfo/kicad-agentic-mcp` (D114).
