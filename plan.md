@@ -5964,25 +5964,25 @@ release has happened: every draft's install path is the config-free one.
   the local build that produced it.
 
 ### Tâches
-- [ ] R.10.1 **F-03**, and only the half that is safe: `packaging/metadata.json`
+- [x] R.10.1 **F-03**, and only the half that is safe: `packaging/metadata.json`
       gains this fork's author and homepage, so the Plugin Manager stops sending
       a first user to the upstream issue tracker. The `identifier`
       (`com.github.mixelpixx.konnect`) is **kept**: it is the install directory
       name, and it appears in the README, both example configs, the demo harness
       and every existing install. Renaming it would break all of them to fix a
       cosmetic string, and the reason is written down where the file is
-- [ ] R.10.2 Version bump to 1.1.1 — workspace `Cargo.toml`, the viewer crate,
+- [x] R.10.2 Version bump to 1.1.1 — workspace `Cargo.toml`, the viewer crate,
       `Cargo.lock` — and nothing else claims a version by hand
-- [ ] R.10.3 `RELEASE_NOTES.md` is rewritten as the **body of v1.1.1** (D143),
+- [x] R.10.3 `RELEASE_NOTES.md` is rewritten as the **body of v1.1.1** (D143),
       not appended to: what changed for a user (the two discovery chains, the
       GUI binary, the undeclared stackup, the PCM metadata), what did not
       (no new tool, no changed signature), and which figures still belong to
       v1.0.0
-- [ ] R.10.4 Every sentence that documents the manual steps as *required* is
+- [x] R.10.4 Every sentence that documents the manual steps as *required* is
       updated where it lives — `README.md`'s status block and Quick start,
       `docs/TROUBLESHOOTING.md`, `examples/*.json`. A release that removes a
       manual step and leaves the documentation demanding it has not removed it
-- [ ] R.10.5 The gate is green on the release commit, and the real-KiCad E2E is
+- [x] R.10.5 The gate is green on the release commit, and the real-KiCad E2E is
       run **by hand before the tag** (D144)
 - [ ] R.10.6 Tag, push, and the release workflow's seven assets are checked for
       presence and size on the release page itself

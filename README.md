@@ -24,7 +24,7 @@ that teach Claude KiCAD conventions out of the box.
 > IR with a deterministic executor, evidence handles, task state and a local-model
 > runtime. The server binary is still called `konnect`.
 >
-> **Status: v1.1.0.** What it measures, what it misses and what it does not cover
+> **Status: v1.1.1.** What it measures, what it misses and what it does not cover
 > are in [RELEASE_NOTES.md](RELEASE_NOTES.md); every figure quoted below traces to
 > [docs/benchmark.md](docs/benchmark.md). Issues and PRs are welcome — see
 > [CONTRIBUTING.md](CONTRIBUTING.md) and the
@@ -98,7 +98,10 @@ versions of both are in [examples/](examples/), and the full snippets are
 [further down](#setup-with-claude-desktop). Restart the client; `konnect` should
 report **21 tools** at startup. That is the whole starter kit — the rest of the
 catalogue loads on demand, or is called through the gateway without ever
-appearing in `tools/list`.
+appearing in `tools/list`. **No `konnect-settings.json` is required** for a
+standard KiCAD 10 install: v1.1.1 discovers `kicad-cli`, the KiCAD GUI binary and
+the IPC address. Explicit settings remain available for unusual or portable
+installations.
 
 **5 — Give it something to do**, with a KiCAD project open. For example:
 
@@ -257,13 +260,14 @@ Or build from source as above (verified on Apple Silicon; the same
 `target/release/konnect` binary is the MCP server).
 
 KiCad on macOS keeps its tools inside the app bundle and they are not on
-`PATH`, so point Konnect at them in `~/Library/Application Support/konnect/config.toml`:
+`PATH`; v1.1.1 searches the standard app bundle and uses KiCad's default IPC
+address automatically. Only an unusual or renamed installation needs explicit
+overrides in `~/Library/Application Support/konnect/config.toml`:
 
 ```toml
 kicad_cli = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 kicad_binary = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad"
-# KiCad 10's IPC socket on macOS (enable it in KiCad:
-# Preferences → Plugins → "Enable KiCad API")
+# Optional override; the default is ipc:///tmp/kicad/api.sock.
 ipc_address = "ipc:///tmp/kicad/api.sock"
 ```
 
@@ -389,8 +393,7 @@ install prefixes (including `%LOCALAPPDATA%\Programs\KiCad\<ver>\bin`, where
 KiCAD's installer puts a per-user install), then the Windows registry. It logs
 which one answered at startup. If none does — an unusual install location, a
 portable copy — set `kicad_cli` explicitly in the plugin settings dialog or your
-config file. **On v1.1.0 that manual step is required whenever KiCAD is not on
-`PATH`**: the search chain lands in the next release.
+config file.
 
 **A validator reports an error instead of zero findings** — that is deliberate. A
 check that could not run is never reported as a check that passed.
