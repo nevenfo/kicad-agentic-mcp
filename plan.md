@@ -2840,7 +2840,7 @@ documents send a reader to another repository's releases.
 ### Validation
 There is no Phase P. Nothing in this phase added a capability.
 
-# Phase P — Schematic round-trip fidelity — DONE
+# Phase P — Schematic round-trip fidelity — P.1..P.6 DONE, reopened by P.7
 
 Opened 2026-08-24 by an explicit user request after V1 closure. Phase O said
 there is no Phase P; that statement described the V1 scope, and the user has
@@ -4757,3 +4757,68 @@ Each implemented item carries a test that is red before it and green after,
 and — where KiCad is the only honest oracle — a probe in
 `schematic_fidelity_live.rs` or its PCB equivalent, inside the gating E2E job.
 No item is closed on "the existing suite still passes".
+
+## P.7 — The suite must prove itself on a machine without KiCad
+
+### Objectif
+P.6 closed with `cargo test --workspace` green here and the PR pushed. The
+gating CI run on the very same commit (`8aeaff7`) was **red on all three
+OSes**, and had been since the commit that introduced the test. The local
+suite and the CI suite were measuring two different machines, and the local
+one was the one with KiCad installed. Close that gap where it is: in the test,
+in the harness that let it stay silent, and in the CI command that hid
+whatever was behind it.
+
+### Dépendances
+None. The defect is in test code and one workflow line; no production path
+changes.
+
+### Tâches
+- [ ] P.7.1 — `a_component_placed_on_a_child_sheet_is_written_with_the_roots_path`
+      (`crates/konnect-core/tests/sheet_instances.rs`) placed `Device:R` into a
+      child built from `blank_schematic_template()`, whose `lib_symbols` is
+      empty. `library::ensure_lib_symbol` therefore had to resolve the id from
+      the **installed** libraries, which exist on the machine the test was
+      written on and on no CI runner — `cargo test` in `ci.yml` installs no
+      KiCad. The tool answered `Library 'Device' not found`, wrote nothing,
+      and the assertion then read a file it had never touched, reporting the
+      absence of `(project "proj"` as an instance-derivation defect.
+      Fixed by making the placement a property of the fixture: the child is
+      `harness::TWO_RESISTORS`, which embeds `Device:R` and is already the
+      repository's answer to this exact question — its doc comment says "so no
+      installed libraries are needed". Red before under a simulated
+      KiCad-less machine, green after, and green with KiCad present.
+      Scope measured rather than assumed: the whole workspace suite was run
+      with `ProgramFiles`, `ProgramFiles(x86)`, `LOCALAPPDATA`, `APPDATA` and
+      the three `KICAD<major>_SYMBOL_DIR` variables pointed at an empty
+      directory — every root `kicad_paths::share_roots` knows on Windows. One
+      test failed. The class is this one test, not a family.
+- [ ] P.7.2 — the harness let it stay silent. `Harness::json`'s doc said
+      "Panics if the tool errored", and it only ever checked `Result::Err` —
+      but a refusing handler here returns `Ok(CallToolResult { is_error: true
+      })`: `require_str`, `get_path` and `lib_symbol_not_found_error` all build
+      a result rather than an error. So a test could assert a tool's effect on
+      a file while the tool had refused to act, and the failure it eventually
+      produced named the wrong thing. `json` now asserts `!is_error` and
+      prints the refusal body. Measured against the whole `konnect-core`
+      suite on a KiCad-less machine: no other test depended on the old
+      leniency. It turns P.7.1's failure message from a dump of an untouched
+      file into `'add_schematic_component' refused: Library 'Device' not
+      found …`.
+- [ ] P.7.3 — `ci.yml`'s test step ran `cargo test` without `--no-fail-fast`,
+      so the run stopped at the first failing binary. `sheet_instances` sits
+      two thirds down the alphabet, and the log said nothing either way about
+      the eleven binaries after it — the red run could not be read as evidence
+      of scope. Added `--no-fail-fast`, matching the command this project
+      already uses locally.
+
+### Validation
+- `cargo test --workspace --locked --lib --tests --no-fail-fast` on a
+  simulated KiCad-less machine (every Windows share root and the three symbol
+  env vars pointed at an empty directory): **57 suites, 1385 tests, 0 failed**
+- the same command in the normal environment, KiCad 10.0.3 installed:
+  **57 suites, 1385 tests, 0 failed**
+- `cargo fmt --all -- --check` and
+  `cargo clippy --workspace --locked --all-targets -- -D warnings`: PASS, 0
+- the CI run on the pushed commit is green on all three OSes — the check that
+  was red is the one that has to turn.

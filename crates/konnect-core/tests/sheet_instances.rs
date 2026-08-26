@@ -57,6 +57,23 @@ fn blank_child(dir: &Path, name: &str) -> PathBuf {
     write(dir, name, &konnect_core::tools::blank_schematic_template())
 }
 
+/// The same child, but carrying `Device:R` in its own `lib_symbols`.
+///
+/// P.7.1: the end-to-end test below places a component, and
+/// `library::ensure_lib_symbol` answers a `lib_id` from the *installed*
+/// libraries when the schematic does not already embed it. On the machine
+/// this was written on KiCad 10 is installed, so `Device:R` resolved and the
+/// test passed; on CI, where nothing installs KiCad for the unit job, the
+/// tool refused and wrote nothing, and the assertion below then read a file
+/// the tool had never touched. Embedding the symbol makes the placement a
+/// property of the fixture, the way `harness::TWO_RESISTORS` already documents
+/// for every other test that places one.
+fn child_with_device_r(dir: &Path, name: &str) -> PathBuf {
+    let src = harness::fixtures_dir().join(harness::TWO_RESISTORS);
+    let body = std::fs::read_to_string(&src).expect("the fixture is readable");
+    write(dir, name, &body)
+}
+
 /// The defect, at the level the derivation happens: the project is the one the
 /// `.kicad_pro` names, and the path starts at the root, stepping through the
 /// `(sheet …)` that placed this file.
@@ -147,7 +164,7 @@ async fn a_component_placed_on_a_child_sheet_is_written_with_the_roots_path() {
         "proj",
         &sheet_block(SHEET_A_UUID, "Amp", "child.kicad_sch"),
     );
-    let child = blank_child(&dir, "child.kicad_sch");
+    let child = child_with_device_r(&dir, "child.kicad_sch");
 
     h.json(
         "add_schematic_component",

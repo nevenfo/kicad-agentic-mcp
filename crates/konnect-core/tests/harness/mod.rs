@@ -140,11 +140,24 @@ impl Harness {
 
     /// Call `tool` and read its JSON body. Panics if the tool errored — use
     /// [`call`](Self::call) when the error is the point.
+    ///
+    /// Both shapes of failure count. A handler that returns `Err` and one that
+    /// returns `CallToolResult { is_error: true }` are the same event to a
+    /// caller, and the second is the shape almost every handler here uses:
+    /// `require_str`, `get_path` and `lib_symbol_not_found_error` all build a
+    /// result rather than an error. Reading the body of one and asserting on
+    /// the file afterwards is how a test can assert a tool's effect while the
+    /// tool refused to act — P.7.1's defect exactly.
     pub async fn json(&self, tool: &str, args: Value) -> Value {
         let result = self
             .call(tool, args)
             .await
             .unwrap_or_else(|e| panic!("'{tool}' failed: {e}"));
+        assert!(
+            !result.is_error,
+            "'{tool}' refused: {}",
+            serde_json::to_string(&body(&result)).unwrap_or_default()
+        );
         body(&result)
     }
 
