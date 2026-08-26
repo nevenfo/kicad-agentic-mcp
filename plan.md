@@ -5412,8 +5412,17 @@ decided by the user on 2026-08-26:
       run 2**: the model ran DRC itself as its last act, and `kicad-cli` run
       afterwards on the file agrees — 5 unconnected items before, **0** after,
       11 track segments, 3 silkscreen warnings, no errors
-- [ ] R.3.6 A capture exists — screen recording or a before/after pair — showing
-      the KiCad window changing, embedded in the README and usable in R.4
+- [x] R.3.6 A capture exists — screen recording or a before/after pair — showing
+      the KiCad window changing, embedded in the README and usable in R.4.
+      A **before/after pair**, `resources/images/demo-{before,after}.png`: the
+      committed pre-state and run 2's end state, rendered by `kicad-cli pcb
+      render` at the same zoom and the same pivot, so `U1` sits on the same
+      pixels in both and only what the prompt changed moves. The README section
+      *What one prompt does* carries them, `examples/demo/README.md` gives the
+      command that regenerates either half, and the caption quotes only what
+      KiCad said — 5 unconnected before, 0 after, 11 segments, 3 warnings, no
+      errors. **It carries no time claim**: that sentence is R.3.10's to write,
+      once the user has decided what the 40 s figure measures
 - [ ] R.3.7 A second run from the committed starting state reproduces the same
       end state, proving the demo is not a lucky take
 - [ ] R.3.10 **Opened by run 2.** The 40 s budget is re-aimed or restated, by

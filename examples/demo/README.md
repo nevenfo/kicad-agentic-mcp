@@ -74,6 +74,18 @@ In the KiCad window, without touching it:
 And in the reply: a DRC result that came from `kicad-cli`, not from the model.
 A check that could not run is reported as an error, never as a clean board.
 
+The committed pair — [`before`](../../resources/images/demo-before.png),
+[`after`](../../resources/images/demo-after.png) — is what run 2 produced, and
+both images come from the board files themselves, same frame and same zoom:
+
+```bash
+kicad-cli pcb render --side top --zoom 2.8 --pivot "0.2,0.25,0"   -w 1200 -h 900 --background opaque -o before.png konnect-demo.kicad_pcb
+```
+
+Run the same command on the board after the prompt for the other half. Your run
+will not match pixel for pixel — a model does not place a capacitor at identical
+coordinates twice — and it does not need to: what has to match is the circuit.
+
 ## Verifying it afterwards
 
 From the folder you ran the demo in:

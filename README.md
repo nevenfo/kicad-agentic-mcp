@@ -30,6 +30,26 @@ that teach Claude KiCAD conventions out of the box.
 > [CONTRIBUTING.md](CONTRIBUTING.md) and the
 > [naming conventions](docs/NAMING_CONVENTIONS.md).
 
+## What one prompt does
+
+<table>
+<tr><th width="50%">Before</th><th width="50%">After</th></tr>
+<tr>
+<td><img src="resources/images/demo-before.png" alt="Three footprints on the board, two capacitors sitting away from the regulator, no copper" /></td>
+<td><img src="resources/images/demo-after.png" alt="The two capacitors placed either side of the regulator, three nets closed in copper" /></td>
+</tr>
+</table>
+
+The starting board, the prompt and the setup steps are committed in
+[`examples/demo/`](examples/demo/), so this is reproducible rather than
+illustrative. Both images are `kicad-cli` renders of the board file, same frame,
+same zoom — the left one before the prompt, the right one after it.
+
+**KiCad's verdict on the result, not ours:** 5 unconnected items before, **0**
+after; 11 track segments; 3 silkscreen warnings and no errors. The full run —
+what was called, in what order, how long it took and where the time went — is in
+[`docs/launch/demo-run-2.md`](docs/launch/demo-run-2.md).
+
 ## Quick start
 
 Five steps from the release page to a change KiCAD itself confirms. Walked on a
