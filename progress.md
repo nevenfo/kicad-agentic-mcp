@@ -3,48 +3,63 @@
 ## Phase actuelle
 
 **R — Launch & adoption : IN PROGRESS.** Ouverte le 2026-08-26 sur demande
-explicite de l'utilisateur, juste après la publication de v1.1.0 (phase Q close,
-toutes ses cases fermées). Périmètre : **adoption, pas capacité**. Aucun refactor,
-aucune feature opportuniste, aucun travail KiCad 11, aucun Dependabot / signature
-macOS / dépôt d'addons officiel sauf blocage réel de R.
-
-Objectif : qu'un inconnu passe seul de la page de release à une première tâche
-validée par KiCad, et que les retours des premiers utilisateurs suffisent à
-décider la phase technique suivante.
+explicite de l'utilisateur, juste après la publication de v1.1.0 (phase Q close).
+Périmètre : **adoption, pas capacité**. Aucun refactor, aucune feature
+opportuniste, aucun travail KiCad 11, aucun Dependabot / signature macOS / dépôt
+d'addons officiel sauf blocage réel de R.
 
 Branche : `ai/R-launch-adoption`, ouverte sur `90d0928`.
 
+**R.1 est walké** : release → installation → connexion MCP → projet KiCad réel →
+première tâche → verdict de KiCad. Le compte rendu complet, avec la liste de
+frictions classée, est `docs/launch/first-run-walk.md`. Une seule case de R.1
+reste ouverte, **R.1.4**, faute de preuve GUI.
+
 ## Tâche actuelle
 
-**R.1.3 — installer le paquet PCM publié par le chemin documenté** : KiCad 10 →
-Plugin and Content Manager → *Install from File* → redémarrage, puis lire le
-chemin d'installation **sur le disque** au lieu de le supposer depuis le README.
-Étape GUI : passe par `desktop-control`.
+**R.1.4 — voir le plugin là où le README le promet** : PCB Editor → *Tools →
+External Plugins* → entrée « Konnect ». Deux tentatives interrompues par un
+dialogue UAC/secure desktop sans rapport avec KiCad ; consigné **non prouvé**,
+jamais coché sur une supposition (INV-R2).
 
 ## Dernière tâche validée
 
-**R.1.1 et R.1.2 — l'état initial et l'artefact publié.**
+**R.1.1 à R.1.10 — le parcours d'un inconnu, mesuré.**
 
-État initial, non reproductible une fois R.1.3 lancée, donc figé ici :
-- `C:\Users\FlowUP\Documents\KiCad\10.0\3rdparty\` est **vide** — aucun plugin
-  Konnect installé sur cette machine
-- KiCad **10.0.3** release build, wxWidgets 3.3.2, à
-  `C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0\bin\`
-- **aucun** client MCP ne connaît `konnect` : pas de
-  `%APPDATA%\Claude\claude_desktop_config.json`, pas de `.mcp.json` dans le
-  dépôt, `claude mcp list` répond « No MCP servers configured »
+- État initial, non reproductible une fois l'installation faite : `3rdparty\`
+  **vide**, KiCad **10.0.3** installé **par utilisateur** dans
+  `%LOCALAPPDATA%\Programs\KiCad\10.0\`, aucun client MCP ne connaissant
+  `konnect`.
+- Artefact publié épinglé : `konnect-pcm-v1.1.0-windows.zip`, 12 258 180 octets,
+  SHA-256 `25fe29ca…67dd0`. Le `konnect.exe` **installé** est identique octet
+  pour octet à celui du zip publié (`57f272cb…1868c`) et répond `konnect 1.1.0`.
+- Chemin d'installation lu **sur le disque** :
+  `…\3rdparty\plugins\com_github_mixelpixx_konnect\bin\konnect.exe` — identique
+  caractère pour caractère à ce que publient le README et les deux fichiers
+  `examples/`.
+- Connexion MCP prouvée par un handshake réel : `protocolVersion 2025-06-18`,
+  `serverInfo konnect 1.1.0`, **21 outils** au démarrage — le chiffre annoncé.
+- Première tâche sur un vrai projet créé par KiCad : `apply_template ldo_3v3`
+  via la gateway, **108 ms**, 5 symboles placés, schéma de 230 → 2 576 octets.
+- Verdict de KiCad obtenu **à la main** : `kicad-cli sch erc` → *0 violation*,
+  exit 0. Le serveur, lui, n'a pas pu le produire (voir R.7).
 
-Artefact sous test, téléchargé depuis la page de release et jamais rebâti :
-`konnect-pcm-v1.1.0-windows.zip`, **12 258 180 octets**, SHA-256
-`25fe29cac9b0f812dd337e5700e466db9dad769bdbbfa89c85b6e11d3d167dd0`, 8 entrées,
-`konnect.exe` de 24 848 384 octets.
+Huit frictions consignées et classées (INV-R3) : F-01 produit, F-02 doc,
+F-03 UX, F-04 packaging, F-05 doc, F-06 doc, F-07 produit, F-08 UX.
 
 ## Décisions actives
 
-- **D147** — le dépôt publie sept assets et **aucun fichier de sommes de
-  contrôle**. Un utilisateur ne peut pas vérifier ce qu'il a téléchargé sans
-  refaire le build. Classé *packaging*, à traiter en R.2 ou R.4 selon le coût ;
-  enregistré ici pour ne pas être redécouvert.
+- **D148** — R.1 a trouvé **un seul** défaut satisfaisant l'exception de la
+  phase : le serveur ne découvre pas `kicad-cli` sur une installation KiCad
+  Windows par défaut. `default_kicad_cli()` renvoie le nom nu `kicad-cli.exe`
+  résolu par `PATH`, et l'installateur KiCad ne met pas son `bin` sur `PATH` ;
+  `detect_kicad()` n'est jamais appelée par le serveur et rate de toute façon
+  `%LOCALAPPDATA%\Programs\KiCad` et la clé de registre par utilisateur.
+  Conséquence : ERC, DRC, tous les exports et `verify:"auto"` échouent à la
+  première utilisation. Classé **produit, bloquant** → lot **R.7**.
+
+- **D147** — la release publie sept assets et **aucun fichier de sommes de
+  contrôle** (F-04). Classé *packaging*.
 
 - **D146** — un chiffre public qu'une release ne remesure pas doit être remesuré
   **sur l'artefact publié**. L'unité du dépôt est le MiB, écrit « MB ».
@@ -61,45 +76,55 @@ Artefact sous test, téléchargé depuis la page de release et jamais rebâti :
 - Les décisions **D142 à D111** et les décisions V1 antérieures (INV6, D97…D101)
   restent actives, inchangées.
 
-- Invariants propres à R : **INV-R1** l'artefact testé est celui qui est publié,
-  jamais un build local ; **INV-R2** une case = une preuve ; **INV-R3** tout
-  problème est classé UX / packaging / documentation / configuration / produit
-  **avant** correction ; **INV-R4** le parcours est consigné tel qu'un inconnu le
-  vit, détours compris.
+- Invariants propres à R : **INV-R1** l'artefact testé est celui qui est publié ;
+  **INV-R2** une case = une preuve ; **INV-R3** tout problème est classé
+  UX / packaging / documentation / configuration / produit **avant** correction ;
+  **INV-R4** le parcours est consigné tel qu'un inconnu le vit, détours compris.
 
 ## Blocage actif
 
-Aucun.
+**R.1.4 uniquement, et il est environnemental.** Un dialogue UAC/secure desktop
+étranger à KiCad a interrompu deux fois l'accès à *Tools → External Plugins*.
+Faits déjà établis autrement : le plugin est bien déployé sur le disque, son
+`plugin.json` déclare l'action `start-server` avec `show-button: true` et le
+scope `pcb`. Prochaine tentative : rouvrir Pcbnew sur le projet
+`r1-walk-test` une fois le bureau libre. N'empêche aucun autre lot d'avancer.
 
 ## Fichiers / zones utiles
 
-- `plan.md` § *Phase R* (l. 5135) — tâches, dépendances, ordre d'exécution.
-- Artefact et travail de R.1 :
+- `plan.md` § *Phase R* (l. 5135) — R.1 à R.6, plus **R.7** ouvert par R.1.
+- `docs/launch/first-run-walk.md` — le parcours, les preuves, les huit frictions.
+- `crates/konnect/src/config.rs:75` `default_kicad_cli()` — le nom nu résolu par
+  `PATH`. Cœur de R.7.
+- `crates/konnect/src/install.rs:402` `detect_kicad()` — liste Windows sans
+  `%LOCALAPPDATA%\Programs\KiCad`, sonde registre en `HKLM` seul ; appelée
+  seulement par `run_install` et `print_status`, jamais par le serveur.
+- `plugin/settings_dialog.py::detect_kicad_cli` — même angle mort registre.
+- `packaging/metadata.json` — auteur `mixelpixx`, homepage
+  `github.com/mixelpixx/Konnect` : le Plugin Manager renvoie le premier
+  utilisateur vers le dépôt **amont** (F-03).
+- Ancre de correction mesurée sur cette machine :
+  `HKCU\…\Uninstall\KiCad 10.0` → `InstallLocation` =
+  `C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0`.
+- Travail de R.1 :
   `%LOCALAPPDATA%\Temp\claude\C--Users-FlowUP-kicad-agentic-mcp-konnect-agentic\ab608642-35fc-4d58-b755-c2e65a52c322\scratchpad\r1-walk\`
-- `packaging/metadata.json` — le paquet publié annonce `identifier`
-  `com.github.mixelpixx.konnect`, auteur `mixelpixx`, homepage
-  `github.com/mixelpixx/Konnect`. Le Plugin Manager de KiCad renverra donc le
-  premier utilisateur vers le dépôt **amont**, pas vers celui-ci : ce qui était
-  un non-bloquant en phase Q casse directement la boucle de retour de R.5.
-- `README.md` — l'installation y est décrite ; R.2 la réécrit à partir de ce que
-  R.1 aura réellement exécuté.
-- `examples/mcp.example.json`, `examples/claude_desktop_config.example.json` —
-  publient le chemin `…\3rdparty\plugins\com_github_mixelpixx_konnect\bin\konnect.exe`,
-  à confronter au chemin réel lu en R.1.3.
+  (`mcp.sh`, un client MCP minimal réutilisable).
+- Projet de test réel : `C:\Users\FlowUP\Documents\r1-walk-test\`.
 
 ## Non-bloquants enregistrés, non traités
 
-- macOS part **non signé et non notarisé** ; les notes donnent la commande
-  `xattr` exacte. Signer exige un compte Apple Developer.
-- Huit PR Dependabot ouvertes (#1, #2, #3, #5, #6, #7, #8, #9), dont plusieurs
-  rouges. Hors périmètre de R sauf blocage réel.
-- Le dépôt est public avec **0 étoile, 0 issue, aucun topic, aucune homepage,
-  Discussions désactivées**. C'est la ligne de base d'adoption que R.4 et R.5
-  déplacent, pas un blocage.
+- macOS non signé et non notarisé ; les notes donnent la commande `xattr`.
+- Huit PR Dependabot ouvertes (#1, #2, #3, #5, #6, #7, #8, #9). Hors périmètre.
+- Dépôt public à **0 étoile, 0 issue, aucun topic, aucune homepage, Discussions
+  désactivées** — ligne de base d'adoption que R.4 et R.5 déplacent.
+- F-07 : la description d'`apply_template` affirme câbler les composants ; elle
+  les place et rend la liste des connexions à faire. Classé **produit non
+  bloquant**, laissé tel quel par R.
 
 ## NEXT ACTION
 
-Exécuter **R.1.3** : installer `konnect-pcm-v1.1.0-windows.zip` par KiCad 10 →
-Plugin and Content Manager → *Install from File*, redémarrer KiCad, puis relever
-sur le disque le chemin réel du binaire installé et le comparer à celui que
-publient le README et les deux fichiers d'exemple.
+Ouvrir **R.7.1** : écrire d'abord le test qui échoue — `kicad_cli` non
+configuré, aucun `kicad-cli` sur `PATH`, une installation KiCad sous préfixe par
+utilisateur doit être trouvée — avant de toucher à la résolution dans
+`crates/konnect/src/config.rs`. R.1.4 se reprend dès que le bureau est libre et
+ne bloque rien.

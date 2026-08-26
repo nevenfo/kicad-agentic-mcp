@@ -5201,12 +5201,17 @@ decide the next technical phase on evidence rather than on preference.
 
 ```
 R.1  install walk from the published release      (no dependency — runs first)
+  ├── R.7  kicad-cli discovery                    (opened by R.1: blocks first use)
   ├── R.2  README / Quick Start                   (needs R.1's measured walk)
-  ├── R.3  canonical demo                         (needs R.1: a working install)
+  ├── R.3  canonical demo                         (needs R.1 and R.7)
   └── R.5  feedback loop                          (needs R.1's friction list)
         R.4  public launch kit                    (needs R.2 and R.3)
         R.6  decision gate                        (needs R.4 and R.5 + real feedback)
 ```
+
+R.7 did not exist when the phase opened. R.1 found it, classified it **product**,
+and it is the single item that satisfies this phase's exception for a defect
+blocking first use.
 
 R.2, R.3 and R.5 are independent of each other and may run in any order once
 R.1 is closed. R.4 publishes nothing without the user's explicit go — it
@@ -5224,33 +5229,33 @@ None. Runs first. Requires the empty-`3rdparty` initial condition recorded
 above, which is consumed by R.1.3.
 
 ### Tâches
-- [ ] R.1.1 The initial condition is recorded before anything is installed:
+- [x] R.1.1 The initial condition is recorded before anything is installed:
       `3rdparty/` contents, KiCad version from `kicad-cli version`, absence of a
       `konnect` entry in every MCP client config on this machine
-- [ ] R.1.2 `konnect-pcm-v1.1.0-windows.zip` is downloaded **from the release
+- [x] R.1.2 `konnect-pcm-v1.1.0-windows.zip` is downloaded **from the release
       page** (`gh release download`, or the browser URL a user would click), and
       its SHA-256 is recorded. No local build is used anywhere in R.1
-- [ ] R.1.3 The package is installed the documented way — KiCad 10 → Plugin and
+- [x] R.1.3 The package is installed the documented way — KiCad 10 → Plugin and
       Content Manager → *Install from File* → restart KiCad — and the
       installed-plugin path is read **from disk**, not assumed from the README
 - [ ] R.1.4 KiCad shows the plugin where the README says it will: PCB Editor →
       *Tools → External Plugins* → **Konnect**
-- [ ] R.1.5 An MCP client is pointed at the installed binary using only what the
+- [x] R.1.5 An MCP client is pointed at the installed binary using only what the
       README gives, and the connection is proved by a real handshake: the
       starter kit lists, and the tool count matches what the README claims
-- [ ] R.1.6 A **real KiCad project** is opened — a copy of a KiCad-shipped demo
+- [x] R.1.6 A **real KiCad project** is opened — a copy of a KiCad-shipped demo
       or a project created in KiCad, never a repository test fixture — and its
       pre-state is recorded
-- [ ] R.1.7 One first task is executed through MCP against that project, chosen
+- [x] R.1.7 One first task is executed through MCP against that project, chosen
       as the thing a new user would try first, and the elapsed time from
       *client connected* to *task returned* is measured
-- [ ] R.1.8 **KiCad delivers the verdict** (INV1): the project is re-opened or
+- [x] R.1.8 **KiCad delivers the verdict** (INV1): the project is re-opened or
       run through `kicad-cli` and the change is confirmed to exist and to be
       readable by KiCad's own tooling
-- [ ] R.1.9 The friction list is written, one line per problem, each classified
+- [x] R.1.9 The friction list is written, one line per problem, each classified
       UX / packaging / documentation / configuration / product, each naming the
       file or surface that must change and the R item that will change it
-- [ ] R.1.10 Anything classified **product** is triaged explicitly: does it block
+- [x] R.1.10 Anything classified **product** is triaged explicitly: does it block
       installation, first use or the demo? If not, it is recorded and left
       alone — R does not fix product defects it is not blocked by
 
@@ -5426,6 +5431,69 @@ none arrived, which is itself evidence.
 One page, one recommendation, every claim on it traceable to an R artefact. The
 next phase is opened by the user, in a separate decision, after R is closed.
 
+
+## R.7 — The one defect that blocks first use — OPENED BY R.1
+
+### Objectif
+R.1 found exactly one problem that satisfies this phase's narrow exception: it
+**directly blocks first use**, on a default Windows KiCad install, for every
+capability that depends on `kicad-cli`. Fix that one, and nothing else. The full
+diagnosis is `docs/launch/first-run-walk.md` § *F-01 in detail*.
+
+The defect: the server's `kicad_cli` default is the bare name `kicad-cli.exe`
+(`crates/konnect/src/config.rs:75`), resolved through `PATH`, and KiCad's Windows
+installer does not put its `bin` on `PATH`. `detect_kicad()`
+(`crates/konnect/src/install.rs:402`) is never called by the server, and would
+miss this machine anyway: its Windows path list has no
+`%LOCALAPPDATA%\Programs\KiCad` entry — while its macOS branch does handle the
+per-user case — and its registry probe reads `HKLM\SOFTWARE\KiCad\10.0`, a key
+that exists in neither hive here.
+
+Consequence: `verify:"auto"`, ERC, DRC and every export fail with
+`Failed to spawn kicad-cli: kicad-cli.exe`. INV1 says the verdict is KiCad's; on
+a stock install the server cannot obtain it.
+
+### Dépendances
+R.1's diagnosis, complete. Blocks **R.3** — a demo whose result is verified by
+KiCad cannot run while the verdict path is broken — and feeds **R.2** (F-02, the
+README claim that auto-detection happens).
+
+### Invariants
+- The fix is a **discovery path only**. No tool signature changes, no new tool,
+  no behaviour change when `kicad_cli` is already configured or already on
+  `PATH`.
+- A discovery that fails still fails loudly. The current error message is
+  correct and must survive: silently continuing without a validator is the
+  failure mode INV4 exists to prevent.
+
+### Tâches
+- [ ] R.7.1 A failing test first, on the observable: with `kicad_cli` unset and
+      nothing named `kicad-cli` on `PATH`, resolution finds a KiCad installed
+      under a per-user prefix
+- [ ] R.7.2 The server resolves `kicad_cli` at startup instead of trusting a
+      bare name: explicit config → `PATH` → known install prefixes → registry.
+      The first hit wins and is logged once, so a user can see which KiCad
+      answered
+- [ ] R.7.3 The Windows prefix list gains `%LOCALAPPDATA%\Programs\KiCad\<ver>`,
+      and the registry probe reads the uninstall key that a per-user install
+      actually writes — `HKCU\…\Uninstall\KiCad <ver>` → `InstallLocation` —
+      in addition to `HKLM`
+- [ ] R.7.4 `plugin/settings_dialog.py::detect_kicad_cli` learns the same two
+      locations, so the PCM settings dialog and the server agree
+- [ ] R.7.5 The gate is green on the changed tree: `fmt`, `clippy -D warnings`,
+      the full suite. A launch phase does not ship a red gate
+- [ ] R.7.6 The walk of R.1 step 8 is repeated on the fixed binary and
+      `verify:"auto"` returns KiCad's ERC counts instead of an `io` error
+- [ ] R.7.7 The release question is **put to the user, not decided here**: this
+      fix only reaches users through a new artefact, and F-03
+      (`packaging/metadata.json` pointing at the upstream repository) would ride
+      the same release. Whether v1.1.1 happens inside R is the user's call
+
+### Validation
+On this machine, with no `kicad_cli` in any config and no `kicad-cli` on `PATH`,
+a `kicad_invoke` with `verify:"auto"` returns an ERC verdict from KiCad. The
+gate is green. Nothing else in the tool surface moved — `v1.1.0..HEAD` registers
+no new tool and no changed signature.
 ## Critères de sortie de la phase R
 
 - [ ] A stranger's path from the release page to a KiCad-verified first task is
