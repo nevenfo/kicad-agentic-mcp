@@ -2,9 +2,9 @@
 
 ## Phase actuelle
 
-**P — Schematic round-trip fidelity.** P.6 : tout est clos sauf P.6.8, découpée
-en huit sous-items ordonnés par conséquence. **P.6.8.1, .2, .6 et .7 closes ;
-restent P.6.8.3, .4, .5 et .8.**
+**P — Schematic round-trip fidelity.** P.6 : tout est clos sauf P.6.8. Sept de
+ses huit sous-items sont clos (.1, .2, .3, .4, .5, .6, .7) ; **reste P.6.8.8**,
+plus **P.6.8.9**, ajouté par la mesure de P.6.8.5.
 Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -13,45 +13,31 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-Quatre items de P.6.8, un commit chacun (`9ff70e2`, `01fc0c5`, `dfe0d69`,
-`a0e9ee3`).
-
-**P.6.8.1 / P.6.8.2 (#179)** — un symbole multi-unités s'écrit en un bloc
-`(symbol …)` par unité sous la **même** `Reference`. Les pins se résolvent
-désormais par `extract_lib_pins_for_unit(sym, inst.unit)` aux quinze sites, et
-`batch_connect_to_net` retient l'instance dont l'unité déclare la pin. Côté
-édition, les quatre familles d'opérations ont chacune leur sémantique :
-propriétés et suppressions par référence portent sur **toutes** les unités ;
-la géométrie par référence est **refusée** sur un multi-unités (INV8, première
-clause : une entrée à deux sens reste refusée) en nommant les uuids ; les
-lectures disent quelle unité elles ont résolue.
-
-**P.6.8.6 (#138)** — séparateur final de `--output` inutile (mesuré, doc du
-fork correcte, aucun code changé) ; `separate_plated` passe à `true` via
-`cli::SEPARATE_PLATED_HOLES` / `cli::fab_drill_options()`, partagés par les
-trois chemins qui livrent un fabricant.
-
-**P.6.8.7 (#162)** — `IpcTrack` porte enfin `uuid: Option<String>`, décodé du
-`Track` que KiCAD envoyait depuis toujours ; `query_traces` le rend, donc
-`delete_trace`/`modify_trace` sont atteignables depuis une liste.
+**P.6.8.5 (#148)** — la direction du stub de `connect_to_net` se dérive de la
+pin elle-même (`pin_outward_at` : axe dominant de `pin - origine du placement`,
+donc sans comptabilité de rotation ni de miroir, les deux points étant déjà en
+espace feuille). Un `direction` explicite reste autoritaire ; un point sans pin
+garde `"right"`. La réponse porte `direction_source` (`requested` /
+`derived_from_pin` / `default_no_pin_here`) : un défaut silencieux et une
+direction dérivée ne doivent pas se lire pareil. Le lookup s'exécute **avant**
+`snap_reporting`, sinon il rate toute feuille non alignée sur la grille.
+`placed_pins` remonte de `sch_analysis` vers `tools/mod.rs` et devient le corps
+de `all_pin_endpoints`, qui en était la copie (D136) ; elle gagne
+`origin_x`/`origin_y`.
 
 Validation :
-- mesure qui a décidé la conception de P.6.8.2 : `Value` désynchronisée entre
-  unités → le netlist prend la valeur du **premier** bloc. Éditer le premier
-  seul donnait donc un netlist correct **par accident**, sur un fichier qui se
-  contredit
-- rouges d'abord : écriture multi-blocs tronquée à un bloc →
-  `editing_value_by_reference_updates_every_unit` tombe ; lookup neutralisé →
-  étiquette à x=92.38 au lieu de x=152.38 ; `IpcTrack.uuid` forcé à `None` →
-  la sonde mock tombe
+- fixture construite pour ça, `conn_double_row.kicad_sch`
+  (`Conn_02x05_Odd_Even` en `J1`) : positions mesurées par `kicad-cli sch erc`,
+  pins impaires à x = 96.52, paires à x = 109.22, pin 9 et pin 10 partageant
+  y = 101.6 ; la feuille charge proprement, 10 `pin_not_connected` et rien
+  d'autre
+- rouge d'abord, dérivation neutralisée : les trois tests de défaut dérivé
+  tombent, et sur la feuille double rangée le stub traverse le corps jusqu'à
+  x = 111.52 et une jonction s'écrit à `(109.22 101.6)`, sur la pin 10
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **57 suites, 1368 tests, 0 échec**
+  **57 suites, 1377 tests, 0 échec**
 - `cargo fmt --all -- --check` / `cargo clippy --workspace --locked
   --all-targets -- -D warnings` : PASS, 0
-- sondes `#[ignore]` `drill_export_live` : PASS, 5/5 ; `kicad-cli sch erc` sur
-  la fixture multi-unités éditée par le tool : 12 violations, comme avant
-  édition
-- `docs/capability-matrix.md` régénérée une fois (cas D128, statut inchangé)
 
 ## Décisions actives
 
@@ -75,7 +61,9 @@ Validation :
   règle : une garde de sécurité a **une** définition, et un test lexical
   interdit le chemin qui la contourne (`no_ipc_call_bypasses_the_guarded_macro`).
   Le doc de `ipc_boundary.rs` énonçait déjà ce principe pour `with_ipc` — la
-  garde de board avait simplement été écrite ailleurs.
+  garde de board avait simplement été écrite ailleurs. Étendu par P.6.8.5 au-delà
+  des gardes : `placed_pins` et `all_pin_endpoints` étaient la même boucle dans
+  deux fichiers, et une seule des deux savait ce que l'autre avait appris.
 
 - **D135** — un scan statique prouve qu'une clé est **lue**, jamais qu'elle est
   **honorée**. `route_pad_to_pad` lit `board` par `get_path` pour trouver ses
@@ -181,7 +169,9 @@ Validation :
   code qui calcule une coordonnée par addition — et non par `snap_point`, qui
   arrondit — doit arrondir à **6 décimales** : cela sépare les deux avec de
   la marge des deux côtés et déplace au pire de 0,4 nm, sous la résolution
-  interne de 1 nm de KiCAD.
+  interne de 1 nm de KiCAD. Corollaire pour les tests : une attente calculée
+  par le test lui-même se compare à 0,01 près, jamais par `==`, sinon on
+  compare deux arrondis du même point.
 - **D123** — les feuilles de démo KiCad 10 livrées par l'installeur Windows
   sont toutes en **CRLF**. Un writer qui émet du LF y reproduit exactement le
   symptôme que P.6.9.4 corrige — tout le document dans le diff — par un autre
@@ -304,11 +294,21 @@ Aucun.
 
 - `docs/upstream-audit.md` — annexe A : le triage P.6.9, avec pour chaque item
   mécanisme amont, état dans ce fork (`file:line`), impact et coût.
+- `crates/konnect-core/src/tools/mod.rs` — `placed_pins`/`PlacedPin`,
+  `all_pin_endpoints` et `pin_outward_at` (P.6.8.5) ; `sheet_instance_context`
+  et `instance_targets` (P.6.9.3), `zone_net_ref` (P.6.9.2),
+  `require_str`/`require_f64`/`get_path` (cibles de P.6.9.7) ;
+  `first_missing_required`, qui n'applique **pas** `anyOf` (D134).
+- `crates/konnect-core/src/tools/sch_wiring.rs` — `handle_connect_to_net`, le
+  seul appelant de `pin_outward_at` ; `snap_reporting` juste après, cible de
+  P.6.8.9.
+- `crates/konnect-core/tests/nets_and_wires.rs` — les cinq tests de direction
+  de stub ; `tests/fixtures/conn_double_row.kicad_sch` et
+  `harness::CONN_DOUBLE_ROW`, qui portent les positions mesurées des pins.
 - `crates/konnect-core/tests/required_schema_honesty.rs` — la passe P.6.9.16 ;
   ses doc-comments portent ce que la forme ne couvre pas, y compris P.6.9.21.
 - `crates/konnect-core/src/mcp/handler.rs:344` — `missing_required_refusal`, le
-  gate que la passe contourne ; `tools/mod.rs:425` — `first_missing_required`,
-  qui n'applique **pas** `anyOf` (D134).
+  gate que la passe contourne.
 - `crates/konnect-schematic-editor/src/sexp/writer.rs` — `WriteStyle`,
   `IndentStyle`, `write` (fragment, défaut) et `write_styled` (document) ;
   `schematic/mod.rs::sniff_write_style` est le seul point de reniflage.
@@ -318,27 +318,21 @@ Aucun.
   les quatre tests de format en fin de
   `crates/konnect-schematic-editor/tests/integration.rs`.
 - `crates/konnect-sexp/src/net.rs` — lecture **et** écriture des nets par forme
-  (`NetRef`, `net_ref_for_write`, `zone_tokens`) ; `tools/mod.rs::zone_net_ref`
-  est le point d'entrée des deux handlers de zone.
+  (`NetRef`, `net_ref_for_write`, `zone_tokens`).
 - `crates/konnect-ipc/src/builders.rs` — `try_layer_from_name` / `layer_from_name` ;
   `crates/konnect-ipc/src/client.rs` — `check_layer`, `build_footprint_item`,
   `build_graphic_child`.
-- `crates/konnect-core/src/tools/mod.rs` — `sheet_instance_context` et
-  `instance_targets` (P.6.9.3), `zone_net_ref` (P.6.9.2),
-  `require_str`/`require_f64`/`get_path` l.414-447 (cibles de P.6.9.7).
-- `crates/konnect-core/src/tools/cli.rs` — `DrcReport`, base de P.6.9.8.
-- `crates/konnect-core/tests/cli_tools.rs` — `copied_complex_hierarchy`, la
-  copie de démo partagée par les deux sondes de hiérarchie (P.6.9.3, P.6.7.11).
+- `crates/konnect-core/src/tools/cli.rs` — `DrcReport`, `SEPARATE_PLATED_HOLES`,
+  `fab_drill_options`.
 - `.github/workflows/e2e-kicad.yml` — job gatant, un step par sonde.
 
 ## NEXT ACTION
 
-Implémenter P.6.8.3 (#271) — `find_orphan_items`
-(`crates/konnect-core/src/tools/sch_analysis.rs:596-624`) ne compte que des
-extrémités de fil et des positions d'étiquette : un fil qui aboutit sur une pin
-est rapporté pendant, et une pin non connectée n'est **jamais** rapportée,
-alors que la description du tool la promet. Faux positifs **et** faux négatifs
-sur toute feuille avec des composants. Dépendait de `LibPin::electrical_type`,
-que P.6.3 a livrée. Relire la section (`rg -n "P.6.8.3" plan.md`) et la fiche
-#271 de `docs/upstream-audit.md` avant de choisir entre porter les index
-amont et écrire l'équivalent ici.
+Implémenter P.6.8.8 (#186) — `Reference` et `Value` sont posées à ±3,81 mm
+codés en dur, à rotation 0, quels que soient le symbole et la rotation du
+placement. Purement visuel, sans effet électrique ni perte de données : c'est
+le dernier item de P.6.8. Relire la section (`rg -n "P.6.8.8" plan.md`) et la
+fiche #186 de `docs/upstream-audit.md`, puis décider si la position se dérive
+de la bounding box du symbole de librairie ou seulement de la rotation de
+l'instance. P.6.8.9 reste ouverte ensuite et demande une décision de forme
+avant implémentation.

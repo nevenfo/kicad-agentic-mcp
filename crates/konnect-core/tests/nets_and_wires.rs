@@ -16,7 +16,7 @@
 
 mod harness;
 
-use harness::{pins, Harness, TWO_RESISTORS};
+use harness::{pins, Harness, CONN_DOUBLE_ROW, MULTIUNIT_LM2904, TWO_RESISTORS};
 use serde_json::json;
 
 /// Wire R1 pin 1 to R2 pin 1 and name the net, the way a caller would.
@@ -175,6 +175,174 @@ async fn connect_to_net_stubs_a_labelled_wire_off_a_pin() {
     let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
     assert!(text.contains("(wire"), "no stub wire was drawn");
     assert!(text.contains("\"GND\""), "the stub was not labelled GND");
+}
+
+/// Without an explicit `direction`, a left-edge pin gets a stub that leaves
+/// the symbol body instead of running through it (P.6.8.5): `U1` unit 1's pin
+/// 2 sits at x = 92.38, left of the symbol's own placement at x = 100, so the
+/// default direction must be "left" and the label must land further left
+/// still, not back into the body.
+#[tokio::test]
+async fn connect_to_net_defaults_a_left_edge_pin_to_a_leftward_stub() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(MULTIUNIT_LM2904)).to_string();
+    let left_pin = (92.38, 52.54);
+
+    let r = h
+        .json(
+            "connect_to_net",
+            json!({
+                "schematic": sch,
+                "pin_x": left_pin.0, "pin_y": left_pin.1,
+                "net": "SIG"
+            }),
+        )
+        .await;
+
+    assert_eq!(r["direction"], "left", "response: {r}");
+    assert_eq!(r["direction_source"], "derived_from_pin", "response: {r}");
+    // Measured against the wire's own start, not against `left_pin`: this
+    // fixture places `U1` at x = 100, which is off the 1.27 grid, so the pin
+    // it carries is off-grid too and the tool snaps the requested point before
+    // drawing (92.38 → 92.71). The direction lookup happens before that snap —
+    // that is why it still finds the pin — but the stub is drawn from the
+    // snapped point, and the invariant that matters is the label sitting one
+    // stub length to the *left* of wherever the wire starts.
+    let stub_length = 2.54; // the tool's own default
+    let (x1, y1) = (
+        r["wire"]["x1"]
+            .as_f64()
+            .expect("the wire reports its start"),
+        r["wire"]["y1"]
+            .as_f64()
+            .expect("the wire reports its start"),
+    );
+    let (label_x, label_y) = (
+        r["label"]["x"]
+            .as_f64()
+            .expect("the label reports its point"),
+        r["label"]["y"]
+            .as_f64()
+            .expect("the label reports its point"),
+    );
+    // 0.01 as everywhere else in these tests: the server rounds a computed
+    // coordinate to 6 decimals (D125), so an exact `==` against the test's own
+    // subtraction compares two different roundings of the same point.
+    assert!(
+        (label_x - (x1 - stub_length)).abs() < 0.01 && (label_y - y1).abs() < 0.01,
+        "the label sits one stub length left of the wire start: {r}"
+    );
+    assert!(
+        x1 < 100.0,
+        "the pin is on the left edge of a symbol placed at x = 100: {r}"
+    );
+}
+
+/// An explicit `direction` on the very same pin stays authoritative — the
+/// derived default must not override a caller who asked for something else.
+#[tokio::test]
+async fn connect_to_net_explicit_direction_overrides_the_derived_one() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(MULTIUNIT_LM2904)).to_string();
+    let left_pin = (92.38, 52.54);
+
+    let r = h
+        .json(
+            "connect_to_net",
+            json!({
+                "schematic": sch,
+                "pin_x": left_pin.0, "pin_y": left_pin.1,
+                "net": "SIG",
+                "direction": "right"
+            }),
+        )
+        .await;
+
+    assert_eq!(r["direction"], "right", "response: {r}");
+    assert_eq!(r["direction_source"], "requested", "response: {r}");
+}
+
+/// A coordinate with no placed pin under it keeps the historical "right"
+/// default — and says so, so a caller can tell the server did not find a pin
+/// to derive a direction from.
+#[tokio::test]
+async fn connect_to_net_defaults_to_right_off_pin() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(TWO_RESISTORS)).to_string();
+
+    let r = h
+        .json(
+            "connect_to_net",
+            json!({
+                "schematic": sch,
+                "pin_x": 130.0, "pin_y": 60.0,
+                "net": "SIG"
+            }),
+        )
+        .await;
+
+    assert_eq!(r["direction"], "right", "response: {r}");
+    assert_eq!(
+        r["direction_source"], "default_no_pin_here",
+        "response: {r}"
+    );
+}
+
+/// The mirror of the left-edge case: `U1` unit 1's pin 1 (the output) sits at
+/// x = 107.62, right of the symbol's placement at x = 100, so this must not
+/// pass only because every pin happens to default left.
+#[tokio::test]
+async fn connect_to_net_defaults_a_right_edge_pin_to_a_rightward_stub() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(MULTIUNIT_LM2904)).to_string();
+    let right_pin = (107.62, 50.0);
+
+    let r = h
+        .json(
+            "connect_to_net",
+            json!({
+                "schematic": sch,
+                "pin_x": right_pin.0, "pin_y": right_pin.1,
+                "net": "SIG"
+            }),
+        )
+        .await;
+
+    assert_eq!(r["direction"], "right", "response: {r}");
+    assert_eq!(r["direction_source"], "derived_from_pin", "response: {r}");
+}
+
+/// Measured on `Connector_Generic:Conn_02x05_Odd_Even`: with the old
+/// unconditional "right" default, a stub off the left row's pin 9 ran through
+/// the symbol body and the mid-segment junction pass dropped a junction dot
+/// exactly on pin 10, directly across at the same y. Deriving the direction
+/// from the pin keeps the stub off the body, so nothing crosses the other row
+/// and no junction lands on it.
+#[tokio::test]
+async fn connect_to_net_does_not_cross_the_opposite_row_of_a_double_row_connector() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(CONN_DOUBLE_ROW)).to_string();
+    let left_row_pin9 = (96.52, 101.6);
+    let right_row_pin10 = (109.22, 101.6);
+
+    let r = h
+        .json(
+            "connect_to_net",
+            json!({
+                "schematic": sch,
+                "pin_x": left_row_pin9.0, "pin_y": left_row_pin9.1,
+                "net": "SIG",
+                "stub_length": 15.0
+            }),
+        )
+        .await;
+
+    assert_eq!(r["direction"], "left", "response: {r}");
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        !text.contains(&format!("(at {} {})", right_row_pin10.0, right_row_pin10.1)),
+        "a junction landed on pin 10, which the stub should never reach:\n{text}"
+    );
 }
 
 /// `connect_passthrough` is the same idea from `sch_batch`, and it must not

@@ -227,6 +227,18 @@ pub const TWO_RESISTORS_ONE_DNP: &str = "bus_two_resistors_dnp.kicad_sch";
 /// property (P.6.8.1). Loads clean in KiCad 10; edited only through copies.
 pub const MULTIUNIT_LM2904: &str = "multiunit_lm2904.kicad_sch";
 
+/// A real `Connector_Generic:Conn_02x05_Odd_Even` placed as `J1` at
+/// (101.6, 96.52) — a double-row connector whose two rows face opposite ways
+/// and share y coordinates, so a wire stub drawn the wrong way genuinely
+/// crosses another pin instead of only looking like it might (P.6.8.5).
+/// Pin positions as `kicad-cli sch erc` reports them: odd pins 1..9 on the
+/// left at x = 96.52, even pins 2..10 on the right at x = 109.22, both rows
+/// stepping 2.54 from y = 91.44 down to y = 101.6 — so pin 9 at
+/// `(96.52, 101.6)` sits directly across from pin 10 at `(109.22, 101.6)`.
+/// Loads clean in KiCad 10 (10 `pin_not_connected` errors and nothing else,
+/// as an unwired connector should); edited only through copies.
+pub const CONN_DOUBLE_ROW: &str = "conn_double_row.kicad_sch";
+
 /// A board with layers and nothing on them — the same skeleton
 /// `create_project` writes. Use it when the fixture's own `Edge.Cuts` outline
 /// would be measured together with whatever the test draws.

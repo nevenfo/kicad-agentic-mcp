@@ -11,9 +11,8 @@ use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident},
     schematic::{
-        extract_all_net_labels, extract_junction_points, extract_lib_pins_for_unit,
-        extract_power_symbol_labels, extract_symbol_instances, extract_wires, find_lib_symbol,
-        parse_at, pin_endpoint, read_schematic, Wire,
+        extract_all_net_labels, extract_junction_points, extract_power_symbol_labels,
+        extract_symbol_instances, extract_wires, find_lib_symbol, parse_at, read_schematic, Wire,
     },
 };
 use serde_json::json;
@@ -724,43 +723,11 @@ async fn handle_find_single_pin_nets(
     ))
 }
 
-/// One placed pin: the instance it belongs to and where its connection point
-/// actually lands on the sheet.
-///
-/// The single definition of "the pins this schematic really has": unit-aware
-/// (a multi-unit symbol declares different pins per unit, P.6.8.1) and
-/// transformed by the placement, so nothing downstream re-derives either.
-pub(crate) struct PlacedPin {
-    pub reference: String,
-    pub number: String,
-    pub name: String,
-    pub x: f64,
-    pub y: f64,
-}
-
-pub(crate) fn placed_pins(tree: &konnect_sexp::parser::SexpNode) -> Vec<PlacedPin> {
-    let lib_syms = tree
-        .find("lib_symbols")
-        .map(|node| node.find_all("symbol"))
-        .unwrap_or_default();
-    let mut out = Vec::new();
-    for instance in extract_symbol_instances(tree) {
-        let Some(lib_sym) = find_lib_symbol(&lib_syms, &instance) else {
-            continue;
-        };
-        for pin in extract_lib_pins_for_unit(lib_sym, instance.unit) {
-            let (x, y) = pin_endpoint(&pin, instance.pin_transform());
-            out.push(PlacedPin {
-                reference: instance.reference.clone(),
-                number: pin.number.clone(),
-                name: pin.name.clone(),
-                x,
-                y,
-            });
-        }
-    }
-    out
-}
+// `PlacedPin` and `placed_pins` live in `crate::tools` (D136): this was the
+// second copy of "for each instance, for each pin of its unit, compute the
+// point", next to `all_pin_endpoints` in `tools/mod.rs`. Re-exported here so
+// call sites in this file did not have to change.
+pub(crate) use crate::tools::placed_pins;
 
 /// Whether anything electrical meets `(x, y)`.
 ///

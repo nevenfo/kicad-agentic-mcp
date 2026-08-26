@@ -3553,12 +3553,42 @@ None. Each item below is independent of the others except where stated.
         goes back to `LOOKS GOOD` with an empty finding list, and the missing
         sub-sheet stops being reported. Single-sheet reviews are unchanged —
         the nine existing tests never moved.
-  - [ ] P.6.8.5 #148 — the net-label stub direction defaults to `"right"`
+  - [x] P.6.8.5 #148 — the net-label stub direction defaults to `"right"`
         (`sch_wiring.rs:1975`), so connecting a left-edge pin drives the stub
         across the symbol body, over other pins, and the mid-segment-pin loop
         then plants junction dots on them. The `justify` half is already done
         here. Port `pin_outward_at`/`stub_direction` as the default, leaving an
         explicit `direction` authoritative.
+        Done. `pin_outward_at` derives the direction from the pin itself — the
+        dominant axis of `pin - instance_origin` — and needs no rotation or
+        mirror bookkeeping of its own, because both points are already in sheet
+        space: the vector between them points outward in whatever orientation
+        the symbol was placed in. A caller's explicit `direction` stays
+        authoritative, and a coordinate with no placed pin under it keeps the
+        historical `"right"`. The response says which of the three happened
+        (`direction_source`: `requested` / `derived_from_pin` /
+        `default_no_pin_here`) — a silent default and a derived direction must
+        not read alike to a caller.
+        The lookup runs against the caller's own `(pin_x, pin_y)` **before**
+        `snap_reporting`: real pin positions are what `placed_pins` holds, so
+        looking up the snapped point missed every pin whose sheet was not
+        grid-exact.
+        No fourth walker (D136): `placed_pins` moves from `sch_analysis` to
+        `tools/mod.rs`, where `all_pin_endpoints` was the same "for each
+        instance, for each pin of its unit" loop, and becomes that function's
+        body. It gains `origin_x`/`origin_y`, which is what the direction is
+        measured against.
+        Fixture built for it, because none here had two rows facing opposite
+        ways: `conn_double_row.kicad_sch`, a real
+        `Connector_Generic:Conn_02x05_Odd_Even` as `J1`. Positions are
+        `kicad-cli sch erc`'s, not assumed — odd pins at x = 96.52, even pins
+        at x = 109.22, so pin 9 and pin 10 share y = 101.6; the sheet loads
+        clean, with 10 `pin_not_connected` errors and nothing else.
+        Red before, with the derivation neutralised: the three derived-default
+        tests fail, and on the double-row sheet the stub off pin 9 runs through
+        the body to x = 111.52 and the mid-segment pass writes a junction at
+        `(109.22 101.6)` — exactly on pin 10. That is the defect, observed in
+        the file rather than argued from the code.
   - [x] P.6.8.6 #138 residual — the doc comment above `export_drill` claims the
         directory form of `--output` was verified against KiCAD 10, while
         upstream appends a trailing separator because kicad-cli otherwise reads
@@ -3619,6 +3649,22 @@ None. Each item below is independent of the others except where stated.
         ±3.81 mm at rotation 0, whatever the symbol and whatever the placement
         rotation. Visual only, no electrical effect and no data loss: last on
         purpose.
+  - [ ] P.6.8.9 — found while measuring P.6.8.5, and not part of it: when a
+        pin does not sit on the 1.27 grid, `connect_to_net` snaps the caller's
+        `(pin_x, pin_y)` and then draws the stub from the **snapped** point, so
+        the wire starts beside the pin instead of on it and the tool answers
+        success for a connection the file does not carry. Measured on
+        `multiunit_lm2904.kicad_sch`, whose `U1` is placed at x = 100: the pin
+        `placed_pins` reports at x = 92.38 gets a wire starting at x = 92.71,
+        0.33 mm away. Not reachable through this server's own placement path,
+        which snaps (that is what `sch_wiring.rs`'s comment above
+        `snap_reporting` assumes), so it needs a sheet written elsewhere;
+        KiCad itself allows a finer placement grid. The shape of the fix is a
+        decision, not a port: either the snap yields to a pin actually found at
+        the requested point — the same lookup P.6.8.5 already performs there —
+        or the response says the wire did not start where the caller asked.
+        `add_wire` and the other endpoint-taking writers must be checked for
+        the same pattern before choosing.
 - [x] P.6.9 The 16 direct-to-`main` upstream fixes of Appendix A are triaged,
       by P.4's method and against this fork's own code: **8 BACKPORT NOW, 4
       LATER, 4 NOT APPLICABLE**, each verdict carrying a `file:line` citation

@@ -778,6 +778,58 @@ pub fn ensure_root_uuid(sch: &mut konnect_schematic_editor::Schematic) -> String
     }
 }
 
+/// One placed pin: the instance it belongs to, where its connection point
+/// actually lands on the sheet, and the placement origin (the instance's own
+/// `(at …)`) that connection point was transformed from.
+///
+/// The single definition of "the pins this schematic really has": unit-aware
+/// (a multi-unit symbol declares different pins per unit, P.6.8.1) and
+/// transformed by the placement, so nothing downstream re-derives either.
+/// Moved here from `sch_analysis` (D136, P.6.8.5): `all_pin_endpoints` below
+/// was the same "for each instance, for each pin of its unit" loop as
+/// `placed_pins`, kept as a second copy only because they started in
+/// different files.
+pub(crate) struct PlacedPin {
+    pub reference: String,
+    pub number: String,
+    pub name: String,
+    pub x: f64,
+    pub y: f64,
+    /// The instance's own placement point — not the pin's — which is what
+    /// [`pin_outward_at`] measures the pin's direction against.
+    pub origin_x: f64,
+    pub origin_y: f64,
+}
+
+pub(crate) fn placed_pins(tree: &konnect_sexp::SexpNode) -> Vec<PlacedPin> {
+    use konnect_sexp::schematic::{
+        extract_lib_pins_for_unit, extract_symbol_instances, find_lib_symbol, pin_endpoint,
+    };
+    let lib_syms = tree
+        .find("lib_symbols")
+        .map(|node| node.find_all("symbol"))
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for instance in extract_symbol_instances(tree) {
+        let Some(lib_sym) = find_lib_symbol(&lib_syms, &instance) else {
+            continue;
+        };
+        for pin in extract_lib_pins_for_unit(lib_sym, instance.unit) {
+            let (x, y) = pin_endpoint(&pin, instance.pin_transform());
+            out.push(PlacedPin {
+                reference: instance.reference.clone(),
+                number: pin.number.clone(),
+                name: pin.name.clone(),
+                x,
+                y,
+                origin_x: instance.x,
+                origin_y: instance.y,
+            });
+        }
+    }
+    out
+}
+
 /// All symbol pin connection points in a parsed schematic tree.
 ///
 /// Unit-aware: a multi-unit library symbol superimposes every unit's pins on
@@ -785,23 +837,46 @@ pub fn ensure_root_uuid(sch: &mut konnect_schematic_editor::Schematic) -> String
 /// These coordinates drive junction insertion, and a dot dropped on a phantom
 /// pin where two wires cross would short them.
 pub(crate) fn all_pin_endpoints(tree: &konnect_sexp::SexpNode) -> Vec<(f64, f64)> {
-    use konnect_sexp::schematic::{
-        extract_lib_pins_for_unit, extract_symbol_instances, find_lib_symbol, pin_endpoint,
-    };
-    let lib_syms = tree
-        .find("lib_symbols")
-        .map(|n| n.find_all("symbol"))
-        .unwrap_or_default();
-    let mut pts = Vec::new();
-    for inst in extract_symbol_instances(tree) {
-        if let Some(sym) = find_lib_symbol(&lib_syms, &inst) {
-            let t = inst.pin_transform();
-            for pin in extract_lib_pins_for_unit(sym, inst.unit) {
-                pts.push(pin_endpoint(&pin, t));
-            }
+    placed_pins(tree).into_iter().map(|p| (p.x, p.y)).collect()
+}
+
+/// The direction that leads a stub off the pin placed at `(x, y)` without
+/// crossing its symbol's body: the dominant axis away from the instance's
+/// own placement origin (`dx = pin.x - origin.x`, `dy = pin.y - origin.y`;
+/// `|dx| >= |dy|` picks `"left"`/`"right"` by the sign of `dx`, otherwise
+/// `"up"`/`"down"` by the sign of `dy`).
+///
+/// This needs no rotation/mirror bookkeeping of its own: `placed_pins`
+/// already transformed both the pin and the origin into sheet space, so the
+/// vector between them already points outward in whatever orientation the
+/// instance was placed in. `None` when no placed pin sits at `(x, y)` — the
+/// caller falls back to its own default rather than guessing (P.6.8.5).
+///
+/// Tolerance matches [`add_pin_midwire_junctions`]'s `0.01`, the value
+/// already used to compare points in this module.
+pub(crate) fn pin_outward_at(
+    tree: &konnect_sexp::SexpNode,
+    x: f64,
+    y: f64,
+) -> Option<&'static str> {
+    use konnect_sexp::geometry::points_coincident;
+    let tol = 0.01;
+    let pin = placed_pins(tree)
+        .into_iter()
+        .find(|p| points_coincident(p.x, p.y, x, y, tol))?;
+    let dx = pin.x - pin.origin_x;
+    let dy = pin.y - pin.origin_y;
+    Some(if dx.abs() >= dy.abs() {
+        if dx < 0.0 {
+            "left"
+        } else {
+            "right"
         }
-    }
-    pts
+    } else if dy < 0.0 {
+        "up"
+    } else {
+        "down"
+    })
 }
 
 /// Add junction dots for pins of `reference` that land mid-segment on a wire.

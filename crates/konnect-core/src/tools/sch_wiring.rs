@@ -2089,9 +2089,35 @@ async fn handle_connect_to_net(
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
     };
-    let direction = opt_str(args, "direction").unwrap_or("right");
     let stub_length = opt_f64(args, "stub_length").unwrap_or(2.54);
     let label_type = opt_str(args, "label_type").unwrap_or("net_label");
+
+    // A caller's explicit `direction` is always authoritative. Otherwise, a
+    // stub defaulting to "right" runs through the symbol body whenever the
+    // targeted pin faces some other way (P.6.8.5) — measured on
+    // `Conn_02x05_Odd_Even`: an unqualified "right" default drew the stub
+    // straight through the body onto the opposite row's pin, and the
+    // mid-segment junction pass then dropped a junction dot on that crossed
+    // pin. Deriving the direction from the pin itself (`pin_outward_at`)
+    // avoids the crossing at its source; a coordinate with no placed pin
+    // keeps the historical "right" default, unchanged.
+    //
+    // Looked up against the caller's own (pin_x, pin_y), before snapping:
+    // real pin positions already sit on-grid, so this is what actually
+    // matches `placed_pins`. Looking it up after snapping moved a genuine
+    // pin coordinate off itself whenever the request wasn't already
+    // grid-exact, and the lookup missed every time.
+    let (direction, direction_source): (&str, &str) = match opt_str(args, "direction") {
+        Some(d) => (d, "requested"),
+        None => match read_schematic(&sch_path)
+            .ok()
+            .and_then(|(_, tree)| crate::tools::pin_outward_at(&tree, pin_x, pin_y))
+        {
+            Some(d) => (d, "derived_from_pin"),
+            None => ("right", "default_no_pin_here"),
+        },
+    };
+
     // pin_x/pin_y should already be on-grid (real pin positions come from
     // snapped component placements), but don't trust callers blindly — same
     // defect class as E6 if a caller derives this coordinate itself.
@@ -2152,6 +2178,7 @@ async fn handle_connect_to_net(
     let mut result = json!({
         "connected": net,
         "direction": direction,
+        "direction_source": direction_source,
         "wire": { "x1": pin_x, "y1": pin_y, "x2": label_x, "y2": label_y },
         "label": { "x": label_x, "y": label_y, "rotation": label_rot }
     });
