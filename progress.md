@@ -12,8 +12,8 @@ Branche de travail `ai/Q-release-1.1.0`, PR **#11** ouverte contre
 
 ## Tâche actuelle
 
-**Q.4 — tag et publication.** Q.3 et Q.6 sont closes ; les gates sont verts sur
-`18ffa13`, le commit que le tag portera.
+**Q.4 — tag et publication.** Q.3 et Q.6 sont closes ; la CI est verte sur
+`123e228`, le commit que le tag portera, et l'E2E gatante y est rejouée.
 
 ## Dernière tâche validée
 
@@ -55,30 +55,40 @@ Validation :
   outre `Live IPC against a running pcbnew`, que le mode gatant écarte, et il
   est vert aussi
 
-**Q.6 — un test mesurait l'horloge du runner, pas l'index.** Trouvé par cette
-phase : la CI a rougi sur `c377a41`, un commit qui ne touche que `plan.md` et
-`progress.md`. `a_symbol_added_inside_an_existing_library_makes_the_index_stale`
-écrit le cache d'index puis crée un fichier dans `Device.kicad_symdir` ;
-`fingerprint_children` hache le mtime de chaque entrée en **millisecondes
-entières**, donc un fichier créé dans la milliseconde déjà estampillée ne change
-rien. Que le scan, l'écriture et la relecture tiennent dans une milliseconde est
-un fait de **machine** : ici le test est vert **30 fois sur 30**, ces I/O coûtant
-plus d'une milliseconde sous Windows ; sur un runner Linux elles tiennent. Classe
-de D140, un cran plus bas. Les deux autres rouges sont **un seul** défaut
-d'amplification : le panic empoisonnait `ENV_LOCK` et tout test suivant mourait
-en `PoisonError` au lieu de rendre son verdict — `env_lock()` récupère
-désormais le garde (P.7.6 au niveau du mutex).
+**Q.6 — un test mesurait le système de fichiers du runner, pas l'index.**
+Trouvé par cette phase : la CI a rougi sur `c377a41`, un commit qui ne touche
+que `plan.md` et `progress.md`.
+`a_symbol_added_inside_an_existing_library_makes_the_index_stale` écrit le cache
+d'index, puis crée un symbole dans `Device.kicad_symdir` et exige que le cache
+devienne périmé. `fingerprint_children` hache le mtime de chaque entrée, donc
+l'assertion ne tient que si le système de fichiers **réestampille** ce
+répertoire. Qu'il le fasse est un fait de **machine** : NTFS horodate en unités
+de 100 ns et le test est vert **30 fois sur 30** ici, tandis qu'un volume ext4 à
+inodes de 128 octets n'a **aucun** champ sous-seconde — là-bas le symbole tombe
+dans le tic déjà enregistré. Classe de D140, un cran plus bas.
+
+La **première correction était fausse et la CI l'a dit** : attendre une
+milliseconde présuppose une granularité plus fine que la milliseconde, ce qui
+est précisément la question posée. Un horodatage déjà écrit ne bouge pas tout
+seul ; ce qu'il faut attendre est la **valeur observable**. Le test recrée
+désormais le symbole jusqu'à ce que le mtime du répertoire diffère de celui que
+le cache a enregistré, borné à ~2 s, et son message d'échec imprime les deux
+horodatages.
+
+Les deux autres rouges du premier run sont **un seul** défaut d'amplification :
+le panic empoisonnait `ENV_LOCK` et tout test suivant mourait en `PoisonError`
+au lieu de rendre son verdict — `env_lock()` récupère le garde avec
+`into_inner()` (P.7.6 au niveau du mutex).
 
 Validation :
-- cause **mesurée** : créer un fichier dans un répertoire laisse le mtime de ce
-  répertoire inchangé **227 fois sur 300** sur cette machine, et 2 000 lectures
-  d'horloge consécutives tombent dans **une** milliseconde
-- gate local rejoué sur `18ffa13` : fmt PASS, clippy `-D warnings` PASS,
-  **1385 tests, 0 échec**
-- CI run `32945471161` sur `18ffa13` : **7 jobs verts**, ubuntu compris — la
-  machine qui rougissait
-- aucun code de production touché : les deux corrections sont dans
-  `mod suggestion_tests`
+- CI run `32946678707` sur `123e228` : **7 jobs verts**, dont
+  `Check & Test (ubuntu-latest)`, seule machine où ce test ait jamais rougi.
+  C'est le seul oracle qui compte ici
+- le run rouge `32945946481` a **prouvé** la correction du mutex : le même
+  défaut s'y rapporte « 34 passed; 1 failed » au lieu de trois échecs
+- gate local sur `123e228` : fmt PASS, clippy `-D warnings` PASS, **1385 tests,
+  0 échec**, plus 30 exécutions consécutives du test réparé, toutes vertes
+- aucun code de production touché : tout est dans `mod suggestion_tests`
 
 ## Décisions actives
 
@@ -99,13 +109,13 @@ Validation :
   ne remesure pas doit dire de quelle version il parle — les figures du
   benchmark décrivent v1.0.0 et le disent maintenant explicitement.
 
-- **D145** — un test qui écrit puis relit un état horodaté doit quitter la
-  milliseconde estampillée avant d'agir. Le fingerprint d'index hache le mtime
-  en millisecondes entières, donc « le scan et la modification tiennent-ils dans
-  la même milliseconde » est une question posée à la machine, pas au code : elle
-  se répond non sous Windows et oui sur un runner Linux. Corollaire de méthode :
-  un mutex de test qui ne garde qu'une variable d'environnement se prend avec
-  `into_inner()`, sinon un panic transforme un rouge en trois.
+- **D145** — un test qui écrit puis relit un état horodaté doit attendre la
+  **valeur observable** du mtime, jamais une durée : la granularité
+  d'horodatage n'est pas portable (100 ns sur NTFS, aucune sous-seconde sur un
+  ext4 à inodes de 128 octets), et un horodatage déjà écrit ne bouge pas tout
+  seul. Corollaire de méthode : un mutex de test qui ne garde qu'une variable
+  d'environnement se prend avec `into_inner()`, sinon un panic transforme un
+  rouge en trois.
 
 - **D144** — l'E2E gatante se lance **à la main avant le tag**, jamais après.
   Elle n'a pas de déclencheur par PR, `release.yml` en dépend, et un rouge
@@ -145,7 +155,7 @@ Aucun.
 
 ## NEXT ACTION
 
-Exécuter **Q.4** dès que l'E2E gatante rejouée sur `18ffa13` (run
-`32945878869`) est verte : fusionner la PR #11, poser le tag annoté `v1.1.0` sur
+Exécuter **Q.4** dès que l'E2E gatante rejouée sur `123e228` (run
+`32947078548`) est verte : fusionner la PR #11, poser le tag annoté `v1.1.0` sur
 le commit de fusion, vérifier les 8 jobs du workflow Release et ses 7 assets,
 puis poser `RELEASE_NOTES.md` comme corps de la release.
