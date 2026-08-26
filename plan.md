@@ -5429,7 +5429,11 @@ decided by the user on 2026-08-26:
       the user, on the evidence of `docs/launch/demo-run-2.md`. Whatever is
       decided is written where the demo is published, in the same words as the
       measurement — a budget that moves silently is worse than a budget that was
-      wrong
+      wrong. **Decided by the user on 2026-08-26: publish both numbers.** The
+      40 s stops being a budget and becomes a named measurement of *product*
+      time; the conversation time is published beside it, in minutes, as the
+      number a viewer actually waits. Written after R.3.7, so the figures cover
+      both runs rather than one
 - [x] R.3.9 **Opened by run 2.** There is no *route this net* tool: three nets
       cost eleven `route_trace` calls, one segment each. Recorded as a
       capability gap, classified with F-13 in R.9.4's family, and decided at R.6
@@ -5684,10 +5688,16 @@ README claim that auto-detection happens).
       `konnect-no-such-kicad-cli` is logged as *using configured value as-is*
       and still fails with `Failed to spawn kicad-cli`, so INV4 holds and no
       silent substitution was introduced
-- [ ] R.7.7 The release question is **put to the user, not decided here**: this
+- [x] R.7.7 The release question is **put to the user, not decided here**: this
       fix only reaches users through a new artefact, and F-03
       (`packaging/metadata.json` pointing at the upstream repository) would ride
-      the same release. Whether v1.1.1 happens inside R is the user's call
+      the same release. Whether v1.1.1 happens inside R is the user's call.
+      **Decided by the user on 2026-08-26: yes, one v1.1.1 at the end of R** —
+      not now, and not one release per finding. It carries R.7 (`kicad_cli`
+      discovery), R.8 (`ipc_address` derivation), R.9.1 (the `kicad` GUI binary)
+      and R.9.2 (the undeclared stackup), plus F-03. Until it ships the README
+      keeps saying plainly that v1.1.0 needs the manual steps. The release
+      itself is a bounded plan of its own, validated before anything moves
 
 ### Validation
 On this machine, with no `kicad_cli` in any config and no `kicad-cli` on `PATH`,
