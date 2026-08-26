@@ -5991,6 +5991,9 @@ release has happened: every draft's install path is the config-free one.
       zip, KiCad API on, one PCB tool and one `kicad-cli`-backed check answering
       without either path configured by hand. That is the claim v1.1.1 exists to
       make, and R.1's walk is what it is measured against
+- [ ] R.10.8 The two `%LOCALAPPDATA%` discovery tests introduced by R.7/R.9.1
+      run only on Windows. They construct a Windows-only install tree and must
+      not fail the macOS/Linux PR gate after the release workflow has passed
 
 ### Validation
 A user who downloads v1.1.1 and follows the Quick start reaches a KiCad-verified

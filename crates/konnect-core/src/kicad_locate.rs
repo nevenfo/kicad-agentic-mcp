@@ -255,6 +255,7 @@ mod resolve_binary_tests {
     // The observable this diagnosis is about: `kicad_cli` unconfigured
     // (bare name) and nothing on PATH -> a per-user install prefix
     // (%LOCALAPPDATA%\Programs\KiCad\<ver>\bin\) is still found.
+    #[cfg(target_os = "windows")]
     #[test]
     fn per_user_install_prefix_is_found_when_not_on_path() {
         let tmp = tempfile::tempdir().unwrap();
@@ -411,6 +412,7 @@ mod resolve_binary_tests {
     /// `konnect-core::tools::verification`) uses this same resolver for the
     /// GUI binary, so a per-user KiCad 10 install must be found for
     /// `kicad.exe` too, not just `kicad-cli.exe`.
+    #[cfg(target_os = "windows")]
     #[test]
     fn per_user_install_prefix_is_found_for_the_gui_binary() {
         let tmp = tempfile::tempdir().unwrap();
