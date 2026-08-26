@@ -216,6 +216,12 @@ and stays open until KiCad 11 can be measured here.
 - **Contribute or navigate the code**: [DEV.md](DEV.md) (architecture, the agent
   layer, build requirements), [tool-directory.md](tool-directory.md) (every
   tool), [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Tell us how far you got**:
+  [file a first-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml)
+  — six questions, about two minutes, and worth filing especially if you gave
+  up. There is no telemetry in this binary and none is planned, so a report you
+  write is the only thing that ever reaches us. The tally lives in
+  [docs/adoption.md](docs/adoption.md).
 
 ## Licence
 

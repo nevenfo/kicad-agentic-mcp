@@ -101,6 +101,11 @@ where you should see **Konnect**.
 - **Symbols and footprints are placed, not authored.** Konnect searches and uses
   existing library parts; creating new ones is on the [roadmap](ROADMAP.md).
 
+**If any of those five steps did not work for you**, that is the thing worth
+reporting: [file a first-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml).
+It takes about two minutes and it is the only way any of this gets measured on a
+machine that is not the maintainer's.
+
 ## Why Konnect exists
 
 Konnect is the successor to [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server),
@@ -370,6 +375,16 @@ check that could not run is never reported as a check that passed.
 
 ## Support
 
-- Issues & feature requests: [GitHub Issues](https://github.com/nevenfo/kicad-agentic-mcp/issues)
+- **Tried it for the first time?** [File a first-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml)
+  — six questions, most of them one click. A report from someone who **gave up**
+  is worth more than one from someone who succeeded. What comes back is tallied
+  in [docs/adoption.md](docs/adoption.md).
+- Bugs & feature requests: [GitHub Issues](https://github.com/nevenfo/kicad-agentic-mcp/issues)
+- Stuck on installation or the IPC socket: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+**No telemetry.** Konnect reports nothing, anywhere, ever. Everything known
+about how it behaves on other people's machines came from someone choosing to
+write it down. A tool that edits your design files earns trust by not phoning
+home.

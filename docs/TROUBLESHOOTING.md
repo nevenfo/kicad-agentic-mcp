@@ -118,3 +118,17 @@ re-fetch `tools/list` in response. If newly loaded tools never show up:
 Install via **Plugin and Content Manager → Install from File** with the
 `konnect-pcm-*.zip` release asset (not the bare binary archives), then restart
 KiCAD.
+
+Look in the **PCB editor**, under *Tools → External Plugins* — and open a
+project first, because pcbnew refuses to open at all without one
+(*« Créer (ou ouvrir) un projet pour modifier un pcb. »*). The package also
+declares a toolbar action, which KiCad 10 does not render; the menu entry is the
+one that works.
+
+## Still stuck?
+
+**[File a first-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml)**
+— six questions, about two minutes. A report from someone who gave up is worth
+more than one from someone who succeeded: it is the only way a failure on a
+machine that is not the maintainer's ever gets seen. What comes back is tallied
+in [adoption.md](adoption.md).

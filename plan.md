@@ -5433,24 +5433,28 @@ can count.
 R.1 closed — the friction list says which questions actually matter.
 
 ### Tâches
-- [ ] R.5.1 The five minimal metrics are defined in writing, each with its
+- [x] R.5.1 The five minimal metrics are defined in writing, each with its
       collection method and its "unknown" value: **install succeeded**,
       **time to first task**, **first blocker**, **task attempted**,
       **success / failure**
-- [ ] R.5.2 GitHub issue templates exist and produce those five fields as
+- [x] R.5.2 GitHub issue templates exist and produce those five fields as
       structured data: a *first-run report*, a *bug report*, and a *feature
       request* that does not swallow the other two
-- [ ] R.5.3 The first-run report is **short enough to be filled in after a
+- [x] R.5.3 The first-run report is **short enough to be filled in after a
       failure** — a user who just gave up will not complete a 20-field form
-- [ ] R.5.4 The feedback route is discoverable from the place people fail: the
+- [x] R.5.4 The feedback route is discoverable from the place people fail: the
       README Quick start, the troubleshooting doc, and the release page all
       point at it
-- [ ] R.5.5 A tally lives in the repository (`docs/adoption.md`): one row per
+- [x] R.5.5 A tally lives in the repository (`docs/adoption.md`): one row per
       report, the five metrics, and nothing that identifies a person beyond
       their own public GitHub handle
-- [ ] R.5.6 Whether GitHub Discussions is enabled is decided explicitly — it is
-      currently off — and the choice is recorded with its reason
-- [ ] R.5.7 It is stated in the repository that no telemetry exists and none is
+- [x] R.5.6 Whether GitHub Discussions is enabled is decided explicitly — it is
+      currently off — and the choice is recorded with its reason. **Decision: it
+      stays off.** A project with no issues does not need a second empty
+      surface; splitting a handful of early reports across two places makes both
+      look dead and makes the tally harder to keep honest. Revisit when
+      questions that are *not* bug reports outnumber the ones that are
+- [x] R.5.7 It is stated in the repository that no telemetry exists and none is
       planned. A tool that edits a user's design files earns trust by not
       phoning home
 

@@ -1,0 +1,88 @@
+name: Bug report
+description: Something behaved differently from what it says it does.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this happened during your **first** hour with Konnect, the
+        *First-run report* is the better form — it is shorter and it asks the
+        questions we need.
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened, and what did you expect instead?
+      description: Paste the exact error text if there is one. Short is fine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How can we reproduce it?
+      description: >
+        The smallest sequence that shows it. A tool call with its arguments, or
+        the prompt you gave, plus what the project looked like beforehand.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Konnect version
+      description: "`konnect --version`, or the version shown in KiCad's Plugin and Content Manager."
+      placeholder: "1.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: kicad
+    attributes:
+      label: KiCad version
+      description: "`kicad-cli version`, or KiCad's Help → About."
+      placeholder: "10.0.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Which path was involved?
+      description: >
+        Schematic edits go straight to the file. PCB edits go through KiCad's
+        IPC API. Checks and exports shell out to kicad-cli. If you are not sure,
+        say so.
+      options:
+        - Schematic (file editing)
+        - PCB (IPC to a running KiCad)
+        - Checks or exports (kicad-cli)
+        - MCP connection / startup
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server output
+      description: >
+        Optional but valuable. Konnect logs to stderr; your MCP client keeps it
+        (Claude Desktop: *Developer → Open Logs*). The startup lines naming
+        which `kicad-cli` and which socket it resolved are often the whole story.
+      render: text
+    validations:
+      required: false
