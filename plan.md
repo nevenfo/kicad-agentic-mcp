@@ -4840,6 +4840,40 @@ changes.
       `numbering_detection_explains_every_layer_entry_in_the_demo_corpus` loses
       its by-name skip too: it already skipped anything that fails to parse.
 
+- [ ] P.7.5 — with the conformance step green, the next E2E run reached the
+      probes behind it — none of which had ever run in CI either — and
+      `a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable` failed on
+      its opening guard, `before["total"] == 0`, with 40 violations. All 40
+      were `warning`, all "The current configuration does not include the
+      footprint library …", `errors: 0`. A KiCad that has never been launched
+      has no user `fp-lib-table`, and every runner is one. The third machine
+      fact in this section, after "is KiCad installed" and "which KiCad":
+      "has KiCad ever been run".
+      The guard was also inert. Its comment said "anything reported afterwards
+      is this call's doing", and the probe never read ERC again — it took one
+      measurement and asserted a constant against it. So it is replaced by the
+      comparison it described: every violation that does not name `R999` must
+      be exactly as numerous after the edit as before, and at least one must
+      name `R999` — which is the root seeing the symbol the child sheet was
+      given, an assertion the probe did not previously make at all.
+      `errors == 0` was tried first and measured false: `R999` goes in unwired,
+      and KiCad rates `pin_not_connected` an **error**, not a warning — 2 of
+      them. "Nothing else moved" is the shape that survives both machines.
+      The axis has no local oracle. `%APPDATA%` was pointed at an empty
+      directory and `kicad-cli sch erc` still reported 0 violations against
+      `complex_hierarchy`, the redirected directory staying empty: KiCad
+      resolves its config through the Windows shell API, not the environment
+      variable. So this fix is proved by CI and by nothing else, which is
+      exactly what a gating E2E job is for.
+- [ ] P.7.6 — the E2E workflow hid the same way `ci.yml` did. Its probes are
+      twelve separate `cargo test` steps, so a red one stops the job and says
+      nothing about the eleven behind it: two full runs were spent finding one
+      defect each, in order, when both were visible from the start. Every probe
+      step now carries `if: always() && steps.kicad.outcome == 'success'` — it
+      runs even after an earlier failure, the job still goes red, and a failed
+      install does not turn into a dozen identical failures. P.7.3 at the
+      workflow's scale.
+
 ### Validation
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` on a
   simulated KiCad-less machine (every Windows share root and the three symbol
@@ -4856,4 +4890,6 @@ changes.
   **6 passed**, the corpus reporting 18/19 boards parsed and one malformed
   with D116's own numbers.
 - the gating E2E, dispatched by hand on this branch (it has no per-PR
-  trigger), green through the conformance step and the nine probes behind it.
+  trigger), green through the conformance step and every probe behind it.
+  It is the only oracle for P.7.4 and P.7.5: which KiCad ships a demo, and
+  whether that KiCad has ever been launched, are not observable from here.

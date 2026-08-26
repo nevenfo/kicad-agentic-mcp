@@ -809,16 +809,29 @@ async fn a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable() {
     let root = dir.join("complex_hierarchy.kicad_sch");
     let child = dir.join("ampli_ht.kicad_sch");
 
-    // The demo is clean as shipped, so anything reported afterwards is this
-    // call's doing.
+    // What the demo reports before the edit, so that what it reports after can
+    // be compared against it rather than against zero.
+    //
+    // P.7.5: this used to assert `total == 0` — a fact about the machine, not
+    // about the demo. On a KiCad that has never been launched, which is every
+    // CI runner, there is no user `fp-lib-table`, so ERC reports one warning
+    // per symbol whose footprint library is not configured: measured 0 here
+    // and 40 on the runner, every one of them "The current configuration does
+    // not include the footprint library …". Those say nothing about this
+    // call, and on the machine that has them they said the probe was broken.
+    let unrelated_to_r999 = |report: &serde_json::Value| {
+        report["violations"]
+            .as_array()
+            .map(|vs| {
+                vs.iter()
+                    .filter(|v| !v["description"].as_str().unwrap_or("").contains("R999"))
+                    .count()
+            })
+            .unwrap_or(0)
+    };
     let before = h
         .json("run_erc", json!({ "schematic": harness::as_str(&root) }))
         .await;
-    assert_eq!(
-        before["total"],
-        json!(0),
-        "the demo should start clean: {before}"
-    );
 
     h.json(
         "add_schematic_component",
@@ -832,6 +845,30 @@ async fn a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable() {
         }),
     )
     .await;
+
+    // The loop the `before` measurement opens, and which this probe used to
+    // leave open: it took a reading and never took a second one. "Anything
+    // reported afterwards is this call's doing" is now checked instead of
+    // asserted — every violation that does not name R999 was already there.
+    //
+    // R999 goes in unwired, so KiCad reports its two pins as `pin_not_connected`,
+    // and that is an **error**, not a warning: measured, 2 errors here. That is
+    // the edit being visible, not the hierarchy breaking, so the shape of the
+    // check is "nothing else moved", not "no error".
+    let after = h
+        .json("run_erc", json!({ "schematic": harness::as_str(&root) }))
+        .await;
+    assert_eq!(
+        unrelated_to_r999(&after),
+        unrelated_to_r999(&before),
+        "placing a symbol on the child sheet changed what ERC reports about the rest \
+         of the hierarchy.\nbefore: {before}\nafter: {after}"
+    );
+    assert!(
+        unrelated_to_r999(&after) < after["violations"].as_array().map_or(0, |v| v.len()),
+        "KiCad reports nothing at all about R999, so the root never saw the symbol \
+         the child sheet was given: {after}"
+    );
 
     // Both halves matter: the hierarchy must still export, and the symbol
     // must be in what it exports. Neither distinguishes the old derivation

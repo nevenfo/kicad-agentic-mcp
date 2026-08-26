@@ -85,12 +85,19 @@ jobs:
           if (Test-Path $footprints) { "KICAD_FOOTPRINTS=$footprints" | Out-File $env:GITHUB_ENV -Append }
           & $cli --version
 
+      # Every probe below runs even when an earlier one failed, and the job
+      # still goes red — the workflow's own version of P.7.3. Each is its own
+      # `cargo test` invocation with nothing shared but the install, so a red
+      # step tells you nothing about the ones behind it: two runs were spent
+      # discovering one defect each, in order. `steps.kicad.outcome` keeps that
+      # from turning a failed install into a dozen identical failures.
       - name: E2E design loop (create → wire → ERC → Gerber → DRC)
         env:
           KONNECT_E2E_KEEP_DIR: ${{ github.workspace }}/e2e-artifacts
         run: cargo test -p konnect --test e2e_kicad -- --ignored --nocapture
 
       - name: Demo-corpus conformance (115+ eeschema-authored schematics)
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test conformance_test -- --nocapture
 
       # Every layer KiCad's own footprints draw on must be representable in the
@@ -99,6 +106,7 @@ jobs:
       # user's unsaved board (P.6.9.1). The corpus is the only oracle for which
       # names occur, and it grows with every KiCad release.
       - name: Footprint-library layer corpus (15k+ .kicad_mod)
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-ipc --test layer_corpus_test -- --nocapture
 
       # The two fidelity regressions whose oracle can only be KiCAD itself:
@@ -112,6 +120,7 @@ jobs:
         # Quoted: an unquoted `#` after a space starts a YAML comment, which
         # silently truncated this name to "… (#144,".
       - name: "Schematic fidelity against real KiCAD (#144, #209)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test schematic_fidelity_live -- --ignored --nocapture
 
       # A symbol placed on a child sheet is written with one instance path per
@@ -120,6 +129,7 @@ jobs:
       # accepts that shape (P.6.9.3). The probe's own doc comment records what
       # it cannot show: no CLI here distinguishes the old derivation.
       - name: "A symbol on a child sheet keeps the hierarchy loadable (e7b0c54)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable
 
       # A no-connect marks a pin, and the grid snap used to move one aimed at
@@ -127,6 +137,7 @@ jobs:
       # is the only authority on the consequence: it stops reporting the pin
       # when the marker lands, and emits no_connect_dangling when it does not.
       - name: "A no-connect on an off-grid pin silences KiCad's own ERC (P.6.8.9)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_no_connect_on_an_off_grid_pin_silences_kicads_own_erc
 
       # A placed symbol takes its Reference/Value from the library symbol's own
@@ -135,6 +146,7 @@ jobs:
       # anchors and the effects nodes KiCad actually ships, and only kicad-cli
       # says whether the property block that comes out still loads.
       - name: "A rotated symbol with library-placed fields still loads (P.6.8.8)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_rotated_symbol_with_library_placed_fields_still_loads
 
       # run_erc refuses a sheet that belongs to a project rooted elsewhere,
@@ -147,6 +159,7 @@ jobs:
       # it is a statement about our behaviour, not about runner liveness. The
       # probe asserts the root/sub-sheet asymmetry, not a violation count.
       - name: "ERC on a sub-sheet reports library artefacts its root does not (P.6.7.11)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not
 
       # A board with open copper is reported by kicad-cli under
@@ -155,6 +168,7 @@ jobs:
       # reported position was null. Only KiCAD can produce the three-array
       # report, so the proof belongs here, in the job that gates the release.
       - name: "DRC reads all three report categories (unrouted copper is an error)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture an_unrouted_board_reports_unconnected_copper_as_an_error
 
       # create_netclass used to insert a (netclass ...) node into the board
@@ -165,9 +179,11 @@ jobs:
       # numbering it, which is a different zone shape. If pcbnew rejected it,
       # the board would stop loading rather than the pour failing (P.6.9.2).
       - name: "A pour on a KiCad 10 board leaves it loadable (f2372ca)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_pour_on_a_kicad_10_board_still_loads_in_kicad_cli
 
       - name: "Netclass tools leave the board loadable by kicad-cli (9a56233)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture netclass_tools_leave_the_board_loadable_by_kicad_cli
 
       # P.6.9.4 changed the shape of every byte the typed writer emits — tab
@@ -176,9 +192,11 @@ jobs:
       # disturbs; this one is the other half, and only KiCAD can answer it: the
       # new shape must still be a sheet KiCAD will load (f8a8db0).
       - name: "A sheet rewritten by the typed writer still loads in KiCAD (f8a8db0)"
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_sheet_rewritten_by_the_typed_writer_is_still_loadable_by_kicad
 
       - name: IPC wedge timeout regression
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-ipc --test mock_server_test -- --ignored --nocapture
 
       - uses: actions/setup-python@v7

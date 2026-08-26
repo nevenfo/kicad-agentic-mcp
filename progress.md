@@ -10,15 +10,30 @@ Branche `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`, non fusionnée.
 
 ## Tâche actuelle
 
-**P.7.4** — le job E2E gatant ne tourne pas par PR, donc la moitié « boards »
-de `conformance_test`, ajoutée dans cette phase, n'avait **jamais** tourné en
-CI. Le run déclenché à la main est le premier, et il tombait : la liste
-`KNOWN_BAD_BOARDS` affirmait une propriété du KiCad **10.0.3** local (D116)
-sur une CI épinglée en **10.0.5**, qui livre `RoyalBlue54L-Feather.kicad_pcb`
-réparé. Remplacée par une mesure : `paren_balance` / `malformation` lisent les
-octets du fichier, et le test exige que le parser **soit d'accord** avec eux
-dans les deux sens. Renommé
-`the_parser_agrees_with_each_demo_boards_own_paren_balance`.
+**P.7.4 à P.7.6**, implémentées et poussées, en attente du run E2E qui est leur
+seule preuve :
+
+- **P.7.4** — le job E2E gatant ne tourne pas par PR, donc la moitié « boards »
+  de `conformance_test`, ajoutée dans cette phase, n'avait **jamais** tourné en
+  CI. La liste `KNOWN_BAD_BOARDS` affirmait une propriété du KiCad **10.0.3**
+  local (D116) sur une CI épinglée en **10.0.5**, qui livre
+  `RoyalBlue54L-Feather.kicad_pcb` réparé. Remplacée par une mesure :
+  `paren_balance` / `malformation` lisent les octets du fichier, et le test
+  exige que le parser **soit d'accord** avec eux dans les deux sens. Renommé
+  `the_parser_agrees_with_each_demo_boards_own_paren_balance`.
+- **P.7.5** — le run suivant a atteint les sondes, elles non plus jamais
+  exécutées en CI. `a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable`
+  tombait sur sa garde d'ouverture `before["total"] == 0` : 40 violations, **tous
+  des warnings** de librairie de footprint non configurée, `errors: 0`. Un KiCad
+  jamais lancé n'a pas de `fp-lib-table` utilisateur, et tout runner en est un.
+  La garde était en outre **inerte** — son commentaire annonçait une comparaison
+  que la sonde ne faisait jamais. Remplacée par cette comparaison : toute
+  violation qui ne nomme pas `R999` doit être aussi nombreuse après qu'avant, et
+  au moins une doit nommer `R999`.
+- **P.7.6** — le workflow E2E masquait comme `ci.yml` : douze steps `cargo test`
+  séparés, un rouge arrête le job. Deux runs entiers ont servi à trouver un
+  défaut chacun. Chaque sonde porte désormais
+  `if: always() && steps.kicad.outcome == 'success'`.
 
 ## Dernière tâche validée
 
@@ -187,6 +202,20 @@ Validation :
   Tout code qui alloue un id de layer le dérive du nom canonique sous la
   numérotation du board (fait par P.6.11, tables en D137).
 
+- **D141** — trois faits de **machine** se sont déguisés en faits de code dans
+  cette phase, et c'est un seul défaut à trois profondeurs : « KiCad est-il
+  installé » (P.7.1), « quel KiCad » (P.7.4), « ce KiCad a-t-il déjà été
+  lancé » (P.7.5). Le dernier n'a **aucun oracle local** : pointer `%APPDATA%`
+  sur un dossier vide ne change rien, `kicad-cli` continuant de rapporter 0
+  violation et le dossier restant vide — KiCad résout sa configuration par
+  l'API shell de Windows, pas par la variable d'environnement. Conséquence
+  pratique : le job E2E gatant est la seule preuve de cet axe, et un test qui
+  n'y tourne jamais n'est pas prouvé. Corollaire mesuré en P.7.5 :
+  `pin_not_connected` est une **erreur** pour KiCad, pas un warning, donc
+  « aucune erreur après l'édition » est une garde fausse dès qu'on pose un
+  symbole non câblé ; la forme qui survit aux deux machines est « rien d'autre
+  n'a bougé ».
+
 - **D116** — *amendée par P.7.4.* Un board livré par KiCad 10 peut être
   réellement malformé : `RoyalBlue54L-Feather.kicad_pcb` en **10.0.3** ferme sa
   racine à l'octet 14735 sur 3 618 800, à la profondeur −349. Ce qui est faux,
@@ -264,8 +293,8 @@ Aucun.
 
 Relancer le job E2E gatant sur `ai/P-schematic-fidelity` (`gh workflow run
 e2e-kicad.yml -R nevenfo/kicad-agentic-mcp --ref ai/P-schematic-fidelity`,
-D114) et vérifier qu'il passe le step conformance **et** les neuf sondes qui
-le suivent — elles n'ont jamais tourné, le premier run s'étant arrêté avant
-elles. Si vert : cocher P.7.4 et demander à l'utilisateur la décision restée
-ouverte, fusionner la PR #10 vers `agentic/main` ou ouvrir une phase suivante.
-Si rouge : le premier écart mesuré, sonde par sonde.
+D114). Grâce à P.7.6 ce run exécute **toutes** les sondes même après un rouge,
+donc il rapporte d'un coup ce qui reste à corriger au lieu d'un défaut par run.
+Si vert : cocher P.7.4, P.7.5 et P.7.6, puis demander à l'utilisateur la
+décision restée ouverte — fusionner la PR #10 vers `agentic/main` ou ouvrir une
+phase suivante. Si rouge : traiter les écarts que ce seul run aura nommés.
