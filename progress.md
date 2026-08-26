@@ -12,8 +12,8 @@ Branche de travail `ai/Q-release-1.1.0`, PR **#11** ouverte contre
 
 ## Tâche actuelle
 
-**Q.4 — tag et publication.** Q.3 est close : les trois gates sont verts sur
-le commit `3089596`.
+**Q.4 — tag et publication.** Q.3 et Q.6 sont closes ; les gates sont verts sur
+`18ffa13`, le commit que le tag portera.
 
 ## Dernière tâche validée
 
@@ -55,6 +55,31 @@ Validation :
   outre `Live IPC against a running pcbnew`, que le mode gatant écarte, et il
   est vert aussi
 
+**Q.6 — un test mesurait l'horloge du runner, pas l'index.** Trouvé par cette
+phase : la CI a rougi sur `c377a41`, un commit qui ne touche que `plan.md` et
+`progress.md`. `a_symbol_added_inside_an_existing_library_makes_the_index_stale`
+écrit le cache d'index puis crée un fichier dans `Device.kicad_symdir` ;
+`fingerprint_children` hache le mtime de chaque entrée en **millisecondes
+entières**, donc un fichier créé dans la milliseconde déjà estampillée ne change
+rien. Que le scan, l'écriture et la relecture tiennent dans une milliseconde est
+un fait de **machine** : ici le test est vert **30 fois sur 30**, ces I/O coûtant
+plus d'une milliseconde sous Windows ; sur un runner Linux elles tiennent. Classe
+de D140, un cran plus bas. Les deux autres rouges sont **un seul** défaut
+d'amplification : le panic empoisonnait `ENV_LOCK` et tout test suivant mourait
+en `PoisonError` au lieu de rendre son verdict — `env_lock()` récupère
+désormais le garde (P.7.6 au niveau du mutex).
+
+Validation :
+- cause **mesurée** : créer un fichier dans un répertoire laisse le mtime de ce
+  répertoire inchangé **227 fois sur 300** sur cette machine, et 2 000 lectures
+  d'horloge consécutives tombent dans **une** milliseconde
+- gate local rejoué sur `18ffa13` : fmt PASS, clippy `-D warnings` PASS,
+  **1385 tests, 0 échec**
+- CI run `32945471161` sur `18ffa13` : **7 jobs verts**, ubuntu compris — la
+  machine qui rougissait
+- aucun code de production touché : les deux corrections sont dans
+  `mod suggestion_tests`
+
 ## Décisions actives
 
 - **D142** — le numéro de version est **v1.1.0**, pas la v1.0.1 demandée à
@@ -73,6 +98,14 @@ Validation :
   des versions vit sur GitHub Releases. Corollaire : un chiffre qu'une release
   ne remesure pas doit dire de quelle version il parle — les figures du
   benchmark décrivent v1.0.0 et le disent maintenant explicitement.
+
+- **D145** — un test qui écrit puis relit un état horodaté doit quitter la
+  milliseconde estampillée avant d'agir. Le fingerprint d'index hache le mtime
+  en millisecondes entières, donc « le scan et la modification tiennent-ils dans
+  la même milliseconde » est une question posée à la machine, pas au code : elle
+  se répond non sous Windows et oui sur un runner Linux. Corollaire de méthode :
+  un mutex de test qui ne garde qu'une variable d'environnement se prend avec
+  `into_inner()`, sinon un panic transforme un rouge en trois.
 
 - **D144** — l'E2E gatante se lance **à la main avant le tag**, jamais après.
   Elle n'a pas de déclencheur par PR, `release.yml` en dépend, et un rouge
@@ -98,6 +131,8 @@ Aucun.
 - `packaging/metadata.json`, `packaging/build-pcm.{ps1,sh}`,
   `packaging/validate-pcm.py` — inchangés depuis v1.0.0.
 - `crates/konnect-core/src/router/mod.rs` — le test qui rend « 202 » mesurable.
+- `crates/konnect-schematic-editor/src/library.rs` — `fingerprint_children`
+  (mtime haché en ms), `env_lock()` et le test d'obsolescence d'index (Q.6).
 
 ## Non-bloquants enregistrés, non traités dans cette phase
 
@@ -110,6 +145,7 @@ Aucun.
 
 ## NEXT ACTION
 
-Exécuter **Q.4** : fusionner la PR #11, poser le tag annoté `v1.1.0` sur le
-commit de fusion, vérifier les 8 jobs du workflow Release et ses 7 assets, puis
-poser `RELEASE_NOTES.md` comme corps de la release.
+Exécuter **Q.4** dès que l'E2E gatante rejouée sur `18ffa13` (run
+`32945878869`) est verte : fusionner la PR #11, poser le tag annoté `v1.1.0` sur
+le commit de fusion, vérifier les 8 jobs du workflow Release et ses 7 assets,
+puis poser `RELEASE_NOTES.md` comme corps de la release.
