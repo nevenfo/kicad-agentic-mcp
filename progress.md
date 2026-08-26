@@ -2,38 +2,41 @@
 
 ## Phase actuelle
 
-**R — Launch & adoption.** R.1 à R.9 sont clos. **R.10 — release v1.1.1** est
-en cours, dans le périmètre fermé validé le 2026-08-26 : R.7, R.8, R.9.1,
-R.9.2 et F-03 uniquement.
+**R — Launch & adoption : terminée.** R.1 à R.10 et tous les critères de sortie
+sont cochés. La release publique **v1.1.1** porte uniquement R.7, R.8, R.9.1,
+R.9.2 et F-03, conformément au périmètre validé le 2026-08-26.
 
 ## Tâche actuelle
 
-**R.10.6 — tag, push et contrôle des sept assets.** La release locale est prête
-et sa gate pré-tag est verte.
+Aucune. **R.10 — release v1.1.1** est close.
 
 ## Dernière tâche validée
 
-**R.10.5 — gate et E2E réel avant tag.** R.10.1 à R.10.5 sont cochées.
+**R.10.7 — parcours de l'artefact publié sans configuration.** Preuves :
 
-Validation :
+- tag `v1.1.1` sur `7d565ce`, workflow release `33012207008` : PASS ;
+- release publique non-draft/non-prerelease, sept assets présents et non vides ;
+- zip PCM Windows publié : 12 267 698 octets, SHA-256
+  `3E379B78E87B20CEECD0BEFC8AC130DBBA47900163CD67197E64DB41B90D14F7` ;
+- installation via le Plugin and Content Manager : v1.1.1 stable, auteur
+  `nevenfo`, homepage du fork ; binaire installé répond `konnect 1.1.1` ;
+- pendant le parcours : aucun `konnect-settings.json`, aucun `--config`, et
+  `KICAD_API_SOCKET`, `KICAD_CLI`, `KICAD_BINARY` absents de l'environnement ;
+- découverte observée : IPC par défaut Windows, `kicad-cli` et `kicad` dans le
+  préfixe KiCad 10 standard ;
+- `get_component_list` : 4 composants live ; `run_drc` : réponse KiCad CLI,
+  1 avertissement et 0 erreur.
 
-- métadonnées PCM : schéma PASS ; exemples JSON : parsing PASS ;
-- versions : les douze crates workspace et le viewer résolvent 1.1.1 ;
-- `gate.ps1` : `fmt`, `clippy -D warnings`, tests, doctests et build release
-  PASS ;
-- `scripts/live-pcb-e2e.ps1` : PASS sur KiCad 10, 2 tests `konnect-ipc` et
-  1 test `konnect`; découverte automatique observée pour `ipc_address`,
-  `kicad-cli` et `kicad` ;
-- aucun tag n'existait au moment de l'E2E, conformément à D144.
+La gate pré-tag (`fmt`, clippy, tests, doctests, build release) et l'E2E manuel
+KiCad (2 tests IPC + 1 test MCP) étaient PASS avant création du tag. Le fichier
+de configuration préexistant a été restauré après le parcours ; KiCad a été
+fermé sans sauvegarde ; les fichiers temporaires ont été supprimés.
 
 ## Décisions actives
 
-- Périmètre strict : R.7, R.8, R.9.1, R.9.2 et F-03 ; aucun correctif
-  opportuniste.
-- INV-R1 : R.10.7 doit installer et vérifier l'artefact publié, pas le build
-  local.
 - L'identifier PCM `com.github.mixelpixx.konnect` reste inchangé pour préserver
   le dossier d'installation et les configurations existantes.
+- INV-R1 à INV-R4 restent les invariants des futures releases et mesures.
 
 ## Blocage actif
 
@@ -41,11 +44,12 @@ Aucun.
 
 ## Fichiers / zones utiles
 
-- Release : `RELEASE_NOTES.md`, `README.md`, `docs/TROUBLESHOOTING.md`,
-  `examples/*.json`, `packaging/metadata.json`, manifests et lockfiles Cargo.
-- Workflow : `.github/workflows/release.yml`.
+- Release : `RELEASE_NOTES.md`, `README.md`, `packaging/metadata.json`.
+- Lancement : `docs/launch/launch-kit.md`, brouillons `docs/launch/announce-*.md`,
+  porte `docs/launch/decision-gate.md`, tally `docs/adoption.md`.
 
 ## NEXT ACTION
 
-Créer et pousser le commit de release validé, créer/pousser le tag `v1.1.1`,
-puis contrôler sur GitHub la présence et la taille des sept assets.
+Décider si les brouillons R.4 doivent maintenant être publiés sur les canaux
+externes nommés, puis rouvrir la porte R.6 lorsque `docs/adoption.md` contient
+des données extérieures.

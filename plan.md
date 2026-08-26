@@ -5984,9 +5984,9 @@ release has happened: every draft's install path is the config-free one.
       manual step and leaves the documentation demanding it has not removed it
 - [x] R.10.5 The gate is green on the release commit, and the real-KiCad E2E is
       run **by hand before the tag** (D144)
-- [ ] R.10.6 Tag, push, and the release workflow's seven assets are checked for
+- [x] R.10.6 Tag, push, and the release workflow's seven assets are checked for
       presence and size on the release page itself
-- [ ] R.10.7 **The published artefact is installed and walked** on this machine
+- [x] R.10.7 **The published artefact is installed and walked** on this machine
       with **no `konnect-settings.json` at all**: PCM install from the published
       zip, KiCad API on, one PCB tool and one `kicad-cli`-backed check answering
       without either path configured by hand. That is the claim v1.1.1 exists to
