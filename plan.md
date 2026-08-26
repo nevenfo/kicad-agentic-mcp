@@ -4898,3 +4898,223 @@ changes.
   Runs `32937438691` and `32938428303` are the two red ones it replaces.
 - the PR checks on the same commit: green on all three OSes, plus Clippy,
   Format, PCM packaging and the schematic viewer (run `32939559816`).
+
+---
+
+# Phase Q — Release v1.1.0 — IN PROGRESS
+
+Opened 2026-08-26 by explicit user request, immediately after Phase P merged.
+Scope is publication only: **no new capability, no Dependabot work, no symbol
+or footprint authoring, no KiCad 11**. The phase ships what `agentic/main`
+already contains, and stops.
+
+## Objectif
+
+Make the post-Phase-P state actually installable by a stranger: version bumped
+everywhere a version is carried, release notes that name what a user can
+observe changing, every gate green on the commit that gets tagged, the tag
+pushed, and the published artefact opened rather than trusted.
+
+## Version — decided, not assumed
+
+**`v1.1.0`, not `v1.0.1`.** The audit that opened this phase measured four
+behaviours a user can observe differing from v1.0.0, all landed by Phase P:
+
+1. `create_netclass` / `assign_net_to_class` write the sibling `.kicad_pro`
+   (`net_settings`, `netclass_patterns`) and never touch the board file — at
+   v1.0.0 they inserted a `(netclass …)` node into the `.kicad_pcb`, which D112
+   measured as making `kicad-cli` exit 3.
+2. `run_drc` reads `unconnected_items` and `schematic_parity`, so a board with
+   unrouted copper is now **refused** by the evidence gate that approved it at
+   v1.0.0 (P.6.1).
+3. Power symbols join the schematic net graph (P.6.3), changing netlists that
+   v1.0.0 reported as disconnected.
+4. `register_footprint_library` / `register_symbol_library` answer a `result`
+   vocabulary (`inserted` / `unchanged` / `updated`) and accept
+   `replace_existing`.
+
+A patch number would under-announce all four. Nothing here is breaking, so the
+minor is the exact number.
+
+## Dépendances
+
+None outside the repository. Phase P is merged; `agentic/main` is at `d962552`
+with CI green (run `32940958142`). The release machinery is Phase O's and is
+reused unchanged, not rebuilt.
+
+## Invariants de la phase
+
+- No production code changes. If a gate goes red for a reason that is not the
+  version bump, the phase **stops** and the defect is triaged as its own item —
+  a release phase does not become a fix phase in silence.
+- The version lives in five files, and `crates/schematic-viewer/Cargo.lock` is
+  one of them (O.7.3: it is outside the workspace, `gate.ps1` never touches it,
+  and at v1.0.0 it turned CI red on `cargo check --locked` alone).
+- macOS ships unsigned and un-notarised, as at v1.0.0. That is documented in the
+  release notes, not silently shipped — decided by the user for this release.
+- PCM is **built and verified only**. Submitting to the official KiCad addon
+  repository is out of scope, and `packaging/metadata.json` keeping upstream's
+  `identifier` / `author` is therefore not a blocker here. Recorded as Q.5.3.
+
+## Q.1 — The version moves in every file that carries one — DONE
+
+### Objectif
+`1.0.0 → 1.1.0` everywhere, verified the way CI verifies it rather than by
+reading the diff.
+
+### Tâches
+- [x] Q.1.1 `Cargo.toml` `[workspace.package].version`, and the `Cargo.lock`
+      entries `--locked` verifies
+- [x] Q.1.2 `crates/schematic-viewer/Cargo.toml`, its `tauri.conf.json`, and
+      **its own `Cargo.lock`** — the three entries `schematic-viewer`,
+      `konnect-schematic-editor` and `konnect-sexp`
+- [x] Q.1.3 Nothing else is version-bumped: the four remaining `1.0.0` strings
+      in the tree are prose (`README.md` status line, `RELEASE_NOTES.md` title
+      and install line), handled by Q.2
+
+### Validation
+`cargo metadata --locked --format-version 1` succeeds against **both**
+manifests — the root workspace and `crates/schematic-viewer/Cargo.toml`. That
+second command is the one CI's `Schematic viewer` job runs and the one the
+v1.0.0 release failed.
+
+## Q.2 — Public documents state the version they ship — DONE
+
+### Objectif
+A reader of the release page learns what changed and what is not covered,
+without opening the plan.
+
+### Tâches
+- [x] Q.2.1 `RELEASE_NOTES.md` becomes the v1.1.0 body: title, a new
+      *What changed in v1.1.0* section naming the four observable behaviours
+      above plus the CI-fidelity work (P.7) in one line, and the install line
+      pointing at `konnect-pcm-v1.1.0-<platform>.zip`
+- [x] Q.2.2 The macOS Gatekeeper limitation is stated in *Getting started* with
+      the exact step a user needs, not a euphemism
+- [x] Q.2.3 `README.md` status line reads v1.1.0
+- [x] Q.2.4 Every other number quoted publicly is re-checked rather than
+      assumed: `202 tools / 22 toolsets` (unchanged — `v1.0.0..HEAD` registers
+      no new tool), the 21.8 MB binary size, and the benchmark figures, which
+      Phase P did not re-measure and which therefore still describe v1.0.0
+
+### Validation
+`rg '1\.0\.0'` over the tree returns only historical references (plan, decisions,
+progress, upstream audit), never a statement about the shipping version.
+
+## Q.3 — Every gate green on the commit that gets tagged — DONE
+
+### Objectif
+The tag lands on a commit already proven, so the release workflow confirms
+rather than discovers.
+
+### Tâches
+- [x] Q.3.1 Local gate on the release commit: `cargo fmt --all -- --check`,
+      `cargo clippy --workspace --locked --all-targets -- -D warnings`,
+      `cargo test --workspace --locked --lib --tests --no-fail-fast`
+- [x] Q.3.2 CI green on the pushed commit, all three OSes plus the
+      `Schematic viewer` job
+- [x] Q.3.3 The **gating E2E dispatched by hand** on the release commit and
+      green: `gh workflow run e2e-kicad.yml -R nevenfo/kicad-agentic-mcp --ref
+      <branch>`. It has no per-PR trigger, its last green run is `32939555970`
+      on `6ae15c2`, and `release.yml` needs it. Running it after the tag would
+      risk a published tag with no release behind it
+
+### Validation
+Three green runs named by id in `progress.md`, on the commit `git rev-list -n1`
+resolves the tag to.
+
+## Q.4 — Tag and publish
+
+### Objectif
+One tag, one release, no artefact invented by hand.
+
+### Tâches
+- [ ] Q.4.1 Work lands on `agentic/main` through a PR from
+      `ai/Q-release-1.1.0` — the default branch takes no direct push
+- [ ] Q.4.2 Annotated tag `v1.1.0` on the merge commit, verified with
+      `git rev-list -n1 v1.1.0` before and after the push. `v1.1.0` collides
+      with nothing: this repository has published `v1.0.0` only
+- [ ] Q.4.3 The Release workflow goes green on all 8 jobs and uploads 7 assets:
+      four standalone binaries, three PCM packages
+- [ ] Q.4.4 The release body is `RELEASE_NOTES.md` (`gh release edit`), the
+      title *KiCad Agentic MCP v1.1.0*, and its relative links resolve against
+      the tag
+
+### Validation
+`gh release view v1.1.0` lists seven assets and a body that is not the
+auto-generated commit list.
+
+## Q.5 — The published artefact is opened, not trusted
+
+### Objectif
+O.9.3's standard: the zip a user downloads is inspected on this machine.
+
+### Tâches
+- [ ] Q.5.1 `konnect-pcm-v1.1.0-windows.zip` downloaded from the release:
+      `metadata.json` carries one `versions[]` entry reading `1.1.0`, the
+      plugin manifest points at `bin/konnect.exe`, the viewer is bundled, and
+      the binary inside answers `konnect 1.1.0`
+- [ ] Q.5.2 `progress.md` states the closing state: released, gates named,
+      nothing open
+- [ ] Q.5.3 The two known non-blockers are recorded rather than fixed:
+      `packaging/metadata.json` still carries upstream's
+      `com.github.mixelpixx.konnect` identifier and `mixelpixx` as author,
+      which only matters at official PCM submission; and eight Dependabot PRs
+      remain open, none of which the release depends on
+
+### Validation
+The version the binary reports is the version the tag names is the version the
+package declares — measured, in that order, from the downloaded file.
+
+## Q.6 — A test that measured the runner's filesystem, found by this phase — DONE
+
+### Objectif
+The phase invariant says a gate going red for a reason that is not the version
+bump stops the release and is triaged as its own item. One did. This is it.
+
+### Ce qui a rougi
+CI run `32944662909`, on `c377a41` — a commit that touches **only** `plan.md`
+and `progress.md`. `Check & Test (ubuntu-latest)` failed with three tests in
+`konnect-schematic-editor --lib`, on identical source to the green run before
+it. Two of the three were collateral: they read `PoisonError`. Run
+`32945946481`, on `724e5a7` — another Markdown-only commit — then rejected the
+first fix and reported the failure alone, which is itself the proof of Q.6.3.
+
+### Tâches
+- [x] Q.6.1 The real failure is
+      `a_symbol_added_inside_an_existing_library_makes_the_index_stale`. It
+      writes the index cache, then creates a symbol inside
+      `Device.kicad_symdir` and requires the cache to read stale.
+      `fingerprint_children` hashes each library entry's mtime, so the
+      assertion holds only if the filesystem gives that directory a *new*
+      stamp. Whether it does is a property of the **machine**: NTFS stamps in
+      100 ns units and the test is green **30 times out of 30** here, while an
+      ext4 volume whose inodes are 128 bytes wide carries no sub-second field
+      at all, and on that runner the symbol lands inside the tick the cache
+      already recorded. D140's class one level down — an assertion about the
+      machine wearing the clothes of an assertion about the code
+- [x] Q.6.2 The first fix was **wrong, and CI said so**: waiting a
+      millisecond before writing assumes the granularity is finer than a
+      millisecond, which is the very thing in question, and the run came back
+      red on the same assertion. A stamp already written does not move on its
+      own, so what has to be waited for is the **observable value**: the test
+      now recreates the symbol until the directory's mtime differs from the one
+      the cache recorded, bounded at ~2 s — comfortably past a one-second
+      granularity, and a failure after that is a real defect rather than a slow
+      disk. The failure message prints both stamps, so the next red run says
+      which of the two it is
+- [x] Q.6.3 The other two reds of the first run are one defect of
+      amplification, not two failures: the panic poisoned `ENV_LOCK`, so every
+      later test taking it died with `PoisonError` instead of reporting its own
+      verdict. That mutex guards an environment variable, not an invariant over
+      data. `env_lock()` now recovers the guard with `into_inner()`. **Proved by
+      the second red run**: the same defect then reported as `34 passed;
+      1 failed` instead of three failures. P.7.6's rule at the mutex level
+- [x] Q.6.4 Production code is untouched. Every edit is inside
+      `mod suggestion_tests`, so the phase invariant holds
+
+### Validation
+`cargo test -p konnect-schematic-editor --lib`: 37 passed, 0 failed, and 30
+consecutive runs of the repaired test green. The oracle that matters is
+`Check & Test (ubuntu-latest)`, since it is the only machine where this has
+ever been red.
