@@ -5407,17 +5407,50 @@ decided by the user on 2026-08-26:
 - [ ] R.3.4 The demo is run end to end on the published install and **timed**.
       If it exceeds 40 s, the task is narrowed or replaced — the budget is not
       moved (INV6)
-- [ ] R.3.5 The end state is verified by KiCad (`kicad-cli` ERC/DRC or a reopen),
-      and the verification is part of the demo, not an afterthought
+- [x] R.3.5 The end state is verified by KiCad (`kicad-cli` ERC/DRC or a reopen),
+      and the verification is part of the demo, not an afterthought. **Proved by
+      run 2**: the model ran DRC itself as its last act, and `kicad-cli` run
+      afterwards on the file agrees — 5 unconnected items before, **0** after,
+      11 track segments, 3 silkscreen warnings, no errors
 - [ ] R.3.6 A capture exists — screen recording or a before/after pair — showing
       the KiCad window changing, embedded in the README and usable in R.4
 - [ ] R.3.7 A second run from the committed starting state reproduces the same
       end state, proving the demo is not a lucky take
+- [ ] R.3.10 **Opened by run 2.** The 40 s budget is re-aimed or restated, by
+      the user, on the evidence of `docs/launch/demo-run-2.md`. Whatever is
+      decided is written where the demo is published, in the same words as the
+      measurement — a budget that moves silently is worse than a budget that was
+      wrong
+- [ ] R.3.9 **Opened by run 2.** There is no *route this net* tool: three nets
+      cost eleven `route_trace` calls, one segment each. Recorded as a
+      capability gap, classified with F-13 in R.9.4's family, and decided at R.6
+      — not fixed here
 - [ ] R.3.8 **Opened by run 1.** The task is narrowed or replaced on the
       evidence of `docs/launch/demo-run-1.md`, and R.3.1's justification is
       amended rather than rewritten — the rejected candidates and the reason the
       live PCB path was chosen still hold; what did not hold is the assumption
       that a board with no netlist can be routed
+
+### Run 2 — 2026-08-26 — the task passed, the clock did not
+
+Full evidence: `docs/launch/demo-run-2.md`. The narrowed task on the
+netlist-carrying pre-state **succeeded**: capacitors at 4.839 mm and 4.888 mm
+from `U1`, three nets closed in copper, and KiCad's own verdict — 5 unconnected
+items before, **0** after, 11 segments, 3 silkscreen warnings, no errors.
+
+And it took **377 s** across 47 turns. The shape of the calls says why: the model
+routed **one segment per turn**, eleven turns of copper, and never batched
+through `kicad_invoke`. At the 8–10 s per turn both runs measured, no reasonable
+prompt reaches 40 s — the tool calls answer in milliseconds; the conversation
+does not.
+
+So R.3.4 stays open, and what it is blocked on is **not** the task any more. The
+40 s figure was written in R.3 before anything was measured, and what it bounds
+is model conversation time rather than product time. Moving it quietly to fit a
+measurement is exactly what INV6 and D146 forbid, so the choice goes to the user:
+re-aim the 40 s at the interval the viewer actually watches — first write to last
+write inside KiCad, which is sub-second here — or publish the real number and
+build R.4's claims on it. **R.3.10** carries that decision.
 
 ### Run 1 — 2026-08-26 — failed its own criterion, and found why
 
