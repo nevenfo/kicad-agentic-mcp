@@ -90,6 +90,11 @@ out, and the choice belongs to the user:
 What must not happen is quietly moving a published budget to fit a measurement
 (INV6, D146).
 
+**Decided by the user on 2026-08-26: publish both numbers.** The 40 s stops
+being a budget; the demo states the product time and the conversation time side
+by side, in `README.md` and `examples/demo/README.md`, with `demo-run-3.md`
+carrying the per-call measurement that separates them.
+
 ## Anything else the run found
 
 - Nothing new broke. F-13 through F-17 stand as run 1 recorded them; the

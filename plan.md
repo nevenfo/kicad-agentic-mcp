@@ -5404,9 +5404,14 @@ decided by the user on 2026-08-26:
       self-contained, with a stated pre-state — so two runs start identically
 - [x] R.3.3 The exact prompt is committed with it. The demo is a prompt, not a
       script: what is being demonstrated is a model doing the work
-- [ ] R.3.4 The demo is run end to end on the published install and **timed**.
+- [x] R.3.4 The demo is run end to end on the published install and **timed**.
       If it exceeds 40 s, the task is narrowed or replaced — the budget is not
-      moved (INV6)
+      moved (INV6). Run three times on the published v1.1.0: run 1 failed its
+      own criterion and returned five defects, R.3.8 narrowed the task on that
+      evidence, and runs 2 and 3 passed it at 377 s and 424 s. The budget was
+      **not** moved to fit them — the task was narrowed first, and when
+      narrowing further was shown to be pointless (the floor is turns, not
+      work), the question went to the user as R.3.10
 - [x] R.3.5 The end state is verified by KiCad (`kicad-cli` ERC/DRC or a reopen),
       and the verification is part of the demo, not an afterthought. **Proved by
       run 2**: the model ran DRC itself as its last act, and `kicad-cli` run
@@ -5423,9 +5428,20 @@ decided by the user on 2026-08-26:
       KiCad said — 5 unconnected before, 0 after, 11 segments, 3 warnings, no
       errors. **It carries no time claim**: that sentence is R.3.10's to write,
       once the user has decided what the 40 s figure measures
-- [ ] R.3.7 A second run from the committed starting state reproduces the same
-      end state, proving the demo is not a lucky take
-- [ ] R.3.10 **Opened by run 2.** The 40 s budget is re-aimed or restated, by
+- [x] R.3.7 A second run from the committed starting state reproduces the same
+      end state, proving the demo is not a lucky take. **It reproduces**
+      (`docs/launch/demo-run-3.md`): 5 unconnected items before and **0** after,
+      **11** track segments both times, no errors, both capacitors within 5 mm
+      of `U1` — and different coordinates, a 180° rotation run 2 did not make,
+      and one extra DRC error found and closed (the SOT-223 tab needs explicit
+      copper to pin 2). The circuit matched; the pixels did not, which is what
+      `examples/demo/README.md` asks for. It also met F-16 and F-15 live and
+      turned both into **false statements in its final answer** — that KiCad was
+      installed nowhere, and that Konnect had fallen back to its file engine,
+      while the writes were in fact reaching the running editor over IPC. Two
+      runs, two models, the same two dead ends: R.9.1 and R.9.3 were the right
+      calls, and they reach users only through R.7.7's v1.1.1
+- [x] R.3.10 **Opened by run 2.** The 40 s budget is re-aimed or restated, by
       the user, on the evidence of `docs/launch/demo-run-2.md`. Whatever is
       decided is written where the demo is published, in the same words as the
       measurement — a budget that moves silently is worse than a budget that was
@@ -5433,7 +5449,13 @@ decided by the user on 2026-08-26:
       40 s stops being a budget and becomes a named measurement of *product*
       time; the conversation time is published beside it, in minutes, as the
       number a viewer actually waits. Written after R.3.7, so the figures cover
-      both runs rather than one
+      both runs rather than one. **Written**: `README.md` and
+      `examples/demo/README.md` both carry the pair — board changes in
+      **0.686 s / 0.773 s** of Konnect time (slowest single write 0.07 s;
+      2.3 s / 4.7 s including KiCad's own DRC), against **377 s / 424 s** of
+      wall clock over 47 / 52 turns. `demo-run-3.md` carries the per-call
+      measurement the pair rests on, and `demo-run-2.md`, which asked the
+      question, records the answer
 - [x] R.3.9 **Opened by run 2.** There is no *route this net* tool: three nets
       cost eleven `route_trace` calls, one segment each. Recorded as a
       capability gap, classified with F-13 in R.9.4's family, and decided at R.6
@@ -5882,8 +5904,13 @@ unclassified.
       walked, measured, and written down (R.1)
 - [ ] The README answers *what, what it costs, how to start* in its first screen
       (R.2)
-- [ ] One demo, under 40 s, verified by KiCad, reproducible from a committed
-      starting state (R.3)
+- [x] ~~One demo, under 40 s~~, verified by KiCad, reproducible from a committed
+      starting state (R.3). **Amended by R.3.10**, on the user's decision and on
+      three measured runs: the demo is verified by KiCad and reproduces from the
+      committed starting state, and its time is published as the two numbers
+      that were actually measured — under a second of board changes, six to
+      seven minutes of conversation. The 40 s was written before anything had
+      been run, and is struck rather than quietly re-aimed
 - [ ] A launch kit the user can publish without rewriting (R.4)
 - [ ] A feedback route that yields the five metrics without a follow-up question
       (R.5)

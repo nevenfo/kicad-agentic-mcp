@@ -46,9 +46,21 @@ illustrative. Both images are `kicad-cli` renders of the board file, same frame,
 same zoom — the left one before the prompt, the right one after it.
 
 **KiCad's verdict on the result, not ours:** 5 unconnected items before, **0**
-after; 11 track segments; 3 silkscreen warnings and no errors. The full run —
-what was called, in what order, how long it took and where the time went — is in
-[`docs/launch/demo-run-2.md`](docs/launch/demo-run-2.md).
+after; 11 track segments; silkscreen warnings and no errors. Run twice from the
+same starting state, and it reproduced — same circuit, same verdict, different
+coordinates.
+
+**Two numbers, because they measure two different things.** The board changes
+themselves — both placements, eleven traces, the saves — land in **under a
+second**: 0.69 s and 0.77 s of Konnect time across the two runs, the slowest
+single write 0.07 s. The prompt, end to end, took **6 to 7 minutes** (377 s and
+424 s), because that is how long the model takes to look, decide and route one
+segment per turn. The product is fast; the conversation is not, and quoting only
+the first number would be quoting the flattering half.
+
+The full runs — what was called, in what order, and where the time went — are in
+[`docs/launch/demo-run-2.md`](docs/launch/demo-run-2.md) and
+[`demo-run-3.md`](docs/launch/demo-run-3.md).
 
 ## Quick start
 

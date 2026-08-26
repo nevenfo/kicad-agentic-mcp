@@ -103,6 +103,30 @@ Start again from the committed files and issue the same prompt. What has to matc
 is the circuit, not the pixels: same three parts, same three nets connected, same
 DRC verdict. A model will not place a capacitor at identical coordinates twice.
 
+It has been run twice this way — `docs/launch/demo-run-2.md` and
+`demo-run-3.md`. Both closed the three nets with 11 segments and left KiCad
+reporting 0 unconnected items and no errors; both placed the capacitors within
+5 mm of `U1`, at coordinates 0.6 mm apart, and run 3 rotated `C2` where run 2
+did not.
+
+## How long it takes, and what that measures
+
+Two numbers, because they measure two different things:
+
+- **The board changes land in under a second.** Every call that alters the board
+  — the placements, the rotation, the eleven traces, the saves — totalled
+  **0.686 s** in run 2 and **0.773 s** in run 3, the slowest single write 0.07 s.
+  Including `run_drc`, which is KiCad doing its own check, all Konnect calls came
+  to 2.3 s and 4.7 s.
+- **The prompt takes 6 to 7 minutes** end to end — 377 s over 47 turns, 424 s
+  over 52. That is the model looking, deciding, and routing one segment per turn;
+  there is no batch *route this net* call to collapse it into one.
+
+The 40 s figure this demo was first written against measured neither: it was
+chosen before anything had been run. It is published here as the two measured
+numbers instead, because a demo whose claims survive checking is worth more than
+a fast one.
+
 ## If you rebuild the pre-state yourself
 
 The board was produced by KiCad's own *Update PCB from Schematic*, which is
