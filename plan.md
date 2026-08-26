@@ -5786,19 +5786,43 @@ R.3.4's run 1, and the evidence document it produced.
       `malformed_document`. KiCad's own verdict backs both halves: the
       four-`gr_line` board with no `(layers)` passes `kicad-cli pcb drc`
       (0 violations, 0 unconnected)
-- [ ] R.9.3 **F-15 — reads and writes disagree about where the board is.** PCB
+- [x] R.9.3 **F-15 — reads and writes disagree about where the board is.** PCB
       writes go to the running pcbnew over IPC; `get_component_pads` and
       `get_pad_position` read the file on disk, so a footprint just placed is
       invisible until something saves. Decide and record whether R fixes this or
-      documents it — the run lost several turns to it, and so will every user
-- [ ] R.9.4 **F-13 — routing is unreachable on a board without a netlist.** This
+      documents it — the run lost several turns to it, and so will every user.
+      **Decided: R documents it.** Rerouting the read means moving the whole PCB
+      read surface onto IPC, and the alternative — saving the user's board
+      behind their back before every read — changes their file without being
+      asked. Both are capability-scale, and the demo passes without either, so
+      the phase's own rule keeps them out. What R does instead is stop the
+      silence: both pad reads now answer `"source": "file"`, like every other
+      split read in this crate, `docs/TROUBLESHOOTING.md` gains the symptom
+      under the words a user would use for it, and both tool descriptions say
+      where they read from. `both_pad_reads_declare_that_they_read_the_file`
+      holds the disclosure in place. The rerouting itself is a named candidate
+      for the R.6 gate
+- [x] R.9.4 **F-13 — routing is unreachable on a board without a netlist.** This
       is a missing capability, not a bug: creating or assigning nets, or an
       *Update PCB from Schematic* equivalent. It is **out of R's scope** by the
       phase's own rule; it is recorded here and becomes a named candidate for
-      the R.6 gate, where evidence decides it
-- [ ] R.9.5 **F-17 — `lib_footprint_mismatch`.** Footprints placed over IPC do
+      the R.6 gate, where evidence decides it. **Recorded, not fixed**, and R.3.8
+      already paid its cost in the open: the demo's pre-state carries a
+      schematic, and `examples/demo/README` says plainly that a PCB has nets
+      only because a schematic gave it some and that the *Update PCB from
+      Schematic* step is setup rather than demo, because Konnect has no
+      equivalent. That sentence is the user-facing half of this record
+- [x] R.9.5 **F-17 — `lib_footprint_mismatch`.** Footprints placed over IPC do
       not match the library copy they name. Classified and recorded; fixed only
-      if R.9.2's or R.9.3's work makes it trivial
+      if R.9.2's or R.9.3's work makes it trivial. Neither made it trivial —
+      they touch a stackup reader and two file reads, not the geometry a
+      placement sends over the wire — so it is **recorded, not fixed**. Run 2
+      bounds it usefully: its footprints reached the board through KiCad's own
+      *Update PCB from Schematic* and were only *moved* over IPC, and its DRC
+      returned three silkscreen warnings and no mismatch at all. So the defect
+      belongs to IPC placement building a footprint, not to IPC touching one,
+      which is why the demo does not meet it. **Product, minor**, and a named
+      candidate for the R.6 gate
 
 - [x] R.9.6 **Found in review of R.9.2, fixed there.** The first answer for an
       undeclared stackup was *two* layers, F.Cu and B.Cu. That is what KiCAD's

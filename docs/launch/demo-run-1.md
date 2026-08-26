@@ -66,8 +66,16 @@ calls in 176 ms proved the **transport**, and the transport is fine.
 | **F-16** | `launch_kicad_ui` fails `program not found` — the same missing-discovery defect R.7 fixed for `kicad-cli`, on `kicad` this time (D149's chain is not applied to it) | **product** |
 | **F-17** | Footprints placed through IPC raise `lib_footprint_mismatch` in DRC against the library they came from | **product, minor** |
 
-None of these are fixed by this document. R.9 carries them; the phase's
-narrow exception decides which, if any, are fixed inside R.
+None of these are fixed by this document. R.9 carried them, and the phase's
+narrow exception decided each one:
+
+| ID | Disposition |
+|---|---|
+| **F-13** | **Recorded, not fixed.** Creating or assigning nets is a capability, and R adds none. `examples/demo/` says so in the open: a PCB has nets only because a schematic gave it some, and *Update PCB from Schematic* is setup, not demo. Named candidate for the R.6 gate |
+| **F-14** | **Fixed** (R.9.2). `get_layer_list` answers with KiCad's own default stackup, flagged `"declared": false`; `add_layer` still refuses, but says how to get a table instead of calling the board malformed |
+| **F-15** | **Documented, not fixed** (R.9.3). Rerouting the read means moving the whole PCB read surface onto IPC; saving the user's board unasked is worse. Both pad reads now answer `"source": "file"`, `TROUBLESHOOTING` carries the symptom, and the rerouting is a named candidate for the R.6 gate |
+| **F-16** | **Fixed** (R.9.1). D149's discovery chain now covers the `kicad` GUI binary, from a resolver both the server and the installer share |
+| **F-17** | **Recorded, not fixed** (R.9.5). Run 2, whose footprints came from KiCad's own *Update PCB from Schematic* and were only moved over IPC, saw no mismatch — so the defect belongs to IPC *building* a footprint, not to IPC touching one. Named candidate for the R.6 gate |
 
 ## What the run also proved
 

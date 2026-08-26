@@ -47,6 +47,18 @@ automatically, and a `konnect-settings.json` passed via `--config` can carry
 The IPC tools talk to KiCAD's **running PCB editor**. Open your board file in
 KiCAD first, and make sure the API is enabled (previous section).
 
+## A footprint I just placed is not where the pad tools say it is
+
+PCB **writes** go to the running PCB editor over IPC; two PCB **reads** —
+`get_component_pads` and `get_pad_position` — read the board **file** on disk.
+So a footprint placed or moved through a running KiCAD keeps its old
+coordinates in those two answers until KiCAD saves the board.
+
+Both answers say which source they used (`"source": "file"`), and the tools
+that read over IPC say `"source": "ipc"`. If the two disagree, save the board
+in KiCAD (Ctrl+S) and read again — that is the whole of it. `get_component_list`
+reads over IPC and therefore always reflects the live board.
+
 ## "kicad-cli not found"
 
 Common install paths are auto-detected (including the Windows registry). If

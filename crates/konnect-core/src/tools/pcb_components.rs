@@ -965,7 +965,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "get_component_pads",
-            "Return the pad positions and net assignments for a footprint.",
+            "Return the pad positions and net assignments for a footprint. Reads the              board file on disk (\"source\": \"file\"): a footprint placed or moved              through a running KiCAD is not visible here until KiCAD saves the board.",
             json!({
                 "type": "object",
                 "properties": {
@@ -978,7 +978,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "get_pad_position",
-            "Return the schematic-space position of a specific pad number on a footprint.",
+            "Return the schematic-space position of a specific pad number on a footprint.              Reads the board file on disk (\"source\": \"file\"): a footprint placed or              moved through a running KiCAD is not visible here until KiCAD saves the board.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1391,9 +1391,19 @@ async fn handle_get_component_pads(
         })
         .collect();
 
-    Ok(CallToolResult::json(
-        &json!({ "reference": reference, "pad_count": pads.len(), "pads": pads }),
-    ))
+    // F-15: this read is the board *file*, while place_component and the other
+    // PCB writes go to the running pcbnew over IPC. A footprint moved live is
+    // therefore still at its old coordinates here until KiCAD saves, and the
+    // demo run lost turns to exactly that. R does not reroute the read — that
+    // is a transport change across the whole PCB read surface, not the minimal
+    // fix the phase allows — but the answer says where it came from, the way
+    // every other split read in this crate already does.
+    Ok(CallToolResult::json(&json!({
+        "reference": reference,
+        "pad_count": pads.len(),
+        "pads": pads,
+        "source": "file",
+    })))
 }
 
 async fn handle_get_pad_position(
@@ -1414,7 +1424,10 @@ async fn handle_get_pad_position(
                     .iter()
                     .find(|p| p["number"].as_str() == Some(&pad_number))
                 {
-                    return Ok(CallToolResult::json(pad));
+                    // F-15 again: same file read, so the same disclosure.
+                    let mut body = pad.clone();
+                    body["source"] = json!("file");
+                    return Ok(CallToolResult::json(&body));
                 }
             }
         }
@@ -2606,6 +2619,44 @@ mod tests {
         let pads = body["pads"].as_array().unwrap();
         assert_eq!(pads[0]["net"], json!("VCC"));
         assert_eq!(pads[1]["net"], json!("GND"));
+    }
+
+    /// F-15: both pad reads read the board *file*, while every PCB write goes
+    /// to the running pcbnew over IPC, so a footprint moved live is still at
+    /// its old coordinates here until KiCAD saves. R does not reroute the
+    /// read; it makes the answer say which of the two it is, like every other
+    /// split read in this crate.
+    #[tokio::test]
+    async fn both_pad_reads_declare_that_they_read_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let board = dir.path().join("b.kicad_pcb");
+        std::fs::write(
+            &board,
+            r#"(kicad_pcb
+  (version 20260206)
+  (generator "pcbnew")
+  (footprint "R_0402"
+    (at 10 20)
+    (property "Reference" "R1" (at 0 -1 0))
+    (pad "1" smd roundrect (at -0.5 0) (size 0.5 0.5) (layers "F.Cu") (net "VCC"))
+  )
+)
+"#,
+        )
+        .unwrap();
+
+        let args = json!({ "board": board.to_str().unwrap(), "reference": "R1" });
+        let pads = handle_get_component_pads(&args, &test_ctx()).await.unwrap();
+        let body: serde_json::Value = serde_json::from_str(&result_text(&pads)).unwrap();
+        assert_eq!(body["source"], json!("file"), "body: {body}");
+
+        let args =
+            json!({ "board": board.to_str().unwrap(), "reference": "R1", "pad_number": "1" });
+        let pad = handle_get_pad_position(&args, &test_ctx()).await.unwrap();
+        assert!(!pad.is_error, "{}", result_text(&pad));
+        let body: serde_json::Value = serde_json::from_str(&result_text(&pad)).unwrap();
+        assert_eq!(body["source"], json!("file"), "body: {body}");
+        assert_eq!(body["number"], json!("1"), "body: {body}");
     }
 }
 
