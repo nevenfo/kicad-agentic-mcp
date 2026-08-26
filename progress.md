@@ -6,7 +6,10 @@
 preuves inchangées. P.7 avait rouvert la phase — la suite locale et la suite CI
 ne mesuraient pas la même machine — et est close à son tour, ses six items
 compris. Aucune case ouverte ne reste.
-Branche `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`, non fusionnée.
+PR #10 **fusionnée** dans `agentic/main` le 2026-08-26 (merge commit `6c449e3`,
+63 commits), sur décision de l'utilisateur et avec tous les checks verts.
+`agentic/main` est la branche par défaut du dépôt ; la branche de travail
+`ai/P-schematic-fidelity` reste sur le remote, sa copie locale est supprimée.
 
 ## Tâche actuelle
 
@@ -301,11 +304,9 @@ Aucun.
 
 ## NEXT ACTION
 
-Aucune tâche de plan ouverte : la phase P est terminée, P.7 comprise, et toutes
-ses preuves sont vertes — y compris le job E2E gatant, qui n'avait jamais
-tourné sur cette branche avant aujourd'hui. La prochaine action demande une
-**décision de l'utilisateur** : fusionner la PR #10
-(`ai/P-schematic-fidelity` → `agentic/main`, 62 commits d'avance, à jour et
-poussée, checks verts) ou ouvrir une phase suivante. Rien ne doit être
-implémenté avant ce choix. Si la fusion est décidée : `gh -R
-nevenfo/kicad-agentic-mcp` (D114).
+Aucune tâche de plan ouverte et rien en attente : la phase P est terminée, P.7
+comprise, et son travail est fusionné dans `agentic/main`. La seule section du
+plan encore ouverte est **I.1 — Custom KiCad gate**, explicitement `TODO
+(default: NO)`, à réévaluer à la sortie de KiCad 11 : elle ne se lance pas
+d'elle-même. La prochaine action demande donc une **décision de l'utilisateur**
+sur ce qu'ouvre la phase suivante. Rien ne doit être implémenté avant ce choix.
