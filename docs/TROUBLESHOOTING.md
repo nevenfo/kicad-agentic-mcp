@@ -1,16 +1,14 @@
 # Troubleshooting
 
-## "KiCAD IPC socket path not configured"
+## "KiCAD IPC socket path not configured" / "IPC connect failed"
 
 Any tool that talks to a live KiCAD session (`save_project`, PCB editing,
-`check_kicad_ui`, …) needs the IPC socket address. Two separate configurations
-must both be correct — neither happens automatically:
+`check_kicad_ui`, …) needs the IPC socket address. Since v1.1.1, Konnect resolves
+it automatically from an explicit setting, then `KICAD_API_SOCKET`, then KiCad's
+platform-default address. A standard install needs no copied socket path and no
+`konnect-settings.json`.
 
-1. **The socket path in Konnect's plugin settings** (inside KiCAD)
-2. **The Konnect server registration in your AI client's MCP config**
-
-Step by step (based on the diagnostic guide contributed in
-[#18](https://github.com/mixelpixx/Konnect/issues/18)):
+Check the runtime in this order:
 
 1. Open KiCAD normally.
 2. Go to **Edit → Preferences → Plugins** and check **"Enable KiCad API"**.
@@ -20,32 +18,38 @@ Step by step (based on the diagnostic guide contributed in
    Listening on ipc://C:\Users\<you>\AppData\Local\Temp\kicad\api.sock
    ```
 
-   Copy the whole address including the `ipc://` prefix — it is unique to
-   your machine and user.
-3. In KiCAD, open **Tools → External Plugins → Konnect** to open the settings
-   dialog.
-4. Paste the address into the **IPC Socket** field and click **Save**.
-5. Confirm your AI client (Claude Code, Claude Desktop, …) has the `konnect`
+3. Confirm your AI client (Claude Code, Claude Desktop, …) has the `konnect`
    MCP server registered in its own config (`.mcp.json` or
    `claude_desktop_config.json`) pointing at the `konnect` binary — see
-   [examples/](../examples/). This registration is separate from the KiCAD
-   plugin settings.
-6. Restart the AI client session so it spawns a fresh Konnect process that
-   reads the saved settings.
-7. Verify: have the AI call `open_project`. Expected:
+   [examples/](../examples/).
+4. Restart the AI client session so it spawns a fresh Konnect process.
+5. Verify: have the AI call `open_project`. Expected:
 
    ```json
    { "kicad_ui_running": true, "message": "KiCAD is running and IPC is available." }
    ```
 
-Alternative: launching the server from within KiCAD sets `KICAD_API_SOCKET`
-automatically, and a `konnect-settings.json` passed via `--config` can carry
-`ipc_socket_path` directly.
+For a non-standard socket, set **IPC Socket** in Konnect's plugin settings or
+pass a `konnect-settings.json` with `ipc_address` (legacy
+`ipc_socket_path` is also accepted). An explicit non-empty value is never
+replaced by discovery.
 
 ## PCB tools return "IPC connect failed" / "No PCB document is open"
 
 The IPC tools talk to KiCAD's **running PCB editor**. Open your board file in
 KiCAD first, and make sure the API is enabled (previous section).
+
+## A footprint I just placed is not where the pad tools say it is
+
+PCB **writes** go to the running PCB editor over IPC; two PCB **reads** —
+`get_component_pads` and `get_pad_position` — read the board **file** on disk.
+So a footprint placed or moved through a running KiCAD keeps its old
+coordinates in those two answers until KiCAD saves the board.
+
+Both answers say which source they used (`"source": "file"`), and the tools
+that read over IPC say `"source": "ipc"`. If the two disagree, save the board
+in KiCAD (Ctrl+S) and read again — that is the whole of it. `get_component_list`
+reads over IPC and therefore always reflects the live board.
 
 ## "kicad-cli not found"
 
@@ -118,3 +122,17 @@ re-fetch `tools/list` in response. If newly loaded tools never show up:
 Install via **Plugin and Content Manager → Install from File** with the
 `konnect-pcm-*.zip` release asset (not the bare binary archives), then restart
 KiCAD.
+
+Look in the **PCB editor**, under *Tools → External Plugins* — and open a
+project first, because pcbnew refuses to open at all without one
+(*« Créer (ou ouvrir) un projet pour modifier un pcb. »*). The package also
+declares a toolbar action, which KiCad 10 does not render; the menu entry is the
+one that works.
+
+## Still stuck?
+
+**[File a first-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml)**
+— six questions, about two minutes. A report from someone who gave up is worth
+more than one from someone who succeeded: it is the only way a failure on a
+machine that is not the maintainer's ever gets seen. What comes back is tallied
+in [adoption.md](adoption.md).

@@ -262,6 +262,61 @@ pub fn numbering(stack: &[Layer]) -> Numbering {
     }
 }
 
+/// The stackup KiCAD itself applies to a board whose file declares no
+/// `(layers …)` section.
+///
+/// Such a board is **not** malformed — KiCAD 10 opens it without complaint —
+/// but it carries no table to read, so a caller asking what layers it has has
+/// to be told what KiCAD will use. Measured, not assumed: a four-`gr_line`
+/// board with no `(layers …)` was handed to `kicad-cli pcb upgrade` on
+/// KiCAD 10.0.3, and this is the table KiCAD wrote back, in its own order —
+/// two copper layers and twenty-two technical ones, including the `Edge.Cuts`
+/// such a board is usually already drawing on.
+///
+/// The ids are `Numbering::Modern`, which is what a tie (an empty stack) in
+/// [`numbering`] already resolves to; `default_stackup_ids_are_the_canonical_ones`
+/// keeps the two in step.
+const DEFAULT_STACKUP: &[(i32, &str, &str, Option<&str>)] = &[
+    (0, "F.Cu", "signal", None),
+    (2, "B.Cu", "signal", None),
+    (9, "F.Adhes", "user", Some("F.Adhesive")),
+    (11, "B.Adhes", "user", Some("B.Adhesive")),
+    (13, "F.Paste", "user", None),
+    (15, "B.Paste", "user", None),
+    (5, "F.SilkS", "user", Some("F.Silkscreen")),
+    (7, "B.SilkS", "user", Some("B.Silkscreen")),
+    (1, "F.Mask", "user", None),
+    (3, "B.Mask", "user", None),
+    (17, "Dwgs.User", "user", Some("User.Drawings")),
+    (19, "Cmts.User", "user", Some("User.Comments")),
+    (21, "Eco1.User", "user", Some("User.Eco1")),
+    (23, "Eco2.User", "user", Some("User.Eco2")),
+    (25, "Edge.Cuts", "user", None),
+    (27, "Margin", "user", None),
+    (31, "F.CrtYd", "user", Some("F.Courtyard")),
+    (29, "B.CrtYd", "user", Some("B.Courtyard")),
+    (35, "F.Fab", "user", None),
+    (33, "B.Fab", "user", None),
+    (39, "User.1", "user", None),
+    (41, "User.2", "user", None),
+    (43, "User.3", "user", None),
+    (45, "User.4", "user", None),
+];
+
+/// KiCAD's own default stackup, for a board file that declares no
+/// `(layers …)` section. See [`DEFAULT_STACKUP`] for how it was measured.
+pub fn default_stackup() -> Vec<Layer> {
+    DEFAULT_STACKUP
+        .iter()
+        .map(|(id, name, kind, user_name)| Layer {
+            id: *id,
+            name: (*name).to_string(),
+            kind: (*kind).to_string(),
+            user_name: user_name.map(|s| s.to_string()),
+        })
+        .collect()
+}
+
 fn layer_from(node: &SexpNode) -> Option<Layer> {
     // `(0 "F.Cu" signal "Top Layer")` — the ordinal is child 0, being the head
     // of the list, so every field sits one place earlier than a tagged node.
@@ -453,5 +508,30 @@ mod tests {
         let spaces = parse_sexp("(kicad_pcb\n  (layers\n    (0 \"F.Cu\" signal)\n  )\n)").unwrap();
         let tabs = parse_sexp("(kicad_pcb\n\t(layers\n\t\t(0 \"F.Cu\" signal)\n\t)\n)").unwrap();
         assert_eq!(layers(&spaces), layers(&tabs));
+    }
+
+    /// The default stackup is measured from KiCAD, and `canonical_id` is
+    /// measured from KiCAD's demo boards. Two independent measurements of the
+    /// same scheme must agree, or one of them has drifted.
+    #[test]
+    fn default_stackup_ids_are_the_canonical_ones() {
+        for layer in default_stackup() {
+            assert_eq!(
+                canonical_id(&layer.name, Numbering::Modern),
+                Some(layer.id),
+                "{} is not at its canonical modern id",
+                layer.name
+            );
+        }
+    }
+
+    /// A default stackup that omits `Edge.Cuts` would tell a caller drawing a
+    /// board outline that the layer it is drawing on does not exist.
+    #[test]
+    fn the_default_stackup_has_two_copper_layers_and_an_outline_layer() {
+        let stack = default_stackup();
+        let cu: Vec<&str> = copper(&stack).iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(cu, vec!["F.Cu", "B.Cu"]);
+        assert!(stack.iter().any(|l| l.name == "Edge.Cuts"));
     }
 }

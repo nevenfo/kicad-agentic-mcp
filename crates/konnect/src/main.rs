@@ -56,14 +56,14 @@ async fn main() -> Result<()> {
         .and_then(|pos| args.get(pos + 1))
         .map(std::path::PathBuf::from);
 
-    let config = if let Some(ref path) = config_path {
+    let (config, ipc_address_source) = if let Some(ref path) = config_path {
         // KiCAD launches the server this way (with KICAD_API_SOCKET set), so
         // the env fallback for a blank ipc_address must apply here too (#39).
         let mut c = Config::load_from(path)?;
-        c.apply_env_fallbacks()?;
-        c
+        let source = c.apply_env_fallbacks()?;
+        (c, source)
     } else {
-        Config::load()?
+        Config::load_with_ipc_source()?
     };
 
     // ─── Initialize tracing (stderr only — stdout is MCP protocol) ──
@@ -77,9 +77,54 @@ async fn main() -> Result<()> {
 
     info!("Konnect v{} starting", env!("CARGO_PKG_VERSION"));
 
+    match ipc_address_source {
+        config::IpcAddressSource::Configured => {
+            info!(
+                "ipc_address: using configured value as-is -> {}",
+                config.ipc_address
+            );
+        }
+        config::IpcAddressSource::EnvVar => {
+            info!(
+                "ipc_address: resolved from KICAD_API_SOCKET -> {}",
+                config.ipc_address
+            );
+        }
+        config::IpcAddressSource::PlatformDefault => {
+            info!(
+                "ipc_address: using platform default -> {}",
+                config.ipc_address
+            );
+        }
+    }
+
+    // Resolve kicad_cli/kicad_binary against the machine when the config
+    // left them at a bare name (no explicit override). An explicit config
+    // value always wins and is passed through untouched; a bare name that
+    // fails to resolve anywhere is also passed through untouched, so the
+    // existing "Failed to spawn kicad-cli" error stays intact (INV4: no
+    // silent fallback without a validator).
+    let kicad_cli_default = if cfg!(target_os = "windows") {
+        "kicad-cli.exe"
+    } else {
+        "kicad-cli"
+    };
+    let kicad_binary_default = if cfg!(target_os = "windows") {
+        "kicad.exe"
+    } else {
+        "kicad"
+    };
+    let kicad_cli = resolve_and_log("kicad_cli", &config.kicad_cli, kicad_cli_default, true);
+    let kicad_binary = resolve_and_log(
+        "kicad_binary",
+        &config.kicad_binary,
+        kicad_binary_default,
+        false,
+    );
+
     let server_config = konnect_core::tools::ServerConfig {
-        kicad_cli: config.kicad_cli.clone(),
-        kicad_binary: config.kicad_binary.clone(),
+        kicad_cli,
+        kicad_binary,
         ipc_address: config.ipc_address.clone(),
         project_dir: config.project_dir.clone(),
         jlcpcb_db_path: config.jlcpcb_db_path.clone(),
@@ -117,6 +162,53 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Resolve one configured binary path (`kicad_cli` or `kicad_binary`)
+/// against the machine and log, once, which branch answered. Shares
+/// resolution with `install::detect_kicad()` via `install::resolve_binary`
+/// so the server and `konnect status`/`init` never disagree.
+fn resolve_and_log(
+    label: &str,
+    configured: &str,
+    default_name: &str,
+    try_registry: bool,
+) -> String {
+    use konnect_core::kicad_locate::{kicad_standard_paths, resolve_binary, KicadCliSource};
+
+    let local_appdata = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
+    let standard_paths = kicad_standard_paths(default_name, local_appdata.as_deref());
+
+    #[cfg(target_os = "windows")]
+    let (path, source) = if try_registry {
+        resolve_binary(configured, default_name, &standard_paths, || {
+            konnect_core::kicad_locate::detect_kicad_from_registry(default_name)
+        })
+    } else {
+        resolve_binary(configured, default_name, &standard_paths, || None)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (path, source) = {
+        let _ = try_registry;
+        resolve_binary(configured, default_name, &standard_paths, || None)
+    };
+
+    let resolved = path.to_string_lossy().to_string();
+    match source {
+        KicadCliSource::Configured => {
+            info!("{label}: using configured value \"{configured}\" as-is");
+        }
+        KicadCliSource::Path => {
+            info!("{label}: resolved \"{configured}\" via PATH -> {resolved}");
+        }
+        KicadCliSource::StandardPath => {
+            info!("{label}: found at standard install path -> {resolved}");
+        }
+        KicadCliSource::Registry => {
+            info!("{label}: found via Windows registry -> {resolved}");
+        }
+    }
+    resolved
 }
 
 fn print_help() {

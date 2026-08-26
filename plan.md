@@ -4901,7 +4901,7 @@ changes.
 
 ---
 
-# Phase Q — Release v1.1.0 — IN PROGRESS
+# Phase Q — Release v1.1.0 — DONE
 
 Opened 2026-08-26 by explicit user request, immediately after Phase P merged.
 Scope is publication only: **no new capability, no Dependabot work, no symbol
@@ -5131,3 +5131,895 @@ first fix and reported the failure alone, which is itself the proof of Q.6.3.
 consecutive runs of the repaired test green. The oracle that matters is
 `Check & Test (ubuntu-latest)`, since it is the only machine where this has
 ever been red.
+
+# Phase R — Launch & adoption — IN PROGRESS
+
+Opened 2026-08-26 by explicit user request, immediately after Phase Q published
+v1.1.0. Scope is **adoption, not capability**: turn a published and technically
+validated release into a project a stranger can understand, install, try and
+judge without asking the maintainer anything.
+
+## Objectif
+
+A person who has never spoken to the maintainer reaches, unaided:
+
+1. an installed Konnect from the **published** v1.1.0 release,
+2. an MCP client that connects to it,
+3. a first task executed against a real KiCad project,
+4. a verdict from KiCad that the task landed,
+
+and the maintainer receives enough structured feedback from the first users to
+decide the next technical phase on evidence rather than on preference.
+
+## Ce que R n'est pas
+
+- **No new product capability.** A capability is added only if a defect directly
+  blocks installation, first use, or the public demo — and then it is the
+  minimum fix, triaged first (see the classification invariant below).
+- **No architectural refactor**, no opportunistic feature, no KiCad 11 work.
+- **No Dependabot sweep, no macOS signing, no official KiCad addon-repository
+  submission** unless one of them turns out to block R itself. All three stay in
+  `progress.md`'s recorded-but-untreated list, where Phase Q left them.
+- **No telemetry.** The feedback loop of R.5 is human-reported and opt-in by
+  construction; nothing is added to the binary that reports anything anywhere.
+
+## Dépendances
+
+- v1.1.0 is published: <https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.1.0>,
+  tag on `80da119`, 7 assets. Phase Q verified the Windows PCM package by
+  opening it.
+- KiCad **10.0.3** at `C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0\bin\`
+  — the install this phase tests against.
+- `C:\Users\FlowUP\Documents\KiCad\10.0\3rdparty\` is **empty**: no Konnect
+  plugin is installed on this machine. That is the initial condition R.1 needs
+  and it exists by accident; it is recorded here because it cannot be recreated
+  once R.1 has run.
+- The repository is public with **0 stars, 0 issues, no topics, no
+  description-linked homepage, Discussions disabled**. That is the adoption
+  baseline R.4 and R.5 move.
+
+## Invariants de la phase
+
+- **INV-R1 — the artefact under test is the published one.** Every step of R.1
+  and R.3 runs against a file downloaded from the GitHub release page. A local
+  `target/release/konnect.exe` is never substituted, not even to unblock a step.
+  Rationale: Q.5 proved the published artefact can differ from what the
+  repository asserts about it (D146).
+- **INV-R2 — one checkbox is one proof.** A step is checked when its evidence
+  exists — a command output, a file on disk, a screenshot, a KiCad verdict —
+  never because it plausibly worked.
+- **INV-R3 — every problem found is classified before it is fixed**, into
+  exactly one of: **UX**, **packaging**, **documentation**, **configuration**,
+  **product**. The class decides who fixes it and in which phase. A product
+  defect discovered here does not become a silent code change in a launch phase.
+- **INV-R4 — the walk is recorded as a stranger would experience it**, including
+  the wrong turns. A step that only worked because the maintainer knew something
+  is a documentation defect, and is logged as one.
+- Existing invariants INV1–INV9 hold unchanged.
+
+## Ordre d'exécution et dépendances internes
+
+```
+R.1  install walk from the published release      (no dependency — runs first)
+  ├── R.7  kicad-cli discovery                    (opened by R.1: blocks first use)
+  ├── R.2  README / Quick Start                   (needs R.1's measured walk)
+  ├── R.3  canonical demo                         (needs R.1 and R.7)
+  │     ├── R.8  ipc_address discovery            (opened by R.3.1, user-approved)
+  │     └── R.9  triage of what run 1 found       (opened by R.3.4)
+  └── R.5  feedback loop                          (needs R.1's friction list)
+        R.4  public launch kit                    (needs R.2 and R.3)
+        R.6  decision gate                        (needs R.4 and R.5 + real feedback)
+```
+
+R.7, R.8 and R.9 did not exist when the phase opened. R.1 found the first and
+classified it **product**; R.3.1 found the second while measuring the live PCB
+path, classified it **configuration**, and the user approved fixing it on
+2026-08-26. Both are the same defect shape — an external address the product
+requires and never derives — and neither adds a capability. R.9 came later and
+is different in kind: R.3.4's first run found five **product** defects at once,
+including one — routing needs a net, and nothing creates one — that is a missing
+capability rather than a bug. R.9 triages them; the phase's exception, not
+momentum, decides which are fixed here.
+
+The user also decided, the same day, that **no release happens until R closes**:
+R.7's and R.8's fixes ride one v1.1.1 at the end, not one release per finding.
+
+R.2, R.3 and R.5 are independent of each other and may run in any order once
+R.1 is closed. R.4 publishes nothing without the user's explicit go — it
+prepares. R.6 is a decision, not an implementation.
+
+## R.1 — The install path a stranger walks, from the published release
+
+### Objectif
+Walk **release page → install → MCP connection → real KiCad project → first
+task → KiCad's verdict** on this machine, from the published assets only, and
+produce a friction list where every entry carries its class (INV-R3).
+
+### Dépendances
+None. Runs first. Requires the empty-`3rdparty` initial condition recorded
+above, which is consumed by R.1.3.
+
+### Tâches
+- [x] R.1.1 The initial condition is recorded before anything is installed:
+      `3rdparty/` contents, KiCad version from `kicad-cli version`, absence of a
+      `konnect` entry in every MCP client config on this machine
+- [x] R.1.2 `konnect-pcm-v1.1.0-windows.zip` is downloaded **from the release
+      page** (`gh release download`, or the browser URL a user would click), and
+      its SHA-256 is recorded. No local build is used anywhere in R.1
+- [x] R.1.3 The package is installed the documented way — KiCad 10 → Plugin and
+      Content Manager → *Install from File* → restart KiCad — and the
+      installed-plugin path is read **from disk**, not assumed from the README
+- [x] R.1.4 KiCad shows the plugin where the README says it will: PCB Editor →
+      *Tools → External Plugins* → **Konnect**. It does, and before the KiCad
+      API is enabled — the entry is the legacy SWIG Action Plugin. Three earlier
+      attempts were blocked by a UAC dialog and were left unproven rather than
+      assumed (INV-R2)
+- [x] R.1.11 The IPC API half of the package is checked where KiCad would show
+      it. The declared toolbar button (`show-button: true`, scope `pcb`) appears
+      **nowhere** — API off, API on, or after a restart (F-11). *Preferences →
+      Plugins* in KiCad 10 is a single API page with no plugin list; enabling
+      « Activer l'API KiCad » and restarting yields
+      `Écoute à ipc://…\Temp\kicad\api.sock`, the socket every PCB tool needs
+      and that KiCad ships switched off (F-09)
+- [x] R.1.5 An MCP client is pointed at the installed binary using only what the
+      README gives, and the connection is proved by a real handshake: the
+      starter kit lists, and the tool count matches what the README claims
+- [x] R.1.6 A **real KiCad project** is opened — a copy of a KiCad-shipped demo
+      or a project created in KiCad, never a repository test fixture — and its
+      pre-state is recorded
+- [x] R.1.7 One first task is executed through MCP against that project, chosen
+      as the thing a new user would try first, and the elapsed time from
+      *client connected* to *task returned* is measured
+- [x] R.1.8 **KiCad delivers the verdict** (INV1): the project is re-opened or
+      run through `kicad-cli` and the change is confirmed to exist and to be
+      readable by KiCad's own tooling
+- [x] R.1.9 The friction list is written, one line per problem, each classified
+      UX / packaging / documentation / configuration / product, each naming the
+      file or surface that must change and the R item that will change it
+- [x] R.1.10 Anything classified **product** is triaged explicitly: does it block
+      installation, first use or the demo? If not, it is recorded and left
+      alone — R does not fix product defects it is not blocked by
+
+### Validation
+The walk is reproducible from the written record alone: a reader who has only
+the friction list and the recorded commands can repeat every step. The first
+task is confirmed by KiCad, not by the tool's own success message. Every
+friction entry has exactly one class.
+
+## R.2 — README and Quick Start, written for the reader who has not decided yet
+
+### Objectif
+The current README opens with architecture and rationale — it is written for
+someone already convinced. A stranger needs, above the fold: what this does,
+what it costs to try, and the shortest path to seeing it work.
+
+### Dépendances
+R.1 closed. Every command and path published here is one R.1 actually ran.
+
+### Tâches
+- [x] R.2.1 A **Quick start** section sits above the essays: numbered steps from
+      the release download to a first verified task, each step a copy-pasteable
+      block, with the total time R.1 measured stated honestly
+- [x] R.2.2 Requirements a reader must satisfy *before* step 1 — KiCad 10, a
+      running KiCad for PCB tools, an MCP client — are stated at the top, not
+      three screens down
+- [x] R.2.3 Every documentation defect from R.1.9 is fixed at its source: the
+      README, `examples/*.json`, `docs/TROUBLESHOOTING.md`, or
+      `RELEASE_NOTES.md`. The fix names the observed failure, not a euphemism
+- [x] R.2.4 The install path published in the README and both example configs is
+      the one read from disk in R.1.3, character for character
+- [x] R.2.5 The macOS and Linux caveats stay where a reader meets them **before**
+      downloading, not after — unsigned binaries and un-QA'd Linux are cost
+      information, not fine print
+- [x] R.2.6 A first-time reader's decision is answerable in the first screen:
+      what it is, what it needs, what it does not do yet
+
+### Validation
+Re-walked against its own text. Every factual claim in the Quick start is one
+R.1 or R.1.11 measured: the install path (identical on disk), the 21-tool
+startup surface, the install firing on file selection with *Apply Pending
+Changes* inert, the API page reading `Listening on ipc://…` after a restart, and
+the *External Plugins* entry needing an open project first. Anchors resolve.
+
+**One claim is not yet proved and is R.3's job**: step 5 is written as a prompt
+to a model, and no model has run it. What R.1 proved is the same work through a
+scripted MCP client. The wording stays; R.3 either confirms it or changes it.
+
+## R.3 — The canonical demo: one task, under 40 seconds, visible in KiCad
+
+### Objectif
+One short, reproducible demonstration that shows the value of an agentic MCP
+over KiCad to someone who has not read a line of documentation. **The result
+appears in KiCad**, not in a terminal. A terminal may be on screen; it may not
+be the only thing on screen.
+
+### Dépendances
+R.1 closed — the demo runs on the installed, published binary (INV-R1).
+
+### The task, chosen — R.3.1
+**A live PCB edit over the IPC API, watched in KiCad's own canvas.** The AI
+places a subcircuit's footprints on an open board and routes them; pcbnew
+redraws as it happens, and KiCad's undo stack holds the result.
+
+Measured before choosing, not assumed: with `ipc_address` set, two
+`place_component` calls put two 0805 footprints on the running board in
+**176 ms**, each replying `"source": "ipc"`. The write reached pcbnew, not the
+file.
+
+Against the three criteria: it is the only candidate where **KiCad itself
+redraws** — every other path changes a file that something else then has to
+show; two footprints snapping into place and a trace appearing between them is
+not something a text editor does; and the tool time is milliseconds, so the
+40 s budget is spent on the model, not on the server.
+
+Rejected, with the reason:
+
+- **`apply_template ldo_3v3` into a schematic** — the fastest and simplest
+  (108 ms, R.1 step 7, no IPC at all), but `apply_template` **places without
+  wiring** (F-07), so the picture is a scatter of symbols rather than a circuit,
+  and eeschema does not redraw a file changed underneath it. It would need the
+  bundled viewer, which is not KiCad.
+- **The live schematic viewer refreshing as the AI edits** — genuinely
+  impressive and it is the "watch it happen" feature, but the window is
+  Konnect's own. The brief says the result must appear in KiCad.
+- **JLCPCB part search** — real value, no visual.
+- **A full manufacturing export** — the output is a folder of Gerbers. Nothing
+  to watch.
+
+Cost of the choice, stated rather than hidden: the demo needs the KiCad API on
+and `ipc_address` configured (F-12). That is one line of setup, off-camera and
+documented — it is not inside the 40 s.
+
+### Amended by R.3.8, on run 1's evidence — 2026-08-26
+
+The choice above holds: the live PCB edit is still the only candidate where
+KiCad itself redraws, and the rejected candidates are rejected for the same
+reasons. What did **not** hold is an assumption inside it — that a board can be
+routed at all. It cannot, unless it already carries a netlist, and nothing in
+the tool surface puts one there (F-13).
+
+So the demo keeps its transport and changes its **pre-state and its task**,
+decided by the user on 2026-08-26:
+
+- **The pre-state carries its own netlist.** A real project — schematic with
+  `U1` AP1117-33, `C1`/`C2` 10 µF, footprints assigned, nets `VIN`, `VOUT`,
+  `GND`, ERC clean — pushed onto the board once through KiCad's own *Update PCB
+  from Schematic*. The board therefore starts with three footprints in a heap
+  and three real nets.
+- **The task is what a layout engineer actually does with that**: place the two
+  capacitors near the regulator, route the three nets, run DRC. Nothing is
+  created; what exists is arranged and connected. That is one batched
+  `kicad_invoke` plus a check — inside the four turns run 1 measured the budget
+  to be worth.
+- **The setup cost rises and is stated**: the demo now ships a schematic as well
+  as a board, and the sentence that says why is the honest one — *a PCB has nets
+  only because a schematic gave it some*.
+
+### Tâches
+- [x] R.3.1 The task is **chosen and justified in writing** against three
+      criteria: visually unambiguous in KiCad's own canvas, under 40 s wall
+      clock end to end, and impossible to mistake for something a text editor
+      could have done. Rejected candidates are named with the reason
+- [x] R.3.2 A **fixed starting project** is committed under `examples/` — small,
+      self-contained, with a stated pre-state — so two runs start identically
+- [x] R.3.3 The exact prompt is committed with it. The demo is a prompt, not a
+      script: what is being demonstrated is a model doing the work
+- [x] R.3.4 The demo is run end to end on the published install and **timed**.
+      If it exceeds 40 s, the task is narrowed or replaced — the budget is not
+      moved (INV6). Run three times on the published v1.1.0: run 1 failed its
+      own criterion and returned five defects, R.3.8 narrowed the task on that
+      evidence, and runs 2 and 3 passed it at 377 s and 424 s. The budget was
+      **not** moved to fit them — the task was narrowed first, and when
+      narrowing further was shown to be pointless (the floor is turns, not
+      work), the question went to the user as R.3.10
+- [x] R.3.5 The end state is verified by KiCad (`kicad-cli` ERC/DRC or a reopen),
+      and the verification is part of the demo, not an afterthought. **Proved by
+      run 2**: the model ran DRC itself as its last act, and `kicad-cli` run
+      afterwards on the file agrees — 5 unconnected items before, **0** after,
+      11 track segments, 3 silkscreen warnings, no errors
+- [x] R.3.6 A capture exists — screen recording or a before/after pair — showing
+      the KiCad window changing, embedded in the README and usable in R.4.
+      A **before/after pair**, `resources/images/demo-{before,after}.png`: the
+      committed pre-state and run 2's end state, rendered by `kicad-cli pcb
+      render` at the same zoom and the same pivot, so `U1` sits on the same
+      pixels in both and only what the prompt changed moves. The README section
+      *What one prompt does* carries them, `examples/demo/README.md` gives the
+      command that regenerates either half, and the caption quotes only what
+      KiCad said — 5 unconnected before, 0 after, 11 segments, 3 warnings, no
+      errors. **It carries no time claim**: that sentence is R.3.10's to write,
+      once the user has decided what the 40 s figure measures
+- [x] R.3.7 A second run from the committed starting state reproduces the same
+      end state, proving the demo is not a lucky take. **It reproduces**
+      (`docs/launch/demo-run-3.md`): 5 unconnected items before and **0** after,
+      **11** track segments both times, no errors, both capacitors within 5 mm
+      of `U1` — and different coordinates, a 180° rotation run 2 did not make,
+      and one extra DRC error found and closed (the SOT-223 tab needs explicit
+      copper to pin 2). The circuit matched; the pixels did not, which is what
+      `examples/demo/README.md` asks for. It also met F-16 and F-15 live and
+      turned both into **false statements in its final answer** — that KiCad was
+      installed nowhere, and that Konnect had fallen back to its file engine,
+      while the writes were in fact reaching the running editor over IPC. Two
+      runs, two models, the same two dead ends: R.9.1 and R.9.3 were the right
+      calls, and they reach users only through R.7.7's v1.1.1
+- [x] R.3.10 **Opened by run 2.** The 40 s budget is re-aimed or restated, by
+      the user, on the evidence of `docs/launch/demo-run-2.md`. Whatever is
+      decided is written where the demo is published, in the same words as the
+      measurement — a budget that moves silently is worse than a budget that was
+      wrong. **Decided by the user on 2026-08-26: publish both numbers.** The
+      40 s stops being a budget and becomes a named measurement of *product*
+      time; the conversation time is published beside it, in minutes, as the
+      number a viewer actually waits. Written after R.3.7, so the figures cover
+      both runs rather than one. **Written**: `README.md` and
+      `examples/demo/README.md` both carry the pair — board changes in
+      **0.686 s / 0.773 s** of Konnect time (slowest single write 0.07 s;
+      2.3 s / 4.7 s including KiCad's own DRC), against **377 s / 424 s** of
+      wall clock over 47 / 52 turns. `demo-run-3.md` carries the per-call
+      measurement the pair rests on, and `demo-run-2.md`, which asked the
+      question, records the answer
+- [x] R.3.9 **Opened by run 2.** There is no *route this net* tool: three nets
+      cost eleven `route_trace` calls, one segment each. Recorded as a
+      capability gap, classified with F-13 in R.9.4's family, and decided at R.6
+      — not fixed here. Recorded in `docs/launch/demo-run-2.md` with the call
+      histogram that proves it, and carried into R.6.5's candidate list so the
+      gate cannot lose it
+- [x] R.3.8 **Opened by run 1.** The task is narrowed or replaced on the
+      evidence of `docs/launch/demo-run-1.md`, and R.3.1's justification is
+      amended rather than rewritten — the rejected candidates and the reason the
+      live PCB path was chosen still hold; what did not hold is the assumption
+      that a board with no netlist can be routed. Done and committed: the
+      pre-state under `examples/demo/` is a real project — schematic, ERC 0/0,
+      footprints assigned, three nets — pushed onto the board once through
+      KiCad's own *Update PCB from Schematic*; the narrowed prompt sits beside
+      it; and R.3.1's justification above is **amended**, not rewritten. Run 2
+      then proved the narrowed task passes
+
+### Run 2 — 2026-08-26 — the task passed, the clock did not
+
+Full evidence: `docs/launch/demo-run-2.md`. The narrowed task on the
+netlist-carrying pre-state **succeeded**: capacitors at 4.839 mm and 4.888 mm
+from `U1`, three nets closed in copper, and KiCad's own verdict — 5 unconnected
+items before, **0** after, 11 segments, 3 silkscreen warnings, no errors.
+
+And it took **377 s** across 47 turns. The shape of the calls says why: the model
+routed **one segment per turn**, eleven turns of copper, and never batched
+through `kicad_invoke`. At the 8–10 s per turn both runs measured, no reasonable
+prompt reaches 40 s — the tool calls answer in milliseconds; the conversation
+does not.
+
+So R.3.4 stays open, and what it is blocked on is **not** the task any more. The
+40 s figure was written in R.3 before anything was measured, and what it bounds
+is model conversation time rather than product time. Moving it quietly to fit a
+measurement is exactly what INV6 and D146 forbid, so the choice goes to the user:
+re-aim the 40 s at the interval the viewer actually watches — first write to last
+write inside KiCad, which is sub-second here — or publish the real number and
+build R.4's claims on it. **R.3.10** carries that decision.
+
+### Run 1 — 2026-08-26 — failed its own criterion, and found why
+
+Full evidence: `docs/launch/demo-run-1.md`. In short: **406 s** against a 40 s
+budget, 41 turns, stopped by `max_turns`; three footprints placed live in
+pcbnew and **zero** track segments; `kicad-cli` DRC 0 errors, 0 unconnected,
+5 warnings.
+
+The failure is not a slow path, it is a closed one. **Routing addresses nets,
+and nothing in the tool surface creates a net on a board that has no netlist**:
+`route_trace` and `route_pad_to_pad` are refused with `Net 'VIN' not found on
+board`, `add_net` targets a file format KiCad 10 no longer writes, no tool
+assigns a net to a pad, and no tool performs *Update PCB from Schematic*. A
+board has nets only if KiCad put them there from a schematic.
+
+R.3.1's measurement did not reach this: two `place_component` calls in 176 ms
+proved the **transport**, and the transport is sound. The capability behind it
+is not.
+
+Four further defects came out of the same run — F-13 to F-17, classified
+**product** in `docs/launch/demo-run-1.md` and carried by **R.9**.
+
+Two facts the run establishes for whoever narrows the task:
+
+- **10 s per turn**, measured. A 40 s budget is about **four turns**: discover,
+  load, one batched `kicad_invoke`, verify. A demo that needs a library search
+  or an error recovery is already over budget.
+- The published binary, configured by hand as documented, **is** reached by a
+  standalone MCP client and does write into a running KiCad. The Quick start's
+  step 5 claim, which R.2 left unproved, holds for placement.
+
+### Validation
+Two runs from the committed pre-state, both under 40 s, both ending in the same
+KiCad-verified state, with a capture that a stranger can watch and understand
+without narration.
+
+## R.4 — Public launch kit
+
+### Objectif
+Everything needed to announce the project, drafted and reviewed **in the
+repository**, so that publishing becomes a single decision rather than a writing
+session. Nothing here is posted without the user's explicit go.
+
+### Dépendances
+R.2 and R.3 closed — the kit quotes the Quick start and shows the demo.
+
+### Tâches
+- [x] R.4.1 Repository metadata: description, topics, and a homepage pointing at
+      the release or the demo. Currently: no topics, no homepage. **Drafted, not
+      applied** (`docs/launch/launch-kit.md` § R.4.1): a description that leads
+      with what the thing is rather than with its architecture, the release page
+      as homepage because the project has no site, and twelve topics — six for
+      the KiCad audience, five for the MCP audience, one for the language.
+      Applying it is one `gh repo edit` and the first line of the go/no-go
+      list, because it is the only item that changes something public before a
+      word is posted
+- [x] R.4.2 A one-paragraph pitch and a one-sentence pitch, both stating the
+      limitation set (Windows most-tested, macOS unsigned, PCB tools need KiCad
+      running) — a launch that hides the caveats buys a first wave of users who
+      leave angry. Both written, both carrying the caveats in their own body
+      rather than in a footnote
+- [x] R.4.3 Long-form announcement drafts under `docs/launch/`, one per intended
+      venue, each adapted rather than pasted: the audience of a KiCad forum and
+      the audience of an MCP directory do not want the same first sentence.
+      Four: `announce-kicad-forum.md` opens on the fear that audience actually
+      has — a model writing to their files — and answers it with KiCad's undo
+      and KiCad's verdict; `announce-reddit-kicad.md` shows the image first;
+      `announce-hn.md` leads with the verification stance and the token
+      measurement; `announce-mcp-directory.md` is four paste-ready lengths plus
+      the metadata table those forms ask for
+- [x] R.4.4 A candidate venue list with, for each, the submission requirement it
+      imposes (format, licence statement, screenshot, maintainer account). Five
+      venues in one table, the fifth — KiCad's official PCM repository — named
+      as **out of R's scope** and blocked on F-03 besides. The requirements are
+      dated and the kit says to re-read each venue's own rules immediately
+      before posting; that is a go/no-go line, not a courtesy
+- [x] R.4.5 The kit states explicitly what is **not** claimed: no success-rate
+      claim beyond what `docs/benchmark.md` measured, no platform claim beyond
+      Windows. Six items, and every draft repeats them in its own body: the
+      18/18 is six golden tasks on one machine; the token figures are v1.0.0's
+      and were not re-run; Windows only; **no claim that it is fast end to end**
+      — the six-to-seven minutes is published beside the sub-second product
+      time; no KiCad endorsement; parts are placed, not authored
+- [x] R.4.6 Nothing is published. The phase produces drafts and a go/no-go list;
+      the posting decision, and the account that posts, are the user's. Nothing
+      was posted and the repository metadata was not touched. The go/no-go list
+      has six lines, and the second is **ship v1.1.1 first** (R.7.7): every
+      draft's install path assumes the two manual configuration steps are gone,
+      so announcing before the release means either rewriting each draft or
+      sending the first wave down the manual path
+
+### Validation
+The user can publish any item in the kit without editing it first. Every factual
+claim in every draft traces to `docs/benchmark.md`, `RELEASE_NOTES.md`, or a
+measurement made in R.1/R.3.
+
+## R.5 — First-user feedback loop
+
+### Objectif
+A stranger who hits a wall has somewhere obvious to say so, in a shape that
+answers the maintainer's questions rather than only theirs. And the maintainer
+can count.
+
+### Dépendances
+R.1 closed — the friction list says which questions actually matter.
+
+### Tâches
+- [x] R.5.1 The five minimal metrics are defined in writing, each with its
+      collection method and its "unknown" value: **install succeeded**,
+      **time to first task**, **first blocker**, **task attempted**,
+      **success / failure**
+- [x] R.5.2 GitHub issue templates exist and produce those five fields as
+      structured data: a *first-run report*, a *bug report*, and a *feature
+      request* that does not swallow the other two
+- [x] R.5.3 The first-run report is **short enough to be filled in after a
+      failure** — a user who just gave up will not complete a 20-field form
+- [x] R.5.4 The feedback route is discoverable from the place people fail: the
+      README Quick start, the troubleshooting doc, and the release page all
+      point at it
+- [x] R.5.5 A tally lives in the repository (`docs/adoption.md`): one row per
+      report, the five metrics, and nothing that identifies a person beyond
+      their own public GitHub handle
+- [x] R.5.6 Whether GitHub Discussions is enabled is decided explicitly — it is
+      currently off — and the choice is recorded with its reason. **Decision: it
+      stays off.** A project with no issues does not need a second empty
+      surface; splitting a handful of early reports across two places makes both
+      look dead and makes the tally harder to keep honest. Revisit when
+      questions that are *not* bug reports outnumber the ones that are
+- [x] R.5.7 It is stated in the repository that no telemetry exists and none is
+      planned. A tool that edits a user's design files earns trust by not
+      phoning home
+
+### Validation
+A stranger can file a first-run report in under two minutes from the link the
+README gives, and the resulting issue contains all five metrics without a
+follow-up question from the maintainer.
+
+## R.6 — Decision gate for the next technical phase
+
+### Objectif
+End R with a **decision founded on real feedback**, not with a new technical
+phase started by momentum.
+
+### Dépendances
+R.4 and R.5 closed, and real feedback received — or an explicit finding that
+none arrived, which is itself evidence.
+
+### Tâches
+- [x] R.6.1 The promotion criteria are written **before** the feedback is read:
+      what evidence would promote each named candidate — Dependabot hygiene,
+      macOS signing, the official PCM submission, symbol/footprint authoring,
+      KiCad 11 / plan item I.1, Linux QA. Criteria written after the data are
+      not criteria. Eleven candidates, one criterion each, in
+      `docs/launch/decision-gate.md` § 4 — the six named here plus R.6.5's four
+      and *reach* itself. The order of writing is stated in the document rather
+      than assumed: the tally was read first and is **empty**, and an empty
+      tally can select nothing, so no criterion could have been fitted to it
+- [x] R.6.2 The R.1 friction list, the R.3 demo result and the R.5 tally are
+      summarised into one page a decision can be made from. One page,
+      `docs/launch/decision-gate.md`: eleven frictions with their disposition
+      today, three demo runs with what each one bought, and the tally
+- [x] R.6.3 The gate is presented to the user with a recommendation and its
+      evidence. The user decides; R does not open the next phase.
+      **Recommendation: publish, then decide the rest with data.** Nine of the
+      eleven criteria name a first-run report, an outside download or an outside
+      install — inputs no further engineering can produce. Order: ship v1.1.1,
+      apply the metadata and post the kit, re-open the gate when the tally stops
+      being zero. Explicitly **not** recommended: opening a PCB-capability phase
+      on run 1's five defects
+- [x] R.6.4 If no feedback arrived, the gate says so and the decision is made on
+      the R.1 friction list alone — an empty tally is a finding about reach, not
+      a reason to postpone the decision. **None arrived**: 0 stars, 0 forks, 0
+      outside issues, 0 first-run reports, 2 downloads and both the
+      maintainer's. The gate says so in its first section, and says the one
+      thing that follows from it — the project has never been announced
+      anywhere, so zero reach produced zero feedback whatever the software is
+      like. The tally is evidence about distribution, not about demand
+- [x] R.6.5 **Opened by R.3 and R.9.** The candidates the demo produced are
+      named alongside the ones R.6.1 already lists, each with the artefact that
+      found it: **nets on a board** (F-13, R.9.4 — no tool creates or assigns
+      one, and no *Update PCB from Schematic* equivalent exists), **a route
+      this net tool** (R.3.9 — three nets cost eleven `route_trace` calls),
+      **PCB reads over IPC** (F-15, R.9.3 — two reads still read the file while
+      every write goes to the running editor), and **IPC placement matching the
+      library** (F-17, R.9.5). None of them is promoted here; R.6.1's rule
+      holds — the criteria are written before the evidence is read
+
+### Validation
+One page, one recommendation, every claim on it traceable to an R artefact. The
+next phase is opened by the user, in a separate decision, after R is closed.
+
+
+## R.7 — The one defect that blocks first use — OPENED BY R.1
+
+### Objectif
+R.1 found exactly one problem that satisfies this phase's narrow exception: it
+**directly blocks first use**, on a default Windows KiCad install, for every
+capability that depends on `kicad-cli`. Fix that one, and nothing else. The full
+diagnosis is `docs/launch/first-run-walk.md` § *F-01 in detail*.
+
+The defect: the server's `kicad_cli` default is the bare name `kicad-cli.exe`
+(`crates/konnect/src/config.rs:75`), resolved through `PATH`, and KiCad's Windows
+installer does not put its `bin` on `PATH`. `detect_kicad()`
+(`crates/konnect/src/install.rs:402`) is never called by the server, and would
+miss this machine anyway: its Windows path list has no
+`%LOCALAPPDATA%\Programs\KiCad` entry — while its macOS branch does handle the
+per-user case — and its registry probe reads `HKLM\SOFTWARE\KiCad\10.0`, a key
+that exists in neither hive here.
+
+Consequence: `verify:"auto"`, ERC, DRC and every export fail with
+`Failed to spawn kicad-cli: kicad-cli.exe`. INV1 says the verdict is KiCad's; on
+a stock install the server cannot obtain it.
+
+### Dépendances
+R.1's diagnosis, complete. Blocks **R.3** — a demo whose result is verified by
+KiCad cannot run while the verdict path is broken — and feeds **R.2** (F-02, the
+README claim that auto-detection happens).
+
+### Invariants
+- The fix is a **discovery path only**. No tool signature changes, no new tool,
+  no behaviour change when `kicad_cli` is already configured or already on
+  `PATH`.
+- A discovery that fails still fails loudly. The current error message is
+  correct and must survive: silently continuing without a validator is the
+  failure mode INV4 exists to prevent.
+
+### Tâches
+- [x] R.7.1 A failing test first, on the observable: with `kicad_cli` unset and
+      nothing named `kicad-cli` on `PATH`, resolution finds a KiCad installed
+      under a per-user prefix
+- [x] R.7.2 The server resolves `kicad_cli` at startup instead of trusting a
+      bare name: explicit config → `PATH` → known install prefixes → registry.
+      The first hit wins and is logged once, so a user can see which KiCad
+      answered
+- [x] R.7.3 The Windows prefix list gains `%LOCALAPPDATA%\Programs\KiCad\<ver>`,
+      and the registry probe reads the uninstall key that a per-user install
+      actually writes — `HKCU\…\Uninstall\KiCad <ver>` → `InstallLocation` —
+      in addition to `HKLM`
+- [x] R.7.8 **Found in review of R.7.3, fixed there.** The candidate list was
+      ordered prefix-first — every 10.0 root, then every 9.0 root, then the
+      per-user prefix appended behind both — so a machine carrying a
+      system-wide KiCad 9 and a per-user KiCad 10 would have resolved to the
+      **9**. Reordered version-first, prefix-second, with a test that asserts
+      it: `every_candidate_of_a_newer_version_comes_before_any_older_one`
+- [x] R.7.4 `plugin/settings_dialog.py::detect_kicad_cli` learns the same two
+      locations, so the PCM settings dialog and the server agree — including
+      R.7.8's ordering, whose pre-existing root-first loop had the same
+      inversion and would have disagreed with the server it is meant to match
+- [x] R.7.5 The gate is green on the changed tree: `fmt` clean,
+      `clippy --workspace --locked --all-targets -- -D warnings` silent, and
+      the full suite at **1 392 passed, 0 failed, 38 ignored across 57
+      suites** — 1 385 at v1.1.0, plus this lot's seven new tests
+- [x] R.7.6 The walk of R.1 step 8 is repeated on the fixed binary and
+      `verify:"auto"` returns KiCad's ERC counts instead of an `io` error.
+      Re-run by the principal, not taken from the worker's report: startup logs
+      `kicad_cli: found at standard install path -> …\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe`
+      and the validator answers `{"check":"erc","errors":0,"warnings":0}`.
+      The negative case is proved too — an explicitly configured
+      `konnect-no-such-kicad-cli` is logged as *using configured value as-is*
+      and still fails with `Failed to spawn kicad-cli`, so INV4 holds and no
+      silent substitution was introduced
+- [x] R.7.7 The release question is **put to the user, not decided here**: this
+      fix only reaches users through a new artefact, and F-03
+      (`packaging/metadata.json` pointing at the upstream repository) would ride
+      the same release. Whether v1.1.1 happens inside R is the user's call.
+      **Decided by the user on 2026-08-26: yes, one v1.1.1 at the end of R** —
+      not now, and not one release per finding. It carries R.7 (`kicad_cli`
+      discovery), R.8 (`ipc_address` derivation), R.9.1 (the `kicad` GUI binary)
+      and R.9.2 (the undeclared stackup), plus F-03. Until it ships the README
+      keeps saying plainly that v1.1.0 needs the manual steps. The release
+      itself is a bounded plan of its own, validated before anything moves
+
+### Validation
+On this machine, with no `kicad_cli` in any config and no `kicad-cli` on `PATH`,
+a `kicad_invoke` with `verify:"auto"` returns an ERC verdict from KiCad. The
+gate is green. Nothing else in the tool surface moved — `v1.1.0..HEAD` registers
+no new tool and no changed signature.
+
+## R.8 — The PCB half of the product configures itself — OPENED BY R.3.1
+
+### Objectif
+Same defect shape as R.7, on the other transport. Every PCB tool needs
+`ipc_address`, and nothing derives it: `default_ipc_address()`
+(`crates/konnect/src/config.rs`) reads `KICAD_API_SOCKET`, an environment
+variable that exists **only when KiCad launches the plugin itself**. A
+standalone MCP client — Claude Desktop, Claude Code, the configuration this
+project's own README documents — never has it, so every PCB tool fails until the
+user copies an `ipc://` path out of KiCad's preferences by hand.
+
+The path is deterministic: KiCad opens its socket under the system temp
+directory, `<temp>/kicad/api.sock`. On this machine, measured from KiCad's own
+preferences page: `ipc://C:\Users\FlowUP\AppData\Local\Temp\kicad\api.sock`.
+
+Decided by the user on 2026-08-26, alongside R.7's release question: derive it,
+same treatment as `kicad-cli`.
+
+### Dépendances
+R.3.1's measurement — with `ipc_address` set explicitly, the live IPC path works
+and answers in 176 ms. The transport is sound; only its address is missing.
+
+### Invariants
+- **Address resolution only.** No transport change, no new tool, no behaviour
+  change when `ipc_address` is already configured or `KICAD_API_SOCKET` is set.
+- **A wrong address still fails loudly**, with the remedy the current message
+  already gives. INV4: a caller must never believe a PCB write landed when no
+  KiCad was listening.
+- On Windows an `ipc://` address is an NNG **named pipe**, not a file: the
+  directory `%LOCALAPPDATA%\Temp\kicad\` is empty even while KiCad is listening.
+  Resolution therefore **constructs** the Windows path and must not gate it on a
+  filesystem existence check.
+
+### Tâches
+- [x] R.8.1 A failing test first, on the observable: with `ipc_address` empty and
+      `KICAD_API_SOCKET` unset, resolution yields the platform's default socket
+      address instead of an empty string
+- [x] R.8.2 The chain, first hit wins, logged once at startup like R.7's:
+      explicit `ipc_address` → `KICAD_API_SOCKET` → the platform default
+- [x] R.8.3 The platform default is right on all three: Windows
+      `<std::env::temp_dir()>\kicad\api.sock`, constructed and not existence-
+      checked; macOS `/tmp/kicad/api.sock`, which is what `README.md` already
+      documents and is **not** what `temp_dir()` returns there; Linux
+      `/tmp/kicad/api.sock`
+- [x] R.8.4 The `not_configured` error text stops linking
+      `github.com/mixelpixx/Konnect` and points at this repository's
+      `docs/TROUBLESHOOTING.md`. Its three-step remedy is good and is kept
+- [x] R.8.5 The gate is green on the changed tree: `fmt`, `clippy -D warnings`,
+      the full suite
+- [x] R.8.6 End to end on this machine, with `ipc_address` configured **nowhere**
+      and `KICAD_API_SOCKET` unset: a PCB tool reaches the running KiCad and
+      replies `"source": "ipc"`. And the negative case — KiCad not listening —
+      still fails with the actionable message. Re-run by the principal:
+      `ipc_address: using platform default -> ipc://…\Temp\kicad\api.sock`,
+      then `get_component_list` answering `ok` with the two footprints R.3.1
+      left on that board
+- [x] R.8.7 **Found in review of R.8.2, fixed there.** Deriving the address makes
+      `not_configured` nearly unreachable — which is the point — but that path
+      carried the only guidance for the commonest beginner failure. What a user
+      now meets is the *unreachable* message, and it named the address without
+      naming the fix: KiCad ships the API **off**, and a running KiCad with the
+      board open still refuses the connection until it is switched on. The
+      sentence moved to `crates/konnect-core/src/tools/ipc_boundary.rs`, where a
+      first-time user actually reads it
+
+### Validation
+A user who follows the README's Quick start, enables the KiCad API and opens a
+board can call a PCB tool without ever seeing an `ipc://` string. Nothing else
+in the tool surface moved.
+## R.9 — What the demo run found, triaged — OPENED BY R.3.4
+
+### Objectif
+Run 1 of the demo returned five product defects (F-13…F-17,
+`docs/launch/demo-run-1.md`). This lot **classifies them and fixes only what the
+phase's narrow exception allows**. It is a triage lot, not a capability lot: R
+does not become a PCB development phase because a demo failed.
+
+### Dépendances
+R.3.4's run 1, and the evidence document it produced.
+
+### Invariants
+- The phase exception is unchanged: a capability is added **only** if the defect
+  directly blocks installation, first use, or the public demo, **and** the fix
+  is the minimum one. A defect that is merely embarrassing waits for R.6.
+- Nothing here is fixed before it is classified (INV-R3).
+
+### Tâches
+- [x] R.9.1 **F-16 — `launch_kicad_ui` cannot find `kicad`.** Same defect shape
+      as R.7, same fix: D149's chain applied to the `kicad` executable.
+      Small, bounded, and it removes a dead end a model walked into.
+      The chain itself moved to `konnect_core::kicad_locate` — `konnect`
+      depends on `konnect-core`, so the resolver could not stay in the
+      installer and still be reachable from the tool that spawns the GUI.
+      `find_kicad_binary` (`tools/verification.rs`), which used to scan four
+      hardcoded `C:`/`D:` roots and miss the per-user prefix entirely, now
+      calls it; `main.rs` resolves `kicad_binary` at startup and logs it once,
+      like `kicad_cli`. Proved end to end on this machine by the principal,
+      through the freshly built binary with `kicad_binary` configured nowhere:
+      `kicad_binary: found at standard install path -> …\AppData\Local\Programs\KiCad\10.0\bin\kicad.exe`,
+      then `launch_kicad_ui` answering `{"launched":true}` with a `kicad`
+      process alive to show for it. INV4's negative case holds too — a
+      configured `konnect-no-such-kicad.exe` is logged *using configured value
+      as-is* and still fails `Failed to launch KiCAD (…): program not found`
+- [x] R.9.2 **F-14 — `get_layer_list` calls a valid board malformed.** A board
+      KiCad opens without complaint is reported `malformed_document: no (layers)
+      section`. Either the reader tolerates the absent section or the error says
+      what is actually wrong; a wrong diagnosis is worse than an error.
+      The reader tolerates it: `get_layer_list` answers with KiCAD's own
+      default stackup, flagged `"declared": false` and with a note saying the
+      table was not read from the file. `add_layer` still refuses — there is
+      no table to insert into — but its message now says how to get one
+      (`open it once in KiCAD's PCB editor and save`) instead of calling the
+      board malformed; only `error.kind`, the machine discriminant, stays
+      `malformed_document`. KiCad's own verdict backs both halves: the
+      four-`gr_line` board with no `(layers)` passes `kicad-cli pcb drc`
+      (0 violations, 0 unconnected)
+- [x] R.9.3 **F-15 — reads and writes disagree about where the board is.** PCB
+      writes go to the running pcbnew over IPC; `get_component_pads` and
+      `get_pad_position` read the file on disk, so a footprint just placed is
+      invisible until something saves. Decide and record whether R fixes this or
+      documents it — the run lost several turns to it, and so will every user.
+      **Decided: R documents it.** Rerouting the read means moving the whole PCB
+      read surface onto IPC, and the alternative — saving the user's board
+      behind their back before every read — changes their file without being
+      asked. Both are capability-scale, and the demo passes without either, so
+      the phase's own rule keeps them out. What R does instead is stop the
+      silence: both pad reads now answer `"source": "file"`, like every other
+      split read in this crate, `docs/TROUBLESHOOTING.md` gains the symptom
+      under the words a user would use for it, and both tool descriptions say
+      where they read from. `both_pad_reads_declare_that_they_read_the_file`
+      holds the disclosure in place. The rerouting itself is a named candidate
+      for the R.6 gate
+- [x] R.9.4 **F-13 — routing is unreachable on a board without a netlist.** This
+      is a missing capability, not a bug: creating or assigning nets, or an
+      *Update PCB from Schematic* equivalent. It is **out of R's scope** by the
+      phase's own rule; it is recorded here and becomes a named candidate for
+      the R.6 gate, where evidence decides it. **Recorded, not fixed**, and R.3.8
+      already paid its cost in the open: the demo's pre-state carries a
+      schematic, and `examples/demo/README` says plainly that a PCB has nets
+      only because a schematic gave it some and that the *Update PCB from
+      Schematic* step is setup rather than demo, because Konnect has no
+      equivalent. That sentence is the user-facing half of this record
+- [x] R.9.5 **F-17 — `lib_footprint_mismatch`.** Footprints placed over IPC do
+      not match the library copy they name. Classified and recorded; fixed only
+      if R.9.2's or R.9.3's work makes it trivial. Neither made it trivial —
+      they touch a stackup reader and two file reads, not the geometry a
+      placement sends over the wire — so it is **recorded, not fixed**. Run 2
+      bounds it usefully: its footprints reached the board through KiCad's own
+      *Update PCB from Schematic* and were only *moved* over IPC, and its DRC
+      returned three silkscreen warnings and no mismatch at all. So the defect
+      belongs to IPC placement building a footprint, not to IPC touching one,
+      which is why the demo does not meet it. **Product, minor**, and a named
+      candidate for the R.6 gate
+
+- [x] R.9.6 **Found in review of R.9.2, fixed there.** The first answer for an
+      undeclared stackup was *two* layers, F.Cu and B.Cu. That is what KiCAD's
+      copper default is, not what KiCAD's default *is*: handed the same board,
+      `kicad-cli pcb upgrade` writes back **24** layers — the two copper ones
+      and twenty-two technical ones, `Edge.Cuts` among them, which is the very
+      layer such a board is already drawing its outline on. A caller asking
+      whether `Edge.Cuts` exists would have been told no. The measured table
+      lives in `konnect_sexp::layers::default_stackup()`, and
+      `default_stackup_ids_are_the_canonical_ones` ties it to `canonical_id`
+      under `Numbering::Modern`, so two independent measurements of KiCAD's
+      scheme cannot drift apart
+
+### Validation
+Every one of F-13…F-17 is either fixed with a test that would have caught it, or
+recorded with the reason it waits and the phase it waits for. No defect leaves R
+unclassified.
+
+## R.10 — v1.1.1, the release R decided to ship — OPENED BY R.7.7
+
+### Objectif
+Four discovery fixes and one packaging fix reach a user only through a new
+artefact. R.7.7's decision was **one v1.1.1 at the end of R**, not a release per
+finding. This lot is that release, and nothing else travels in it.
+
+### Dépendances
+R.9 closed (its fixes are in the tree, gate green). R.4's kit assumes this
+release has happened: every draft's install path is the config-free one.
+
+### Invariants
+- **Scope is closed.** R.7, R.8, R.9.1, R.9.2 and F-03. No opportunistic fix
+  rides along; a defect found while releasing is recorded, not fixed in the tag.
+- **D144** — the real-KiCad E2E is run by hand **before** the tag, never after.
+- **D146** — any public figure this release does not re-measure is either
+  re-measured on the published artefact or explicitly dated to the version that
+  did measure it.
+- **INV-R1** — what is verified at the end is the **published** artefact, not
+  the local build that produced it.
+
+### Tâches
+- [x] R.10.1 **F-03**, and only the half that is safe: `packaging/metadata.json`
+      gains this fork's author and homepage, so the Plugin Manager stops sending
+      a first user to the upstream issue tracker. The `identifier`
+      (`com.github.mixelpixx.konnect`) is **kept**: it is the install directory
+      name, and it appears in the README, both example configs, the demo harness
+      and every existing install. Renaming it would break all of them to fix a
+      cosmetic string, and the reason is written down where the file is
+- [x] R.10.2 Version bump to 1.1.1 — workspace `Cargo.toml`, the viewer crate,
+      `Cargo.lock` — and nothing else claims a version by hand
+- [x] R.10.3 `RELEASE_NOTES.md` is rewritten as the **body of v1.1.1** (D143),
+      not appended to: what changed for a user (the two discovery chains, the
+      GUI binary, the undeclared stackup, the PCM metadata), what did not
+      (no new tool, no changed signature), and which figures still belong to
+      v1.0.0
+- [x] R.10.4 Every sentence that documents the manual steps as *required* is
+      updated where it lives — `README.md`'s status block and Quick start,
+      `docs/TROUBLESHOOTING.md`, `examples/*.json`. A release that removes a
+      manual step and leaves the documentation demanding it has not removed it
+- [x] R.10.5 The gate is green on the release commit, and the real-KiCad E2E is
+      run **by hand before the tag** (D144)
+- [x] R.10.6 Tag, push, and the release workflow's seven assets are checked for
+      presence and size on the release page itself
+- [x] R.10.7 **The published artefact is installed and walked** on this machine
+      with **no `konnect-settings.json` at all**: PCM install from the published
+      zip, KiCad API on, one PCB tool and one `kicad-cli`-backed check answering
+      without either path configured by hand. That is the claim v1.1.1 exists to
+      make, and R.1's walk is what it is measured against
+- [x] R.10.8 The two `%LOCALAPPDATA%` discovery tests introduced by R.7/R.9.1
+      run only on Windows. They construct a Windows-only install tree and must
+      not fail the macOS/Linux PR gate after the release workflow has passed
+
+### Validation
+A user who downloads v1.1.1 and follows the Quick start reaches a KiCad-verified
+result without editing a configuration file, on this machine, proved on the
+published artefact. `RELEASE_NOTES.md` describes v1.1.1 and no other version.
+Nothing outside the closed scope changed between v1.1.0 and the tag.
+
+## Critères de sortie de la phase R
+
+- [x] A stranger's path from the release page to a KiCad-verified first task is
+      walked, measured, and written down (R.1) — `docs/launch/first-run-walk.md`,
+      eleven frictions, detours included
+- [x] The README answers *what, what it costs, how to start* in its first screen
+      (R.2). R.3.6's before/after pair was added above the Quick start and then
+      **compressed** to keep that true: the images and four lines, with the
+      per-call numbers left to the run documents
+- [x] ~~One demo, under 40 s~~, verified by KiCad, reproducible from a committed
+      starting state (R.3). **Amended by R.3.10**, on the user's decision and on
+      three measured runs: the demo is verified by KiCad and reproduces from the
+      committed starting state, and its time is published as the two numbers
+      that were actually measured — under a second of board changes, six to
+      seven minutes of conversation. The 40 s was written before anything had
+      been run, and is struck rather than quietly re-aimed
+- [x] A launch kit the user can publish without rewriting (R.4)
+- [x] A feedback route that yields the five metrics without a follow-up question
+      (R.5) — three issue forms, `docs/adoption.md`, and the baseline it tallies
+      against
+- [x] A written decision for the next phase, with its evidence (R.6) — written
+      and put to the user; the phase it opens is the user's to open

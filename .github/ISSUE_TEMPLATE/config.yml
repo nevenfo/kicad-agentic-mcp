@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and setup trouble
+    url: https://github.com/nevenfo/kicad-agentic-mcp/blob/main/docs/TROUBLESHOOTING.md
+    about: The IPC socket, kicad-cli, and the plugin not appearing are covered here first.
+  - name: What v1.1.0 does and does not cover
+    url: https://github.com/nevenfo/kicad-agentic-mcp/blob/main/RELEASE_NOTES.md
+    about: Measured results, missed targets, and known limitations — stated rather than buried.

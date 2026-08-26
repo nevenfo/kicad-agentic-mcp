@@ -61,6 +61,8 @@ def detect_kicad_cli():
         # Check Windows registry for KiCAD install path
         try:
             import winreg
+
+            # Machine-wide install: HKLM\SOFTWARE\KiCad\KiCad, InstallDir.
             for key_path in [
                 r"SOFTWARE\KiCad\KiCad",
                 r"SOFTWARE\WOW6432Node\KiCad\KiCad",
@@ -74,18 +76,52 @@ def detect_kicad_cli():
                         return cli
                 except (FileNotFoundError, OSError):
                     pass
+
+            # Per-user install (the default when the KiCAD installer is run
+            # without admin rights): the uninstall key it writes lives in
+            # HKCU (and, for some installer versions, HKLM), keyed by
+            # "InstallLocation" rather than "InstallDir".
+            for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                for version in ["10.0", "9.0", "8.0"]:
+                    key_path = (
+                        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+                        r"\KiCad {}".format(version)
+                    )
+                    try:
+                        key = winreg.OpenKey(hive, key_path)
+                        install_dir, _ = winreg.QueryValueEx(key, "InstallLocation")
+                        winreg.CloseKey(key)
+                        cli = os.path.join(install_dir, "bin", "kicad-cli.exe")
+                        if os.path.isfile(cli):
+                            return cli
+                    except (FileNotFoundError, OSError):
+                        pass
         except ImportError:
             pass
 
-        # Scan common root directories for KiCad installations
+        # Scan common root directories for KiCad installations. Newest version
+        # first, and every root of one version before any root of an older one,
+        # so a per-user KiCad 10 wins over a system-wide KiCad 9 — the same
+        # order the server uses in install.rs::kicad_standard_paths, so the two
+        # never point at different KiCads.
         versions = ["10.0", "9.0", "8.0"]
         roots = ["C:\\Program Files", "C:\\", "D:\\", "D:\\Program Files"]
-        for root in roots:
-            for ver in versions:
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        for ver in versions:
+            for root in roots:
                 cli = os.path.join(root, "KiCad", ver, "bin", "kicad-cli.exe")
                 if os.path.isfile(cli):
                     return cli
-            # Also check without version subdir
+            # Per-user install prefix: %LOCALAPPDATA%\Programs\KiCad\<ver>\bin\.
+            if local_appdata:
+                cli = os.path.join(
+                    local_appdata, "Programs", "KiCad", ver, "bin", "kicad-cli.exe"
+                )
+                if os.path.isfile(cli):
+                    return cli
+
+        # Unversioned layout, checked only once every versioned one has missed.
+        for root in roots:
             cli = os.path.join(root, "KiCad", "bin", "kicad-cli.exe")
             if os.path.isfile(cli):
                 return cli

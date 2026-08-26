@@ -1,0 +1,92 @@
+name: First-run report
+description: You tried Konnect for the first time. Tell us how far you got — especially if you gave up.
+title: "[first run] "
+labels: ["first-run"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Six questions, most of them a single click. A report from someone who
+        **gave up** is worth more than one from someone who succeeded, so please
+        file it even if — especially if — nothing worked.
+
+        Nothing here is collected automatically. Konnect has no telemetry and
+        none is planned.
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Did the install finish?
+      options:
+        - "Yes"
+        - "No — it failed"
+        - "I could not tell whether it worked"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: time_to_first_task
+    attributes:
+      label: How long from downloading to your first working task?
+      description: Your best guess. "Never got there" is a valid and useful answer.
+      options:
+        - Under 10 minutes
+        - 10 to 30 minutes
+        - 30 to 60 minutes
+        - More than an hour
+        - Never got there
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: first_blocker
+    attributes:
+      label: What was the first thing that stopped you?
+      description: >
+        The first place you got stuck, even if you got past it. One or two
+        sentences. Paste the exact error text if there was one.
+      placeholder: "Konnect didn't show up in KiCad's menu and I couldn't tell why."
+    validations:
+      required: false
+
+  - type: textarea
+    id: task_attempted
+    attributes:
+      label: What did you ask it to do?
+      description: The task you actually tried — your own words or the prompt you used.
+      placeholder: "Add a 3.3 V regulator to my board and route it."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Did that task work?
+      options:
+        - "Yes"
+        - "Partly — it did something, but not what I asked"
+        - "No"
+        - "I never got as far as trying"
+    validations:
+      required: true
+
+  - type: textarea
+    id: anything_else
+    attributes:
+      label: Anything else?
+      description: Optional. Versions, what you expected, what surprised you.
+    validations:
+      required: false

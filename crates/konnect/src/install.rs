@@ -397,86 +397,33 @@ fn remove_hooks_from_settings() -> Result<()> {
     Ok(())
 }
 
-/// Auto-detect a KiCAD installation.
-/// Checks standard per-platform paths for kicad-cli (plus the registry on Windows).
+// Binary-location logic (KicadCliSource, resolve_binary, kicad_standard_paths,
+// detect_kicad_from_registry) lives in `konnect_core::kicad_locate` — shared
+// with `find_kicad_binary` in `konnect-core::tools::verification` since
+// `konnect` depends on `konnect-core`, not the reverse.
+use konnect_core::kicad_locate::{kicad_standard_paths, resolve_binary, KicadCliSource};
+
+/// Auto-detect a KiCAD installation (used by `init`/`status`, which have no
+/// user-configured value to respect). Checks standard per-platform paths for
+/// kicad-cli, then the registry on Windows.
 pub fn detect_kicad() -> Option<PathBuf> {
-    // Standard paths (check these first — faster than registry)
-    #[cfg(target_os = "windows")]
-    let standard_paths: Vec<PathBuf> = [
-        r"C:\KiCad\10.0\bin\kicad-cli.exe",
-        r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe",
-        r"C:\Program Files (x86)\KiCad\10.0\bin\kicad-cli.exe",
-        r"C:\KiCad\9.0\bin\kicad-cli.exe",
-        r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
-        r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
-    ]
-    .iter()
-    .map(PathBuf::from)
-    .collect();
-
-    #[cfg(target_os = "macos")]
-    let standard_paths: Vec<PathBuf> = {
-        let mut paths = vec![
-            PathBuf::from("/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"),
-            PathBuf::from("/usr/local/bin/kicad-cli"),
-        ];
-        if let Ok(home) = std::env::var("HOME") {
-            // Per-user install (KiCad.app dragged into ~/Applications)
-            paths.push(
-                PathBuf::from(home).join("Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"),
-            );
-        }
-        paths
+    let local_appdata = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let cli_name = if cfg!(target_os = "windows") {
+        "kicad-cli.exe"
+    } else {
+        "kicad-cli"
     };
+    let standard_paths = kicad_standard_paths(cli_name, local_appdata.as_deref());
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let standard_paths: Vec<PathBuf> = vec![
-        PathBuf::from("/usr/bin/kicad-cli"),
-        PathBuf::from("/usr/local/bin/kicad-cli"),
-    ];
-
-    for path in &standard_paths {
-        if path.exists() {
-            return Some(path.clone());
-        }
-    }
-
-    // Try registry on Windows
     #[cfg(target_os = "windows")]
-    {
-        if let Some(path) = detect_kicad_from_registry() {
-            return Some(path);
-        }
+    let (path, source) = resolve_binary(cli_name, cli_name, &standard_paths, || {
+        konnect_core::kicad_locate::detect_kicad_from_registry(cli_name)
+    });
+    #[cfg(not(target_os = "windows"))]
+    let (path, source) = resolve_binary(cli_name, cli_name, &standard_paths, || None);
+
+    match source {
+        KicadCliSource::Configured => None,
+        _ => Some(path),
     }
-
-    None
-}
-
-#[cfg(target_os = "windows")]
-fn detect_kicad_from_registry() -> Option<PathBuf> {
-    use std::process::Command;
-
-    // Use reg.exe to query the registry (avoids winreg dependency)
-    let output = Command::new("reg")
-        .args(["query", r"HKLM\SOFTWARE\KiCad\10.0", "/ve"])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        // Parse the default value which contains the install path
-        for line in stdout.lines() {
-            if line.contains("REG_SZ") {
-                let path_str = line.split("REG_SZ").last()?.trim();
-                let cli_path = std::path::Path::new(path_str)
-                    .join("bin")
-                    .join("kicad-cli.exe");
-                if cli_path.exists() {
-                    return Some(cli_path);
-                }
-            }
-        }
-    }
-
-    None
 }

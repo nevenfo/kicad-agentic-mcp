@@ -1,0 +1,44 @@
+name: Feature request
+description: Something Konnect cannot do that you needed it to do.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful requests describe a **board you were trying to make**,
+        not a tool you would like to exist. What you were doing tells us more
+        than a specification does.
+
+  - type: textarea
+    id: what_you_were_doing
+    attributes:
+      label: What were you trying to do?
+      description: The actual design task, and where Konnect ran out.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What did you do instead?
+      description: >
+        Did you finish it by hand in KiCad, use another tool, or abandon it?
+        This is how we tell an inconvenience from a wall.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Roughly which area?
+      options:
+        - Schematic capture
+        - PCB layout or routing
+        - Libraries — symbols, footprints, parts
+        - Checks — ERC, DRC, design review
+        - Manufacturing output
+        - Installation, configuration, or the MCP connection
+        - Something else
+    validations:
+      required: true

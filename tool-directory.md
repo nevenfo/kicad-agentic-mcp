@@ -28,7 +28,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | Tool | Purpose |
 |------|---------|
 | `kicad_describe` | Return the full input schema of named tools. The schemas arrive as a result the caller asked for instead of a catalogue refresh it cannot decline. |
-| `kicad_invoke` | Run one or more tools by name, in order, loaded or not. Nothing is added to `tools/list`. Stops at the first failure unless `stop_on_error: false`; reports `failed_at` and `not_run` so the caller knows what to retry. |
+| `kicad_invoke` | Run one or more tools by name, in order, loaded or not. Nothing is added to `tools/list`. Stops at the first failure unless `stop_on_error: false`; reports `failed_at` and `not_run` so the caller knows what to retry. **It takes a batch**: `{"calls": [{"tool": "…", "args": {…}}]}` — not the `{"name", "arguments"}` shape a single MCP tool call uses. |
 | `kicad_agent` | Explicit Agent gateway. Runs one supervisor turn from durable TaskState using the measured decision NO_LLM, LOCAL, or ESCALATE. Direct `kicad_describe`/`kicad_invoke` never enter this gateway or start an LLM. |
 | `kicad_agent_verify` | Explicit Agent verification turn. Its PASS/FAIL verdict and `TaskState.verified_facts` come only from cached or freshly run kicad-cli ERC/DRC; model assertions are never verified facts. |
 

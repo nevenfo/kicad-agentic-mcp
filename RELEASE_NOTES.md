@@ -1,59 +1,37 @@
-# KiCad Agentic MCP v1.1.0
+# KiCad Agentic MCP v1.1.1
 
-Correctness release. No new tool and no architecture change: the surface is
-still **202 tools across 22 toolsets**. What moved is fidelity — what this
-server writes into a KiCad file, and what it reports back about one — plus the
-release gate that now proves it on CI's machine rather than on a developer's.
+Discovery and packaging release. There is no new tool, changed tool signature
+or architecture change: the surface remains **202 tools across 22 toolsets**.
+The change is the first-run path — a standard KiCad 10 installation no longer
+needs a hand-written Konnect settings file.
 
-The measured figures further down were taken on 2026-08-24 for v1.0.0, on the
-machine named at the top of [docs/benchmark.md](docs/benchmark.md), from
-artefacts committed under `bench/results/`. This release did not re-run the
-benchmark, so those numbers describe v1.0.0 and are reproduced unchanged. Where
-a target was missed, it says so and the target is not moved.
+The benchmark and model-fit figures further down were taken on 2026-08-24 for
+v1.0.0, on the machine named at the top of
+[docs/benchmark.md](docs/benchmark.md), from artefacts committed under
+`bench/results/`. This release did not re-run them, so those numbers describe
+v1.0.0 and are reproduced unchanged. The separate Windows binary-size figure
+was measured on v1.1.0 and is labelled as such. Where a target was missed, it
+says so and the target is not moved.
 
-## What changed in v1.1.0
+## What changed in v1.1.1
 
-Four fixes change a behaviour you can observe from a client:
+- **`kicad-cli` is discovered automatically.** Konnect now resolves an explicit
+  configured value first, then `PATH`, known KiCad install prefixes and the
+  Windows registry. Known prefixes are ordered by KiCad version before prefix.
+- **The KiCad GUI binary uses the same discovery chain.** Tools that need to
+  launch KiCad no longer assume the executable is already on `PATH`.
+- **The IPC address no longer needs to be copied by hand.** Konnect keeps an
+  explicit configured value, otherwise uses `KICAD_API_SOCKET`, then KiCad's
+  platform-default address.
+- **Boards without an explicit stackup are handled as such.** Inspection no
+  longer treats the absence of a declared stackup as a malformed board.
+- **PCM metadata points to this fork.** The author, contact and homepage now
+  lead to `nevenfo/kicad-agentic-mcp`. The existing PCM identifier is retained
+  because changing it would change the installation directory and break current
+  installs and documented client paths.
 
-- **`create_netclass` and `assign_net_to_class` write the project file, not the
-  board.** They now edit the sibling `.kicad_pro` (`net_settings`,
-  `netclass_patterns`). At v1.0.0 they inserted a `(netclass …)` node into the
-  `.kicad_pcb`, which makes `kicad-cli` exit 3 — the board became unreadable to
-  KiCad's own tooling.
-- **`run_drc` no longer reports a clean board that is not routed.** It reads
-  `unconnected_items` and `schematic_parity` alongside `violations`, and it
-  reads each violation's position where KiCad actually writes it. A board with
-  unrouted copper is now refused by the evidence gate that used to approve it.
-- **Power symbols are part of the schematic net graph.** Netlists that
-  previously reported a supply pin as disconnected now resolve it.
-- **`register_footprint_library` and `register_symbol_library` answer what they
-  did**: `result` is `inserted`, `unchanged` or `updated`, and a nickname
-  already registered against a different URI is refused unless
-  `replace_existing` is set.
-
-Fidelity fixes, none of which change an API:
-
-- `(paper …)` keeps every argument KiCad wrote after the page-size name, so a
-  custom page size and the portrait flag survive a load/write cycle.
-- `(lib_name …)` is preserved, and a derived symbol resolves its pins the way
-  KiCad resolves them.
-- A tool that writes a **connection point** — wire, junction, no-connect, stub —
-  leaves a placed pin's coordinate untouched instead of snapping it to the grid;
-  7.6 % of the pins in KiCad's own demo corpus do not survive that snap.
-- Line endings, indentation and coordinate precision are properties of the file
-  being edited rather than of this writer.
-- The parser reports failure on a document it could not consume. It previously
-  returned success on a truncated file.
-- `add_layer` allocates a layer id from the canonical name under the board's own
-  numbering, rather than an id that need not match it.
-
-Infrastructure:
-
-- **A red real-KiCad E2E now has no path to a published release** — the suite is
-  a required gate of the release workflow instead of a signal running beside it.
-- The test suite proves itself on a machine that has never had KiCad installed,
-  which is what CI is. Three of its assertions were measuring this developer's
-  machine and passed for that reason.
+These fixes change discovery and first-run behaviour only. They add no tool and
+change no MCP parameter or response schema.
 
 ## What this is
 
@@ -118,8 +96,8 @@ Baseline (upstream v0.2.2 at `5cd6454`) and this fork ran back to back on
   `kicad_agent`. The plan is compiled, applied and verified server-side; the
   caller sees no intermediate round trip.
 - **Retrieval**: 62.0 % precision @8 with 100 % recall @8.
-- **Binary**: 23.7 MB on Windows, unstripped — measured on the binary this
-  release actually published, up 1.9 MB from v1.0.0's 21.8 MB. There is no
+- **Binary**: 23.7 MB on Windows, unstripped — measured on the v1.1.0 binary,
+  up 1.9 MB from v1.0.0's 21.8 MB. v1.1.1 did not re-measure it. There is no
   `[profile.release]`,
   deliberately — adding `strip`/`lto` would change the code generation under
   every artefact the gate and the benchmarks were measured on, to improve a
@@ -164,7 +142,7 @@ match the result, and no win is netted off against them.
 - **Windows is the most-tested platform.** macOS works from the release binaries
   or a source build and is not code-signed or notarised. Linux compiles and
   passes CI but has had no per-platform QA against a running KiCad.
-- **The agent-mode success rate is not claimed from this release's runs** — two
+- **The agent-mode success rate is not claimed from v1.0.0's runs** — two
   designs, one run each. The rate for the local model lives in the model-fit
   section of `docs/benchmark.md`, where it was measured with 60 attempts per arm.
 - The evidence store holds 64 entries. Deepening it is deliberately deferred
@@ -198,7 +176,7 @@ and stays open until KiCad 11 can be measured here.
 ## Getting started
 
 - **Install**: KiCad 10 → Plugin and Content Manager → *Install from File* with
-  `konnect-pcm-v1.1.0-<platform>.zip` from this release, or use the standalone
+  `konnect-pcm-v1.1.1-<platform>.zip` from this release, or use the standalone
   server binary. Full steps, including the Claude Desktop and Claude Code
   configuration, are in [README.md](README.md).
 - **macOS: the binaries are not signed or notarised.** Gatekeeper will refuse
@@ -216,6 +194,12 @@ and stays open until KiCad 11 can be measured here.
 - **Contribute or navigate the code**: [DEV.md](DEV.md) (architecture, the agent
   layer, build requirements), [tool-directory.md](tool-directory.md) (every
   tool), [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Tell us how far you got**:
+  [file a first-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml)
+  — six questions, about two minutes, and worth filing especially if you gave
+  up. There is no telemetry in this binary and none is planned, so a report you
+  write is the only thing that ever reaches us. The tally lives in
+  [docs/adoption.md](docs/adoption.md).
 
 ## Licence
 
