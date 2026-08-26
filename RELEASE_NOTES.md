@@ -1,9 +1,59 @@
-# KiCad Agentic MCP v1.0.0
+# KiCad Agentic MCP v1.1.0
 
-First tagged release of this fork. Everything below is measured on the machine
-named at the top of [docs/benchmark.md](docs/benchmark.md), from artefacts
-committed under `bench/results/`. Where a target was missed, it says so and the
-target is not moved.
+Correctness release. No new tool and no architecture change: the surface is
+still **202 tools across 22 toolsets**. What moved is fidelity — what this
+server writes into a KiCad file, and what it reports back about one — plus the
+release gate that now proves it on CI's machine rather than on a developer's.
+
+The measured figures further down were taken on 2026-08-24 for v1.0.0, on the
+machine named at the top of [docs/benchmark.md](docs/benchmark.md), from
+artefacts committed under `bench/results/`. This release did not re-run the
+benchmark, so those numbers describe v1.0.0 and are reproduced unchanged. Where
+a target was missed, it says so and the target is not moved.
+
+## What changed in v1.1.0
+
+Four fixes change a behaviour you can observe from a client:
+
+- **`create_netclass` and `assign_net_to_class` write the project file, not the
+  board.** They now edit the sibling `.kicad_pro` (`net_settings`,
+  `netclass_patterns`). At v1.0.0 they inserted a `(netclass …)` node into the
+  `.kicad_pcb`, which makes `kicad-cli` exit 3 — the board became unreadable to
+  KiCad's own tooling.
+- **`run_drc` no longer reports a clean board that is not routed.** It reads
+  `unconnected_items` and `schematic_parity` alongside `violations`, and it
+  reads each violation's position where KiCad actually writes it. A board with
+  unrouted copper is now refused by the evidence gate that used to approve it.
+- **Power symbols are part of the schematic net graph.** Netlists that
+  previously reported a supply pin as disconnected now resolve it.
+- **`register_footprint_library` and `register_symbol_library` answer what they
+  did**: `result` is `inserted`, `unchanged` or `updated`, and a nickname
+  already registered against a different URI is refused unless
+  `replace_existing` is set.
+
+Fidelity fixes, none of which change an API:
+
+- `(paper …)` keeps every argument KiCad wrote after the page-size name, so a
+  custom page size and the portrait flag survive a load/write cycle.
+- `(lib_name …)` is preserved, and a derived symbol resolves its pins the way
+  KiCad resolves them.
+- A tool that writes a **connection point** — wire, junction, no-connect, stub —
+  leaves a placed pin's coordinate untouched instead of snapping it to the grid;
+  7.6 % of the pins in KiCad's own demo corpus do not survive that snap.
+- Line endings, indentation and coordinate precision are properties of the file
+  being edited rather than of this writer.
+- The parser reports failure on a document it could not consume. It previously
+  returned success on a truncated file.
+- `add_layer` allocates a layer id from the canonical name under the board's own
+  numbering, rather than an id that need not match it.
+
+Infrastructure:
+
+- **A red real-KiCad E2E now has no path to a published release** — the suite is
+  a required gate of the release workflow instead of a signal running beside it.
+- The test suite proves itself on a machine that has never had KiCad installed,
+  which is what CI is. Three of its assertions were measuring this developer's
+  machine and passed for that reason.
 
 ## What this is
 
@@ -146,9 +196,15 @@ and stays open until KiCad 11 can be measured here.
 ## Getting started
 
 - **Install**: KiCad 10 → Plugin and Content Manager → *Install from File* with
-  `konnect-pcm-v1.0.0-<platform>.zip` from this release, or use the standalone
+  `konnect-pcm-v1.1.0-<platform>.zip` from this release, or use the standalone
   server binary. Full steps, including the Claude Desktop and Claude Code
   configuration, are in [README.md](README.md).
+- **macOS: the binaries are not signed or notarised.** Gatekeeper will refuse
+  them on first launch, and the PCM package is not exempt. Clear the quarantine
+  attribute after installing — `xattr -dr com.apple.quarantine <path>` on the
+  extracted `konnect` binary, or on the plugin folder KiCad installed it into —
+  or approve it under *System Settings → Privacy & Security*. This needs an
+  Apple Developer account to fix properly and has not changed since v1.0.0.
 - **Build from source**: `cargo build --release -p konnect` (needs `protoc` and
   `cmake`).
 - **Reproduce the numbers**: `.\gate.ps1 -Bench`, or the individual runs listed
