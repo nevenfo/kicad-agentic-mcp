@@ -5065,3 +5065,47 @@ O.9.3's standard: the zip a user downloads is inspected on this machine.
 ### Validation
 The version the binary reports is the version the tag names is the version the
 package declares — measured, in that order, from the downloaded file.
+
+## Q.6 — A test that measured the runner's clock, found by this phase — DONE
+
+### Objectif
+The phase invariant says a gate going red for a reason that is not the version
+bump stops the release and is triaged as its own item. One did. This is it.
+
+### Ce qui a rougi
+CI run `32944662909`, on `c377a41` — a commit that touches **only** `plan.md`
+and `progress.md`. `Check & Test (ubuntu-latest)` failed with three tests in
+`konnect-schematic-editor --lib`, on identical source to the green run before
+it. Two of the three are collateral: they read `PoisonError`.
+
+### Tâches
+- [x] Q.6.1 The real failure is
+      `a_symbol_added_inside_an_existing_library_makes_the_index_stale`.
+      `fingerprint_children` hashes each library entry's mtime in whole
+      **milliseconds**, so a file created inside the millisecond already
+      stamped on `Device.kicad_symdir` leaves the fingerprint unchanged and the
+      cache reads fresh. Whether the scan, the cache write and the cache read
+      fit inside one millisecond is a property of the **machine**: measured
+      here, the test is green **30 times out of 30**, because those I/Os cost
+      more than a millisecond on Windows; on a Linux runner they fit. D140's
+      class one level down — a test asserting a property of the runner while
+      appearing to assert a property of the code. Fixed by leaving the stamped
+      millisecond before writing, bounded at 200 iterations so a test can never
+      spin on a clock that runs backwards
+- [x] Q.6.2 The other two are one defect of amplification, not two failures:
+      the panic poisoned `ENV_LOCK`, so every later test taking it died with
+      `PoisonError` instead of reporting its own verdict. That mutex guards an
+      environment variable, not an invariant over data — there is no state a
+      panicking test leaves half-written. `env_lock()` now recovers the guard
+      with `into_inner()`. P.7.6's rule at the mutex level: a red run reports
+      what is actually red
+- [x] Q.6.3 The cause is measured rather than argued: creating a file inside a
+      directory leaves that directory's mtime unchanged **227 times out of
+      300** on this machine, and 2 000 consecutive wall-clock reads land in a
+      single millisecond
+- [x] Q.6.4 Production code is untouched. Both edits are inside
+      `mod suggestion_tests`, so the phase invariant holds
+
+### Validation
+`cargo test -p konnect-schematic-editor --lib`: 37 passed, 0 failed, and the
+full gate re-run below on the commit that carries the fix.

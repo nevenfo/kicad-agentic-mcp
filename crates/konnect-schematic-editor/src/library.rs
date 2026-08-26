@@ -1304,6 +1304,20 @@ mod suggestion_tests {
     /// alongside `ensure_lib_symbol_flattens_extends_chain`.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// `ENV_LOCK` guards an environment variable, not an invariant over data:
+    /// there is no state a panicking test could leave half-written for the
+    /// next one to find. Taking it with `unwrap()` therefore buys nothing and
+    /// costs the diagnosis — one test panicking poisons the mutex, and every
+    /// later test in this binary fails with `PoisonError` instead of its own
+    /// result. That is P.7.6's lesson at the mutex level: a red run must
+    /// report what is actually red, not one real failure wearing two
+    /// disguises. Recovering the guard keeps each test's verdict its own.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn edit_distance_basics() {
         assert_eq!(edit_distance("", ""), 0);
@@ -1354,7 +1368,7 @@ mod suggestion_tests {
 
     #[test]
     fn ensure_lib_symbol_flattens_extends_chain() {
-        let _env_guard = ENV_LOCK.lock().unwrap();
+        let _env_guard = env_lock();
         // NE5532-style derived symbol: (extends "LM2904"), no drawing of its
         // own. The embed must copy the parent's unit sub-symbols renamed to
         // the derived name and drop the extends marker — the old stub+parent
@@ -1678,7 +1692,7 @@ mod suggestion_tests {
 
     #[test]
     fn canonical_lib_id_leaves_a_resolvable_lib_id_alone() {
-        let _env_guard = ENV_LOCK.lock().unwrap();
+        let _env_guard = env_lock();
         let _fixture = write_device_r_fixture();
         // Already valid: no rewrite, and no claim of one.
         assert_eq!(canonical_lib_id("Device:R"), None);
@@ -1697,7 +1711,7 @@ mod suggestion_tests {
     /// are part of the fingerprint for this reason.
     #[test]
     fn a_symbol_added_inside_an_existing_library_makes_the_index_stale() {
-        let _env_guard = ENV_LOCK.lock().unwrap();
+        let _env_guard = env_lock();
         let fixture = write_device_r_fixture();
         let dirs = vec![fixture.path().to_path_buf()];
 
@@ -1708,8 +1722,36 @@ mod suggestion_tests {
             "the cache this test just wrote must read back as fresh"
         );
 
+        // The fingerprint hashes each library entry's mtime in whole
+        // milliseconds (`fingerprint_children`), so a file created inside the
+        // same millisecond as the one already stamped on the directory leaves
+        // that mtime — and with it the fingerprint — unchanged. Whether the
+        // scan, the cache write and the cache read fit inside one millisecond
+        // is a fact about the machine, not about the code under test: on
+        // Windows those I/Os cost more than a millisecond and this never
+        // fails (measured: 0 red in 30 runs), while on a Linux runner they
+        // fit, and it went red there on a commit that touched only Markdown.
+        // D140's class, one level down. Leave the stamped millisecond before
+        // writing, so the assertion below measures invalidation and not the
+        // filesystem's clock. Bounded, because a test must not be able to
+        // spin forever if a clock ever runs backwards.
+        let symdir = fixture.path().join("Device.kicad_symdir");
+        let stamped = mtime_millis_of(&std::fs::metadata(&symdir).unwrap());
+        let now_millis = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the system clock is after the epoch")
+                .as_millis() as u64
+        };
+        for _ in 0..200 {
+            if now_millis() > stamped {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
         std::fs::write(
-            fixture.path().join("Device.kicad_symdir").join("AMS1117.kicad_sym"),
+            symdir.join("AMS1117.kicad_sym"),
             "(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"AMS1117\"\n\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t(property \"Value\" \"AMS1117\" (at 0 0 0))\n\t)\n)\n",
         )
         .unwrap();
@@ -1735,7 +1777,7 @@ mod suggestion_tests {
 
     #[test]
     fn ensure_lib_symbol_resolves_a_known_good_lib_id_without_touching_candidates() {
-        let _env_guard = ENV_LOCK.lock().unwrap();
+        let _env_guard = env_lock();
         let _fixture = write_device_r_fixture();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("t.kicad_sch");
