@@ -5540,22 +5540,49 @@ session. Nothing here is posted without the user's explicit go.
 R.2 and R.3 closed — the kit quotes the Quick start and shows the demo.
 
 ### Tâches
-- [ ] R.4.1 Repository metadata: description, topics, and a homepage pointing at
-      the release or the demo. Currently: no topics, no homepage
-- [ ] R.4.2 A one-paragraph pitch and a one-sentence pitch, both stating the
+- [x] R.4.1 Repository metadata: description, topics, and a homepage pointing at
+      the release or the demo. Currently: no topics, no homepage. **Drafted, not
+      applied** (`docs/launch/launch-kit.md` § R.4.1): a description that leads
+      with what the thing is rather than with its architecture, the release page
+      as homepage because the project has no site, and twelve topics — six for
+      the KiCad audience, five for the MCP audience, one for the language.
+      Applying it is one `gh repo edit` and the first line of the go/no-go
+      list, because it is the only item that changes something public before a
+      word is posted
+- [x] R.4.2 A one-paragraph pitch and a one-sentence pitch, both stating the
       limitation set (Windows most-tested, macOS unsigned, PCB tools need KiCad
       running) — a launch that hides the caveats buys a first wave of users who
-      leave angry
-- [ ] R.4.3 Long-form announcement drafts under `docs/launch/`, one per intended
+      leave angry. Both written, both carrying the caveats in their own body
+      rather than in a footnote
+- [x] R.4.3 Long-form announcement drafts under `docs/launch/`, one per intended
       venue, each adapted rather than pasted: the audience of a KiCad forum and
-      the audience of an MCP directory do not want the same first sentence
-- [ ] R.4.4 A candidate venue list with, for each, the submission requirement it
-      imposes (format, licence statement, screenshot, maintainer account)
-- [ ] R.4.5 The kit states explicitly what is **not** claimed: no success-rate
+      the audience of an MCP directory do not want the same first sentence.
+      Four: `announce-kicad-forum.md` opens on the fear that audience actually
+      has — a model writing to their files — and answers it with KiCad's undo
+      and KiCad's verdict; `announce-reddit-kicad.md` shows the image first;
+      `announce-hn.md` leads with the verification stance and the token
+      measurement; `announce-mcp-directory.md` is four paste-ready lengths plus
+      the metadata table those forms ask for
+- [x] R.4.4 A candidate venue list with, for each, the submission requirement it
+      imposes (format, licence statement, screenshot, maintainer account). Five
+      venues in one table, the fifth — KiCad's official PCM repository — named
+      as **out of R's scope** and blocked on F-03 besides. The requirements are
+      dated and the kit says to re-read each venue's own rules immediately
+      before posting; that is a go/no-go line, not a courtesy
+- [x] R.4.5 The kit states explicitly what is **not** claimed: no success-rate
       claim beyond what `docs/benchmark.md` measured, no platform claim beyond
-      Windows
-- [ ] R.4.6 Nothing is published. The phase produces drafts and a go/no-go list;
-      the posting decision, and the account that posts, are the user's
+      Windows. Six items, and every draft repeats them in its own body: the
+      18/18 is six golden tasks on one machine; the token figures are v1.0.0's
+      and were not re-run; Windows only; **no claim that it is fast end to end**
+      — the six-to-seven minutes is published beside the sub-second product
+      time; no KiCad endorsement; parts are placed, not authored
+- [x] R.4.6 Nothing is published. The phase produces drafts and a go/no-go list;
+      the posting decision, and the account that posts, are the user's. Nothing
+      was posted and the repository metadata was not touched. The go/no-go list
+      has six lines, and the second is **ship v1.1.1 first** (R.7.7): every
+      draft's install path assumes the two manual configuration steps are gone,
+      so announcing before the release means either rewriting each draft or
+      sending the first wave down the manual path
 
 ### Validation
 The user can publish any item in the kit without editing it first. Every factual
@@ -5911,7 +5938,7 @@ unclassified.
       that were actually measured — under a second of board changes, six to
       seven minutes of conversation. The 40 s was written before anything had
       been run, and is struck rather than quietly re-aimed
-- [ ] A launch kit the user can publish without rewriting (R.4)
+- [x] A launch kit the user can publish without rewriting (R.4)
 - [ ] A feedback route that yields the five metrics without a follow-up question
       (R.5)
 - [ ] A written decision for the next phase, with its evidence (R.6)
