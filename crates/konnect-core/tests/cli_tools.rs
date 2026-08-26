@@ -853,6 +853,59 @@ async fn a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable() {
     );
 }
 
+/// P.6.8.8 places `Reference`/`Value` at the anchor the **installed** library
+/// declares, carrying that library's own `(effects …)` and text angle through
+/// the placement. The stub libraries the unit tests use cannot prove KiCad
+/// accepts what that produces; this can.
+///
+/// `Device:R` is the case worth probing: its reference anchor is off-axis
+/// (`(at 2.032 0 90)`), so the field really moves, and its text angle is the
+/// library's 90 rather than the 0 this used to write. Rotated on purpose —
+/// at 90° the anchor is transformed rather than merely translated.
+#[tokio::test]
+#[ignore = "requires kicad-cli and KiCad demos; run with --ignored"]
+async fn a_rotated_symbol_with_library_placed_fields_still_loads() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let Some(dir) = copied_complex_hierarchy(&h) else {
+        eprintln!("SKIP: no KiCad demos found (set KICAD_DEMOS to enable)");
+        return;
+    };
+    let child = dir.join("ampli_ht.kicad_sch");
+    let root = dir.join("complex_hierarchy.kicad_sch");
+
+    for (reference, rotation, x) in [("R900", 0.0, 44.45), ("R901", 90.0, 57.15)] {
+        h.json(
+            "add_schematic_component",
+            json!({
+                "schematic": harness::as_str(&child),
+                "lib_id": "Device:R",
+                "reference": reference,
+                "value": "10k",
+                "x": x, "y": 44.45,
+                "rotation": rotation
+            }),
+        )
+        .await;
+    }
+
+    let text = std::fs::read_to_string(&child).expect("the sheet is readable");
+    assert!(
+        text.contains("R900") && text.contains("R901"),
+        "both symbols should be on the sheet"
+    );
+
+    // KiCad's own verdict on the file we just wrote. `run_erc` returning at
+    // all means the schematic loaded; a malformed property block fails the
+    // load, not the check.
+    let erc = h
+        .json("run_erc", json!({ "schematic": harness::as_str(&root) }))
+        .await;
+    assert!(
+        erc["total"].is_number(),
+        "kicad-cli did not load the sheet after two library-anchored placements: {erc}"
+    );
+}
+
 /// The manufacturing package is the pipeline end to end: Gerbers, drills and
 /// the assembly files in one directory.
 #[tokio::test]

@@ -652,25 +652,12 @@ pub(crate) fn place_one_component(
     sym.at.rotation = Some(rotation);
     sym.unit = unit;
 
-    // Reference above the component, Value below; Footprint/Datasheet hidden.
-    // Power symbols get their Reference hidden too, matching eeschema: a
-    // #PWR designator is never shown on the sheet.
+    // The four fields go where the library symbol puts them, transformed by
+    // this placement (P.6.8.8). Power symbols get their Reference hidden too,
+    // matching eeschema: a #PWR designator is never shown on the sheet, and
+    // the `power:` library already hides its own.
     let hide_reference = lib_id.starts_with("power:") || reference.starts_with("#PWR");
-    let positioned = crate::tools::positioned_property;
-    sym.properties.push(positioned(
-        "Reference",
-        reference,
-        x,
-        y - 3.81,
-        0.0,
-        hide_reference,
-    ));
-    sym.properties
-        .push(positioned("Value", val_str, x, y + 3.81, 0.0, false));
-    sym.properties
-        .push(positioned("Footprint", "", x, y, 0.0, true));
-    sym.properties
-        .push(positioned("Datasheet", "", x, y, 0.0, true));
+    crate::tools::push_placed_fields(sch, &mut sym, reference, val_str, hide_reference);
 
     // Instance entry, keyed to the root sheet UUID like eeschema writes it:
     // (instances (project "<name>" (path "/<root-uuid>" (reference ...) (unit 1))))
@@ -2679,6 +2666,179 @@ pub(crate) mod tests {
         let msg = format!("{:?}", result.content);
         assert!(msg.contains("Device:CP"));
         assert!(msg.contains("no embedded definition"));
+    }
+
+    /// A sheet carrying one library symbol whose fields sit somewhere other
+    /// than the old hard-coded offsets: `Reference` right and above the
+    /// origin, `Value` right and below, both left-justified, and the whole
+    /// thing in the library's Y-up space.
+    fn sheet_with_fielded_symbol(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("fielded.kicad_sch");
+        std::fs::write(
+            &path,
+            concat!(
+                "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n",
+                "  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n",
+                "  (lib_symbols\n    (symbol \"Test:FIELDED\"\n",
+                "      (property \"Reference\" \"U\" (at 2.54 3.81 0)",
+                " (effects (font (size 1.27 1.27)) (justify left)))\n",
+                "      (property \"Value\" \"FIELDED\" (at 2.54 -3.81 0)",
+                " (effects (font (size 1.27 1.27)) (justify left)))\n",
+                "    )\n  )\n)\n"
+            ),
+        )
+        .unwrap();
+        path
+    }
+
+    async fn place_fielded(path: &std::path::Path, rotation: f64) -> cse::Symbol {
+        let result = handle_add_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "lib_id": "Test:FIELDED",
+                "x": 101.6,
+                "y": 88.9,
+                "rotation": rotation,
+                "reference": "U1",
+                "value": "FIELDED"
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+        cse::Schematic::load(path)
+            .unwrap()
+            .symbols
+            .iter()
+            .find(|s| s.reference() == Some("U1"))
+            .expect("the placed symbol")
+            .clone()
+    }
+
+    fn field_at(sym: &cse::Symbol, name: &str) -> String {
+        let prop = sym
+            .properties
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("no {name} property"));
+        cse::sexp::writer::write(&prop.to_sexp())
+    }
+
+    /// P.6.8.8: the fields go where the library symbol says, not to a fixed
+    /// ±3.81 under the placement. At rotation 0 that is the anchor flipped
+    /// from Y-up to Y-down and translated — including its x, which the old
+    /// hard-coded rule dropped entirely.
+    #[tokio::test]
+    async fn placed_fields_take_the_library_anchor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = sheet_with_fielded_symbol(dir.path());
+        let sym = place_fielded(&path, 0.0).await;
+
+        // (2.54, 3.81) Y-up → (101.6 + 2.54, 88.9 - 3.81).
+        assert!(
+            field_at(&sym, "Reference").contains("(at 104.14 85.09 0)"),
+            "{}",
+            field_at(&sym, "Reference")
+        );
+        assert!(
+            field_at(&sym, "Value").contains("(at 104.14 92.71 0)"),
+            "{}",
+            field_at(&sym, "Value")
+        );
+    }
+
+    /// The rotated case, which is the one the old rule could never get right:
+    /// it wrote the same two points whatever the placement rotation. The
+    /// anchor goes through the pin transform, so (2.54, 3.81) at 90° lands at
+    /// (x - 3.81, y - 2.54).
+    #[tokio::test]
+    async fn placed_fields_rotate_with_the_symbol() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = sheet_with_fielded_symbol(dir.path());
+        let sym = place_fielded(&path, 90.0).await;
+
+        assert!(
+            field_at(&sym, "Reference").contains("(at 97.79 86.36"),
+            "{}",
+            field_at(&sym, "Reference")
+        );
+        assert!(
+            field_at(&sym, "Value").contains("(at 105.41 86.36"),
+            "{}",
+            field_at(&sym, "Value")
+        );
+    }
+
+    /// The text angle is the library's, not the placement's — measured on the
+    /// demo corpus — and the library's justification comes across with it: a
+    /// `left`-justified reference written without its justify shifts by half
+    /// its own width.
+    #[tokio::test]
+    async fn a_placed_field_keeps_the_library_text_angle_and_justification() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = sheet_with_fielded_symbol(dir.path());
+        let sym = place_fielded(&path, 90.0).await;
+
+        let reference = field_at(&sym, "Reference");
+        assert!(
+            reference.contains("(at 97.79 86.36 0)"),
+            "the field angle is the library's 0, not the placement's 90: {reference}"
+        );
+        assert!(
+            reference.contains("(justify left)"),
+            "the library justification must survive the placement: {reference}"
+        );
+    }
+
+    /// A library entry that declares no `Reference`/`Value` of its own keeps
+    /// the historical offsets: this is the fallback, and it must stay, because
+    /// a symbol with no anchor to read is exactly where the old rule was the
+    /// only rule available.
+    #[tokio::test]
+    async fn a_symbol_without_field_anchors_keeps_the_old_offsets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("anchorless.kicad_sch");
+        std::fs::write(
+            &path,
+            concat!(
+                "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n",
+                "  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n",
+                "  (lib_symbols\n    (symbol \"Test:BARE\"\n    )\n  )\n)\n"
+            ),
+        )
+        .unwrap();
+
+        let result = handle_add_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "lib_id": "Test:BARE",
+                "x": 101.6,
+                "y": 88.9,
+                "reference": "U1",
+                "value": "BARE"
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+        let sch = cse::Schematic::load(&path).unwrap();
+        let sym = sch
+            .symbols
+            .iter()
+            .find(|s| s.reference() == Some("U1"))
+            .expect("the placed symbol");
+        assert!(
+            field_at(sym, "Reference").contains("(at 101.6 85.09 0)"),
+            "{}",
+            field_at(sym, "Reference")
+        );
+        assert!(
+            field_at(sym, "Value").contains("(at 101.6 92.71 0)"),
+            "{}",
+            field_at(sym, "Value")
+        );
     }
 
     #[tokio::test]

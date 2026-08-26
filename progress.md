@@ -2,9 +2,10 @@
 
 ## Phase actuelle
 
-**P — Schematic round-trip fidelity.** P.6 : tout est clos sauf P.6.8. Sept de
-ses huit sous-items sont clos (.1, .2, .3, .4, .5, .6, .7) ; **reste P.6.8.8**,
-plus **P.6.8.9**, ajouté par la mesure de P.6.8.5.
+**P — Schematic round-trip fidelity.** P.6 : tout est clos sauf P.6.8, dont les
+**huit items de la liste `LATER` sont clos**. Ce qui reste sous P.6.8 est
+**P.6.8.9**, découverte de la mesure de P.6.8.5 et rattachée à aucune issue
+amont. P.6.7 est cochée : ses onze sous-items l'étaient déjà.
 Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
 
 ## Tâche actuelle
@@ -13,33 +14,50 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-**P.6.8.5 (#148)** — la direction du stub de `connect_to_net` se dérive de la
-pin elle-même (`pin_outward_at` : axe dominant de `pin - origine du placement`,
-donc sans comptabilité de rotation ni de miroir, les deux points étant déjà en
-espace feuille). Un `direction` explicite reste autoritaire ; un point sans pin
-garde `"right"`. La réponse porte `direction_source` (`requested` /
-`derived_from_pin` / `default_no_pin_here`) : un défaut silencieux et une
-direction dérivée ne doivent pas se lire pareil. Le lookup s'exécute **avant**
-`snap_reporting`, sinon il rate toute feuille non alignée sur la grille.
-`placed_pins` remonte de `sch_analysis` vers `tools/mod.rs` et devient le corps
-de `all_pin_endpoints`, qui en était la copie (D136) ; elle gagne
-`origin_x`/`origin_y`.
+**P.6.8.8 (#186)** — `Reference` et `Value` ne sont plus posées à ±3,81 mm
+codés en dur : `library::field_anchor` lit l'ancre du `lib_symbols` **embarqué**
+(la définition avec laquelle la feuille sera réellement dessinée) et
+`tools::push_placed_fields` la fait passer par `transform_pin`, exactement
+comme une pin — Y-up retourné, rotation et miroir du placement appliqués,
+translation, arrondi à six décimales (D125). Les quatre champs, aux deux sites
+qui posent un symbole (`add_schematic_component` et `add_power_symbol`), par un
+seul helper au lieu de deux copies des mêmes quatre lignes (D136) ; `mm` remonte
+dans `tools/mod.rs` pour la même raison. L'angle du texte est celui de la
+librairie, jamais celui du placement, et le `(effects …)` de la librairie est
+repris entier, justification comprise. Repli conservé et testé : une entrée de
+librairie sans le champ garde les anciens offsets.
 
 Validation :
-- fixture construite pour ça, `conn_double_row.kicad_sch`
-  (`Conn_02x05_Odd_Even` en `J1`) : positions mesurées par `kicad-cli sch erc`,
-  pins impaires à x = 96.52, paires à x = 109.22, pin 9 et pin 10 partageant
-  y = 101.6 ; la feuille charge proprement, 10 `pin_not_connected` et rien
-  d'autre
-- rouge d'abord, dérivation neutralisée : les trois tests de défaut dérivé
-  tombent, et sur la feuille double rangée le stub traverse le corps jusqu'à
-  x = 111.52 et une jonction s'écrit à `(109.22 101.6)`, sur la pin 10
+- mesure qui décide la conception, sur 12 894 champs `Reference`/`Value` du
+  corpus de démos : ancien offset fixe 7,5 %, ancre transformée **41,4 %**,
+  ancre translatée sans rotation 24,2 %. Ce sont les buckets rotés qui
+  tranchent — l'ancienne règle n'est presque jamais juste à 90° (10 sur 2 440)
+  et tourner l'ancre bat ne pas la tourner de plus de dix contre un
+- angle du texte, mesuré sur les seuls champs que le corpus montre posés par
+  eeschema : lib 0° → 0° dans 4 906 cas sur 5 071, lib 90° → 90° dans les 261
+- rouge d'abord, lookup d'ancre neutralisé : les trois nouveaux tests de
+  placement et le test du symbole d'alimentation tombent ; le test de repli
+  reste vert, comme il doit
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **57 suites, 1377 tests, 0 échec**
+  **57 suites, 1381 tests, 0 échec**
 - `cargo fmt --all -- --check` / `cargo clippy --workspace --locked
   --all-targets -- -D warnings` : PASS, 0
+- sondes live `cli_tools --ignored` : PASS, 15/15, dont la nouvelle
+  `a_rotated_symbol_with_library_placed_fields_still_loads` (`Device:R` posé à
+  0° et à 90°, hiérarchie toujours chargée par kicad-cli) ; step gatant ajouté
+  à `e2e-kicad.yml`
 
 ## Décisions actives
+
+- **D138** — le corpus de démos n'est pas un oracle direct du placement d'un
+  champ : sur une feuille finie, un champ a souvent été déplacé à la main, donc
+  aucune règle ne peut en reproduire plus d'une fraction. Mesuré : la meilleure
+  règle en reproduit 41,4 %, et c'est **normal**, pas un échec. Ce qui décide
+  entre deux règles est la comparaison **relative**, et sur les sous-ensembles
+  où elles divergent — ici les placements rotés. Corollaire utilisé deux fois :
+  les champs dont la position est reproduite exactement sont ceux que personne
+  n'a bougés, et eux seuls forment un oracle propre pour les propriétés
+  voisines (angle du texte, justification).
 
 - **D137** — `kicad-cli` n'est **pas** un oracle de la table `(layers …)`.
   Mesuré sur 10.0.3 : id non canonique, id dupliqué et même nom déclaré deux
@@ -302,6 +320,10 @@ Aucun.
 - `crates/konnect-core/src/tools/sch_wiring.rs` — `handle_connect_to_net`, le
   seul appelant de `pin_outward_at` ; `snap_reporting` juste après, cible de
   P.6.8.9.
+- `crates/konnect-schematic-editor/src/library.rs` — `field_anchor` /
+  `FieldAnchor`, l'ancre lue dans le `lib_symbols` embarqué (P.6.8.8) ;
+  `tools/mod.rs::push_placed_fields` est son unique appelant, partagé par les
+  deux sites de pose.
 - `crates/konnect-core/tests/nets_and_wires.rs` — les cinq tests de direction
   de stub ; `tests/fixtures/conn_double_row.kicad_sch` et
   `harness::CONN_DOUBLE_ROW`, qui portent les positions mesurées des pins.
@@ -328,11 +350,13 @@ Aucun.
 
 ## NEXT ACTION
 
-Implémenter P.6.8.8 (#186) — `Reference` et `Value` sont posées à ±3,81 mm
-codés en dur, à rotation 0, quels que soient le symbole et la rotation du
-placement. Purement visuel, sans effet électrique ni perte de données : c'est
-le dernier item de P.6.8. Relire la section (`rg -n "P.6.8.8" plan.md`) et la
-fiche #186 de `docs/upstream-audit.md`, puis décider si la position se dérive
-de la bounding box du symbole de librairie ou seulement de la rotation de
-l'instance. P.6.8.9 reste ouverte ensuite et demande une décision de forme
-avant implémentation.
+Décider la forme de P.6.8.9 puis l'implémenter — `connect_to_net` snappe le
+point demandé puis trace le stub depuis le point **snappé**, si bien qu'une pin
+hors grille 1,27 reçoit un fil qui commence à côté d'elle et non dessus, pour
+un appel qui répond succès (mesuré : `multiunit_lm2904.kicad_sch`, pin à
+x = 92,38, fil à x = 92,71). Relire la section (`rg -n "P.6.8.9" plan.md`) : le
+choix est entre « le snap cède quand une pin est trouvée au point demandé » —
+le lookup que P.6.8.5 fait déjà là — et « la réponse dit que le fil n'a pas
+commencé où l'appelant demandait ». Vérifier d'abord `add_wire` et les autres
+writers qui prennent des extrémités : s'ils partagent le motif, la correction
+est commune.

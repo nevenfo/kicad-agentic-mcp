@@ -122,6 +122,14 @@ jobs:
       - name: "A symbol on a child sheet keeps the hierarchy loadable (e7b0c54)"
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable
 
+      # A placed symbol takes its Reference/Value from the library symbol's own
+      # anchor, transformed by the placement (P.6.8.8). The unit tests prove
+      # the arithmetic against stub libraries; only a real install has the
+      # anchors and the effects nodes KiCad actually ships, and only kicad-cli
+      # says whether the property block that comes out still loads.
+      - name: "A rotated symbol with library-placed fields still loads (P.6.8.8)"
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_rotated_symbol_with_library_placed_fields_still_loads
+
       # run_erc refuses a sheet that belongs to a project rooted elsewhere,
       # because kicad-cli never reads that project's sym-lib-table and reports
       # every project-library symbol as an unknown library (P.6.7.8). That

@@ -3181,8 +3181,9 @@ None. Each item below is independent of the others except where stated.
       Stated bound: no live probe proves the id is right, because KiCAD
       offers no way to observe it from the CLI. The assertions are on what
       this server writes and on what KiCAD's own files contain.
-- [ ] P.6.7 Smaller, independent, each with its own discriminating test. Split
-      into one id per item so a commit closes exactly one:
+- [x] P.6.7 Smaller, independent, each with its own discriminating test. Split
+      into one id per item so a commit closes exactly one: all eleven are closed,
+      each by its own commit and its own discriminating test.
   - [x] P.6.7.1 #212 — one junction dot per wire instead of per T. Done: a
         single `add_missing_junctions` helper in `sch_wiring.rs` guards on a
         coincident dot, and the three unguarded loops call it —
@@ -3397,7 +3398,9 @@ None. Each item below is independent of the others except where stated.
       rather than re-deriving. #271 depends on P.6.3, which is closed, so
       nothing here is blocked any more. Split into one id per item, ordered by
       consequence and not by issue number, so a commit closes exactly one — the
-      shape P.6.7 and P.6.9 used:
+      shape P.6.7 and P.6.9 used. The eight items of the `LATER` list are all
+      closed; what keeps this box open is P.6.8.9, found while measuring
+      P.6.8.5 and belonging to no upstream issue.
   - [x] P.6.8.1 #179 pin half — fifteen call sites still resolve pins with the
         unit-blind `extract_lib_pins`, and `sch_batch.rs:390-399` finds an
         instance by `reference` alone. Together they compute unit 2's pin
@@ -3645,10 +3648,52 @@ None. Each item below is independent of the others except where stated.
         read as one with a usable id and be handed to a delete.
         Red before: with the field forced to `None`, the mock test fails on
         the assertion that says why the id matters.
-  - [ ] P.6.8.8 #186 — `Reference` and `Value` are placed at a hard-coded
+  - [x] P.6.8.8 #186 — `Reference` and `Value` are placed at a hard-coded
         ±3.81 mm at rotation 0, whatever the symbol and whatever the placement
         rotation. Visual only, no electrical effect and no data loss: last on
         purpose.
+        Done. `library::field_anchor` reads the anchor from the **embedded**
+        `lib_symbols` entry — the definition this sheet will actually be drawn
+        with, already flattened by `ensure_lib_symbol` — and
+        `tools::push_placed_fields` runs it through `transform_pin`, the same
+        transform a pin goes through: library Y-up flipped, placement rotation
+        and mirror applied, translated to the instance origin, rounded to six
+        decimals (D125). All four fields, at both sites that place a symbol
+        (`add_schematic_component` and `add_power_symbol`), through one helper
+        rather than two copies of the same four lines (D136); `mm` moves up to
+        `tools/mod.rs` for the same reason.
+        What decides the design is a measurement over the KiCad 10 demo
+        corpus — 12 894 placed `Reference`/`Value` fields, each compared with
+        the position its file actually carries:
+
+        | rule                                        | reproduces |
+        |---------------------------------------------|------------|
+        | fixed `y ∓ 3.81`, angle 0 (what this did)   | 7.5 %      |
+        | library anchor **transformed**               | 41.4 %     |
+        | library anchor translated, rotation ignored  | 24.2 %     |
+
+        The absolute numbers do not settle it and are not meant to: the
+        remainder is fields a human dragged, which no rule reproduces and none
+        should (D138). What settles it is the rotated buckets, where the old
+        rule is essentially never right — 10 of 2 440 at 90° — and rotating
+        the anchor beats not rotating it by more than ten to one.
+        Two further properties, measured the same way but only over the fields
+        the corpus shows eeschema itself placed (position reproduced exactly,
+        so nobody moved them): the field's **text angle is the library's**, not
+        the placement's — lib 0° → 0° in 4 906 of 5 071, lib 90° → 90° in all
+        261 — and the library's `(effects …)` comes across whole, justification
+        included, in the overwhelming majority. A `left`-justified reference
+        written without its justify shifts by half its own width.
+        Fallback kept and tested: a library entry that declares no such field
+        keeps the historical offsets, which is exactly the case the old rule
+        was the only rule for.
+        Red before, with the anchor lookup neutralised: the three new
+        placement tests and the power-symbol test fail; the fallback test
+        stays green, as it must. Live: `Device:R` — whose reference anchor is
+        off-axis (`at 2.032 0 90`) and whose text angle is 90, not the 0 this
+        used to write — placed at 0° and at 90° on a demo sub-sheet, and
+        kicad-cli still loads the hierarchy. Gating step added to
+        `e2e-kicad.yml`.
   - [ ] P.6.8.9 — found while measuring P.6.8.5, and not part of it: when a
         pin does not sit on the 1.27 grid, `connect_to_net` snaps the caller's
         `(pin_x, pin_y)` and then draws the stub from the **snapped** point, so

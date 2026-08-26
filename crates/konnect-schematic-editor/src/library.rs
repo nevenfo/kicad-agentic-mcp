@@ -290,6 +290,59 @@ pub fn ensure_lib_symbol(schematic: &mut Schematic, lib_id: &str) -> bool {
     true
 }
 
+/// Where a library symbol puts one of its own fields, and how it draws it.
+///
+/// Coordinates are the library's: symbol-local and **Y-up**, so a caller
+/// placing an instance has to run them through the same transform a pin goes
+/// through (`konnect_sexp::geometry::transform_pin`) before writing them into
+/// a sheet. `angle` is the field's own text angle, which is *not* the
+/// placement rotation — measured on the KiCad 10 demo corpus, a field eeschema
+/// itself placed keeps the library's angle whatever the symbol was rotated to
+/// (lib 0° → 0° in 4906 of 5071 such fields, lib 90° → 90° in all 261).
+///
+/// `effects` is the library's own `(effects …)` node, carried over whole: it
+/// holds the font size and the justification, and copying it is what keeps a
+/// placed field looking like the same field in eeschema.
+#[derive(Debug, Clone)]
+pub struct FieldAnchor {
+    pub x: f64,
+    pub y: f64,
+    pub angle: f64,
+    /// The library marks this field hidden — power symbols do it for
+    /// `Reference`, and every symbol does it for `Footprint`/`Datasheet`.
+    pub hide: bool,
+    pub effects: Option<SexpNode>,
+}
+
+/// The anchor a schematic's *embedded* `lib_symbols` entry declares for
+/// `field`, or `None` when the entry or the field is absent.
+///
+/// Reads the embedded copy rather than the installed library on purpose: the
+/// embedded definition is what this sheet will actually be drawn with, and
+/// `ensure_lib_symbol` has already put it there (flattened) by the time a
+/// caller places an instance.
+pub fn field_anchor(schematic: &Schematic, lib_id: &str, field: &str) -> Option<FieldAnchor> {
+    let sym = schematic
+        .raw_other
+        .iter()
+        .filter(|node| node.tag() == Some("lib_symbols"))
+        .flat_map(|node| node.find_all("symbol"))
+        .find(|s| s.value() == Some(lib_id))?;
+    let prop = sym
+        .find_all("property")
+        .into_iter()
+        .find(|p| p.args().first().and_then(|n| n.text()) == Some(field))?;
+    let at = prop.find("at")?;
+    let num = |i: usize| -> Option<f64> { at.args().get(i)?.text()?.parse::<f64>().ok() };
+    Some(FieldAnchor {
+        x: num(0)?,
+        y: num(1)?,
+        angle: num(2).unwrap_or(0.0),
+        hide: prop.find("hide").and_then(|h| h.value()) == Some("yes"),
+        effects: prop.find("effects").cloned(),
+    })
+}
+
 /// Number of units of the symbol `lib_id` resolves to, following the
 /// `(extends "Parent")` chain when the symbol has no unit sub-symbols of its
 /// own (#35). The count is the maximum `N >= 1` over `Name_N_M` sub-symbol

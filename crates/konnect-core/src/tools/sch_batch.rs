@@ -9,9 +9,9 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_all_symbol_instance_blocks, find_symbol_instance_block, get_path, opt_str, require_f64,
-    require_str, set_symbol_property_on_all_units, symbol_property_at_spans, SetPropertyOutcome,
-    ToolDef, RESERVED_PROPERTY_KEYS,
+    find_all_symbol_instance_blocks, find_symbol_instance_block, get_path, mm, opt_str,
+    require_f64, require_str, set_symbol_property_on_all_units, symbol_property_at_spans,
+    SetPropertyOutcome, ToolDef, RESERVED_PROPERTY_KEYS,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -758,25 +758,6 @@ fn symbol_own_at_span(
         .ok_or_else(|| "Unterminated (at) in symbol".to_string())?;
     let at_end = sym_start + at_rel + close_rel;
     Ok((at_abs, at_end))
-}
-
-/// Round a millimetre coordinate to the precision KiCAD actually writes,
-/// so adding a delta does not leak binary-float noise into the file.
-///
-/// The symbol's own anchor is protected by `snap_point`; a property anchor is
-/// a plain addition, and `139.7 → 144.78` moves a field at `241.3` to
-/// `246.38000000000002` and one at `3.556` to `8.636000000000013`. Writing
-/// that is the same class of damage P.6.9.4 removed — a byte changing for no
-/// reason the caller asked for.
-///
-/// Six decimals, measured: across 126 933 `(at …)` coordinates in the KiCad 10
-/// demo schematics, every one but a single value carries at most **four**
-/// decimals. The exception, `59.209102362204725`, is an inch conversion rather
-/// than float noise, and six decimals moves it by 0.4 nm — under KiCAD's own
-/// 1 nm internal resolution. Addition noise, meanwhile, shows up around the
-/// thirteenth decimal. Six separates the two with room on both sides.
-fn mm(value: f64) -> f64 {
-    (value * 1e6).round() / 1e6
 }
 
 async fn handle_bulk_move(

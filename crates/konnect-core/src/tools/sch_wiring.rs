@@ -1740,19 +1740,13 @@ async fn handle_add_power_symbol(
     sym.on_board = true;
     sym.uuid = uuid::Uuid::new_v4().to_string();
 
-    // Property (at …) is absolute sheet coords — same as add_schematic_component.
-    // Bare Property::new writes no (at); KiCad then defaults to (0,0) and every
-    // #PWR piles up in the top-left corner. Hide Reference like eeschema does
-    // (property-level `(hide yes)`, matching what KiCad 10 itself writes).
-    let positioned = crate::tools::positioned_property;
-    sym.properties
-        .push(positioned("Reference", &pwr_ref, x, y - 3.81, 0.0, true));
-    sym.properties
-        .push(positioned("Value", &power_net, x, y + 3.81, 0.0, false));
-    sym.properties
-        .push(positioned("Footprint", "", x, y, 0.0, true));
-    sym.properties
-        .push(positioned("Datasheet", "", x, y, 0.0, true));
+    // Property (at …) is absolute sheet coords — same as add_schematic_component,
+    // and through the same helper, which reads where the library symbol puts
+    // each field and transforms it by this placement (P.6.8.8). Bare
+    // Property::new writes no (at); KiCad then defaults to (0,0) and every
+    // #PWR piles up in the top-left corner. Reference is hidden like eeschema
+    // does (property-level `(hide yes)`, matching what KiCad 10 itself writes).
+    crate::tools::push_placed_fields(&sch, &mut sym, &pwr_ref, &power_net, true);
 
     // Instance entry, keyed to the root sheet UUID like eeschema writes it —
     // without a resolvable "/<root-uuid>" path KiCAD's netlister drops the
@@ -2410,6 +2404,10 @@ mod unit_aware_wiring_tests {
     fn single_pin_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pin.kicad_sch");
+        // The anchors are the installed `power:GND`'s own, so the fields
+        // land where KiCad would put them (P.6.8.8): Reference at
+        // (0, -6.35) and Value at (0, -3.81) in library Y-up space, both
+        // *below* the symbol once flipped into sheet space.
         std::fs::write(
             &path,
             "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols\n\t\t(symbol \"Test:P1\"\n\t\t\t(symbol \"P1_1_1\"\n\t\t\t\t(pin passive line (at 0 0 0) (length 2.54)\n\t\t\t\t\t(name \"~\" (effects (font (size 1.27 1.27))))\n\t\t\t\t\t(number \"1\" (effects (font (size 1.27 1.27))))\n\t\t\t\t)\n\t\t\t)\n\t\t)\n\t)\n\t(symbol\n\t\t(lib_id \"Test:P1\")\n\t\t(at 101.6 76.2 0)\n\t\t(unit 1)\n\t\t(uuid \"u1\")\n\t\t(property \"Reference\" \"U1\"\n\t\t\t(at 101.6 71.12 0)\n\t\t)\n\t)\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n",
@@ -3139,7 +3137,7 @@ mod power_symbol_tests {
         let path = dir.path().join("power.kicad_sch");
         std::fs::write(
             &path,
-            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 0 0))\n      (property \"Value\" \"GND\" (at 0 0 0))\n    )\n  )\n)\n",
+            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 -6.35 0))\n      (property \"Value\" \"GND\" (at 0 -3.81 0))\n    )\n  )\n)\n",
         )
         .unwrap();
 
@@ -3169,10 +3167,11 @@ mod power_symbol_tests {
             .find(|p| p.name == "Reference")
             .unwrap();
         let ref_sexp = cse::sexp::writer::write(&ref_prop.to_sexp());
-        // Input (100, 80) snaps to the 1.27mm grid (E6): (100.33, 80.01).
+        // Input (100, 80) snaps to the 1.27mm grid (E6): (100.33, 80.01), and
+        // the library's own -6.35 anchor flips to +6.35 in sheet space.
         assert!(
-            ref_sexp.contains("(at 100.33") && ref_sexp.contains("76.2"),
-            "Reference must sit near the symbol, not sheet origin: {ref_sexp}"
+            ref_sexp.contains("(at 100.33 86.36"),
+            "Reference must sit where the library puts it, not at the sheet origin and not at a fixed offset: {ref_sexp}"
         );
         let hide_at = ref_sexp
             .find("(hide yes)")
@@ -3185,8 +3184,8 @@ mod power_symbol_tests {
         let val_prop = sym.properties.iter().find(|p| p.name == "Value").unwrap();
         let val_sexp = cse::sexp::writer::write(&val_prop.to_sexp());
         assert!(
-            val_sexp.contains("(at 100.33") && val_sexp.contains("83.82"),
-            "Value must sit near the symbol: {val_sexp}"
+            val_sexp.contains("(at 100.33 83.82"),
+            "Value must sit where the library puts it: {val_sexp}"
         );
         assert!(
             !val_sexp.contains("hide"),

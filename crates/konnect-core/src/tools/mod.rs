@@ -940,6 +940,146 @@ pub(crate) fn add_pin_midwire_junctions(
     Ok(to_add)
 }
 
+/// Round a computed millimetre coordinate to six decimals (D125).
+///
+/// Six decimals, measured: across 126 933 `(at ...)` coordinates in the KiCad
+/// 10 demo schematics, every one but a single value carries at most **four**
+/// decimals. The exception, `59.209102362204725`, is an inch conversion rather
+/// than float noise, and six decimals moves it by 0.4 nm - under KiCAD's own
+/// 1 nm internal resolution. Addition noise, meanwhile, shows up around the
+/// thirteenth decimal. Six separates the two with room on both sides.
+///
+/// Anything that *computes* a coordinate goes through here: a bulk move adds a
+/// delta, a placed field runs the library anchor through a rotation. Neither
+/// may leak binary-float noise into a file the caller never asked to change --
+/// a symbol's own anchor is protected by `snap_point`, but a property anchor
+/// is not, and `139.7 -> 144.78` moves a field at `241.3` to
+/// `246.38000000000002` and one at `3.556` to `8.636000000000013`. Writing
+/// that is the same class of damage P.6.9.4 removed.
+pub(crate) fn mm(value: f64) -> f64 {
+    (value * 1e6).round() / 1e6
+}
+
+/// Push the four properties eeschema writes onto a freshly placed symbol --
+/// `Reference`, `Value`, `Footprint`, `Datasheet` -- where the **library
+/// symbol itself** says they belong (P.6.8.8).
+///
+/// The anchor comes from the embedded `lib_symbols` entry and is transformed
+/// exactly like a pin: `transform_pin` flips the library's Y-up space, applies
+/// the placement rotation and mirror, and translates to the instance origin.
+/// The text angle is the library's own, not the placement's.
+///
+/// Measured over the KiCad 10 demo corpus, 12 894 placed `Reference`/`Value`
+/// fields, against the position each file actually carries:
+///
+/// | rule                                        | reproduces |
+/// |---------------------------------------------|------------|
+/// | fixed `y -/+ 3.81`, angle 0 (what this did)  | 7.5 %      |
+/// | library anchor **transformed** (this)        | 41.4 %     |
+/// | library anchor translated, rotation ignored  | 24.2 %     |
+///
+/// The remainder is fields a human dragged, which no rule reproduces and none
+/// should. What decides it is the rotated buckets, where the old rule is
+/// essentially never right (10 of 2 440 at 90 degrees) and rotating the anchor
+/// beats not rotating it more than ten to one.
+///
+/// `sch` must already carry the library definition -- `ensure_lib_symbol`
+/// first -- or every field falls back to the old fixed offsets, which is also
+/// what happens for a symbol whose library entry declares no such field.
+pub(crate) fn push_placed_fields(
+    sch: &konnect_schematic_editor::Schematic,
+    sym: &mut konnect_schematic_editor::Symbol,
+    reference: &str,
+    value: &str,
+    hide_reference: bool,
+) {
+    use konnect_sexp::geometry::{transform_pin, PinTransform};
+
+    let lib_key = sym.lib_symbol_name().to_string();
+    let (x, y) = (sym.at.x, sym.at.y);
+    let mirror = sym.mirror.clone().unwrap_or_default();
+    let transform = PinTransform {
+        comp_x: x,
+        comp_y: y,
+        rotation_deg: sym.at.rotation.unwrap_or(0.0),
+        mirror_x: mirror == "x" || mirror == "xy",
+        mirror_y: mirror == "y" || mirror == "xy",
+    };
+
+    // Reference above the component, Value below, Footprint/Datasheet on the
+    // origin: the fallback, used when the library entry has nothing to say.
+    for (name, value, fallback_dy, hide) in [
+        ("Reference", reference, -3.81, hide_reference),
+        ("Value", value, 3.81, false),
+        ("Footprint", "", 0.0, true),
+        ("Datasheet", "", 0.0, true),
+    ] {
+        let prop = match konnect_schematic_editor::library::field_anchor(sch, &lib_key, name) {
+            Some(anchor) => {
+                let (px, py) = transform_pin(anchor.x, anchor.y, transform);
+                // `hide` unions with the library's: a power symbol's library
+                // entry hides its own Reference, and the caller hides the
+                // Reference of anything designated `#PWR` whether or not the
+                // library thought to.
+                anchored_property(
+                    name,
+                    value,
+                    mm(px),
+                    mm(py),
+                    anchor.angle,
+                    hide || anchor.hide,
+                    anchor.effects,
+                )
+            }
+            None => positioned_property(name, value, x, y + fallback_dy, 0.0, hide),
+        };
+        sym.properties.push(prop);
+    }
+}
+
+/// A property written at an already-transformed point, carrying the library's
+/// own `(effects ...)` -- font size and justification both -- rather than the
+/// 1.27mm default [`positioned_property`] invents.
+///
+/// Copying the justification is not decoration: measured on the demo corpus,
+/// the fields eeschema placed itself carry the library's justification
+/// verbatim in the overwhelming majority, and a `left`-justified reference
+/// written without it shifts by half its own width.
+fn anchored_property(
+    name: &str,
+    value: &str,
+    x: f64,
+    y: f64,
+    angle: f64,
+    hide: bool,
+    effects: Option<konnect_schematic_editor::sexp::SexpNode>,
+) -> konnect_schematic_editor::Property {
+    use konnect_schematic_editor::sexp::{atom, SexpNode};
+    use konnect_schematic_editor::types::fmt_f64;
+
+    let mut prop = konnect_schematic_editor::Property::new(name, value);
+    prop.sub_nodes.push(SexpNode::List(vec![
+        atom("at"),
+        atom(fmt_f64(x)),
+        atom(fmt_f64(y)),
+        atom(fmt_f64(angle)),
+    ]));
+    if hide {
+        prop.sub_nodes
+            .push(SexpNode::List(vec![atom("hide"), atom("yes")]));
+    }
+    prop.sub_nodes.push(effects.unwrap_or_else(|| {
+        SexpNode::List(vec![
+            atom("effects"),
+            SexpNode::List(vec![
+                atom("font"),
+                SexpNode::List(vec![atom("size"), atom("1.27"), atom("1.27")]),
+            ]),
+        ])
+    }));
+    prop
+}
+
 /// A symbol-instance property positioned in absolute sheet coordinates, with
 /// eeschema's default 1.27mm font. The `(at)` node is mandatory: a property
 /// written without one is defaulted to the sheet origin by KiCAD, which is how
