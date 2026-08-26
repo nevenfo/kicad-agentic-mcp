@@ -2,19 +2,27 @@
 
 ## Phase actuelle
 
-**P — Schematic round-trip fidelity : DONE.** P.1 à P.6 sont closes et leurs
-preuves inchangées. P.7 avait rouvert la phase — la CI sur le commit exact de
-la clôture (`8aeaff7`) était **rouge sur les trois OS** alors que la suite
-locale était verte — et est close à son tour. Aucune case ouverte ne reste.
+**P — Schematic round-trip fidelity.** P.1 à P.6 sont closes et leurs preuves
+inchangées. P.7 a rouvert la phase : la suite locale et la suite CI ne
+mesuraient pas la même machine. P.7.1 à P.7.3 sont validées ; P.7.4 est
+implémentée et verte localement, en attente du run E2E.
 Branche `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`, non fusionnée.
 
 ## Tâche actuelle
 
-Aucune en cours.
+**P.7.4** — le job E2E gatant ne tourne pas par PR, donc la moitié « boards »
+de `conformance_test`, ajoutée dans cette phase, n'avait **jamais** tourné en
+CI. Le run déclenché à la main est le premier, et il tombait : la liste
+`KNOWN_BAD_BOARDS` affirmait une propriété du KiCad **10.0.3** local (D116)
+sur une CI épinglée en **10.0.5**, qui livre `RoyalBlue54L-Feather.kicad_pcb`
+réparé. Remplacée par une mesure : `paren_balance` / `malformation` lisent les
+octets du fichier, et le test exige que le parser **soit d'accord** avec eux
+dans les deux sens. Renommé
+`the_parser_agrees_with_each_demo_boards_own_paren_balance`.
 
 ## Dernière tâche validée
 
-**P.7** — la suite se prouve désormais sur une machine sans KiCad :
+**P.7.1 à P.7.3** — la suite se prouve désormais sur une machine sans KiCad :
 
 - **P.7.1** — `a_component_placed_on_a_child_sheet_is_written_with_the_roots_path`
   plaçait `Device:R` dans un enfant issu de `blank_schematic_template()`, dont
@@ -179,9 +187,16 @@ Validation :
   Tout code qui alloue un id de layer le dérive du nom canonique sous la
   numérotation du board (fait par P.6.11, tables en D137).
 
-- **D116** — un board livré par KiCad 10 peut être réellement malformé
-  (`royalblue54L_feather`, racine fermée à l'octet 14735 sur 3,6 Mo). Toute
-  conformance doit traiter ce cas comme un échec attendu.
+- **D116** — *amendée par P.7.4.* Un board livré par KiCad 10 peut être
+  réellement malformé : `RoyalBlue54L-Feather.kicad_pcb` en **10.0.3** ferme sa
+  racine à l'octet 14735 sur 3 618 800, à la profondeur −349. Ce qui est faux,
+  c'est d'en faire une liste de **noms** : la CI épingle 10.0.5, qui livre le
+  fichier réparé, et l'entrée s'y inverse — le board parse, la liste dit qu'il
+  ne doit pas. Règle : une conformance ne liste pas les fichiers cassés, elle
+  **mesure** la balance de parenthèses de chaque fichier et exige que le parser
+  soit d'accord avec elle dans les deux sens. Un fichier équilibré refusé est
+  notre bug ; un fichier déséquilibré accepté est le dégât silencieux que le
+  test cherche.
 
 - **D115** — oracle de forme des nets : **20260206** est la bascule (table
   supprimée, `(net "<nom>")` sur chaque item). Se discrimine par `SexpNode::Str`
@@ -247,13 +262,10 @@ Aucun.
 
 ## NEXT ACTION
 
-Aucune tâche de plan ouverte. Reste une vérification en cours et **une
-décision de l'utilisateur**, dans cet ordre :
-
-1. Lire le run E2E `32937438691`, déclenché à la main sur
-   `ai/P-schematic-fidelity` (`gh workflow run e2e-kicad.yml -R
-   nevenfo/kicad-agentic-mcp`, D114) : il ne tourne pas par PR, et ses deux
-   steps ajoutés en P.6.8.8 et P.6.8.9 n'avaient encore jamais tourné en CI.
-2. Puis demander la décision restée ouverte — fusionner la PR #10 vers
-   `agentic/main` ou ouvrir une phase suivante. Rien ne doit être implémenté
-   avant ce choix.
+Relancer le job E2E gatant sur `ai/P-schematic-fidelity` (`gh workflow run
+e2e-kicad.yml -R nevenfo/kicad-agentic-mcp --ref ai/P-schematic-fidelity`,
+D114) et vérifier qu'il passe le step conformance **et** les neuf sondes qui
+le suivent — elles n'ont jamais tourné, le premier run s'étant arrêté avant
+elles. Si vert : cocher P.7.4 et demander à l'utilisateur la décision restée
+ouverte, fusionner la PR #10 vers `agentic/main` ou ouvrir une phase suivante.
+Si rouge : le premier écart mesuré, sonde par sonde.

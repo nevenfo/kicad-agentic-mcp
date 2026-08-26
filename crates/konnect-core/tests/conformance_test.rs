@@ -129,27 +129,94 @@ fn collect_boards(root: &std::path::Path) -> Vec<PathBuf> {
     out
 }
 
-/// Boards KiCad itself ships that are genuinely malformed, and why.
+/// Whether a file's own bytes form one balanced s-expression, measured
+/// without the parser under test.
 ///
-/// This is an allow-list of *measured* facts, not a way to quiet a failing
-/// parser: each entry is a file whose own bytes are unbalanced, verified
-/// independently of us. Anything else that fails is our bug.
-const KNOWN_BAD_BOARDS: &[(&str, &str)] = &[(
-    "RoyalBlue54L-Feather.kicad_pcb",
-    "3.6 MB whose root closes at byte 14735, ending 349 closing parens ahead; \
-     a paren-balance scan over interf_u and pic_programmer returns depth 0, so \
-     the imbalance is this file's and not the scanner's",
-)];
+/// Returns `(final_depth, offset_where_the_root_closes)`. Quoted strings and
+/// their backslash escapes are skipped, so a paren inside `"…"` never counts.
+///
+/// This used to be a `KNOWN_BAD_BOARDS` list of file *names*, seeded from
+/// `RoyalBlue54L-Feather.kicad_pcb` as KiCad 10.0.3 ships it (D116). P.7.4:
+/// that list states a fact about one KiCad install and reads as a fact about
+/// the parser. CI pins 10.0.5, which ships the file repaired, so the entry
+/// inverted there — the board parsed, the list said it must not, and the test
+/// failed on a machine where nothing was wrong. Measuring the bytes makes the
+/// property travel with the file instead of with a version number.
+fn paren_balance(content: &str) -> (i64, Option<usize>) {
+    let mut depth: i64 = 0;
+    let mut in_str = false;
+    let mut escaped = false;
+    let mut opened = false;
+    let mut root_close = None;
+    for (i, c) in content.char_indices() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '(' => {
+                depth += 1;
+                opened = true;
+            }
+            ')' => {
+                depth -= 1;
+                if depth == 0 && opened && root_close.is_none() {
+                    root_close = Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    (depth, root_close)
+}
 
-/// Every board KiCad ships must parse, or be a named, explained exception.
+/// A one-line account of why a file is not one balanced s-expression, or
+/// `None` when it is.
+fn malformation(content: &str) -> Option<String> {
+    let (depth, root_close) = paren_balance(content);
+    match root_close {
+        None => Some(format!(
+            "no balanced root: depth ends at {depth} over {} bytes",
+            content.len()
+        )),
+        Some(end) => {
+            let tail = content[end + 1..].trim();
+            if depth != 0 || !tail.is_empty() {
+                Some(format!(
+                    "root closes at byte {end} of {}, ending at depth {depth} \
+                     with {} more non-blank bytes after it",
+                    content.len(),
+                    tail.len()
+                ))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// The parser must agree with the bytes: every board that *is* one balanced
+/// s-expression has to parse, and every board that is not has to be refused.
 ///
 /// The board half of the corpus had no conformance test at all, which is how
 /// `parse_sexp` could answer `Ok` on a 3.6 MB board while holding three of its
 /// pads: nothing ever asked. The counts are printed and asserted so that a run
 /// finding zero files fails instead of passing in 0.00 s — the exact trap that
 /// made these tests look green on a machine that had KiCad installed all along.
+///
+/// Both directions are failures, and they mean different things: a balanced
+/// file the parser rejects is our bug, and a malformed file it accepts is the
+/// silent damage this test exists to catch. Neither is a property of which
+/// KiCad shipped the demo.
 #[test]
-fn every_installed_demo_board_parses_or_is_a_known_bad_file() {
+fn the_parser_agrees_with_each_demo_boards_own_paren_balance() {
     let Some(root) = demo_dirs() else {
         eprintln!("SKIP: no KiCAD demos found (set KICAD_DEMOS to enable)");
         return;
@@ -169,9 +236,9 @@ fn every_installed_demo_board_parses_or_is_a_known_bad_file() {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let known_bad = KNOWN_BAD_BOARDS.iter().find(|(file, _)| *file == name);
         let content = std::fs::read_to_string(board).unwrap_or_default();
-        match (parse_sexp(&content), known_bad) {
+        let malformed = malformation(&content);
+        match (parse_sexp(&content), &malformed) {
             (Ok(node), None) => {
                 assert_eq!(
                     node.head(),
@@ -181,26 +248,29 @@ fn every_installed_demo_board_parses_or_is_a_known_bad_file() {
                 );
                 parsed += 1;
             }
-            (Err(e), None) => failures.push(format!("{}: {}", board.display(), e)),
-            (Err(_), Some((_, why))) => expected_failures.push(format!("{name}: {why}")),
-            // A file we recorded as malformed now parses: either KiCad shipped
-            // a fixed copy or the parser started accepting damage. Both need a
-            // human, so neither may pass silently.
-            (Ok(_), Some((_, why))) => failures.push(format!(
-                "{} parses, but is on the known-bad list ({why}). Re-measure and \
-                 update KNOWN_BAD_BOARDS.",
+            (Err(e), None) => failures.push(format!(
+                "{}: balanced in its own bytes, but the parser refused it: {e}",
+                board.display()
+            )),
+            (Err(_), Some(why)) => expected_failures.push(format!("{name}: {why}")),
+            // The damage this test exists to catch: the bytes do not form one
+            // s-expression and the parser answered `Ok` anyway, holding a
+            // fraction of the file with nothing to say so.
+            (Ok(_), Some(why)) => failures.push(format!(
+                "{} is not one balanced s-expression ({why}), yet the parser \
+                 accepted it",
                 board.display()
             )),
         }
     }
     eprintln!(
-        "parsed {}/{} demo boards ({} known-bad)",
+        "parsed {}/{} demo boards ({} malformed in their own bytes)",
         parsed,
         boards.len(),
         expected_failures.len()
     );
     for note in &expected_failures {
-        eprintln!("  known-bad {note}");
+        eprintln!("  malformed {note}");
     }
     assert!(
         failures.is_empty(),
@@ -214,8 +284,11 @@ fn every_installed_demo_board_parses_or_is_a_known_bad_file() {
 /// scheme has to explain every `(id, name)` pair the board's own
 /// `(layers …)` table carries, not just a majority of them.
 ///
-/// `RoyalBlue54L-Feather.kicad_pcb` is excluded: its root closes 349 parens
-/// early (see `KNOWN_BAD_BOARDS`), so it never reaches this check.
+/// A board whose bytes are not one balanced s-expression never reaches this
+/// check, because it does not parse — `RoyalBlue54L-Feather.kicad_pcb` on a
+/// KiCad that still ships it damaged (D116). No name is listed here: which
+/// files those are is a property of the install, and the skip below reads it
+/// from the parse result rather than restating it.
 #[test]
 fn numbering_detection_explains_every_layer_entry_in_the_demo_corpus() {
     use konnect_sexp::layers;
@@ -235,16 +308,9 @@ fn numbering_detection_explains_every_layer_entry_in_the_demo_corpus() {
     let mut entries_checked = 0usize;
     let mut mismatches = Vec::new();
     for board in &boards {
-        let name = board
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if KNOWN_BAD_BOARDS.iter().any(|(file, _)| *file == name) {
-            continue;
-        }
         let content = std::fs::read_to_string(board).unwrap_or_default();
-        // A board that fails to parse without being on the known-bad list is
-        // `every_installed_demo_board_parses_or_is_a_known_bad_file`'s finding,
+        // A board that fails to parse while its own bytes are balanced is
+        // `the_parser_agrees_with_each_demo_boards_own_paren_balance`'s finding,
         // not this test's; asserting it here too would be a second copy of the
         // same guard, free to drift from the first.
         let Ok(tree) = parse_sexp(&content) else {

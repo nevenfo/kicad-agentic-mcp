@@ -2840,7 +2840,7 @@ documents send a reader to another repository's releases.
 ### Validation
 There is no Phase P. Nothing in this phase added a capability.
 
-# Phase P — Schematic round-trip fidelity — DONE
+# Phase P — Schematic round-trip fidelity — P.1..P.6 DONE, P.7 in flight
 
 Opened 2026-08-24 by an explicit user request after V1 closure. Phase O said
 there is no Phase P; that statement described the V1 scope, and the user has
@@ -4758,7 +4758,7 @@ and — where KiCad is the only honest oracle — a probe in
 `schematic_fidelity_live.rs` or its PCB equivalent, inside the gating E2E job.
 No item is closed on "the existing suite still passes".
 
-## P.7 — The suite must prove itself on a machine without KiCad — DONE
+## P.7 — The suite must prove itself on CI's machine, not this one
 
 ### Objectif
 P.6 closed with `cargo test --workspace` green here and the PR pushed. The
@@ -4812,6 +4812,34 @@ changes.
       of scope. Added `--no-fail-fast`, matching the command this project
       already uses locally.
 
+- [ ] P.7.4 — the gating E2E was red for the same reason, one layer out. It is
+      not a per-PR job, so `conformance_test`'s board half — added in this
+      phase — had never run in CI at all; the run dispatched by hand on this
+      branch is its first. It failed on
+      `every_installed_demo_board_parses_or_is_a_known_bad_file`:
+      `RoyalBlue54L-Feather.kicad_pcb` **parses** on the 10.0.5 CI pins, while
+      `KNOWN_BAD_BOARDS` — measured on the local 10.0.3 (D116) — says it must
+      not. The list stated a fact about one KiCad install and read as a fact
+      about the parser, so the test failed on a machine where nothing was
+      wrong. Same family as P.7.1 and D113, one level up: not "is KiCad
+      installed" but "which KiCad".
+      Fixed by measuring instead of listing. `paren_balance` walks the file's
+      own bytes, honouring quoted strings and their escapes, and
+      `malformation` reports why a file is not one balanced s-expression —
+      root closing early, a non-blank tail after it, or a depth that never
+      returns to zero. The test then asserts the parser *agrees* with that
+      measurement in both directions: a balanced file it refuses is our bug, a
+      malformed file it accepts is the silent damage the test exists to catch.
+      No file name appears in it, so which board is damaged travels with the
+      install. Renamed to
+      `the_parser_agrees_with_each_demo_boards_own_paren_balance`, since that
+      is now what it proves.
+      The scanner reproduces D116's numbers exactly on 10.0.3 — "root closes at
+      byte 14735 of 3618800, ending at depth -349" — which is what makes it
+      trustworthy as a replacement for the list it removes.
+      `numbering_detection_explains_every_layer_entry_in_the_demo_corpus` loses
+      its by-name skip too: it already skipped anything that fails to parse.
+
 ### Validation
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` on a
   simulated KiCad-less machine (every Windows share root and the three symbol
@@ -4824,3 +4852,8 @@ changes.
   all three OSes — the check that was red is the one that had to turn, and it
   did: `Check & Test` passes on ubuntu, macos and windows, where the same
   workflow on `8aeaff7` (run `32936272573`) failed on all three.
+- `cargo test -p konnect-core --test conformance_test` locally, KiCad 10.0.3:
+  **6 passed**, the corpus reporting 18/19 boards parsed and one malformed
+  with D116's own numbers.
+- the gating E2E, dispatched by hand on this branch (it has no per-PR
+  trigger), green through the conformance step and the nine probes behind it.
