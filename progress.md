@@ -2,46 +2,51 @@
 
 ## Phase actuelle
 
-**R — Launch & adoption.** R.1 à R.10.7 sont clos et la release publique
-**v1.1.1** est validée. **R.10.8** est ouvert uniquement pour rendre portables
-deux tests Windows de R.7/R.9.1 avant fusion de la PR #12.
+**R — Launch & adoption : terminée.** R.1 à R.10.8 et tous les critères de
+sortie sont cochés. La release publique **v1.1.1** est validée et la PR #12
+porte la phase complète vers `agentic/main`.
 
 ## Tâche actuelle
 
-**R.10.8 — borner les tests `%LOCALAPPDATA%` à Windows.** La correction locale
-est faite et attend la preuve de la CI multi-plateforme.
+Aucune.
 
 ## Dernière tâche validée
 
-**R.10.7 — parcours de l'artefact publié sans configuration.** Preuves :
+**R.10.8 — portabilité des tests de découverte Windows.** Les deux tests qui
+construisent `%LOCALAPPDATA%\Programs\KiCad` sont bornés à Windows.
 
-- tag `v1.1.1` sur `7d565ce`, workflow release `33012207008` : PASS ;
-- release publique, sept assets présents et non vides ;
-- installation PCM Windows publiée : v1.1.1 stable, auteur `nevenfo`, homepage
-  du fork ; aucun `--config`, fichier de configuration ou variable de découverte ;
-- découverte de l'IPC par défaut, `kicad-cli` et `kicad` ;
-  `get_component_list` : 4 composants ; `run_drc` : 1 avertissement, 0 erreur ;
-- configuration utilisateur restaurée, KiCad fermé sans sauvegarde, temporaires
-  supprimés.
+Validation :
+
+- local : 8 tests `kicad_locate::resolve_binary_tests`, `fmt` et
+  `git diff --check` PASS ;
+- CI PR #12, run `33014965860` : sept checks PASS — format, clippy, packaging
+  PCM, viewer, tests et doctests Windows/macOS/Ubuntu.
+
+R.10.7 reste prouvée par le tag `v1.1.1` sur `7d565ce`, le workflow release
+`33012207008` PASS, sept assets publics, et le parcours du PCM Windows publié
+sans configuration : découverte IPC/CLI/GUI, 4 composants live et DRC
+`1 warning / 0 error`. La configuration utilisateur a été restaurée et les
+temporaires supprimés.
 
 ## Décisions actives
 
-- Périmètre release inchangé : R.7, R.8, R.9.1, R.9.2 et F-03 uniquement.
+- Périmètre release : R.7, R.8, R.9.1, R.9.2 et F-03 uniquement.
 - L'identifier PCM `com.github.mixelpixx.konnect` reste inchangé.
+- INV-R1 à INV-R4 restent les invariants des futures releases et mesures.
 
 ## Blocage actif
 
-PR #12 : le premier run CI `33014616858` échoue sur deux tests qui construisent
-une arborescence `%LOCALAPPDATA%` Windows mais s'exécutent sur macOS/Linux. La
-correction `#[cfg(target_os = "windows")]` passe localement : 8 tests ciblés,
-`fmt` et `git diff --check` PASS. Il faut la preuve du prochain run CI.
+Aucun.
 
 ## Fichiers / zones utiles
 
-- `crates/konnect-core/src/kicad_locate.rs` — deux tests R.10.8.
-- `plan.md` § R.10 ; PR `https://github.com/nevenfo/kicad-agentic-mcp/pull/12`.
+- Release : `RELEASE_NOTES.md`, `README.md`, `packaging/metadata.json`.
+- Lancement : `docs/launch/launch-kit.md`, `docs/launch/announce-*.md`,
+  `docs/launch/decision-gate.md`, `docs/adoption.md`.
+- PR : `https://github.com/nevenfo/kicad-agentic-mcp/pull/12`.
 
 ## NEXT ACTION
 
-Committer et pousser R.10.8, attendre la CI multi-plateforme de la PR #12, puis
-cocher R.10.8 et fusionner seulement si tous les checks requis sont PASS.
+Décider si les brouillons R.4 doivent maintenant être publiés sur les canaux
+externes nommés, puis rouvrir la porte R.6 lorsque `docs/adoption.md` contient
+des données extérieures.
