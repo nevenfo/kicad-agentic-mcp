@@ -5286,27 +5286,33 @@ what it costs to try, and the shortest path to seeing it work.
 R.1 closed. Every command and path published here is one R.1 actually ran.
 
 ### Tâches
-- [ ] R.2.1 A **Quick start** section sits above the essays: numbered steps from
+- [x] R.2.1 A **Quick start** section sits above the essays: numbered steps from
       the release download to a first verified task, each step a copy-pasteable
       block, with the total time R.1 measured stated honestly
-- [ ] R.2.2 Requirements a reader must satisfy *before* step 1 — KiCad 10, a
+- [x] R.2.2 Requirements a reader must satisfy *before* step 1 — KiCad 10, a
       running KiCad for PCB tools, an MCP client — are stated at the top, not
       three screens down
-- [ ] R.2.3 Every documentation defect from R.1.9 is fixed at its source: the
+- [x] R.2.3 Every documentation defect from R.1.9 is fixed at its source: the
       README, `examples/*.json`, `docs/TROUBLESHOOTING.md`, or
       `RELEASE_NOTES.md`. The fix names the observed failure, not a euphemism
-- [ ] R.2.4 The install path published in the README and both example configs is
+- [x] R.2.4 The install path published in the README and both example configs is
       the one read from disk in R.1.3, character for character
-- [ ] R.2.5 The macOS and Linux caveats stay where a reader meets them **before**
+- [x] R.2.5 The macOS and Linux caveats stay where a reader meets them **before**
       downloading, not after — unsigned binaries and un-QA'd Linux are cost
       information, not fine print
-- [ ] R.2.6 A first-time reader's decision is answerable in the first screen:
+- [x] R.2.6 A first-time reader's decision is answerable in the first screen:
       what it is, what it needs, what it does not do yet
 
 ### Validation
-A reader following only the Quick start, with no other file open, reaches the
-same verified end state R.1 reached. Checked by re-walking the Quick start
-against its own text — the drift between the two, if any, is the defect.
+Re-walked against its own text. Every factual claim in the Quick start is one
+R.1 or R.1.11 measured: the install path (identical on disk), the 21-tool
+startup surface, the install firing on file selection with *Apply Pending
+Changes* inert, the API page reading `Listening on ipc://…` after a restart, and
+the *External Plugins* entry needing an open project first. Anchors resolve.
+
+**One claim is not yet proved and is R.3's job**: step 5 is written as a prompt
+to a model, and no model has run it. What R.1 proved is the same work through a
+scripted MCP client. The wording stays; R.3 either confirms it or changes it.
 
 ## R.3 — The canonical demo: one task, under 40 seconds, visible in KiCad
 
@@ -5500,7 +5506,8 @@ README claim that auto-detection happens).
       inversion and would have disagreed with the server it is meant to match
 - [x] R.7.5 The gate is green on the changed tree: `fmt` clean,
       `clippy --workspace --locked --all-targets -- -D warnings` silent, and
-      the full suite reporting **0 failed in every one of its suites**
+      the full suite at **1 392 passed, 0 failed, 38 ignored across 57
+      suites** — 1 385 at v1.1.0, plus this lot's seven new tests
 - [x] R.7.6 The walk of R.1 step 8 is repeated on the fixed binary and
       `verify:"auto"` returns KiCad's ERC counts instead of an `io` error.
       Re-run by the principal, not taken from the worker's report: startup logs

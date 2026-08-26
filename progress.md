@@ -16,11 +16,15 @@ n'est pas un travail mais une **décision utilisateur**.
 
 ## Tâche actuelle
 
-**R.7.7 — la question de la release, posée et non tranchée.** La correction de
-la découverte de `kicad-cli` n'atteint un utilisateur que par un nouvel
-artefact. F-03 (`packaging/metadata.json` renvoyant vers le dépôt amont)
-voyagerait dans la même release. Décider une v1.1.1 à l'intérieur de R
-appartient à l'utilisateur ; en attendant, la correction vit sur la branche.
+**R.3 — la démo canonique.** R.2 est close : le README ouvre désormais sur un
+Quick Start en cinq étapes, dont chaque affirmation factuelle a été mesurée en
+R.1, et les quatre frictions de documentation sont corrigées à leur source.
+
+En attente d'une décision utilisateur, **R.7.7** : la correction de la
+découverte de `kicad-cli` n'atteint un utilisateur que par un nouvel artefact, et
+F-03 (`packaging/metadata.json` renvoyant vers le dépôt amont) voyagerait dans la
+même release. Décider une v1.1.1 à l'intérieur de R appartient à l'utilisateur ;
+en attendant, la correction vit sur la branche et ne bloque pas R.3.
 
 ## Dernière tâche validée
 
@@ -36,8 +40,9 @@ valeur inchangée, l'échec de spawn reste bruyant.
 
 Validé par le principal, pas repris du worker :
 - gate sur l'arbre final — `fmt` propre, `clippy --workspace --locked
-  --all-targets -- -D warnings` silencieux, suite complète **0 échec dans
-  chacune de ses suites**
+  --all-targets -- -D warnings` silencieux, suite complète à **1 392 passés,
+  0 échec, 38 ignorés sur 57 suites** (1 385 à la v1.1.0, plus les sept tests
+  de ce lot)
 - preuve de bout en bout, binaire release, aucun `kicad_cli` configuré :
   `kicad_cli: found at standard install path -> …\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe`
   au démarrage, puis `verify:"auto"` → `{"check":"erc","errors":0,"warnings":0}`
@@ -134,8 +139,9 @@ Aucun.
 
 ## NEXT ACTION
 
-Poser **R.7.7** à l'utilisateur — une v1.1.1 embarquant la correction de
-découverte et F-03, ou la branche qui attend — puis lancer **R.2** : réécrire le
-Quick Start du README à partir des dix frictions de R.1, à commencer par F-09
-(l'API KiCad livrée désactivée, nommée seulement dans un bloc macOS) et F-02
-(le README promet une auto-détection qui, jusqu'à R.7, n'existait pas).
+Lancer **R.3.1** : choisir et justifier par écrit la tâche de démo, contre ses
+trois critères — visuellement non ambiguë dans le canevas de KiCad, moins de
+40 s de bout en bout, impossible à confondre avec ce qu'un éditeur de texte
+ferait — en nommant les candidats écartés et pourquoi. Ce choix tranche aussi la
+seule affirmation non prouvée du Quick Start : son étape 5 est écrite comme une
+consigne à un modèle, et aucun modèle ne l'a encore exécutée.

@@ -30,6 +30,77 @@ that teach Claude KiCAD conventions out of the box.
 > [CONTRIBUTING.md](CONTRIBUTING.md) and the
 > [naming conventions](docs/NAMING_CONVENTIONS.md).
 
+## Quick start
+
+Five steps from the release page to a change KiCAD itself confirms. Walked on a
+machine that had never had Konnect installed; the record, including what went
+wrong, is [docs/launch/first-run-walk.md](docs/launch/first-run-walk.md).
+
+What that walk measured: **about nine clicks and dialogs** between launching
+KiCAD and an installed plugin, two KiCAD restarts, and a first task that came
+back in **108 ms**. The total is dominated by how fast you click, so it is not
+quoted as a number.
+
+**Before you start** you need KiCAD 10 (tested against 10.0.3) and an MCP client
+— Claude Desktop, Claude Code, or anything else that speaks MCP. Nothing else:
+no Node, no Python, no package tree. Windows is the most-tested platform; see
+[Requirements](#requirements) for where macOS and Linux stand.
+
+**1 — Download the plugin package.** From
+[Releases](https://github.com/nevenfo/kicad-agentic-mcp/releases), take
+`konnect-pcm-v<version>-windows.zip` (or `-macos.zip` / `-linux.zip`). The
+`konnect-pcm-*` assets are the KiCAD plugin packages; the other archives are
+standalone server binaries you do not need for this path.
+
+**2 — Install it.** KiCAD 10 → **Plugin and Content Manager** → **Install from
+File…** → pick the zip. It installs the moment you select the file — the *Apply
+Pending Changes* button stays greyed out and there is nothing further to
+confirm. Restart KiCAD.
+
+**3 — Turn on the KiCAD API.** *Preferences → Plugins* → check **Enable KiCad
+API**, then restart KiCAD. KiCAD ships this **off**, and every PCB tool here
+talks to KiCAD through it. Schematic editing and exports work without it; live
+board editing does not. After the restart the same page should read
+`Listening on ipc://…`.
+
+**4 — Point your MCP client at the server.** After a PCM install the binary
+lives in your KiCAD documents folder:
+
+```
+C:\Users\<YOU>\Documents\KiCad\10.0\3rdparty\plugins\com_github_mixelpixx_konnect\bin\konnect.exe
+```
+
+Put that path in your client's MCP config — `%APPDATA%\Claude\claude_desktop_config.json`
+for Claude Desktop, a `.mcp.json` in your project root for Claude Code. Copy-paste
+versions of both are in [examples/](examples/), and the full snippets are
+[further down](#setup-with-claude-desktop). Restart the client; `konnect` should
+report **21 tools** at startup. That is the whole starter kit — the rest of the
+catalogue loads on demand, or is called through the gateway without ever
+appearing in `tools/list`.
+
+**5 — Give it something to do**, with a KiCAD project open. For example:
+
+> *Add a 3.3 V LDO regulator subcircuit to my schematic and run ERC on it.*
+
+The reply should name the parts it placed — a regulator, its input and output
+capacitors — and carry an ERC result that came from `kicad-cli`, not from the
+model. Open the schematic in KiCAD: the symbols are there.
+
+**Check the install itself** at any point: open a project (KiCAD's PCB editor
+refuses to open without one), then **PCB Editor → Tools → External Plugins**,
+where you should see **Konnect**.
+
+### What this does not do yet
+
+- **PCB tools need a running KiCAD** with the API on and the board open. There is
+  no headless PCB path — pcbnew has none.
+- **macOS binaries are not signed or notarised.** Gatekeeper stops them on first
+  launch; the [macOS section](#macos) has the exact `xattr` command.
+- **Linux compiles and passes CI** but has had no per-platform QA against a
+  running KiCAD.
+- **Symbols and footprints are placed, not authored.** Konnect searches and uses
+  existing library parts; creating new ones is on the [roadmap](ROADMAP.md).
+
 ## Why Konnect exists
 
 Konnect is the successor to [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server),
@@ -120,10 +191,15 @@ The full tool catalog is documented in [tool-directory.md](tool-directory.md).
    assets are the KiCAD plugin packages; the other archives are standalone
    server binaries.)
 2. Open KiCAD 10 → **Plugin and Content Manager**
-3. Click **Install from File** and select the zip
+3. Click **Install from File** and select the zip. Installation happens on
+   selection — *Apply Pending Changes* stays greyed out, and there is nothing
+   else to confirm
 4. Restart KiCAD
+5. Enable the KiCAD API: *Preferences → Plugins* → **Enable KiCad API**, then
+   restart KiCAD again. It ships off, and every PCB tool needs it
 
-Verify: open the **PCB Editor** → **Tools → External Plugins** → you should see
+Verify: open (or create) a project — KiCAD's PCB editor will not open without
+one — then **PCB Editor** → **Tools → External Plugins** → you should see
 **Konnect**.
 
 ### Build from source
@@ -234,8 +310,11 @@ the main workspace — see [DEV.md](DEV.md) for build steps.
   binaries or a source build — see the [macOS section](#macos) above. Linux
   compiles and passes tests in CI but hasn't had per-platform QA yet; both are
   tracked on the [roadmap](ROADMAP.md))
-- `kicad-cli` (ships with KiCAD — used for exports, ERC, DRC)
-- For PCB tools: KiCAD running with the target board open (IPC API)
+- `kicad-cli` (ships with KiCAD — used for exports, ERC, DRC). It is not put on
+  `PATH` by KiCAD's installer; the server searches the usual install locations,
+  and you can name it explicitly if yours is elsewhere
+- For PCB tools: KiCAD running with the target board open, **and the KiCAD API
+  switched on** — *Preferences → Plugins → Enable KiCad API*, which ships off
 
 ## License: free for the little guys
 
@@ -268,14 +347,26 @@ the architecture it proved, rebuilt for production:
 ## Troubleshooting
 
 **Plugin doesn't appear in KiCAD** — install via the Plugin and Content Manager (not
-manual copy), then restart KiCAD.
+manual copy), then restart KiCAD. The entry lives under *Tools → External Plugins*
+in the **PCB editor**, which will not open at all until a project is open.
 
-**PCB tools return "IPC connect failed"** — open KiCAD with your board file first;
-PCB tools talk to the running PCB editor.
+**PCB tools return "IPC connect failed"** — two separate things must both be
+true: *Preferences → Plugins → Enable KiCad API* is checked (KiCAD ships it
+**off**), and KiCAD is running with your board file open. The API page should
+read `Listening on ipc://…` after a restart.
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) walks through both.
 
-**"kicad-cli not found"** — common install paths are auto-detected; set the path
-explicitly in the plugin settings dialog or your `konnect-settings.json` if yours
-is elsewhere.
+**"Failed to spawn kicad-cli"** — the server looks for `kicad-cli` in this order:
+the `kicad_cli` value in your config if you set one, then `PATH`, then the known
+install prefixes (including `%LOCALAPPDATA%\Programs\KiCad\<ver>\bin`, where
+KiCAD's installer puts a per-user install), then the Windows registry. It logs
+which one answered at startup. If none does — an unusual install location, a
+portable copy — set `kicad_cli` explicitly in the plugin settings dialog or your
+config file. **On v1.1.0 that manual step is required whenever KiCAD is not on
+`PATH`**: the search chain lands in the next release.
+
+**A validator reports an error instead of zero findings** — that is deliberate. A
+check that could not run is never reported as a check that passed.
 
 ## Support
 
