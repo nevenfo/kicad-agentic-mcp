@@ -5066,7 +5066,7 @@ O.9.3's standard: the zip a user downloads is inspected on this machine.
 The version the binary reports is the version the tag names is the version the
 package declares — measured, in that order, from the downloaded file.
 
-## Q.6 — A test that measured the runner's clock, found by this phase — DONE
+## Q.6 — A test that measured the runner's filesystem, found by this phase — DONE
 
 ### Objectif
 The phase invariant says a gate going red for a reason that is not the version
@@ -5076,36 +5076,45 @@ bump stops the release and is triaged as its own item. One did. This is it.
 CI run `32944662909`, on `c377a41` — a commit that touches **only** `plan.md`
 and `progress.md`. `Check & Test (ubuntu-latest)` failed with three tests in
 `konnect-schematic-editor --lib`, on identical source to the green run before
-it. Two of the three are collateral: they read `PoisonError`.
+it. Two of the three were collateral: they read `PoisonError`. Run
+`32945946481`, on `724e5a7` — another Markdown-only commit — then rejected the
+first fix and reported the failure alone, which is itself the proof of Q.6.3.
 
 ### Tâches
 - [x] Q.6.1 The real failure is
-      `a_symbol_added_inside_an_existing_library_makes_the_index_stale`.
-      `fingerprint_children` hashes each library entry's mtime in whole
-      **milliseconds**, so a file created inside the millisecond already
-      stamped on `Device.kicad_symdir` leaves the fingerprint unchanged and the
-      cache reads fresh. Whether the scan, the cache write and the cache read
-      fit inside one millisecond is a property of the **machine**: measured
-      here, the test is green **30 times out of 30**, because those I/Os cost
-      more than a millisecond on Windows; on a Linux runner they fit. D140's
-      class one level down — a test asserting a property of the runner while
-      appearing to assert a property of the code. Fixed by leaving the stamped
-      millisecond before writing, bounded at 200 iterations so a test can never
-      spin on a clock that runs backwards
-- [x] Q.6.2 The other two are one defect of amplification, not two failures:
-      the panic poisoned `ENV_LOCK`, so every later test taking it died with
-      `PoisonError` instead of reporting its own verdict. That mutex guards an
-      environment variable, not an invariant over data — there is no state a
-      panicking test leaves half-written. `env_lock()` now recovers the guard
-      with `into_inner()`. P.7.6's rule at the mutex level: a red run reports
-      what is actually red
-- [x] Q.6.3 The cause is measured rather than argued: creating a file inside a
-      directory leaves that directory's mtime unchanged **227 times out of
-      300** on this machine, and 2 000 consecutive wall-clock reads land in a
-      single millisecond
-- [x] Q.6.4 Production code is untouched. Both edits are inside
+      `a_symbol_added_inside_an_existing_library_makes_the_index_stale`. It
+      writes the index cache, then creates a symbol inside
+      `Device.kicad_symdir` and requires the cache to read stale.
+      `fingerprint_children` hashes each library entry's mtime, so the
+      assertion holds only if the filesystem gives that directory a *new*
+      stamp. Whether it does is a property of the **machine**: NTFS stamps in
+      100 ns units and the test is green **30 times out of 30** here, while an
+      ext4 volume whose inodes are 128 bytes wide carries no sub-second field
+      at all, and on that runner the symbol lands inside the tick the cache
+      already recorded. D140's class one level down — an assertion about the
+      machine wearing the clothes of an assertion about the code
+- [x] Q.6.2 The first fix was **wrong, and CI said so**: waiting a
+      millisecond before writing assumes the granularity is finer than a
+      millisecond, which is the very thing in question, and the run came back
+      red on the same assertion. A stamp already written does not move on its
+      own, so what has to be waited for is the **observable value**: the test
+      now recreates the symbol until the directory's mtime differs from the one
+      the cache recorded, bounded at ~2 s — comfortably past a one-second
+      granularity, and a failure after that is a real defect rather than a slow
+      disk. The failure message prints both stamps, so the next red run says
+      which of the two it is
+- [x] Q.6.3 The other two reds of the first run are one defect of
+      amplification, not two failures: the panic poisoned `ENV_LOCK`, so every
+      later test taking it died with `PoisonError` instead of reporting its own
+      verdict. That mutex guards an environment variable, not an invariant over
+      data. `env_lock()` now recovers the guard with `into_inner()`. **Proved by
+      the second red run**: the same defect then reported as `34 passed;
+      1 failed` instead of three failures. P.7.6's rule at the mutex level
+- [x] Q.6.4 Production code is untouched. Every edit is inside
       `mod suggestion_tests`, so the phase invariant holds
 
 ### Validation
-`cargo test -p konnect-schematic-editor --lib`: 37 passed, 0 failed, and the
-full gate re-run below on the commit that carries the fix.
+`cargo test -p konnect-schematic-editor --lib`: 37 passed, 0 failed, and 30
+consecutive runs of the repaired test green. The oracle that matters is
+`Check & Test (ubuntu-latest)`, since it is the only machine where this has
+ever been red.

@@ -1722,43 +1722,43 @@ mod suggestion_tests {
             "the cache this test just wrote must read back as fresh"
         );
 
-        // The fingerprint hashes each library entry's mtime in whole
-        // milliseconds (`fingerprint_children`), so a file created inside the
-        // same millisecond as the one already stamped on the directory leaves
-        // that mtime — and with it the fingerprint — unchanged. Whether the
-        // scan, the cache write and the cache read fit inside one millisecond
-        // is a fact about the machine, not about the code under test: on
-        // Windows those I/Os cost more than a millisecond and this never
-        // fails (measured: 0 red in 30 runs), while on a Linux runner they
-        // fit, and it went red there on a commit that touched only Markdown.
-        // D140's class, one level down. Leave the stamped millisecond before
-        // writing, so the assertion below measures invalidation and not the
-        // filesystem's clock. Bounded, because a test must not be able to
-        // spin forever if a clock ever runs backwards.
+        // The fingerprint hashes the library directory's mtime, and filesystem
+        // timestamp granularity is not portable: NTFS stamps in 100 ns units,
+        // while an ext4 volume whose inodes are 128 bytes wide carries no
+        // sub-second field at all. Where the granularity is coarse, a symbol
+        // created inside the same tick the cache recorded leaves the stamp —
+        // and with it the fingerprint — untouched, and the assertion below
+        // measures the runner's filesystem instead of the invalidation it is
+        // about. Waiting a fixed duration does not fix that, because the
+        // stamp already written does not move on its own: what has to be
+        // waited for is the observable value, so recreate the file until the
+        // stamp it leaves is new. Bounded at ~2 s, comfortably past a
+        // one-second granularity, and a test that still fails after that is
+        // reporting a real defect rather than a slow disk.
+        //
+        // Found by this phase: CI went red here twice on commits that touched
+        // only Markdown, while this test is green 30 times out of 30 on
+        // Windows. D140's class — an assertion about the machine wearing the
+        // clothes of an assertion about the code.
         let symdir = fixture.path().join("Device.kicad_symdir");
         let stamped = mtime_millis_of(&std::fs::metadata(&symdir).unwrap());
-        let now_millis = || {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("the system clock is after the epoch")
-                .as_millis() as u64
-        };
-        for _ in 0..200 {
-            if now_millis() > stamped {
+        let symbol = symdir.join("AMS1117.kicad_sym");
+        const ADDED_SYMBOL: &str = "(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"AMS1117\"\n\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t(property \"Value\" \"AMS1117\" (at 0 0 0))\n\t)\n)\n";
+
+        std::fs::write(&symbol, ADDED_SYMBOL).unwrap();
+        for _ in 0..80 {
+            if mtime_millis_of(&std::fs::metadata(&symdir).unwrap()) != stamped {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            std::fs::remove_file(&symbol).unwrap();
+            std::fs::write(&symbol, ADDED_SYMBOL).unwrap();
         }
-
-        std::fs::write(
-            symdir.join("AMS1117.kicad_sym"),
-            "(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"AMS1117\"\n\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t(property \"Value\" \"AMS1117\" (at 0 0 0))\n\t)\n)\n",
-        )
-        .unwrap();
 
         assert!(
             load_symbol_index_cache(&dirs).is_none(),
-            "a symbol added inside an existing library left the index looking fresh"
+            "a symbol added inside an existing library left the index looking fresh              (the library directory's mtime read {stamped} ms when the cache was              written and {} ms after the symbol was added; equal values mean the              filesystem's timestamp granularity outlasted the loop above, and the              test never reached the behaviour it is about)",
+            mtime_millis_of(&std::fs::metadata(&symdir).unwrap())
         );
         // And the rescan behind it sees the new symbol, so the invalidation is
         // worth something: this is the name `canonical_lib_id` would otherwise
