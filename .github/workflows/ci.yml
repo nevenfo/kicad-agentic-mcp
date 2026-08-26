@@ -42,8 +42,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check
         run: cargo check --workspace --locked
+      # --no-fail-fast: without it cargo stops at the first failing test
+      # binary, and the ones after it in the run never execute. P.7.1's single
+      # red test sat at `sheet_instances`, two thirds of the way down the
+      # alphabet, and the log gave no evidence either way about the eleven
+      # binaries behind it. A red run should report everything that is red.
       - name: Test (unit + integration)
-        run: cargo test --workspace --locked --lib --tests
+        run: cargo test --workspace --locked --lib --tests --no-fail-fast
       # --doc cannot be combined with --lib/--tests; doctests broke silently
       # once (PR #49) because they were never run in CI.
       - name: Doctests

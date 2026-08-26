@@ -11,7 +11,7 @@
 
 mod harness;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use harness::Harness;
 use serde_json::json;
@@ -307,6 +307,193 @@ async fn searching_the_installed_libraries_finds_a_common_footprint() {
                 .as_str()
                 .is_some_and(|id| id.contains(':') && id.contains("0603")),
             "a result should be a Library:Footprint id matching the query: {result}"
+        );
+    }
+}
+
+// ─── Registration outcome (P.6.9.12) ─────────────────────────────────────────
+//
+// A registration that did nothing used to answer exactly what a registration
+// that wrote the entry answered — a bare `"success": true` — so a stale URI
+// could never be corrected and the caller could not tell it had not been.
+
+/// The two registration tools, each with the table it writes and a library
+/// path whose extension the tool expects.
+const REGISTRARS: [(&str, &str, &str, &str); 2] = [
+    (
+        "register_footprint_library",
+        "fp-lib-table",
+        "fp_lib_table",
+        "Probe.pretty",
+    ),
+    (
+        "register_symbol_library",
+        "sym-lib-table",
+        "sym_lib_table",
+        "Probe.kicad_sym",
+    ),
+];
+
+/// Register `library` under `nickname` for `h`'s project, returning the tool's
+/// own result so the outcome — not just the absence of an error — can be read.
+async fn register(
+    h: &Harness,
+    tool: &str,
+    library: &Path,
+    nickname: &str,
+    replace_existing: Option<bool>,
+) -> konnect_core::mcp::protocol::CallToolResult {
+    let project = h.path("probe.kicad_pro");
+    let mut args = json!({
+        "library_path": harness::as_str(library),
+        "nickname": nickname,
+        "scope": "project",
+        "project": harness::as_str(&project)
+    });
+    if let Some(replace) = replace_existing {
+        args["replace_existing"] = json!(replace);
+    }
+    h.call(tool, args).await.expect("the tool answered")
+}
+
+/// A nickname the table has never seen is inserted, and says so.
+#[tokio::test]
+async fn a_first_registration_reports_inserted() {
+    for (tool, _table, _root, library_name) in REGISTRARS {
+        let h = Harness::new();
+        let _project = a_project(&h);
+        let library = h.path(library_name);
+
+        let body = harness::body(&register(&h, tool, &library, "Probe", None).await);
+        assert_eq!(
+            body["result"], "inserted",
+            "{tool} did not report a first registration as inserted: {body}"
+        );
+    }
+}
+
+/// Registering the same library twice is still idempotent — and now says the
+/// second call did nothing. The file must be byte-identical: a bare success
+/// would pass even if the table had been rewritten underneath.
+#[tokio::test]
+async fn re_registering_the_same_uri_reports_unchanged_and_rewrites_nothing() {
+    for (tool, table_name, _root, library_name) in REGISTRARS {
+        let h = Harness::new();
+        let _project = a_project(&h);
+        let library = h.path(library_name);
+        let table = h.path(table_name);
+
+        register(&h, tool, &library, "Probe", None).await;
+        let before = std::fs::read(&table).expect("the table was written");
+
+        let body = harness::body(&register(&h, tool, &library, "Probe", None).await);
+        assert_eq!(
+            body["result"], "unchanged",
+            "{tool} did not report a repeat registration as unchanged: {body}"
+        );
+        assert_eq!(
+            std::fs::read(&table).expect("the table is still readable"),
+            before,
+            "{tool} rewrote a table it had nothing to change"
+        );
+    }
+}
+
+/// A nickname already registered against a different URI is refused rather
+/// than reported as a registration, and the table keeps the URI it had.
+#[tokio::test]
+async fn a_different_uri_without_replace_existing_is_refused() {
+    for (tool, table_name, _root, library_name) in REGISTRARS {
+        let h = Harness::new();
+        let _project = a_project(&h);
+        let old = h.path(library_name);
+        let new = h.path(&format!("Moved_{library_name}"));
+        let table = h.path(table_name);
+
+        register(&h, tool, &old, "Probe", None).await;
+        let result = register(&h, tool, &new, "Probe", None).await;
+        let body = harness::body(&result);
+        assert_ne!(
+            body["result"], "inserted",
+            "{tool} claimed to insert over an existing nickname: {body}"
+        );
+        assert!(
+            result.is_error,
+            "{tool} answered success for a URI it did not write: {body}"
+        );
+
+        let text = std::fs::read_to_string(&table).expect("the table is readable");
+        assert!(
+            text.contains(harness::as_str(&old)) && !text.contains(harness::as_str(&new)),
+            "{tool} changed the URI without replace_existing:\n{text}"
+        );
+    }
+}
+
+/// `replace_existing` corrects a stale URI in place and leaves the rest of the
+/// entry — the caller's own `options` and `descr` — exactly as it was.
+#[tokio::test]
+async fn replace_existing_corrects_the_uri_and_preserves_options_and_descr() {
+    for (tool, table_name, root, library_name) in REGISTRARS {
+        let h = Harness::new();
+        let _project = a_project(&h);
+        let new = h.path(library_name);
+        let table = h.path(table_name);
+        std::fs::write(
+            &table,
+            format!(
+                "({root}\n\t(version 7)\n\t(lib (name \"Probe\") (type \"KiCad\") (uri \"/gone/old.path\") (options \"hand-written\") (descr \"the caller's own note\"))\n)\n"
+            ),
+        )
+        .expect("the table is writable");
+
+        let body = harness::body(&register(&h, tool, &new, "Probe", Some(true)).await);
+        assert_eq!(
+            body["result"], "updated",
+            "{tool} did not report a corrected URI as updated: {body}"
+        );
+
+        let text = std::fs::read_to_string(&table).expect("the table is readable");
+        assert!(
+            text.contains(harness::as_str(&new)) && !text.contains("/gone/old.path"),
+            "{tool} did not correct the URI:\n{text}"
+        );
+        assert!(
+            text.contains("(options \"hand-written\")")
+                && text.contains("(descr \"the caller's own note\")"),
+            "{tool} discarded the entry's own options/descr:\n{text}"
+        );
+    }
+}
+
+/// The old presence check was `content.contains("(name \"X\")")` over the whole
+/// file, so any entry whose description quoted that text made `X` look
+/// registered — and the real registration was then skipped.
+#[tokio::test]
+async fn a_nickname_quoted_inside_a_descr_is_not_a_registration() {
+    for (tool, table_name, root, library_name) in REGISTRARS {
+        let h = Harness::new();
+        let _project = a_project(&h);
+        let library = h.path(library_name);
+        let table = h.path(table_name);
+        std::fs::write(
+            &table,
+            format!(
+                "({root}\n\t(version 7)\n\t(lib (name \"Other\") (type \"KiCad\") (uri \"/other\") (options \"\") (descr \"see (name \\\"Probe\\\") elsewhere\"))\n)\n"
+            ),
+        )
+        .expect("the table is writable");
+
+        let body = harness::body(&register(&h, tool, &library, "Probe", None).await);
+        assert_eq!(
+            body["result"], "inserted",
+            "{tool} mistook a quoted nickname in a descr for a registration: {body}"
+        );
+
+        let text = std::fs::read_to_string(&table).expect("the table is readable");
+        assert!(
+            text.contains(harness::as_str(&library)),
+            "{tool} did not write the entry it reported:\n{text}"
         );
     }
 }

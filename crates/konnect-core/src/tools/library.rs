@@ -6,7 +6,7 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{get_path, require_str, ToolContext, ToolDef};
+use crate::tools::{get_path, require_array, require_str, ToolContext, ToolDef};
 use crate::try_arg;
 use konnect_sexp::parser::{parse_sexp, SexpNode};
 use konnect_sexp::writer::{find_balanced_block, find_block_starts, write_atomic};
@@ -140,7 +140,12 @@ pub fn tools() -> Vec<ToolDef> {
                         "description": "Scope: 'global' or 'project'",
                         "default": "project"
                     },
-                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" }
+                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" },
+                    "replace_existing": {
+                        "type": "boolean",
+                        "description": "If the nickname is already registered with a different URI, correct that entry's URI in place, keeping its options and descr. Without it such a call is refused and nothing is written.",
+                        "default": false
+                    }
                 },
                 "required": ["library_path", "nickname"]
             }),
@@ -257,7 +262,12 @@ pub fn tools() -> Vec<ToolDef> {
                         "description": "Scope: 'global' or 'project'",
                         "default": "project"
                     },
-                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" }
+                    "project": { "type": "string", "description": "Path to .kicad_pro file (required for project scope)" },
+                    "replace_existing": {
+                        "type": "boolean",
+                        "description": "If the nickname is already registered with a different URI, correct that entry's URI in place, keeping its options and descr. Without it such a call is refused and nothing is written.",
+                        "default": false
+                    }
                 },
                 "required": ["library_path", "nickname"]
             }),
@@ -627,13 +637,16 @@ async fn handle_create_footprint(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let output = get_path(args, "output")?;
-    let name = args["name"].as_str().unwrap_or("Footprint");
+    let name = try_arg!(require_str(args, "name"));
     let description = args["description"].as_str().unwrap_or("");
 
-    let pads_val = args["pads"].as_array().cloned().unwrap_or_default();
+    // `name` and `pads` are `required` in the schema. Defaulting them wrote a
+    // footprint called "Footprint" with no pads over whatever `output` already
+    // held — a destructive write standing in for the call the caller meant.
+    let pads_val = try_arg!(require_array(args, "pads"));
     let mut pad_geoms: Vec<PadGeom> = Vec::new();
     let mut pad_sexp = String::new();
-    for pad in &pads_val {
+    for pad in pads_val {
         let number = pad["number"].as_str().unwrap_or("1").to_string();
         let pad_type = pad["type"].as_str().unwrap_or("smd").to_string();
         let shape = pad["shape"].as_str().unwrap_or("rect");
@@ -1352,6 +1365,56 @@ fn extract_sexp_string(block: &str, key: &str) -> Option<String> {
     Some(block[start..end].to_string())
 }
 
+/// The `replace_existing` policy, defaulting to `false`.
+///
+/// False is the conservative reading of the old behaviour: a registration used
+/// to touch nothing when the nickname was present, so a default of `true`
+/// would turn every repeat call into a silent rewrite of someone else's entry.
+/// Correcting a stale URI is an explicit request, and the refusal that comes
+/// without it names the flag.
+fn replace_existing(args: &serde_json::Value) -> bool {
+    args["replace_existing"].as_bool().unwrap_or(false)
+}
+
+/// The one place a [`LibTableRegistration`] becomes an agent-facing answer,
+/// shared by the footprint and symbol registrars so the two report the same
+/// vocabulary for the same outcome.
+fn registration_result(
+    outcome: &LibTableRegistration,
+    nickname: &str,
+    scope: &str,
+    table_path: &Path,
+    requested_uri: &str,
+) -> CallToolResult {
+    let table = table_path.to_str().unwrap_or("");
+    if let LibTableRegistration::UriConflict { existing_uri } = outcome {
+        return CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "replace_existing".to_string(),
+                reason: "nickname already registered with a different URI".to_string(),
+            },
+            format!(
+                "'{nickname}' is already registered in {table} as '{existing_uri}', not \
+                 '{requested_uri}'. Nothing was written — pass replace_existing: true to \
+                 correct the URI in place, or register under another nickname."
+            ),
+        );
+    }
+
+    let mut body = json!({
+        "success": true,
+        "result": outcome.as_str(),
+        "nickname": nickname,
+        "scope": scope,
+        "table": table,
+        "uri": requested_uri
+    });
+    if let LibTableRegistration::Updated { previous_uri } = outcome {
+        body["previous_uri"] = json!(previous_uri);
+    }
+    CallToolResult::text(serde_json::to_string(&body).unwrap())
+}
+
 async fn handle_register_footprint_library(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -1377,22 +1440,22 @@ async fn handle_register_footprint_library(
         ));
     };
 
-    register_in_lib_table(
+    let requested_uri = lib_path.to_str().unwrap_or("");
+    let outcome = register_in_lib_table(
         &table_path,
         nickname,
-        lib_path.to_str().unwrap_or(""),
+        requested_uri,
         "KiCad",
+        replace_existing(args),
     )
     .await?;
 
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "success": true,
-            "nickname": nickname,
-            "scope": scope,
-            "table": table_path.to_str().unwrap_or("")
-        }))
-        .unwrap(),
+    Ok(registration_result(
+        &outcome,
+        nickname,
+        scope,
+        &table_path,
+        requested_uri,
     ))
 }
 
@@ -1464,22 +1527,22 @@ async fn handle_register_symbol_library(
         ));
     };
 
-    register_in_lib_table(
+    let requested_uri = lib_path.to_str().unwrap_or("");
+    let outcome = register_in_lib_table(
         &table_path,
         nickname,
-        lib_path.to_str().unwrap_or(""),
+        requested_uri,
         "KiCad",
+        replace_existing(args),
     )
     .await?;
 
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "success": true,
-            "nickname": nickname,
-            "scope": scope,
-            "table": table_path.to_str().unwrap_or("")
-        }))
-        .unwrap(),
+    Ok(registration_result(
+        &outcome,
+        nickname,
+        scope,
+        &table_path,
+        requested_uri,
     ))
 }
 
@@ -1544,14 +1607,73 @@ fn table_root_element(table_path: &Path) -> &'static str {
     }
 }
 
-/// Insert a new `(lib ...)` entry into a lib-table file (fp-lib-table or sym-lib-table).
+/// What a call to [`register_in_lib_table`] did to the table.
+///
+/// P.6.9.12: the function used to return `()`, so "wrote the entry" and "found
+/// the nickname and did nothing" reached the caller as the same bare
+/// `"success": true`. A no-op was indistinguishable from a registration, and a
+/// stale URI could not be corrected at all — re-registering hit the early
+/// return and reported success without touching the table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LibTableRegistration {
+    /// The nickname was not in the table; the entry was appended.
+    Inserted,
+    /// The nickname was already registered against this exact URI. The file
+    /// is not rewritten, so it stays byte-identical.
+    Unchanged,
+    /// The nickname was registered against a different URI and
+    /// `replace_existing` allowed correcting it in place.
+    Updated { previous_uri: String },
+    /// The nickname was registered against a different URI and
+    /// `replace_existing` was not set. Nothing was written.
+    UriConflict { existing_uri: String },
+}
+
+impl LibTableRegistration {
+    /// The word the tool reports.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Inserted => "inserted",
+            Self::Unchanged => "unchanged",
+            Self::Updated { .. } => "updated",
+            Self::UriConflict { .. } => "uri_conflict",
+        }
+    }
+}
+
+/// Byte range of the `(lib …)` block in `content` whose `(name …)` is
+/// `nickname`.
+///
+/// Not `content.contains("(name \"X\")")`, which is what this replaced: that
+/// is a substring test over the whole file, so any entry whose `descr` quotes
+/// the text made `X` look registered. [`find_block_starts`] skips quoted
+/// strings and matches whole tags, and [`find_balanced_block`] closes the
+/// entry by nesting depth — the same pair [`parse_lib_table`] already reads
+/// these tables with, rather than a second parser for the same file.
+fn find_lib_entry(content: &str, nickname: &str) -> Option<(usize, usize)> {
+    find_block_starts(content, "lib")
+        .into_iter()
+        .filter_map(|start| find_balanced_block(content, start))
+        .find(|&(block_start, block_end)| {
+            extract_sexp_string(&content[block_start..block_end], "name").as_deref()
+                == Some(nickname)
+        })
+}
+
+/// Insert a new `(lib ...)` entry into a lib-table file (fp-lib-table or sym-lib-table),
+/// or correct an existing entry's URI when `replace_existing` is set.
 /// Creates the file with minimal scaffolding if it doesn't exist.
+///
+/// An update rewrites the `(uri …)` sub-block and nothing else, so the entry's
+/// own `options` and `descr` — whatever the user or KiCad put there — survive
+/// the correction.
 async fn register_in_lib_table(
     table_path: &Path,
     nickname: &str,
     uri: &str,
     lib_type: &str,
-) -> anyhow::Result<()> {
+    replace_existing: bool,
+) -> anyhow::Result<LibTableRegistration> {
     let content = if table_path.exists() {
         tokio::fs::read_to_string(table_path).await?
     } else {
@@ -1561,25 +1683,60 @@ async fn register_in_lib_table(
         format!("({}\n  (version 7)\n)\n", table_root_element(table_path))
     };
 
-    // Check if nickname already registered
-    if content.contains(&format!("(name \"{}\")", nickname)) {
-        return Ok(()); // already registered, idempotent
-    }
-
-    // Find closing paren of the root expression
-    let insert_pos = content.rfind(')').unwrap_or(content.len());
-    let entry = format!(
-        "\n  (lib (name \"{}\") (type \"{}\") (uri \"{}\") (options \"\") (descr \"\"))",
-        nickname, lib_type, uri
-    );
-
-    let new_content = format!("{}{}\n)", &content[..insert_pos], entry);
+    let (new_content, outcome) = match find_lib_entry(&content, nickname) {
+        Some((entry_start, entry_end)) => {
+            let entry = &content[entry_start..entry_end];
+            let existing_uri = extract_sexp_string(entry, "uri").unwrap_or_default();
+            if existing_uri == uri {
+                return Ok(LibTableRegistration::Unchanged);
+            }
+            if !replace_existing {
+                return Ok(LibTableRegistration::UriConflict { existing_uri });
+            }
+            // Replace only the (uri …) sub-block, keeping the rest of the
+            // entry — an entry with no uri at all gets one before its closing
+            // paren.
+            let (uri_start, uri_end) = find_block_starts(entry, "uri")
+                .into_iter()
+                .find_map(|start| find_balanced_block(entry, start))
+                .unwrap_or((entry.len() - 1, entry.len() - 1));
+            let rewritten = format!(
+                "{}(uri \"{}\"){}",
+                &entry[..uri_start],
+                uri,
+                &entry[uri_end..]
+            );
+            (
+                format!(
+                    "{}{}{}",
+                    &content[..entry_start],
+                    rewritten,
+                    &content[entry_end..]
+                ),
+                LibTableRegistration::Updated {
+                    previous_uri: existing_uri,
+                },
+            )
+        }
+        None => {
+            // Find closing paren of the root expression
+            let insert_pos = content.rfind(')').unwrap_or(content.len());
+            let entry = format!(
+                "\n  (lib (name \"{}\") (type \"{}\") (uri \"{}\") (options \"\") (descr \"\"))",
+                nickname, lib_type, uri
+            );
+            (
+                format!("{}{}\n)", &content[..insert_pos], entry),
+                LibTableRegistration::Inserted,
+            )
+        }
+    };
 
     if let Some(parent) = table_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
     write_atomic(table_path, &new_content)?;
-    Ok(())
+    Ok(outcome)
 }
 
 // ─── Symbol library tools ─────────────────────────────────────────────────────
@@ -2295,8 +2452,10 @@ async fn handle_create_symbol(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let lib_path = get_path(args, "library_path")?;
-    let name = args["name"].as_str().unwrap_or("Symbol");
-    let ref_prefix = args["reference_prefix"].as_str().unwrap_or("U");
+    // Both are `required` in the schema; the old defaults appended a symbol
+    // named "Symbol" with prefix "U" to the caller's library.
+    let name = try_arg!(require_str(args, "name"));
+    let ref_prefix = try_arg!(require_str(args, "reference_prefix"));
     let value_str = args["value"].as_str().unwrap_or(name);
     let show_names = args["show_pin_names"].as_bool().unwrap_or(true);
     let show_numbers = args["show_pin_numbers"].as_bool().unwrap_or(true);
@@ -2804,7 +2963,9 @@ async fn handle_search_symbols(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
-    let query = args["query"].as_str().unwrap_or("").to_lowercase();
+    // `query` is `required`: `unwrap_or("")` made `contains` true of every
+    // symbol name, so a call that never asked returned the whole catalogue.
+    let query = try_arg!(require_str(args, "query")).to_lowercase();
     let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
     let project_dir = args["project_dir"]
@@ -2924,12 +3085,19 @@ async fn handle_get_footprint_info(
             .to_string()
     });
 
-    // Count pads
-    let pad_count = content.matches("\n  (pad ").count();
-
-    // Extract courtyard bbox (gr_poly on B.CrtYd or F.CrtYd) — simplified
-    let has_courtyard = content.contains("B.CrtYd") || content.contains("F.CrtYd");
-    let has_3d = content.contains("(model ");
+    // KiCad controls indentation and line endings, so these properties must be
+    // read from the parsed footprint rather than inferred from source text: a
+    // tab-indented or CRLF footprint counted zero pads, and a courtyard was
+    // "found" in any footprint whose description merely named the layer.
+    // Pads and models are direct children of a `(footprint …)` node.
+    let footprint = parse_sexp(&content)?;
+    let pad_count = footprint.find_all("pad").len();
+    let has_courtyard = footprint
+        .children()
+        .unwrap_or(&[])
+        .iter()
+        .any(|node| matches!(node.find_str("layer"), Some("B.CrtYd" | "F.CrtYd")));
+    let has_3d = !footprint.find_all("model").is_empty();
 
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
@@ -2950,7 +3118,9 @@ async fn handle_search_footprints(
     args: &serde_json::Value,
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
-    let query = args["query"].as_str().unwrap_or("").to_lowercase();
+    // Same substitution on the footprint side; `query` is `required` here too.
+    let raw_query = try_arg!(require_str(args, "query"));
+    let query = raw_query.to_lowercase();
     let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
     // Walk global fp-lib-table
@@ -2987,7 +3157,7 @@ async fn handle_search_footprints(
 
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
-            "query": args["query"].as_str().unwrap_or(""),
+            "query": raw_query,
             "count": results.len(),
             "results": results
         }))
@@ -3639,7 +3809,7 @@ mod tests {
     async fn registering_a_symbol_library_scaffolds_a_sym_root() {
         let tmp = tempfile::tempdir().unwrap();
         let table = tmp.path().join("sym-lib-table");
-        register_in_lib_table(&table, "MySyms", "${KIPRJMOD}/my.kicad_sym", "KiCad")
+        register_in_lib_table(&table, "MySyms", "${KIPRJMOD}/my.kicad_sym", "KiCad", false)
             .await
             .unwrap();
         let content = std::fs::read_to_string(&table).unwrap();
@@ -3840,6 +4010,144 @@ mod tests {
             konnect_sexp::parser::parse_sexp(&c).is_ok(),
             "generated footprint doesn't parse"
         );
+    }
+
+    /// Reduced from KiCad 10's stock Connector_USB footprint without rewriting
+    /// the retained nodes. CRLF is intentional: together with KiCad's tabs it
+    /// reproduces both formatting assumptions the old substring probes made.
+    const KICAD_STYLE_FOOTPRINT: &str = concat!(
+        "(footprint \"USB_C_Receptacle_HRO_TYPE-C-31-M-12\"\r\n",
+        "\t(version 20260206)\r\n",
+        "\t(generator \"pcbnew\")\r\n",
+        "\t(generator_version \"10.0\")\r\n",
+        "\t(layer \"F.Cu\")\r\n",
+        "\t(descr \"USB Type-C receptacle for USB 2.0 and PD\")\r\n",
+        "\t(tags \"usb usb-c 2.0 pd\")\r\n",
+        "\t(fp_line\r\n",
+        "\t\t(start -5.32 -5.27)\r\n",
+        "\t\t(end -5.32 4.15)\r\n",
+        "\t\t(stroke\r\n",
+        "\t\t\t(width 0.05)\r\n",
+        "\t\t\t(type solid)\r\n",
+        "\t\t)\r\n",
+        "\t\t(layer \"F.CrtYd\")\r\n",
+        "\t\t(uuid \"d939342c-cab3-429e-ad71-738d34173267\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"\" np_thru_hole circle\r\n",
+        "\t\t(at -2.89 -2.6)\r\n",
+        "\t\t(size 0.65 0.65)\r\n",
+        "\t\t(drill 0.65)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(uuid \"e13b4b37-788a-41d5-87ca-c66be43ee32d\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"\" np_thru_hole circle\r\n",
+        "\t\t(at 2.89 -2.6)\r\n",
+        "\t\t(size 0.65 0.65)\r\n",
+        "\t\t(drill 0.65)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(uuid \"4558f1f0-2fa3-46e1-a220-284fa2707bb5\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"A1\" smd roundrect\r\n",
+        "\t\t(at -3.25 -4.045)\r\n",
+        "\t\t(size 0.6 1.45)\r\n",
+        "\t\t(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")\r\n",
+        "\t\t(roundrect_rratio 0.25)\r\n",
+        "\t\t(uuid \"245fae56-8b58-4bd8-bbf1-36624dc3fa3e\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"B12\" smd roundrect\r\n",
+        "\t\t(at -3.25 -4.045)\r\n",
+        "\t\t(size 0.6 1.45)\r\n",
+        "\t\t(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")\r\n",
+        "\t\t(roundrect_rratio 0.25)\r\n",
+        "\t\t(uuid \"eda87c04-3a59-4e2c-a9bd-f59ed31672aa\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"SH\" thru_hole oval\r\n",
+        "\t\t(at -4.32 -3.13)\r\n",
+        "\t\t(size 1 2.1)\r\n",
+        "\t\t(drill oval 0.6 1.7)\r\n",
+        "\t\t(property pad_prop_mechanical)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(remove_unused_layers no)\r\n",
+        "\t\t(uuid \"69c3dc88-a37e-49ef-ae4d-497d3191ad5b\")\r\n",
+        "\t)\r\n",
+        "\t(pad \"SH\" thru_hole oval\r\n",
+        "\t\t(at -4.32 1.05)\r\n",
+        "\t\t(size 1 1.6)\r\n",
+        "\t\t(drill oval 0.6 1.2)\r\n",
+        "\t\t(property pad_prop_mechanical)\r\n",
+        "\t\t(layers \"*.Cu\" \"*.Mask\")\r\n",
+        "\t\t(remove_unused_layers no)\r\n",
+        "\t\t(uuid \"5991ca6f-c5c1-4692-8fe9-cf4b7ca50c4b\")\r\n",
+        "\t)\r\n",
+        "\t(embedded_fonts no)\r\n",
+        "\t(model \"${KICAD10_3DMODEL_DIR}/Connector_USB.3dshapes/USB_C.step\"\r\n",
+        "\t\t(offset\r\n",
+        "\t\t\t(xyz 0 0 0)\r\n",
+        "\t\t)\r\n",
+        "\t\t(scale\r\n",
+        "\t\t\t(xyz 1 1 1)\r\n",
+        "\t\t)\r\n",
+        "\t\t(rotate\r\n",
+        "\t\t\t(xyz 0 0 0)\r\n",
+        "\t\t)\r\n",
+        "\t)\r\n",
+        ")\r\n",
+    );
+
+    async fn footprint_info(path: &std::path::Path) -> serde_json::Value {
+        let result = handle_get_footprint_info(
+            &json!({ "footprint_path": path.to_string_lossy() }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text");
+        };
+        serde_json::from_str(text).unwrap()
+    }
+
+    /// The pad count was `content.matches("\n  (pad ")`, so KiCad's own tabs
+    /// and CRLF made every stock footprint report zero pads — the number an
+    /// agent checks a footprint against a symbol with.
+    #[tokio::test]
+    async fn get_footprint_info_reads_kicad_style_layout_structurally() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp
+            .path()
+            .join("USB_C_Receptacle_HRO_TYPE-C-31-M-12.kicad_mod");
+        std::fs::write(&path, KICAD_STYLE_FOOTPRINT).unwrap();
+
+        let info = footprint_info(&path).await;
+        assert_eq!(info["name"], "USB_C_Receptacle_HRO_TYPE-C-31-M-12");
+        assert_eq!(info["pad_count"], 6);
+        assert_eq!(info["has_courtyard"], true);
+        assert_eq!(info["has_3d_model"], true);
+    }
+
+    /// The other half: a courtyard was "found" in any footprint whose
+    /// description merely named the layer.
+    #[tokio::test]
+    async fn get_footprint_info_ignores_metadata_that_looks_like_structure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("metadata-only.kicad_mod");
+        std::fs::write(
+            &path,
+            concat!(
+                "(footprint \"MetadataOnly\"\r\n",
+                "\t(version 20240108)\r\n",
+                "\t(generator \"pcbnew\")\r\n",
+                "\t(layer \"F.Cu\")\r\n",
+                "\t(descr \"mentions (pad fake), F.CrtYd, and (model fake)\")\r\n",
+                ")\r\n",
+            ),
+        )
+        .unwrap();
+
+        let info = footprint_info(&path).await;
+        assert_eq!(info["pad_count"], 0);
+        assert_eq!(info["has_courtyard"], false);
+        assert_eq!(info["has_3d_model"], false);
     }
 
     #[tokio::test]
@@ -4774,6 +5082,112 @@ mod tests {
         assert!(
             rc.contains("(name \"IN\" (effects (font (size 1.27 1.27))))"),
             "rectangle pin names keep the default 1.27 font:\n{rc}"
+        );
+    }
+
+    /// A `create_footprint` call that omits `pads` used to substitute an empty
+    /// pad list and a footprint named "Footprint", then `write_atomic` that
+    /// over whatever the `output` path already held. Asserting the refusal
+    /// alone would pass even if the write happened first, so the bytes of the
+    /// target file are what this pins.
+    #[tokio::test]
+    async fn create_footprint_without_pads_leaves_the_target_file_byte_identical() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("EXISTING.kicad_mod");
+        let before = "(footprint \"EXISTING\"
+	(version 20240108)
+)
+";
+        std::fs::write(&out, before).unwrap();
+
+        let args = json!({ "output": out.to_string_lossy() });
+        let res = handle_create_footprint(&args, &test_ctx()).await.unwrap();
+        assert!(res.is_error, "a call with no pads must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+
+        let after = std::fs::read(&out).unwrap();
+        assert_eq!(
+            after,
+            before.as_bytes(),
+            "the target file was rewritten by a call that was refused"
+        );
+    }
+
+    /// The refusal is about absence, not emptiness: a caller who asks for a
+    /// footprint with no pads gets one.
+    #[tokio::test]
+    async fn create_footprint_accepts_an_explicitly_empty_pad_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("NOPADS.kicad_mod");
+        let args = json!({
+            "output": out.to_string_lossy(),
+            "name": "NOPADS",
+            "pads": []
+        });
+        let res = handle_create_footprint(&args, &test_ctx()).await.unwrap();
+        assert!(
+            !res.is_error,
+            "an empty pad list is a value, not an omission"
+        );
+        let c = std::fs::read_to_string(&out).unwrap();
+        assert!(c.contains("(footprint \"NOPADS\""), "{c}");
+    }
+
+    /// Without `name` the tool used to write a symbol called "Symbol" with
+    /// reference prefix "U" — a library entry nothing asked for.
+    #[tokio::test]
+    async fn create_symbol_without_a_name_is_refused_not_named_symbol() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = tmp.path().join("test.kicad_sym");
+        let args = json!({
+            "library_path": lib.to_string_lossy(),
+            "reference_prefix": "U"
+        });
+        let res = handle_create_symbol(&args, &test_ctx()).await.unwrap();
+        assert!(res.is_error, "a nameless symbol must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+        assert!(
+            !lib.exists()
+                || !std::fs::read_to_string(&lib)
+                    .unwrap()
+                    .contains("\"Symbol\""),
+            "a symbol named 'Symbol' was written anyway"
+        );
+    }
+
+    /// `query` is `required` in the schema, but the handler read it with
+    /// `unwrap_or("")` and `contains("")` is true of every name: a call that
+    /// forgot it walked every installed library and answered with the whole
+    /// catalogue instead of saying nothing was asked.
+    #[tokio::test]
+    async fn search_symbols_without_a_query_is_refused_rather_than_answered_with_every_symbol() {
+        let res = handle_search_symbols(&json!({ "limit": 5 }), &test_ctx())
+            .await
+            .unwrap();
+        assert!(res.is_error, "a search with no query must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+    }
+
+    /// The same substitution on the footprint side.
+    #[tokio::test]
+    async fn search_footprints_without_a_query_is_refused_rather_than_answered_with_every_footprint(
+    ) {
+        let res = handle_search_footprints(&json!({ "limit": 5 }), &test_ctx())
+            .await
+            .unwrap();
+        assert!(res.is_error, "a search with no query must be refused");
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
         );
     }
 }

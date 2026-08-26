@@ -272,3 +272,199 @@ async fn the_severity_filter_drops_everything_below_it() {
         "'info' should return more than 'error': {everything}"
     );
 }
+
+// ─── DRC evidence in the verdict ─────────────────────────────────────────────
+
+/// A schematic-only review never had a board to run DRC on, and must come
+/// back exactly as it did before DRC entered the verdict: the three original
+/// verdicts, and no `drc` key claiming anything either way.
+#[tokio::test]
+async fn a_schematic_only_review_is_untouched_by_the_drc_gate() {
+    let h = Harness::new();
+    let sch = sheet_with_net(&h, "VCC").await;
+    let review = h
+        .json("run_design_review", json!({ "schematic": sch }))
+        .await;
+    let review = &review["design_review"];
+    assert!(
+        review.get("drc").is_none(),
+        "no board was reviewed, so there is nothing to say about DRC: {review}"
+    );
+    let verdict = review["verdict"].as_str().unwrap_or("");
+    assert!(
+        verdict.starts_with("NOT READY")
+            || verdict.starts_with("NEEDS ATTENTION")
+            || verdict.starts_with("LOOKS GOOD"),
+        "the schematic-only vocabulary changed: {verdict}"
+    );
+    assert!(
+        review["findings"]
+            .as_array()
+            .expect("findings is a list")
+            .iter()
+            .all(|f| f["audit"] != "drc"),
+        "a schematic review invented a DRC audit: {review}"
+    );
+}
+
+/// With a board in play and no `kicad-cli` behind the harness, the review has
+/// not checked the board against a single design rule. Saying "LOOKS GOOD" is
+/// the false clearance this item exists to remove.
+#[tokio::test]
+async fn a_board_review_without_drc_evidence_cannot_look_good() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("test.kicad_pcb")).to_string();
+    let review = h.json("run_design_review", json!({ "board": board })).await;
+    let review = &review["design_review"];
+    assert!(
+        review["drc"].is_null(),
+        "an unmeasured DRC is null, not an object of zeroes: {review}"
+    );
+    assert_eq!(
+        review["verdict"], "INCOMPLETE — DRC did not run, so the board is unverified",
+        "{review}"
+    );
+}
+
+// ─── Sheet hierarchy coverage (P.6.8.4) ──────────────────────────────────────
+//
+// `hier_root.kicad_sch` places two sub-sheets: `hier_sub_clean.kicad_sch`
+// (nothing on it) and `hier_sub_defect.kicad_sch` (two resistors on a VCC
+// net with no decoupling cap — the same defect shape
+// `the_power_rail_audit_is_quiet_until_there_is_a_rail` uses). `kicad-cli sch
+// erc` (KiCad 10.0.3) accepts the full hierarchy from `hier_root.kicad_sch`
+// with 2 violations, both unrelated pin-unconnected findings — the fixture
+// loads.
+
+/// A defect that lives only on a sub-sheet must not be invisible to a review
+/// run on the root. Before this item, `run_design_review` audited only the
+/// path it was handed — the root, which carries no defect of its own — and
+/// came back clean while the sub-sheet's missing decoupling sat unseen.
+#[tokio::test]
+async fn a_review_on_the_root_finds_a_defect_that_lives_only_on_a_sub_sheet() {
+    let h = Harness::new();
+    h.fixture("hier_sub_clean.kicad_sch");
+    h.fixture("hier_sub_defect.kicad_sch");
+    let root = harness::as_str(&h.fixture("hier_root.kicad_sch")).to_string();
+
+    let review = h
+        .json("run_design_review", json!({ "schematic": root }))
+        .await;
+    let review = &review["design_review"];
+    let findings = review["findings"].as_array().expect("findings is a list");
+
+    assert!(
+        findings.iter().any(|f| {
+            f["issue"]
+                .as_str()
+                .is_some_and(|s| s.contains("VCC") && s.contains("decoupling"))
+                && f["sheet"]
+                    .as_str()
+                    .is_some_and(|s| s.contains("hier_sub_defect"))
+        }),
+        "the sub-sheet's missing decoupling should be in the review, tagged with its sheet: {review}"
+    );
+    assert_eq!(
+        review["schematic_coverage"]["sheets_reachable"], 3,
+        "root + two sub-sheets: {review}"
+    );
+    assert_eq!(
+        review["schematic_coverage"]["sheets_audited"], 3,
+        "every reachable sheet loaded: {review}"
+    );
+    assert!(
+        review["verdict"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("NOT READY"),
+        "a missing decoupling cap is an error-level finding: {review}"
+    );
+}
+
+/// A `(sheet …)` reference to a file that is not on disk must not be
+/// silently skipped: the coverage numbers say so, the missing file is named,
+/// and the verdict cannot claim "LOOKS GOOD" for ground it never covered.
+#[tokio::test]
+async fn a_sheet_reference_with_no_file_on_disk_makes_the_verdict_incomplete() {
+    let h = Harness::new();
+    h.fixture("hier_sub_clean.kicad_sch");
+    // hier_sub_missing.kicad_sch is deliberately never fixtured.
+    let root = harness::as_str(&h.fixture("hier_root_missing_sub.kicad_sch")).to_string();
+
+    let review = h
+        .json("run_design_review", json!({ "schematic": root }))
+        .await;
+    let review = &review["design_review"];
+
+    assert_eq!(
+        review["schematic_coverage"]["sheets_reachable"], 3,
+        "root + the clean sub-sheet + the missing one, still counted: {review}"
+    );
+    assert_eq!(
+        review["schematic_coverage"]["sheets_audited"], 2,
+        "only root and the clean sub-sheet actually loaded: {review}"
+    );
+    let unaudited = review["schematic_coverage"]["unaudited"]
+        .as_array()
+        .expect("unaudited is a list");
+    assert!(
+        unaudited.iter().any(|u| u["sheet"]
+            .as_str()
+            .is_some_and(|s| s.contains("hier_sub_missing"))),
+        "the missing sheet should be named: {review}"
+    );
+    assert!(
+        review["verdict"]
+            .as_str()
+            .is_some_and(|v| v.starts_with("INCOMPLETE") && v.contains("hier_sub_missing")),
+        "an unaudited sheet must not be papered over: {review}"
+    );
+}
+
+/// The ordinary case — one file, nothing missing — must still report full
+/// coverage and reach "LOOKS GOOD" exactly as it did before sheets were
+/// walked at all.
+#[tokio::test]
+async fn a_single_sheet_review_reports_full_coverage() {
+    let h = Harness::new();
+    // A non-power net keeps the power-rail and decoupling audits silent; a
+    // footprint on both resistors keeps the BOM audit silent too, so the only
+    // thing left to prove is coverage and the verdict it allows.
+    let sch = sheet_with_net(&h, "SIGNAL").await;
+    for reference in ["R1", "R2"] {
+        h.json(
+            "add_component_annotation",
+            json!({
+                "schematic": sch,
+                "reference": reference,
+                "key": "Footprint",
+                "value": "Resistor_SMD:R_0603_1608Metric"
+            }),
+        )
+        .await;
+    }
+
+    let review = h
+        .json("run_design_review", json!({ "schematic": sch }))
+        .await;
+    let review = &review["design_review"];
+    assert_eq!(
+        review["schematic_coverage"]["sheets_reachable"], 1,
+        "{review}"
+    );
+    assert_eq!(
+        review["schematic_coverage"]["sheets_audited"], 1,
+        "{review}"
+    );
+    assert_eq!(
+        review["schematic_coverage"]["unaudited"]
+            .as_array()
+            .map(|a| a.len()),
+        Some(0),
+        "{review}"
+    );
+    assert_eq!(
+        review["verdict"], "LOOKS GOOD — no critical issues found",
+        "two unconnected resistors with no rails and no BOM gaps: {review}"
+    );
+}

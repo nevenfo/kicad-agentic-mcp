@@ -22,6 +22,28 @@ use sheet::{Sheet, SheetCollection};
 use symbol::{Symbol, SymbolCollection};
 use wire::{Wire, WireCollection};
 
+// ---- raw child preservation -------------------------------------------------
+
+/// Collect the children of `node` that `to_sexp` does *not* reconstruct from
+/// typed fields, so they survive a load/save round-trip verbatim.
+///
+/// This is a deny-list on purpose. It used to be an allow-list naming the two
+/// or three sub-nodes we happened to care about, which silently deleted every
+/// other token KiCAD writes — most damagingly `(lib_name …)`, whose loss
+/// re-points a symbol at the wrong `lib_symbols` entry and rewires the
+/// netlist without any error from KiCAD or from us (#143).
+pub(crate) fn unmodelled_children(node: &SexpNode, modelled: &[&str]) -> Vec<SexpNode> {
+    node.args()
+        .iter()
+        .filter(|n| match n.tag() {
+            Some(tag) => !modelled.contains(&tag),
+            // Bare atoms (e.g. a lone flag token) are unmodelled by definition.
+            None => true,
+        })
+        .cloned()
+        .collect()
+}
+
 // ---- LocatedElement ---------------------------------------------------------
 
 pub enum LocatedElement<'a> {
@@ -71,12 +93,27 @@ impl<'a> LocatedElement<'a> {
 pub struct Schematic {
     filepath: PathBuf,
     original_source: Mutex<String>,
+    /// Indentation and line-ending style sniffed from `original_source`, so
+    /// `save`/`to_source` round-trip the file's own formatting instead of
+    /// reformatting the whole document. See `sniff_write_style`.
+    write_style: writer::WriteStyle,
 
     pub version: Option<u32>,
     pub generator: Option<String>,
     pub generator_version: Option<String>,
     pub uuid: Option<String>,
+    /// Page size name only — `A4`, `USLetter`, `User`, …
     pub paper: Option<String>,
+    /// Tokens that follow the page size name inside `(paper …)`, preserved
+    /// verbatim.
+    ///
+    /// KiCAD writes `(paper "User" 292.1 205.105)` for a custom page — the two
+    /// dimensions are REQUIRED there — and `(paper "A4" portrait)` for a
+    /// portrait named page. Both were dropped when only `paper` was
+    /// round-tripped, and a `(paper "User")` with no dimensions makes KiCAD
+    /// refuse to load the schematic at all ("Failed to load schematic", no
+    /// further diagnostic).
+    pub paper_args: Vec<SexpNode>,
 
     pub symbols: SymbolCollection,
     pub wires: WireCollection,
@@ -111,7 +148,7 @@ impl Schematic {
     /// Saving to the loaded path instead performs a revision-checked commit.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        let text = writer::write(&self.to_sexp());
+        let text = writer::write_styled(&self.to_sexp(), self.write_style);
         if path == self.filepath {
             let mut original_source = self.original_source.lock().map_err(|_| {
                 crate::error::Error::Io(std::io::Error::other(
@@ -137,7 +174,7 @@ impl Schematic {
     /// commands from an edited candidate and commit through `konnect-sexp`.
     #[must_use]
     pub fn to_source(&self) -> String {
-        writer::write(&self.to_sexp())
+        writer::write_styled(&self.to_sexp(), self.write_style)
     }
 
     pub fn filepath(&self) -> &Path {
@@ -390,11 +427,13 @@ impl Schematic {
     // ---- internal -----------------------------------------------------------
 
     fn from_sexp(root: SexpNode, filepath: PathBuf, original_source: String) -> Result<Self> {
+        let write_style = sniff_write_style(&original_source);
         let mut version = None;
         let mut generator = None;
         let mut generator_version = None;
         let mut uuid = None;
         let mut paper = None;
+        let mut paper_args: Vec<SexpNode> = vec![];
 
         let mut symbols: Vec<Symbol> = vec![];
         let mut wires: Vec<Wire> = vec![];
@@ -426,6 +465,9 @@ impl Schematic {
                 }
                 Some("paper") => {
                     paper = child.value().map(str::to_owned);
+                    // Everything after the size name: `292.1 205.105` for a
+                    // custom page, `portrait` for a portrait named page.
+                    paper_args = child.args().iter().skip(1).cloned().collect();
                 }
                 Some("symbol") => match Symbol::from_sexp(child) {
                     Ok(s) => symbols.push(s),
@@ -486,11 +528,13 @@ impl Schematic {
         Ok(Schematic {
             filepath,
             original_source: Mutex::new(original_source),
+            write_style,
             version,
             generator,
             generator_version,
             uuid,
             paper,
+            paper_args,
             symbols: SymbolCollection::new(symbols),
             wires: WireCollection::new(wires),
             buses,
@@ -526,8 +570,15 @@ impl Schematic {
         if let Some(u) = &self.uuid {
             c.push(tagged("uuid", vec![qstr(u.clone())]));
         }
+        // The page size name alone is not always a complete `(paper …)` node:
+        // `User` requires its width and height, and a portrait named size
+        // carries a `portrait` token. KiCAD rejects the whole file if either is
+        // missing, so re-emit whatever followed the name.
         if let Some(p) = &self.paper {
-            c.push(tagged("paper", vec![qstr(p.clone())]));
+            let mut args = Vec::with_capacity(1 + self.paper_args.len());
+            args.push(qstr(p.clone()));
+            args.extend(self.paper_args.iter().cloned());
+            c.push(tagged("paper", args));
         }
 
         // Preserved nodes — emit in order:
@@ -615,6 +666,34 @@ impl std::fmt::Debug for Schematic {
             self.wires.len()
         )
     }
+}
+
+/// Sniff the indent unit and line ending a `.kicad_sch` source uses, so a
+/// round-tripped save reproduces the file's own formatting instead of
+/// reformatting the whole document (see `writer::WriteStyle`).
+///
+/// Indent: the first indented line decides — leading tab means tabs;
+/// otherwise its leading space count is the unit. No indented line at all
+/// (e.g. an empty or single-line document) falls back to the default (tab).
+/// EOL: any `\r\n` anywhere in the source means CRLF, matching every KiCAD
+/// 10 demo sheet on Windows.
+fn sniff_write_style(source: &str) -> writer::WriteStyle {
+    let crlf = source.contains("\r\n");
+    let indent = source
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim_start_matches([' ', '\t']);
+            let indent_str = &line[..line.len() - trimmed.len()];
+            if indent_str.is_empty() {
+                None
+            } else if indent_str.starts_with('\t') {
+                Some(writer::IndentStyle::Tab)
+            } else {
+                Some(writer::IndentStyle::Spaces(indent_str.len()))
+            }
+        })
+        .unwrap_or(writer::IndentStyle::Tab);
+    writer::WriteStyle { indent, crlf }
 }
 
 fn dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {

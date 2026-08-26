@@ -3,6 +3,7 @@
 pub mod cli;
 pub mod config;
 pub mod design_review;
+pub(crate) mod drc_gate;
 pub mod graph;
 pub mod integration;
 mod ipc_boundary;
@@ -399,7 +400,7 @@ macro_rules! try_arg {
 /// Build a structured `InvalidArgument` CallToolResult. Used by the
 /// `require_*` helpers so every handler that uses them emits structured
 /// errors the client / observer can match on — no per-handler change needed.
-fn invalid_arg(field: &str, reason: &str) -> CallToolResult {
+pub(crate) fn invalid_arg(field: &str, reason: &str) -> CallToolResult {
     CallToolResult::error_kind(
         crate::mcp::error::ToolErrorKind::InvalidArgument {
             field: field.to_string(),
@@ -407,6 +408,28 @@ fn invalid_arg(field: &str, reason: &str) -> CallToolResult {
         },
         format!("Argument '{}' is invalid: {}", field, reason),
     )
+}
+
+/// The first key a schema's `"required"` list names that the call did not
+/// supply, if any.
+///
+/// Presence only — no type, no format, no value constraint: that is what the
+/// `require_*` helpers below still do, from inside the handler, where the type
+/// a key must have is known. This is the floor under them, applied at dispatch
+/// so a tool whose handler forgot to check (or checks late, after it has
+/// already read a file) cannot run on an incomplete call.
+///
+/// An explicit `null` is missing. A client that serialises its absent
+/// optionals as `null` is saying the same thing as one that omits the key, and
+/// no `require_*` helper accepts `null` either.
+pub(crate) fn first_missing_required(schema: &Value, args: &Value) -> Option<String> {
+    schema
+        .get("required")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .find(|key| args.get(*key).unwrap_or(&Value::Null).is_null())
+        .map(str::to_string)
 }
 
 /// Extract a required string argument, returning a structured
@@ -435,15 +458,72 @@ pub fn opt_f64(args: &Value, key: &str) -> Option<f64> {
     args[key].as_f64()
 }
 
+/// Extract a required array argument. Returns a structured `InvalidArgument`
+/// error result if missing or not an array.
+///
+/// An explicitly empty array is a legitimate answer — "export no layers", "a
+/// footprint with no pads" — and is returned as an empty slice. Only absence
+/// (or a non-array) is refused, because that is the caller who never said.
+/// The borrowed slice, rather than an owned `Vec`, keeps the callers that only
+/// iterate from cloning the whole payload.
+pub fn require_array<'a>(args: &'a Value, key: &str) -> Result<&'a [Value], CallToolResult> {
+    args[key]
+        .as_array()
+        .map(|a| a.as_slice())
+        .ok_or_else(|| invalid_arg(key, "missing or not an array"))
+}
+
+/// Extract a required unsigned integer argument. Returns a structured
+/// `InvalidArgument` error result if missing, not a number, or negative /
+/// fractional — `serde_json`'s `as_u64` already rejects all three.
+pub fn require_u64(args: &Value, key: &str) -> Result<u64, CallToolResult> {
+    args[key]
+        .as_u64()
+        .ok_or_else(|| invalid_arg(key, "missing or not a non-negative integer"))
+}
+
 /// Extract a required path string and return it as a PathBuf, using
 /// `anyhow::Error`. Use this variant with `?` inside handlers that return
-/// `anyhow::Result`. The surrounding dispatch will stringify the error and
-/// surface it as `ToolErrorKind::HandlerError`.
+/// `anyhow::Result`.
+///
+/// The absence is carried as a typed [`crate::mcp::error::MissingArgument`] in
+/// the error chain, which
+/// [`crate::mcp::error::ToolErrorKind::from_anyhow`] downcasts back into the
+/// same `InvalidArgument` the `require_*` helpers return. Which of the two
+/// helpers a handler was written with is an accident of its author; the
+/// vocabulary a caller sees must not depend on it.
+///
+/// Only absence. A path that is present but leads nowhere stays whatever the
+/// tool's own attempt to use it produced.
 pub fn get_path(args: &Value, key: &str) -> anyhow::Result<std::path::PathBuf> {
-    let s = args[key]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Missing required argument: '{}'", key))?;
+    let s = args[key].as_str().ok_or_else(|| {
+        anyhow::Error::new(crate::mcp::error::MissingArgument {
+            key: key.to_string(),
+        })
+    })?;
     Ok(std::path::PathBuf::from(s))
+}
+
+/// How a zone must name `net_name` on this board, or the tool error to return.
+///
+/// The two board forms disagree about more than the id — see
+/// [`konnect_sexp::net::NetRef::zone_tokens`] — and a net a legacy board does
+/// not declare is refused here rather than written as id 0. Id 0 is the
+/// unconnected pseudo-net: a pour attached to it is electrically orphaned, and
+/// the tool used to report that as a success.
+pub(crate) fn zone_net_ref(
+    tree: &konnect_sexp::SexpNode,
+    net_name: &str,
+) -> Result<konnect_sexp::net::NetRef, CallToolResult> {
+    konnect_sexp::net::net_ref_for_write(tree, net_name).map_err(|why| {
+        CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "net_name".to_string(),
+                reason: why.to_string(),
+            },
+            format!("Cannot place a zone on '{net_name}': {why}"),
+        )
+    })
 }
 
 /// Project name used in symbol/sheet `(instances (project "..." ...))` entries:
@@ -491,6 +571,233 @@ pub fn snap_reporting(x: f64, y: f64) -> ((f64, f64), Option<serde_json::Value>)
     }
 }
 
+/// [`snap_reporting`], except that a point already sitting on a placed pin is
+/// left exactly where it is (P.6.8.9).
+///
+/// The grid snap exists to rescue a caller who derived a coordinate loosely
+/// (E6). A pin's own position needs no rescuing, and 7.6 % of them cannot
+/// survive one: measured over the KiCad 10 demo corpus, **3 670 of 48 068**
+/// placed pin endpoints do not sit on the 1.27 mm grid — a symbol placed
+/// off-grid (127 of 6 447 placements) or a pin whose length is not a grid
+/// multiple puts them there. Snapping such a point moves it up to 0.635 mm
+/// off the pin, and what gets written is a wire beside the pin, a junction
+/// beside the pin, or a no-connect that marks nothing — each reported as a
+/// success.
+///
+/// `pins` is the caller's already-computed [`all_pin_endpoints`]: every site
+/// that uses this either had that list in hand already or needs it for its own
+/// junction pass, so nothing here re-parses a sheet.
+///
+/// Tolerance 0.01, the same one `add_pin_midwire_junctions` and
+/// [`pin_outward_at`] compare points with.
+pub(crate) fn snap_unless_pin(
+    pins: &[(f64, f64)],
+    x: f64,
+    y: f64,
+) -> ((f64, f64), Option<serde_json::Value>) {
+    use konnect_sexp::geometry::points_coincident;
+    if pins
+        .iter()
+        .any(|(px, py)| points_coincident(*px, *py, x, y, 0.01))
+    {
+        return ((x, y), None);
+    }
+    snap_reporting(x, y)
+}
+
+/// Where a sheet sits in its project, as the `(instances …)` block needs it.
+///
+/// Both halves of that block belong to the **root** sheet, not to the file
+/// being written into: the project name is the one the `.kicad_pro` carries,
+/// and the path starts at the root's uuid. On a root sheet the two coincide,
+/// which is why deriving them from the file's own stem and uuid looked right
+/// for so long; on a child sheet they name a project and a path KiCad matches
+/// against nothing, and every symbol placed there reads as unannotated.
+pub struct SheetInstanceContext {
+    /// The `.kicad_pro`'s stem.
+    pub project_name: String,
+    /// One `"/<root-uuid>/<sheet-uuid>[/<sheet-uuid>…]"` per placement of this
+    /// sheet in the hierarchy. A sheet instantiated twice — KiCad's own
+    /// `complex_hierarchy` does exactly that with `ampli_ht.kicad_sch` — needs
+    /// an entry for each, or the symbol is annotated in one instance and
+    /// invisible in the other.
+    pub paths: Vec<String>,
+}
+
+/// Resolve `sch_path`'s place in its project, or `None` when it cannot be
+/// resolved and the caller must fall back to standalone behaviour.
+///
+/// `None` covers: a root sheet (it sits beside its own `.kicad_pro`), a
+/// schematic belonging to no project, a directory holding several projects, a
+/// root that cannot be read or carries no uuid, and a sheet that does not
+/// appear anywhere in that root's tree. Every one of those is a case where a
+/// guess would be worse than today's behaviour.
+///
+/// The walk is depth-bounded and tracks visited files, like every other
+/// hierarchy walk here: a sheet may reference a file that references it back.
+pub fn sheet_instance_context(sch_path: &std::path::Path) -> Option<SheetInstanceContext> {
+    use crate::tools::sch_export::{project_root_schematic, same_file};
+
+    // A file beside its own `.kicad_pro` is a root: today's derivation is
+    // already right for it, and `ensure_root_uuid` can repair a missing uuid,
+    // which this function deliberately does not do.
+    if sch_path.with_extension("kicad_pro").is_file() {
+        return None;
+    }
+    let dir = sch_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let root = project_root_schematic(dir)?;
+    if same_file(&root, sch_path) {
+        return None;
+    }
+    let project_name = root.file_stem()?.to_str()?.to_string();
+    let root_sch = konnect_schematic_editor::Schematic::load(&root).ok()?;
+    let root_uuid = root_sch.uuid.clone()?;
+
+    let mut paths = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    collect_sheet_paths(
+        &root,
+        sch_path,
+        &format!("/{root_uuid}"),
+        0,
+        &mut visited,
+        &mut paths,
+    );
+    if paths.is_empty() {
+        return None;
+    }
+    // A file reachable by several routes must be written in a stable order, or
+    // two identical calls produce two different files.
+    paths.sort();
+    paths.dedup();
+    Some(SheetInstanceContext {
+        project_name,
+        paths,
+    })
+}
+
+/// Append, to `out`, the instance path of every placement of `target` beneath
+/// `sheet` — whose own path is `prefix`.
+fn collect_sheet_paths(
+    sheet: &std::path::Path,
+    target: &std::path::Path,
+    prefix: &str,
+    depth: usize,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+    out: &mut Vec<String>,
+) {
+    use crate::tools::sch_export::{canonical, same_file};
+
+    if depth > crate::tools::sch_hierarchy::MAX_HIERARCHY_DEPTH {
+        return;
+    }
+    if !visited.insert(canonical(sheet)) {
+        return;
+    }
+    let Ok(sch) = konnect_schematic_editor::Schematic::load(sheet) else {
+        return;
+    };
+    let dir = sheet.parent().unwrap_or_else(|| std::path::Path::new("."));
+    for child_sheet in sch.sheets.iter() {
+        let child = dir.join(child_sheet.file());
+        let child_path = format!("{prefix}/{}", child_sheet.uuid);
+        if same_file(&child, target) {
+            out.push(child_path.clone());
+        }
+        // Not `else`: a sheet can be both a placement of the target and a
+        // parent of another placement of it further down.
+        collect_sheet_paths(&child, target, &child_path, depth + 1, visited, out);
+    }
+    // A file reached through one branch may sit under another as well, so it
+    // must not stay marked once this branch is done.
+    visited.remove(&canonical(sheet));
+}
+
+/// Every file reachable from `root` by following `(sheet …)` references, plus
+/// every reference this walk could not follow.
+///
+/// The third walker of this repo's schematic hierarchy, after
+/// `sch_hierarchy::build_hierarchy_node` and `collect_sheet_paths` above —
+/// this one exists so `design_review`'s audits can be run once per reachable
+/// file instead of once on whatever single path a caller happened to pass, and
+/// so `sch_export::sheet_tree_contains` can ask the same question ("is this
+/// file in that tree?") without its own copy of the walk.
+pub(crate) struct SheetWalk {
+    /// Root first, then every child sheet in the order this walk first found
+    /// it. No duplicates, even for a sheet instantiated more than once.
+    pub sheets: Vec<std::path::PathBuf>,
+    /// A `(sheet …)` reference this walk could not follow, with why: the file
+    /// is missing, unreadable, or failed to parse. The path is the one the
+    /// referencing sheet named, not a resolved one — there is nothing to
+    /// resolve it against.
+    pub unloadable: Vec<(std::path::PathBuf, String)>,
+}
+
+/// Walk the schematic hierarchy rooted at `root`. See [`SheetWalk`].
+pub(crate) fn reachable_sheets(root: &std::path::Path) -> SheetWalk {
+    let mut sheets = Vec::new();
+    let mut unloadable = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    walk_reachable_sheets(root, 0, &mut visited, &mut sheets, &mut unloadable);
+    SheetWalk { sheets, unloadable }
+}
+
+fn walk_reachable_sheets(
+    file: &std::path::Path,
+    depth: usize,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+    sheets: &mut Vec<std::path::PathBuf>,
+    unloadable: &mut Vec<(std::path::PathBuf, String)>,
+) {
+    use crate::tools::sch_export::canonical;
+
+    if depth > crate::tools::sch_hierarchy::MAX_HIERARCHY_DEPTH {
+        return;
+    }
+    if !visited.insert(canonical(file)) {
+        return;
+    }
+    match konnect_schematic_editor::Schematic::load(file) {
+        Ok(sch) => {
+            sheets.push(file.to_path_buf());
+            let dir = file.parent().unwrap_or_else(|| std::path::Path::new("."));
+            for child_sheet in sch.sheets.iter() {
+                let child = dir.join(child_sheet.file());
+                walk_reachable_sheets(&child, depth + 1, visited, sheets, unloadable);
+            }
+        }
+        Err(e) => unloadable.push((file.to_path_buf(), e.to_string())),
+    }
+    // A file reached through one branch may sit under another as well, so it
+    // must not stay marked once this branch is done — same reasoning as
+    // `collect_sheet_paths`.
+    visited.remove(&canonical(file));
+}
+
+/// The project name and instance paths a symbol placed in `sch_path` must be
+/// written with.
+///
+/// One call site's worth of the answer to "where does this sheet live": it
+/// resolves the sheet's real place in its project via
+/// [`sheet_instance_context`], and falls back to the standalone derivation —
+/// this file's own stem and uuid — when it cannot be resolved. `sch` is only
+/// touched on that fallback, where [`ensure_root_uuid`] may assign a uuid to a
+/// file that predates Konnect writing them.
+pub fn instance_targets(
+    sch_path: &std::path::Path,
+    sch: &mut konnect_schematic_editor::Schematic,
+) -> (String, Vec<String>) {
+    match sheet_instance_context(sch_path) {
+        Some(ctx) => (ctx.project_name, ctx.paths),
+        None => {
+            let root_uuid = ensure_root_uuid(sch);
+            (project_name_for(sch_path), vec![format!("/{root_uuid}")])
+        }
+    }
+}
+
 /// Root UUID of a loaded schematic, assigning a fresh one when the file
 /// predates Konnect writing root UUIDs — the file is repaired on its next
 /// overwrite. Instance paths are built as "/<root-uuid>[/<sheet-uuid>…]".
@@ -505,6 +812,58 @@ pub fn ensure_root_uuid(sch: &mut konnect_schematic_editor::Schematic) -> String
     }
 }
 
+/// One placed pin: the instance it belongs to, where its connection point
+/// actually lands on the sheet, and the placement origin (the instance's own
+/// `(at …)`) that connection point was transformed from.
+///
+/// The single definition of "the pins this schematic really has": unit-aware
+/// (a multi-unit symbol declares different pins per unit, P.6.8.1) and
+/// transformed by the placement, so nothing downstream re-derives either.
+/// Moved here from `sch_analysis` (D136, P.6.8.5): `all_pin_endpoints` below
+/// was the same "for each instance, for each pin of its unit" loop as
+/// `placed_pins`, kept as a second copy only because they started in
+/// different files.
+pub(crate) struct PlacedPin {
+    pub reference: String,
+    pub number: String,
+    pub name: String,
+    pub x: f64,
+    pub y: f64,
+    /// The instance's own placement point — not the pin's — which is what
+    /// [`pin_outward_at`] measures the pin's direction against.
+    pub origin_x: f64,
+    pub origin_y: f64,
+}
+
+pub(crate) fn placed_pins(tree: &konnect_sexp::SexpNode) -> Vec<PlacedPin> {
+    use konnect_sexp::schematic::{
+        extract_lib_pins_for_unit, extract_symbol_instances, find_lib_symbol, pin_endpoint,
+    };
+    let lib_syms = tree
+        .find("lib_symbols")
+        .map(|node| node.find_all("symbol"))
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for instance in extract_symbol_instances(tree) {
+        let Some(lib_sym) = find_lib_symbol(&lib_syms, &instance) else {
+            continue;
+        };
+        for pin in extract_lib_pins_for_unit(lib_sym, instance.unit) {
+            let (x, y) = pin_endpoint(&pin, instance.pin_transform());
+            out.push(PlacedPin {
+                reference: instance.reference.clone(),
+                number: pin.number.clone(),
+                name: pin.name.clone(),
+                x,
+                y,
+                origin_x: instance.x,
+                origin_y: instance.y,
+            });
+        }
+    }
+    out
+}
+
 /// All symbol pin connection points in a parsed schematic tree.
 ///
 /// Unit-aware: a multi-unit library symbol superimposes every unit's pins on
@@ -512,26 +871,46 @@ pub fn ensure_root_uuid(sch: &mut konnect_schematic_editor::Schematic) -> String
 /// These coordinates drive junction insertion, and a dot dropped on a phantom
 /// pin where two wires cross would short them.
 pub(crate) fn all_pin_endpoints(tree: &konnect_sexp::SexpNode) -> Vec<(f64, f64)> {
-    use konnect_sexp::schematic::{
-        extract_lib_pins_for_unit, extract_symbol_instances, pin_endpoint,
-    };
-    let lib_syms = tree
-        .find("lib_symbols")
-        .map(|n| n.find_all("symbol"))
-        .unwrap_or_default();
-    let mut pts = Vec::new();
-    for inst in extract_symbol_instances(tree) {
-        if let Some(sym) = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        {
-            let t = inst.pin_transform();
-            for pin in extract_lib_pins_for_unit(sym, inst.unit) {
-                pts.push(pin_endpoint(&pin, t));
-            }
+    placed_pins(tree).into_iter().map(|p| (p.x, p.y)).collect()
+}
+
+/// The direction that leads a stub off the pin placed at `(x, y)` without
+/// crossing its symbol's body: the dominant axis away from the instance's
+/// own placement origin (`dx = pin.x - origin.x`, `dy = pin.y - origin.y`;
+/// `|dx| >= |dy|` picks `"left"`/`"right"` by the sign of `dx`, otherwise
+/// `"up"`/`"down"` by the sign of `dy`).
+///
+/// This needs no rotation/mirror bookkeeping of its own: `placed_pins`
+/// already transformed both the pin and the origin into sheet space, so the
+/// vector between them already points outward in whatever orientation the
+/// instance was placed in. `None` when no placed pin sits at `(x, y)` — the
+/// caller falls back to its own default rather than guessing (P.6.8.5).
+///
+/// Tolerance matches [`add_pin_midwire_junctions`]'s `0.01`, the value
+/// already used to compare points in this module.
+pub(crate) fn pin_outward_at(
+    tree: &konnect_sexp::SexpNode,
+    x: f64,
+    y: f64,
+) -> Option<&'static str> {
+    use konnect_sexp::geometry::points_coincident;
+    let tol = 0.01;
+    let pin = placed_pins(tree)
+        .into_iter()
+        .find(|p| points_coincident(p.x, p.y, x, y, tol))?;
+    let dx = pin.x - pin.origin_x;
+    let dy = pin.y - pin.origin_y;
+    Some(if dx.abs() >= dy.abs() {
+        if dx < 0.0 {
+            "left"
+        } else {
+            "right"
         }
-    }
-    pts
+    } else if dy < 0.0 {
+        "up"
+    } else {
+        "down"
+    })
 }
 
 /// Add junction dots for pins of `reference` that land mid-segment on a wire.
@@ -545,7 +924,7 @@ pub(crate) fn add_pin_midwire_junctions(
     use konnect_sexp::geometry::{point_on_segment, points_coincident};
     use konnect_sexp::schematic::{
         extract_junction_points, extract_lib_pins_for_unit, extract_symbol_instances,
-        extract_wires, pin_endpoint, read_schematic,
+        extract_wires, find_lib_symbol, pin_endpoint, read_schematic,
     };
     let tol = 0.01;
     let (_, tree) = read_schematic(sch_path)?;
@@ -563,10 +942,7 @@ pub(crate) fn add_pin_midwire_junctions(
         .iter()
         .filter(|i| i.reference == reference)
     {
-        let Some(sym) = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        else {
+        let Some(sym) = find_lib_symbol(&lib_syms, inst) else {
             continue;
         };
         let t = inst.pin_transform();
@@ -596,6 +972,146 @@ pub(crate) fn add_pin_midwire_junctions(
         sch.overwrite()?;
     }
     Ok(to_add)
+}
+
+/// Round a computed millimetre coordinate to six decimals (D125).
+///
+/// Six decimals, measured: across 126 933 `(at ...)` coordinates in the KiCad
+/// 10 demo schematics, every one but a single value carries at most **four**
+/// decimals. The exception, `59.209102362204725`, is an inch conversion rather
+/// than float noise, and six decimals moves it by 0.4 nm - under KiCAD's own
+/// 1 nm internal resolution. Addition noise, meanwhile, shows up around the
+/// thirteenth decimal. Six separates the two with room on both sides.
+///
+/// Anything that *computes* a coordinate goes through here: a bulk move adds a
+/// delta, a placed field runs the library anchor through a rotation. Neither
+/// may leak binary-float noise into a file the caller never asked to change --
+/// a symbol's own anchor is protected by `snap_point`, but a property anchor
+/// is not, and `139.7 -> 144.78` moves a field at `241.3` to
+/// `246.38000000000002` and one at `3.556` to `8.636000000000013`. Writing
+/// that is the same class of damage P.6.9.4 removed.
+pub(crate) fn mm(value: f64) -> f64 {
+    (value * 1e6).round() / 1e6
+}
+
+/// Push the four properties eeschema writes onto a freshly placed symbol --
+/// `Reference`, `Value`, `Footprint`, `Datasheet` -- where the **library
+/// symbol itself** says they belong (P.6.8.8).
+///
+/// The anchor comes from the embedded `lib_symbols` entry and is transformed
+/// exactly like a pin: `transform_pin` flips the library's Y-up space, applies
+/// the placement rotation and mirror, and translates to the instance origin.
+/// The text angle is the library's own, not the placement's.
+///
+/// Measured over the KiCad 10 demo corpus, 12 894 placed `Reference`/`Value`
+/// fields, against the position each file actually carries:
+///
+/// | rule                                        | reproduces |
+/// |---------------------------------------------|------------|
+/// | fixed `y -/+ 3.81`, angle 0 (what this did)  | 7.5 %      |
+/// | library anchor **transformed** (this)        | 41.4 %     |
+/// | library anchor translated, rotation ignored  | 24.2 %     |
+///
+/// The remainder is fields a human dragged, which no rule reproduces and none
+/// should. What decides it is the rotated buckets, where the old rule is
+/// essentially never right (10 of 2 440 at 90 degrees) and rotating the anchor
+/// beats not rotating it more than ten to one.
+///
+/// `sch` must already carry the library definition -- `ensure_lib_symbol`
+/// first -- or every field falls back to the old fixed offsets, which is also
+/// what happens for a symbol whose library entry declares no such field.
+pub(crate) fn push_placed_fields(
+    sch: &konnect_schematic_editor::Schematic,
+    sym: &mut konnect_schematic_editor::Symbol,
+    reference: &str,
+    value: &str,
+    hide_reference: bool,
+) {
+    use konnect_sexp::geometry::{transform_pin, PinTransform};
+
+    let lib_key = sym.lib_symbol_name().to_string();
+    let (x, y) = (sym.at.x, sym.at.y);
+    let mirror = sym.mirror.clone().unwrap_or_default();
+    let transform = PinTransform {
+        comp_x: x,
+        comp_y: y,
+        rotation_deg: sym.at.rotation.unwrap_or(0.0),
+        mirror_x: mirror == "x" || mirror == "xy",
+        mirror_y: mirror == "y" || mirror == "xy",
+    };
+
+    // Reference above the component, Value below, Footprint/Datasheet on the
+    // origin: the fallback, used when the library entry has nothing to say.
+    for (name, value, fallback_dy, hide) in [
+        ("Reference", reference, -3.81, hide_reference),
+        ("Value", value, 3.81, false),
+        ("Footprint", "", 0.0, true),
+        ("Datasheet", "", 0.0, true),
+    ] {
+        let prop = match konnect_schematic_editor::library::field_anchor(sch, &lib_key, name) {
+            Some(anchor) => {
+                let (px, py) = transform_pin(anchor.x, anchor.y, transform);
+                // `hide` unions with the library's: a power symbol's library
+                // entry hides its own Reference, and the caller hides the
+                // Reference of anything designated `#PWR` whether or not the
+                // library thought to.
+                anchored_property(
+                    name,
+                    value,
+                    mm(px),
+                    mm(py),
+                    anchor.angle,
+                    hide || anchor.hide,
+                    anchor.effects,
+                )
+            }
+            None => positioned_property(name, value, x, y + fallback_dy, 0.0, hide),
+        };
+        sym.properties.push(prop);
+    }
+}
+
+/// A property written at an already-transformed point, carrying the library's
+/// own `(effects ...)` -- font size and justification both -- rather than the
+/// 1.27mm default [`positioned_property`] invents.
+///
+/// Copying the justification is not decoration: measured on the demo corpus,
+/// the fields eeschema placed itself carry the library's justification
+/// verbatim in the overwhelming majority, and a `left`-justified reference
+/// written without it shifts by half its own width.
+fn anchored_property(
+    name: &str,
+    value: &str,
+    x: f64,
+    y: f64,
+    angle: f64,
+    hide: bool,
+    effects: Option<konnect_schematic_editor::sexp::SexpNode>,
+) -> konnect_schematic_editor::Property {
+    use konnect_schematic_editor::sexp::{atom, SexpNode};
+    use konnect_schematic_editor::types::fmt_f64;
+
+    let mut prop = konnect_schematic_editor::Property::new(name, value);
+    prop.sub_nodes.push(SexpNode::List(vec![
+        atom("at"),
+        atom(fmt_f64(x)),
+        atom(fmt_f64(y)),
+        atom(fmt_f64(angle)),
+    ]));
+    if hide {
+        prop.sub_nodes
+            .push(SexpNode::List(vec![atom("hide"), atom("yes")]));
+    }
+    prop.sub_nodes.push(effects.unwrap_or_else(|| {
+        SexpNode::List(vec![
+            atom("effects"),
+            SexpNode::List(vec![
+                atom("font"),
+                SexpNode::List(vec![atom("size"), atom("1.27"), atom("1.27")]),
+            ]),
+        ])
+    }));
+    prop
 }
 
 /// A symbol-instance property positioned in absolute sheet coordinates, with
@@ -649,8 +1165,32 @@ pub(crate) fn positioned_property(
 /// a hand-authored library sets) but never a `lib_id`. Only placed instances
 /// have one, so that's the discriminator.
 pub fn find_symbol_instance_block(content: &str, reference: &str) -> Option<(usize, usize)> {
+    find_all_symbol_instance_blocks(content, reference)
+        .into_iter()
+        .next()
+}
+
+/// Every placed `(symbol …)` block whose Reference property is `reference`,
+/// in document order.
+///
+/// A multi-unit symbol (e.g. a quad op-amp) is written as one such block per
+/// unit, all sharing the same designator and each carrying its own uuid and
+/// its own copy of `Value`/`Footprint`/`Datasheet` (P.6.8.1 fixture
+/// `multiunit_lm2904.kicad_sch`). Measured on that fixture: editing `Value`
+/// on the first unit's block alone and exporting the netlist reports the
+/// edited value, but editing the *second* unit's block alone reports the
+/// stale one — KiCad's netlist export reads only the first block. A tool
+/// that also reads or writes only the first block therefore produces a
+/// correct netlist by accident while leaving a file that contradicts
+/// itself: every unit past the first still shows the old value in eeschema,
+/// and any by-unit read (this crate's included) returns it. This is the
+/// shared block-finder `find_symbol_instance_block` used to guess at with a
+/// single hit; the two must not diverge on what "an instance block" means
+/// (D136), so that one is now expressed in terms of this one.
+pub fn find_all_symbol_instance_blocks(content: &str, reference: &str) -> Vec<(usize, usize)> {
     let ref_search = format!(r#"(property "Reference" "{reference}""#);
     let mut from = 0usize;
+    let mut blocks = Vec::new();
 
     while let Some(rel) = content[from..].find(&ref_search) {
         let ref_pos = from + rel;
@@ -658,12 +1198,379 @@ pub fn find_symbol_instance_block(content: &str, reference: &str) -> Option<(usi
             konnect_sexp::writer::find_enclosing_block(content, "symbol", ref_pos)
         {
             if content[start..end].contains("(lib_id ") {
-                return Some((start, end));
+                blocks.push((start, end));
             }
         }
         from = ref_pos + ref_search.len();
     }
+    blocks
+}
+
+/// The `(uuid "…")` of one such block, by plain text search.
+///
+/// Every message that has to name the units of a multi-unit symbol reads it
+/// the same way — the single-symbol refusal in `sch_components` and the
+/// per-entry one in `sch_batch` — and a second copy of this search is a second
+/// thing to drift (D136). Text rather than an [`ItemId`] because these
+/// messages are written *before* an edit, about blocks located by offset.
+pub(crate) fn symbol_block_uuid(block: &str) -> Option<String> {
+    const NEEDLE: &str = r#"(uuid ""#;
+    let start = block.find(NEEDLE)? + NEEDLE.len();
+    let end = start + block[start..].find('"')?;
+    Some(block[start..end].to_string())
+}
+
+// ─── Symbol property scanning (string-aware) ─────────────────────────────────
+//
+// Shared by `sch_components` (single-symbol property edits) and `sch_batch`
+// (bulk move, which must drag each property's own `(at …)` along with the
+// symbol). A naive `find("(property \"")` is fooled by a property *value*
+// that happens to contain that literal text; these walk the tree by nesting
+// depth and quote/escape state instead, the same technique
+// `konnect_sexp::writer::find_direct_child_blocks` already uses for top-level
+// schematic items.
+
+/// Property keys that carry an invariant a generic "add a custom property"
+/// call would break.
+///
+/// `Reference` is the only one: `edit_schematic_component`'s
+/// `new_reference` argument routes a `Reference` change through
+/// `sch_components::update_instance_reference`, which repoints the symbol's
+/// `(instances …)` entries — the designator KiCAD's own netlist export
+/// actually reads — to match. Writing `Reference` through this generic path
+/// instead would leave `(instances …)` pointing at the stale designator, so
+/// it is refused. `Value` / `Footprint` / `Datasheet` carry no such
+/// invariant — they are ordinary properties like any custom key, and
+/// `add_component_annotation` setting one is exactly how
+/// `the_bom_audit_finds_missing_footprints_and_lets_go_when_they_are_assigned`
+/// (design_review.rs) already uses it — so they are not in this list.
+pub(crate) const RESERVED_PROPERTY_KEYS: &[&str] = &["Reference"];
+
+/// Direct-child `(property …)` blocks of the symbol at `sym_block` (which
+/// must itself start with `(symbol`), by nesting depth rather than text
+/// search.
+pub(crate) fn symbol_property_blocks(sym_block: &str) -> Vec<(usize, usize)> {
+    konnect_sexp::writer::find_direct_child_blocks(sym_block, "symbol")
+        .into_iter()
+        .filter(|&(s, e)| sym_block[s..e].starts_with("(property "))
+        .collect()
+}
+
+/// Byte range (relative to `s`), exclusive of the surrounding quotes, of the
+/// first quoted string found at or after `from`. Honors backslash escapes,
+/// so a value like `"a \"quoted\" word"` is not cut short at the escaped
+/// quote.
+pub(crate) fn quoted_string_after(s: &str, from: usize) -> Option<(usize, usize)> {
+    let rel_open = s.get(from..)?.find('"')?;
+    let open = from + rel_open;
+    let bytes = s.as_bytes();
+    let mut i = open + 1;
+    let mut escape = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if escape {
+            escape = false;
+        } else if b == b'\\' {
+            escape = true;
+        } else if b == b'"' {
+            return Some((open + 1, i));
+        }
+        i += 1;
+    }
     None
+}
+
+/// An existing `(property "<key>" "<value>" …)` block located inside a
+/// symbol, with byte ranges relative to the same `content` the symbol was
+/// found in.
+pub(crate) struct SymbolProperty {
+    pub value_start: usize,
+    pub value_end: usize,
+}
+
+/// The direct-child property of the symbol at `content[sym_start..sym_end]`
+/// whose key is exactly `field`, if it has one. String-aware: a property
+/// whose *value* contains the literal text `(property "` is not mistaken for
+/// a second property, because candidates come from
+/// [`symbol_property_blocks`] (depth-based) and the key comparison is on the
+/// quote/escape-aware extracted text, not a substring match.
+pub(crate) fn find_symbol_property(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+    field: &str,
+) -> Option<SymbolProperty> {
+    let sym_block = &content[sym_start..sym_end];
+    for (p_start, p_end) in symbol_property_blocks(sym_block) {
+        let block = &sym_block[p_start..p_end];
+        let (key_s, key_e) = quoted_string_after(block, 0)?;
+        if &block[key_s..key_e] != field {
+            continue;
+        }
+        let (val_s, val_e) = quoted_string_after(block, key_e + 1)?;
+        return Some(SymbolProperty {
+            value_start: sym_start + p_start + val_s,
+            value_end: sym_start + p_start + val_e,
+        });
+    }
+    None
+}
+
+/// Byte range (in `content`) of the coordinate text inside each `(at x y
+/// rot)` that is a direct child of a `(property …)` under the symbol at
+/// `content[sym_start..sym_end]` — one entry per property that has one
+/// (every property eeschema or this crate writes does).
+///
+/// For bulk-move: a symbol's field text carries its own absolute `(at …)`,
+/// so moving only the symbol's own anchor leaves every field's text sitting
+/// where the symbol used to be.
+pub(crate) fn symbol_property_at_spans(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+) -> Vec<(usize, usize)> {
+    let sym_block = &content[sym_start..sym_end];
+    let mut out = Vec::new();
+    for (p_start, p_end) in symbol_property_blocks(sym_block) {
+        let prop_block = &sym_block[p_start..p_end];
+        for (a_start, a_end) in
+            konnect_sexp::writer::find_direct_child_blocks(prop_block, "property")
+        {
+            let at_block = &prop_block[a_start..a_end];
+            if let Some(rest) = at_block.strip_prefix("(at ") {
+                let coord_len = rest.len().saturating_sub(1); // drop the closing ')'
+                let coord_abs_start = sym_start + p_start + a_start + 4;
+                out.push((coord_abs_start, coord_abs_start + coord_len));
+            }
+        }
+    }
+    out
+}
+
+/// Where to insert a property the symbol at `content[sym_start..sym_end]`
+/// does not carry yet.
+pub(crate) struct SymbolInsertionSite {
+    /// Byte offset in `content` to insert the new property's text at.
+    pub insert_at: usize,
+    /// Indentation for the new `(property …)` line, read off an existing
+    /// direct child of the symbol so it matches the file's own style: tabs
+    /// on a file eeschema saved, this crate's own two-space indent on one
+    /// this crate wrote (P.6.9.4).
+    pub indent: String,
+    /// Indentation for the property's own children (`(at …)`, `(effects
+    /// …)`), one nesting level deeper than `indent`.
+    pub child_indent: String,
+    /// The symbol's own position — `(x, y)` from its own `(at x y rot)`,
+    /// the anchor a new hidden property should use.
+    ///
+    /// Measured on `CM5.kicad_sch` (KiCad 10 demos): a hidden custom
+    /// property nothing else has repositioned (`Description` on the `GND`
+    /// power symbol at `(at 139.7 241.3 0)`, and again on a *rotated*
+    /// connector symbol at `(at 119.38 238.76 270)`) is written at
+    /// `(at <symbol-x> <symbol-y> 0)` — the symbol's own (x, y), rotation
+    /// always 0 regardless of the symbol's own rotation. The origin
+    /// `(at 0 0 0)` this code used to write unconditionally only matches
+    /// that by coincidence when a symbol happens to sit at the origin.
+    pub anchor: (f64, f64),
+}
+
+/// Compute [`SymbolInsertionSite`] for the symbol at
+/// `content[sym_start..sym_end]`. `None` only for a symbol block malformed
+/// enough to carry no `(at …)` of its own, which should not occur for an
+/// already-placed symbol.
+pub(crate) fn symbol_insertion_site(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+) -> Option<SymbolInsertionSite> {
+    let sym_block = &content[sym_start..sym_end];
+    let children = konnect_sexp::writer::find_direct_child_blocks(sym_block, "symbol");
+
+    // The symbol's own `(at x y rot)` is a direct child that comes before any
+    // `(property …)`, so the first one found is it, not a property's.
+    let (at_s, at_e) = children
+        .iter()
+        .find(|&&(s, e)| sym_block[s..e].starts_with("(at "))
+        .copied()?;
+    let at_text = &sym_block[at_s + 4..at_e.saturating_sub(1)];
+    let mut parts = at_text.split_whitespace();
+    let x: f64 = parts.next()?.parse().ok()?;
+    let y: f64 = parts.next()?.parse().ok()?;
+
+    let indent_of = |abs_pos: usize| -> String {
+        let line_start = content[..abs_pos].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        content[line_start..abs_pos]
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect()
+    };
+    // Indentation of an existing direct child, so the inserted line matches
+    // this file's own style; a symbol block with no children to measure
+    // (should not happen for a placed symbol) falls back to a tab, the shape
+    // eeschema itself writes.
+    let indent = children
+        .last()
+        .map(|&(s, _)| indent_of(sym_start + s))
+        .unwrap_or_else(|| "\t".to_string());
+    // One nesting level deeper, measured from an existing property's own
+    // `(at …)` line if there is one; otherwise `indent` plus one more unit of
+    // whatever it is already made of.
+    let child_indent = symbol_property_blocks(sym_block)
+        .first()
+        .and_then(|&(p_s, p_e)| {
+            let prop_block = &sym_block[p_s..p_e];
+            konnect_sexp::writer::find_direct_child_blocks(prop_block, "property")
+                .first()
+                .map(|&(c_s, _)| indent_of(sym_start + p_s + c_s))
+        })
+        .unwrap_or_else(|| {
+            let unit = if indent.starts_with('\t') { "\t" } else { "  " };
+            format!("{indent}{unit}")
+        });
+
+    let insert_at = sym_block
+        .find("(instances")
+        .or_else(|| sym_block.rfind(')'))
+        .map(|rel| sym_start + rel)?;
+
+    Some(SymbolInsertionSite {
+        insert_at,
+        indent,
+        child_indent,
+        anchor: (x, y),
+    })
+}
+
+/// Why [`set_symbol_property`] could not apply a change.
+#[derive(Debug)]
+pub(crate) enum SetPropertyError {
+    /// `field` is in the caller's reject-list (typically
+    /// [`RESERVED_PROPERTY_KEYS`]).
+    Reserved(String),
+    /// The symbol block has no `(at …)` of its own to insert a new property
+    /// relative to — too malformed to edit safely.
+    Malformed,
+}
+
+impl std::fmt::Display for SetPropertyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SetPropertyError::Reserved(field) => write!(
+                f,
+                "'{field}' is a reserved property; use edit_schematic_component to change it"
+            ),
+            SetPropertyError::Malformed => {
+                write!(f, "symbol block is too malformed to add a property to")
+            }
+        }
+    }
+}
+
+/// Whether [`set_symbol_property`] updated a property the symbol already had
+/// or inserted a new one.
+#[derive(Debug)]
+pub(crate) enum SetPropertyOutcome {
+    Updated,
+    Inserted,
+}
+
+/// Set property `field` on the symbol at `content[sym_start..sym_end]` to
+/// `value`: update it in place if the symbol already carries one, otherwise
+/// insert a new hidden one at the symbol's own position ([`symbol_insertion_site`]).
+///
+/// `reject` is checked first and unconditionally — including against a
+/// property the symbol already has — so a caller that must not touch a given
+/// key (e.g. `Reference`, whose designator lives in `(instances …)` too and
+/// needs its own update path) cannot do so through this generic entry point
+/// at all.
+pub(crate) fn set_symbol_property(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+    field: &str,
+    value: &str,
+    reject: &[&str],
+) -> Result<(String, SetPropertyOutcome), SetPropertyError> {
+    if reject.contains(&field) {
+        return Err(SetPropertyError::Reserved(field.to_string()));
+    }
+    if let Some(prop) = find_symbol_property(content, sym_start, sym_end, field) {
+        let updated = format!(
+            "{}{}{}",
+            &content[..prop.value_start],
+            value,
+            &content[prop.value_end..]
+        );
+        return Ok((updated, SetPropertyOutcome::Updated));
+    }
+    let site =
+        symbol_insertion_site(content, sym_start, sym_end).ok_or(SetPropertyError::Malformed)?;
+    let (ax, ay) = site.anchor;
+    let indent = &site.indent;
+    let child = &site.child_indent;
+    let property = format!(
+        "{indent}(property \"{field}\" \"{value}\"\n\
+         {child}(at {ax} {ay} 0)\n\
+         {child}(effects (font (size 1.27 1.27)) (hide yes))\n\
+         {indent})\n\
+         {indent}"
+    );
+    let updated = format!(
+        "{}{}{}",
+        &content[..site.insert_at],
+        property,
+        &content[site.insert_at..]
+    );
+    Ok((updated, SetPropertyOutcome::Inserted))
+}
+
+/// [`set_symbol_property`], applied to every unit of `reference` rather than
+/// just the block a plain search happens to land on first.
+///
+/// `Value` / `Footprint` / `Datasheet` and any custom field are properties of
+/// the *component*, not of one unit's placement — KiCad's own editor keeps
+/// them identical across every unit of a multi-unit symbol. Writing only the
+/// first block, as `find_symbol_instance_block` alone would, is the
+/// "accidentally correct netlist, self-contradicting file" defect documented
+/// on [`find_all_symbol_instance_blocks`]; this is how the reference-addressed
+/// edit paths (`edit_schematic_component`, `batch_edit`,
+/// `add_component_annotation`, `replace_component`'s `lib_id`) avoid it.
+///
+/// Edits are applied in descending start-offset order: rewriting a later
+/// block only shifts bytes after its own start, which never reaches an
+/// earlier block still waiting its turn, so every block's offset from the
+/// initial scan stays valid when its edit is finally applied — the same
+/// reasoning `handle_batch_edit` already relies on by re-searching after
+/// every write instead.
+///
+/// The returned outcome is the first unit's ([`SetPropertyOutcome::Inserted`]
+/// if the property was absent there, `Updated` otherwise) — what a caller
+/// reporting "added" vs. a plain change means by "the property".
+pub(crate) fn set_symbol_property_on_all_units(
+    content: &str,
+    reference: &str,
+    field: &str,
+    value: &str,
+    reject: &[&str],
+) -> Result<(String, SetPropertyOutcome), SetPropertyError> {
+    let mut blocks = find_all_symbol_instance_blocks(content, reference);
+    blocks.sort_by_key(|b| std::cmp::Reverse(b.0));
+
+    let mut new_content = content.to_string();
+    let mut outcomes: Vec<(usize, SetPropertyOutcome)> = Vec::new();
+    for (start, end) in blocks {
+        let (updated, outcome) =
+            set_symbol_property(&new_content, start, end, field, value, reject)?;
+        new_content = updated;
+        outcomes.push((start, outcome));
+    }
+    outcomes.sort_by_key(|(start, _)| *start);
+    let outcome = outcomes
+        .into_iter()
+        .next()
+        .map(|(_, o)| o)
+        .unwrap_or(SetPropertyOutcome::Updated);
+    Ok((new_content, outcome))
 }
 
 /// `(start, end, kind)` of a top-level schematic item's own block, resolved
@@ -1141,6 +2048,122 @@ mod symbol_block_tests {
 }
 
 #[cfg(test)]
+mod symbol_property_tests {
+    use super::*;
+
+    /// A placed instance, tab-indented like eeschema writes one (P.6.9.4),
+    /// with a `Note` property whose *value* contains the literal text
+    /// `(property "Sku" "` — the exact pattern a naive `str::find` for
+    /// `(property "Sku" "` would be fooled by — quoted with the escaped-quote
+    /// shape KiCad itself uses (measured on `CM5.kicad_sch`'s `Description`
+    /// property, which carries an escaped `"GND"` the same way).
+    const TAB_INDENTED: &str = "(kicad_sch\n\t(symbol\n\t\t(lib_id \"Device:R\")\n\t\t(at 100 80 0)\n\t\t(uuid \"u1\")\n\t\t(property \"Reference\" \"R1\"\n\t\t\t(at 102 78 0)\n\t\t\t(effects (font (size 1.27 1.27)))\n\t\t)\n\t\t(property \"Value\" \"10k\"\n\t\t\t(at 102 82 0)\n\t\t\t(effects (font (size 1.27 1.27)))\n\t\t)\n\t\t(property \"Note\" \"has (property \\\"Sku\\\" \\\"nested\"\n\t\t\t(at 100 80 0)\n\t\t\t(hide yes)\n\t\t\t(effects (font (size 1.27 1.27)))\n\t\t)\n\t\t(instances\n\t\t\t(project \"p\" (path \"/root\" (reference \"R1\") (unit 1)))\n\t\t)\n\t)\n)\n";
+
+    const SPACE_INDENTED: &str = "(kicad_sch\n  (symbol\n    (lib_id \"Device:R\")\n    (at 100 80 0)\n    (uuid \"u1\")\n    (property \"Reference\" \"R1\"\n      (at 102 78 0)\n      (effects (font (size 1.27 1.27)))\n    )\n    (property \"Value\" \"10k\"\n      (at 102 82 0)\n      (effects (font (size 1.27 1.27)))\n    )\n    (instances\n      (project \"p\" (path \"/root\" (reference \"R1\") (unit 1)))\n    )\n  )\n)\n";
+
+    fn sym_range(content: &str) -> (usize, usize) {
+        find_symbol_instance_block(content, "R1").expect("R1 block")
+    }
+
+    #[test]
+    fn find_symbol_property_is_not_derailed_by_a_lookalike_value() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        // Before the fix, a naive `find("(property \"Sku\" \"")` would match
+        // inside `Note`'s value and report a phantom `Sku` property.
+        assert!(
+            find_symbol_property(TAB_INDENTED, start, end, "Sku").is_none(),
+            "the lookalike text inside Note's value must not be found as a real property"
+        );
+        // The real property must still be found correctly despite the decoy.
+        let value = find_symbol_property(TAB_INDENTED, start, end, "Value").expect("Value");
+        assert_eq!(&TAB_INDENTED[value.value_start..value.value_end], "10k");
+    }
+
+    #[test]
+    fn quoted_string_after_honors_escaped_quotes() {
+        let s = r#""a \"quoted\" word""#;
+        let (start, end) = quoted_string_after(s, 0).expect("span");
+        assert_eq!(&s[start..end], r#"a \"quoted\" word"#);
+    }
+
+    #[test]
+    fn set_symbol_property_updates_existing_value_in_place() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let (updated, outcome) =
+            set_symbol_property(TAB_INDENTED, start, end, "Value", "4k7", &[]).expect("update");
+        assert!(matches!(outcome, SetPropertyOutcome::Updated));
+        assert_eq!(
+            updated.matches("(property \"Value\" ").count(),
+            1,
+            "still exactly one Value property"
+        );
+        assert!(updated.contains("(property \"Value\" \"4k7\""));
+        // The decoy text in Note survives untouched.
+        assert!(updated.contains(r#"has (property \"Sku\" \"nested"#));
+    }
+
+    #[test]
+    fn set_symbol_property_inserts_missing_property_with_matching_indentation() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let (updated, outcome) =
+            set_symbol_property(TAB_INDENTED, start, end, "MPN", "RC0805", &[]).expect("insert");
+        assert!(matches!(outcome, SetPropertyOutcome::Inserted));
+        let idx = updated
+            .find("(property \"MPN\" \"RC0805\"")
+            .expect("inserted property");
+        let line_start = updated[..idx].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert!(
+            updated[line_start..idx].chars().all(|c| c == '\t'),
+            "inserted property must be tab-indented to match the surrounding tab-indented block: {:?}",
+            &updated[line_start..idx]
+        );
+        // Anchor is the symbol's own position (100 80), not the origin.
+        assert!(
+            updated.contains("(at 100 80 0)\n\t\t\t(effects"),
+            "new hidden property must anchor at the symbol's own position: {updated}"
+        );
+    }
+
+    #[test]
+    fn set_symbol_property_inserts_missing_property_with_space_indentation() {
+        let (start, end) = sym_range(SPACE_INDENTED);
+        let (updated, _) =
+            set_symbol_property(SPACE_INDENTED, start, end, "MPN", "RC0805", &[]).expect("insert");
+        let idx = updated
+            .find("(property \"MPN\" \"RC0805\"")
+            .expect("inserted property");
+        let line_start = updated[..idx].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert!(
+            !updated[line_start..idx].contains('\t'),
+            "a space-indented file must not gain a tab-indented insertion: {:?}",
+            &updated[line_start..idx]
+        );
+    }
+
+    #[test]
+    fn set_symbol_property_refuses_reserved_keys() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let err = set_symbol_property(TAB_INDENTED, start, end, "Reference", "R9", &["Reference"])
+            .unwrap_err();
+        assert!(matches!(err, SetPropertyError::Reserved(_)));
+    }
+
+    #[test]
+    fn symbol_property_at_spans_finds_every_property_anchor() {
+        let (start, end) = sym_range(TAB_INDENTED);
+        let spans = symbol_property_at_spans(TAB_INDENTED, start, end);
+        // Reference, Value, Note: three properties, three anchors, and the
+        // decoy `(property "Sku" "...` text inside Note's value must not
+        // contribute a fourth.
+        assert_eq!(spans.len(), 3, "{spans:?}");
+        let texts: Vec<&str> = spans.iter().map(|&(s, e)| &TAB_INDENTED[s..e]).collect();
+        assert!(texts.contains(&"102 78 0"));
+        assert!(texts.contains(&"102 82 0"));
+        assert!(texts.contains(&"100 80 0"));
+    }
+}
+
+#[cfg(test)]
 mod arg_helper_tests {
     use super::*;
     use crate::mcp::error::extract_error_kind;
@@ -1174,11 +2197,128 @@ mod arg_helper_tests {
         );
     }
 
+    /// The `anyhow` helper says the same thing as `require_str`, by type: the
+    /// marker rides the chain and `from_anyhow` downcasts it. No assertion
+    /// here reads the message, which is the point — a classifier that matched
+    /// text would pass this too, and would break the first time the prose
+    /// changed.
+    #[test]
+    fn get_path_missing_classifies_as_invalid_argument_by_type() {
+        let args = json!({});
+        let err = get_path(&args, "board").expect_err("no board key");
+        assert!(err.chain().any(|cause| cause
+            .downcast_ref::<crate::mcp::error::MissingArgument>()
+            .is_some()));
+        match crate::mcp::error::ToolErrorKind::from_anyhow(&err) {
+            crate::mcp::error::ToolErrorKind::InvalidArgument { field, .. } => {
+                assert_eq!(field, "board")
+            }
+            other => panic!("an argument nobody supplied is not a handler failure: {other:?}"),
+        }
+    }
+
+    /// An unrelated failure is untouched: only the marker reclassifies, so a
+    /// tool that tried and failed keeps the classification it already had.
+    #[test]
+    fn an_error_without_the_marker_is_not_reclassified() {
+        let err = anyhow::anyhow!("the tool tried and failed");
+        assert!(!matches!(
+            crate::mcp::error::ToolErrorKind::from_anyhow(&err),
+            crate::mcp::error::ToolErrorKind::InvalidArgument { .. }
+        ));
+    }
+
+    #[test]
+    fn get_path_present_returns_the_path() {
+        let args = json!({ "board": "b.kicad_pcb" });
+        let path = get_path(&args, "board").expect("present");
+        assert_eq!(path, std::path::PathBuf::from("b.kicad_pcb"));
+    }
+
     #[test]
     fn require_str_present_returns_value() {
         let args = json!({ "name": "ok" });
         let v = require_str(&args, "name").expect("should parse");
         assert_eq!(v, "ok");
+    }
+
+    #[test]
+    fn require_array_present_returns_its_elements() {
+        let args = json!({ "layers": ["Edge.Cuts", "F.Cu"] });
+        let v = require_array(&args, "layers").expect("should parse");
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0], "Edge.Cuts");
+    }
+
+    /// An empty list is something the caller said, not something they omitted,
+    /// so it survives the check that absence does not.
+    #[test]
+    fn require_array_accepts_an_explicitly_empty_array() {
+        let args = json!({ "pads": [] });
+        let v = require_array(&args, "pads").expect("an empty array is a value");
+        assert!(v.is_empty());
+    }
+
+    #[test]
+    fn require_array_missing_produces_structured_invalid_argument() {
+        let args = json!({});
+        let err = require_array(&args, "pads").expect_err("should fail");
+        assert_eq!(
+            extract_error_kind(&err).as_deref(),
+            Some("invalid_argument")
+        );
+        let body = match &err.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            _ => panic!(),
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["error"]["field"], "pads");
+    }
+
+    #[test]
+    fn require_array_non_array_is_refused() {
+        let args = json!({ "pads": "1,2" });
+        let err = require_array(&args, "pads").expect_err("should fail");
+        assert_eq!(
+            extract_error_kind(&err).as_deref(),
+            Some("invalid_argument")
+        );
+    }
+
+    #[test]
+    fn require_u64_present_returns_value() {
+        let args = json!({ "count_x": 4 });
+        assert_eq!(require_u64(&args, "count_x").expect("should parse"), 4);
+    }
+
+    #[test]
+    fn require_u64_missing_produces_structured_invalid_argument() {
+        let args = json!({});
+        let err = require_u64(&args, "count_x").expect_err("should fail");
+        assert_eq!(
+            extract_error_kind(&err).as_deref(),
+            Some("invalid_argument")
+        );
+        let body = match &err.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            _ => panic!(),
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["error"]["field"], "count_x");
+    }
+
+    /// A negative or fractional count is not an unsigned integer, and guessing
+    /// one from it would be the substitution this helper exists to stop.
+    #[test]
+    fn require_u64_non_integer_is_refused() {
+        for bad in [json!("4"), json!(-1), json!(2.5)] {
+            let args = json!({ "count_x": bad });
+            let err = require_u64(&args, "count_x").expect_err("should fail");
+            assert_eq!(
+                extract_error_kind(&err).as_deref(),
+                Some("invalid_argument")
+            );
+        }
     }
 }
 

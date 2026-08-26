@@ -244,15 +244,17 @@ fn unit_suffix_of<'a>(name: &'a str, base: &str) -> Option<&'a str> {
 /// yields empty pin lists downstream (#34).
 #[must_use]
 pub fn ensure_lib_symbol(schematic: &mut Schematic, lib_id: &str) -> bool {
-    // Check if already present
-    let check_name = format!("\"{}\"", lib_id);
+    // Check if already present. This is a structural match on the direct
+    // children of lib_symbols: it used to substring-search a `{:?}` debug
+    // rendering of the whole node, which matched on any nested occurrence of
+    // the name — a property value, a unit sub-symbol, or an unrelated entry
+    // that merely contains it (#143).
     let already_present = schematic.raw_other.iter().any(|node| {
-        if node.tag() == Some("lib_symbols") {
-            let content = format!("{:?}", node);
-            content.contains(&check_name)
-        } else {
-            false
-        }
+        node.tag() == Some("lib_symbols")
+            && node
+                .find_all("symbol")
+                .iter()
+                .any(|s| s.value() == Some(lib_id))
     });
     if already_present {
         return true;
@@ -286,6 +288,59 @@ pub fn ensure_lib_symbol(schematic: &mut Schematic, lib_id: &str) -> bool {
         }
     }
     true
+}
+
+/// Where a library symbol puts one of its own fields, and how it draws it.
+///
+/// Coordinates are the library's: symbol-local and **Y-up**, so a caller
+/// placing an instance has to run them through the same transform a pin goes
+/// through (`konnect_sexp::geometry::transform_pin`) before writing them into
+/// a sheet. `angle` is the field's own text angle, which is *not* the
+/// placement rotation — measured on the KiCad 10 demo corpus, a field eeschema
+/// itself placed keeps the library's angle whatever the symbol was rotated to
+/// (lib 0° → 0° in 4906 of 5071 such fields, lib 90° → 90° in all 261).
+///
+/// `effects` is the library's own `(effects …)` node, carried over whole: it
+/// holds the font size and the justification, and copying it is what keeps a
+/// placed field looking like the same field in eeschema.
+#[derive(Debug, Clone)]
+pub struct FieldAnchor {
+    pub x: f64,
+    pub y: f64,
+    pub angle: f64,
+    /// The library marks this field hidden — power symbols do it for
+    /// `Reference`, and every symbol does it for `Footprint`/`Datasheet`.
+    pub hide: bool,
+    pub effects: Option<SexpNode>,
+}
+
+/// The anchor a schematic's *embedded* `lib_symbols` entry declares for
+/// `field`, or `None` when the entry or the field is absent.
+///
+/// Reads the embedded copy rather than the installed library on purpose: the
+/// embedded definition is what this sheet will actually be drawn with, and
+/// `ensure_lib_symbol` has already put it there (flattened) by the time a
+/// caller places an instance.
+pub fn field_anchor(schematic: &Schematic, lib_id: &str, field: &str) -> Option<FieldAnchor> {
+    let sym = schematic
+        .raw_other
+        .iter()
+        .filter(|node| node.tag() == Some("lib_symbols"))
+        .flat_map(|node| node.find_all("symbol"))
+        .find(|s| s.value() == Some(lib_id))?;
+    let prop = sym
+        .find_all("property")
+        .into_iter()
+        .find(|p| p.args().first().and_then(|n| n.text()) == Some(field))?;
+    let at = prop.find("at")?;
+    let num = |i: usize| -> Option<f64> { at.args().get(i)?.text()?.parse::<f64>().ok() };
+    Some(FieldAnchor {
+        x: num(0)?,
+        y: num(1)?,
+        angle: num(2).unwrap_or(0.0),
+        hide: prop.find("hide").and_then(|h| h.value()) == Some("yes"),
+        effects: prop.find("effects").cloned(),
+    })
 }
 
 /// Number of units of the symbol `lib_id` resolves to, following the
@@ -1375,6 +1430,73 @@ mod suggestion_tests {
             &mut sch,
             "Definitely_Not_A_Library_xyzzy:Nope"
         ));
+    }
+
+    /// Load a schematic from literal source in a tempdir. The `TempDir` is
+    /// returned so the caller keeps it alive for the schematic's lifetime.
+    fn sch_from(src: &str) -> (tempfile::TempDir, std::path::PathBuf, Schematic) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.kicad_sch");
+        std::fs::write(&path, src).unwrap();
+        let sch = Schematic::load(&path).unwrap();
+        (dir, path, sch)
+    }
+
+    #[test]
+    fn ensure_lib_symbol_presence_check_is_exact_and_structural() {
+        // The presence check used to substring-search a `{:?}` rendering of the
+        // whole lib_symbols node, so any nested occurrence of the name — a
+        // property value, a unit sub-symbol — read as "already embedded" and
+        // the real definition was never written. It is now an exact match on
+        // the direct children (#143). The negative cases below use lib_ids
+        // that resolve nowhere, so a `false` return proves the check declined
+        // to claim presence rather than merely failing to embed.
+
+        // 1. Exact direct child: present, and embedding again must not
+        //    duplicate the entry.
+        let (_d, path, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Device:R\"\n\t\t\t(property \"Reference\" \"R\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(ensure_lib_symbol(&mut sch, "Device:R"));
+        sch.overwrite().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .matches("(symbol \"Device:R\"")
+                .count(),
+            1,
+            "an already-embedded symbol must not be embedded twice"
+        );
+
+        // 2. The name appears only nested, as an unrelated entry's property
+        //    value. That is not an embedded definition.
+        let (_d, _p, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Other:Thing\"\n\t\t\t(property \"Value\" \"Zzz_NoSuchLib:Part\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(
+            !ensure_lib_symbol(&mut sch, "Zzz_NoSuchLib:Part"),
+            "a nested property value must not count as an embedded definition"
+        );
+
+        // 3. Near-miss sibling: a unit sub-symbol name that merely starts with
+        //    the wanted name.
+        let (_d, _p, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Zzz_NoSuchLib:R_1_1\"\n\t\t\t(property \"Reference\" \"R\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(
+            !ensure_lib_symbol(&mut sch, "Zzz_NoSuchLib:R_1"),
+            "a longer sibling name must not satisfy the lookup"
+        );
+
+        // 4. More than one lib_symbols block: the match may be in any of them.
+        //    Both land in `raw_other`, which the check iterates.
+        let (_d, _p, mut sch) = sch_from(
+            "(kicad_sch\n\t(version 20250610)\n\t(generator \"test\")\n\t(lib_symbols\n\t\t(symbol \"Other:Thing\"\n\t\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t)\n\t)\n\t(lib_symbols\n\t\t(symbol \"Zzz_NoSuchLib:Part\"\n\t\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t)\n\t)\n)\n",
+        );
+        assert!(
+            ensure_lib_symbol(&mut sch, "Zzz_NoSuchLib:Part"),
+            "a match in a second lib_symbols block must be found"
+        );
     }
 
     /// Fixture library listing for [`suggest_lib_ids_from`]: `Device` with a

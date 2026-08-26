@@ -26,17 +26,29 @@ The last section lists what no tool covers at all, because a matrix keyed on
 the tools that exist is exactly how a document reports full coverage of a
 partial feature set.
 
-The scan recognises a tool by its name in quotes or by a call to
-`handle_<tool>`. A tool whose handler is named differently — `route_differential_pair`
-is handled by `handle_route_diff_pair` — is therefore under-reported unless a
-test names it. That direction is deliberate: a scanner that guesses wide
-inflates the number it exists to keep honest.
+The scan is lexical: it recognises a tool by its name in quotes or by a call to
+`handle_<tool>`, and it errs in both directions.
+
+It under-reports a tool whose handler is named differently — `route_differential_pair`
+is handled by `handle_route_diff_pair` — unless a test names the tool itself.
+Twenty-four tools are in that position, and none of them is currently
+under-reported, because the tests here go through `ToolRouter` by name rather
+than calling a private handler (`tests/harness/mod.rs` says why). That
+convention, not the naming, is what keeps the number honest for those
+twenty-four; a tool proved *only* by a unit test calling its handler directly
+would read `NOT_TESTED` while a test exercises it.
+
+It over-reports a tool whose name is quoted in a test that does not call it — a
+list of exclusions counts as proof, which is why the exclusion list in
+`tests/required_schema_honesty.rs` has to split its three tool names with
+`concat!` to stay out of the scan. Where a test mentions a tool it deliberately
+does not exercise, break the name.
 
 ## Headline
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 120 | 19 | 23 | 2 | 5 | 73.2 % |
+| KiCAD domains | 169 | 122 | 19 | 21 | 2 | 5 | 74.4 % |
 | server's own | 40 | 27 | 10 | 3 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -48,7 +60,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 42 | 22.6 % |
-| this fork | 186 | 135 | 72.6 % |
+| this fork | 186 | 137 | 73.7 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -65,9 +77,9 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`buses`](#buses) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`libraries`](#libraries) | 9 | 9 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`footprints`](#footprints) | 7 | 6 | 0 | 1 | 0 | 0 | 85.7 % |
+| [`footprints`](#footprints) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`pcb`](#pcb) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`placement`](#placement) | 11 | 1 | 0 | 9 | 1 | 0 | 9.1 % |
+| [`placement`](#placement) | 11 | 2 | 0 | 8 | 1 | 0 | 18.2 % |
 | [`routing`](#routing) | 10 | 3 | 0 | 5 | 0 | 2 | 37.5 % |
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`zones`](#zones) | 3 | 2 | 0 | 1 | 0 | 0 | 66.7 % |
@@ -150,7 +162,7 @@ The always-visible gateway/discovery tools (`crates/konnect-core/src/router/meta
 | `create_schematic` | `sch_components` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `add_component_annotation` | `sch_components` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_components.rs` |  |
 | `get_schematic_view` | `sch_components` | `cli` | `read` | — | NOT_TESTED | gated | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `find_orphan_items` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/symbols_and_schematic.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `find_orphan_items` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `check_schematic_overlaps` | `sch_analysis` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 | `batch_delete` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_batch.rs` |  |
 | `add_schematic_text` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
@@ -197,7 +209,7 @@ Not covered by any tool:
 | `split_wire_at_point` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/sch_wiring.rs` |  |
 | `add_junction` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `batch_add_junction` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | bench | `bench/tasks/02_sch_ldo.yaml` |  |
-| `list_schematic_wires` | `sch_analysis` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
+| `list_schematic_wires` | `sch_analysis` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/missing_path_argument.rs` |  |
 
 ### nets
 
@@ -210,11 +222,11 @@ Not covered by any tool:
 | `connect_pins` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
 | `add_schematic_connection` | `sch_wiring` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
 | `list_schematic_nets` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | bench | `bench/probes/divider.yaml` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_net_connections` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_net_connections` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_net_connectivity` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_pin_connections` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_pin_net_name` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
-| `get_component_nets` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
+| `get_component_nets` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/src/tools/sch_analysis.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `get_net_components` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `trace_from_point` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `find_shorted_nets` | `sch_analysis` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
@@ -226,7 +238,7 @@ Not covered by any tool:
 | `validate_wire_connections` | `sch_batch` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/nets_and_wires.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `validate_component_connections` | `sch_batch` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/src/tools/sch_batch.rs` | advisory: connectivity derived in-process, and it has disagreed with kicad-cli ERC (E7) — the verdict comes from run_erc / verify |
 | `fix_connectivity` | `sch_export` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/nets_and_wires.rs` |  |
-| `add_net` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `add_net` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_routing.rs` |  |
 | `get_nets_list` | `pcb_routing` | `ipc` | `read` | — | NOT_TESTED | — | — |  |
 
 ### labels
@@ -285,13 +297,13 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
-| `get_component_pads` | `pcb_components` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_component_pads` | `pcb_components` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
 | `get_pad_position` | `pcb_components` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `create_footprint` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 | `edit_footprint_pad` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `list_library_footprints` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `get_footprint_info` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
-| `search_footprints` | `library` | `sexpr` | `read` | — | NOT_TESTED | gated | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `get_footprint_info` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
+| `search_footprints` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 
 ### pcb
 
@@ -317,7 +329,7 @@ Not covered by any tool:
 | `edit_component` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
 | `find_component` | `pcb_components` | `ipc` | `read` | — | NOT_TESTED | — | — |  |
 | `get_component_list` | `pcb_components` | `ipc` | `read` | — | NOT_TESTED | — | — |  |
-| `place_component_array` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
+| `place_component_array` | `pcb_components` | `ipc` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
 | `align_components` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
 | `duplicate_component` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | — | — |  |
 
@@ -339,7 +351,7 @@ Not covered by any tool:
 | `route_differential_pair` | `pcb_routing` | `ipc` | `write` | design_document | NOT_TESTED | — | — | one straight segment per net, offset perpendicular by (gap + width) / 2: no length matching, no skew budget, no impedance target and no vias |
 | `autoroute` | `integration` | `external` | `write` | design_document | GUI_ONLY_NO_API | test | `crates/konnect-core/src/tools/integration.rs` | kicad-cli 10 dropped Specctra DSN export and SES import, so the Freerouting round trip exists only in the PCB editor; the handler always fails and names the GUI steps |
 | `check_freerouting` | `integration` | `external` | `read` | — | EXTERNAL_TOOL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
-| `copy_routing_pattern` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
+| `copy_routing_pattern` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/verification.rs` |  |
 
 Not covered by any tool:
 
@@ -366,7 +378,7 @@ Not covered by any tool:
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
 | `get_layer_list` | `pcb_board` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
-| `add_layer` | `pcb_board` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `add_layer` | `pcb_board` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
 | `set_active_layer` | `pcb_board` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 Not covered by any tool:
@@ -379,8 +391,8 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
-| `create_netclass` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `assign_net_to_class` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `create_netclass` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_routing.rs` |  |
+| `assign_net_to_class` | `pcb_routing` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_routing.rs` |  |
 | `set_design_rules` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 | `get_design_rules` | `verification` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
 | `set_layer_constraints` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
@@ -436,7 +448,7 @@ Not covered by any tool:
 | tool | toolset | adapter | effect | write target | status | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|
 | `export_manufacturing_package` | `manufacturing` | `cli` | `write` | derived | SUPPORTED | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `validate_for_manufacturing` | `manufacturing` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
+| `validate_for_manufacturing` | `manufacturing` | `sexpr` | `read` | — | PARTIAL | test | `crates/konnect-core/src/tools/manufacturing.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
 | `estimate_cost` | `manufacturing` | `internal` | `read` | — | PARTIAL | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | an order-of-magnitude estimate from stored per-fab-house rates, not a quote |
 
 ### gerber
@@ -556,7 +568,7 @@ Not covered by any tool:
 
 ## Not tested
 
-26 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+24 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|
@@ -572,7 +584,6 @@ Not covered by any tool:
 | `edit_component` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `find_component` | `placement` | `ipc` | none |
 | `get_component_list` | `placement` | `ipc` | none |
-| `place_component_array` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `align_components` | `placement` | `ipc` | gated — `crates/konnect/tests/live_kicad_tools.rs` |
 | `duplicate_component` | `placement` | `ipc` | none |
 | `route_pad_to_pad` | `routing` | `ipc` | none |
@@ -583,7 +594,6 @@ Not covered by any tool:
 | `modify_trace` | `routing` | `ipc` | none |
 | `route_differential_pair` | `routing` | `ipc` | none |
 | `refill_zones` | `zones` | `ipc` | none |
-| `search_footprints` | `footprints` | `sexpr` | gated — `crates/konnect-core/tests/libraries_and_footprints.rs` |
 | `check_kicad_ui` | `ui` | `process` | none |
 | `launch_kicad_ui` | `ui` | `process` | none |
 

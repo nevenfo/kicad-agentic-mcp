@@ -447,3 +447,409 @@ fn changeset_display() {
     assert_eq!(cs.len(), 2);
     assert!(cs.summary().contains("R1.Value"));
 }
+
+// ---- (paper …) round-trip ---------------------------------------------------
+
+/// Load a one-off schematic whose only interesting content is its paper node.
+fn sch_with_paper(paper_line: &str) -> Schematic {
+    let src = format!(
+        "(kicad_sch\n  (version 20250114)\n  (generator \"eeschema\")\n  \
+         (generator_version \"10.0\")\n  \
+         (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  {paper_line}\n  \
+         (lib_symbols\n  )\n)"
+    );
+    let tmp = tempfile::Builder::new()
+        .suffix(".kicad_sch")
+        .tempfile()
+        .expect("create tempfile");
+    std::fs::write(tmp.path(), src).unwrap();
+    Schematic::load(tmp.path()).unwrap()
+}
+
+#[test]
+fn custom_paper_keeps_its_dimensions() {
+    // `User` is the one page size whose width and height are mandatory. Writing
+    // a bare `(paper "User")` produces a file KiCAD refuses to load, with no
+    // diagnostic beyond "Failed to load schematic" — and KiCAD's own EasyEDA
+    // importer lands every imported sheet on `User`.
+    let sch = sch_with_paper(r#"(paper "User" 292.1 205.105)"#);
+    assert_eq!(sch.paper.as_deref(), Some("User"));
+
+    let out = sch.to_source();
+    assert!(
+        out.contains(r#"(paper "User" 292.1 205.105)"#),
+        "custom page dimensions must survive a parse -> write cycle:\n{out}"
+    );
+}
+
+#[test]
+fn custom_paper_survives_repeated_round_trips() {
+    let mut sch = sch_with_paper(r#"(paper "User" 292.1 205.105)"#);
+    for _ in 0..3 {
+        let tmp = tempfile::Builder::new()
+            .suffix(".kicad_sch")
+            .tempfile()
+            .expect("create tempfile");
+        std::fs::write(tmp.path(), sch.to_source()).unwrap();
+        sch = Schematic::load(tmp.path()).unwrap();
+    }
+    assert!(
+        sch.to_source().contains(r#"(paper "User" 292.1 205.105)"#),
+        "dimensions must not erode across successive edits"
+    );
+}
+
+#[test]
+fn portrait_paper_keeps_its_orientation() {
+    let sch = sch_with_paper(r#"(paper "A4" portrait)"#);
+    assert_eq!(sch.paper.as_deref(), Some("A4"));
+
+    let out = sch.to_source();
+    assert!(
+        out.contains(r#"(paper "A4" portrait)"#),
+        "the portrait flag must survive a parse -> write cycle:\n{out}"
+    );
+}
+
+#[test]
+fn named_paper_gains_no_extra_tokens() {
+    let out = sch_with_paper(r#"(paper "A4")"#).to_source();
+    assert!(
+        out.contains(r#"(paper "A4")"#),
+        "a plain named page must round-trip unchanged:\n{out}"
+    );
+}
+
+// ---- unmodelled-token preservation (#143) -----------------------------------
+
+/// A symbol block in the shape eeschema writes for a locally edited library
+/// symbol: `lib_name` ahead of `lib_id`, plus tokens the typed model does not
+/// reconstruct field-by-field.
+fn derived_symbol_sch() -> &'static str {
+    r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (at 2.032 0 90))
+    )
+    (symbol "R_1"
+      (property "Reference" "R" (at 2.032 0 90))
+    )
+  )
+  (symbol
+    (lib_name "R_1")
+    (lib_id "Device:R")
+    (at 88.9 63.5 0)
+    (unit 1)
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "44444444-0002-4111-8111-111111111111")
+    (property "Reference" "R2" (at 91.44 62.23 0))
+    (property "Value" "22k" (at 91.44 64.77 0))
+    (convert 2)
+    (default_instance
+      (reference "R")
+      (unit 1)
+    )
+    (pin "1" (uuid "55555555-0003-4111-8111-111111111111"))
+    (instances
+      (project "derived"
+        (path "/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (reference "R2") (unit 1))
+      )
+    )
+  )
+)"#
+}
+
+fn load_derived() -> Schematic {
+    let tmp = tempfile::Builder::new()
+        .suffix(".kicad_sch")
+        .tempfile()
+        .expect("create tempfile");
+    std::fs::write(tmp.path(), derived_symbol_sch()).unwrap();
+    Schematic::load(tmp.path()).unwrap()
+}
+
+#[test]
+fn lib_name_survives_a_load_and_save_round_trip() {
+    // The whole point of #143: dropping this silently re-points the symbol at
+    // the base definition and rewires the netlist.
+    let out = load_derived().to_source();
+    assert!(
+        out.contains(r#"(lib_name "R_1")"#),
+        "lib_name must survive the round-trip:\n{out}"
+    );
+}
+
+#[test]
+fn unmodelled_symbol_children_survive_a_round_trip() {
+    let out = load_derived().to_source();
+    for token in ["(exclude_from_sim no)", "(convert 2)", "(default_instance"] {
+        assert!(out.contains(token), "{token} was dropped:\n{out}");
+    }
+}
+
+#[test]
+fn lib_name_is_parsed_into_its_own_field() {
+    let sch = load_derived();
+    let r2 = sch.symbols.by_reference("R2").unwrap();
+    assert_eq!(r2.lib_name.as_deref(), Some("R_1"));
+    assert_eq!(r2.lib_id, "Device:R");
+}
+
+#[test]
+fn lib_symbol_name_prefers_lib_name_over_lib_id() {
+    let sch = load_derived();
+    // The derived entry is what KiCAD resolves through; lib_id is provenance.
+    assert_eq!(
+        sch.symbols.by_reference("R2").unwrap().lib_symbol_name(),
+        "R_1"
+    );
+    // A symbol with no lib_name falls back to lib_id.
+    let plain = load_minimal();
+    assert_eq!(
+        plain.symbols.by_reference("R1").unwrap().lib_symbol_name(),
+        "Device:R"
+    );
+}
+
+#[test]
+fn lib_name_is_written_before_lib_id_like_eeschema() {
+    let out = load_derived().to_source();
+    let lib_name = out.find(r#"(lib_name "R_1")"#).expect("lib_name emitted");
+    let lib_id = out.find(r#"(lib_id "Device:R")"#).expect("lib_id emitted");
+    assert!(
+        lib_name < lib_id,
+        "eeschema writes lib_name ahead of lib_id:\n{out}"
+    );
+}
+
+#[test]
+fn exclude_from_sim_keeps_its_eeschema_position() {
+    let out = load_derived().to_source();
+    let unit = out.find("(unit 1)").expect("unit emitted");
+    let excl = out
+        .find("(exclude_from_sim no)")
+        .expect("exclude_from_sim emitted");
+    let in_bom = out.find("(in_bom yes)").expect("in_bom emitted");
+    assert!(unit < excl && excl < in_bom, "wrong ordering:\n{out}");
+}
+
+#[test]
+fn a_symbol_without_exclude_from_sim_does_not_gain_one() {
+    // Older files omit the token; inventing it on save would be a silent
+    // format upgrade.
+    let out = load_minimal().to_source();
+    assert!(!out.contains("exclude_from_sim"), "{out}");
+}
+
+#[test]
+fn editing_one_symbol_does_not_corrupt_the_others() {
+    // The reported failure mode: a single add/edit re-serializes every symbol
+    // in the file, so untouched symbols lost their lib_name too.
+    let mut sch = load_derived();
+    sch.symbols.by_reference_mut("R2").unwrap().dnp = true;
+    let out = sch.to_source();
+    assert!(out.contains(r#"(lib_name "R_1")"#), "{out}");
+    assert!(out.contains("(dnp yes)"), "{out}");
+}
+
+/// A symbol whose unmodelled tokens are scattered *between* the modelled ones,
+/// which is how KiCad may write them: `pin` ahead of `at`, `convert` before
+/// `uuid`, `default_instance` between two properties.
+fn interleaved_symbol_sch() -> &'static str {
+    r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (at 2.032 0 90))
+    )
+  )
+  (symbol
+    (pin "1" (uuid "55555555-0003-4111-8111-111111111111"))
+    (lib_id "Device:R")
+    (at 88.9 63.5 0)
+    (convert 2)
+    (unit 1)
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "44444444-0002-4111-8111-111111111111")
+    (property "Reference" "R2" (at 91.44 62.23 0))
+    (default_instance
+      (reference "R")
+      (unit 1)
+    )
+    (property "Value" "22k" (at 91.44 64.77 0))
+    (instances
+      (project "interleaved"
+        (path "/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (reference "R2") (unit 1))
+      )
+    )
+  )
+)"#
+}
+
+#[test]
+fn raw_and_typed_symbol_children_survive_interleaving() {
+    // Contract asserted here is *survival and uniqueness*, not byte-identity:
+    // `to_sexp` emits the preserved raw children after the typed fields, so a
+    // symbol whose unmodelled tokens were interleaved comes back with them
+    // grouped at the end. KiCad's parser is order-insensitive for these, so
+    // this is valid — but it does mean a round-trip is not byte-faithful for
+    // such files. Re-interleaving to the original positions is deliberately
+    // left as follow-up; this test pins today's behaviour so that change is a
+    // conscious one.
+    let tmp = tempfile::Builder::new()
+        .suffix(".kicad_sch")
+        .tempfile()
+        .expect("create tempfile");
+    std::fs::write(tmp.path(), interleaved_symbol_sch()).unwrap();
+    let out = Schematic::load(tmp.path()).unwrap().to_source();
+
+    for token in [
+        "(lib_id \"Device:R\")",
+        "(convert 2)",
+        "(exclude_from_sim no)",
+        "(default_instance",
+        "(pin \"1\"",
+        "(instances",
+        "(property \"Reference\" \"R2\"",
+        "(property \"Value\" \"22k\"",
+    ] {
+        assert_eq!(
+            out.matches(token).count(),
+            1,
+            "{token} must appear exactly once — not dropped, not duplicated by \
+             both the typed path and raw_sub_nodes:\n{out}"
+        );
+    }
+
+    // Re-parsing the output must yield the same field values.
+    let reparsed = tempfile::Builder::new()
+        .suffix(".kicad_sch")
+        .tempfile()
+        .expect("create tempfile");
+    std::fs::write(reparsed.path(), &out).unwrap();
+    let sch = Schematic::load(reparsed.path()).unwrap();
+    let r2 = sch.symbols.by_reference("R2").unwrap();
+    assert_eq!(r2.lib_id, "Device:R");
+    assert_eq!(r2.lib_name, None);
+    assert_eq!(r2.exclude_from_sim, Some(false));
+    assert_eq!(r2.unit, 1);
+    assert_eq!(r2.value_str(), Some("22k"));
+}
+
+// ---- P.6.9.4: the writer reproduces the sheet's own formatting -------------
+//
+// The demo-corpus measurement in `konnect-core`'s conformance suite compares
+// with `str::lines()`, which strips a trailing `\r`. It therefore proves the
+// indent/paren/blank-line half of P.6.9.4 and says nothing at all about line
+// endings — these tests cover the axes that measurement cannot see.
+
+fn load_source(src: &str) -> Schematic {
+    let tmp = tempfile::Builder::new()
+        .suffix(".kicad_sch")
+        .tempfile()
+        .expect("create tempfile");
+    std::fs::write(tmp.path(), src).unwrap();
+    Schematic::load(tmp.path()).unwrap()
+}
+
+/// A KiCAD 10 sheet as eeschema writes it: one tab per level, closing paren
+/// alone on its own line, no blank lines.
+fn kicad_shaped_sch(newline: &str) -> String {
+    let lines = [
+        "(kicad_sch",
+        "\t(version 20250114)",
+        "\t(generator \"eeschema\")",
+        "\t(generator_version \"10.0\")",
+        "\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")",
+        "\t(paper \"A4\")",
+        "\t(lib_symbols",
+        "\t)",
+        "\t(junction",
+        "\t\t(at 50.8 50.8)",
+        "\t\t(diameter 0)",
+        "\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")",
+        "\t)",
+        "\t(embedded_fonts no)",
+        ")",
+    ];
+    let mut out = lines.join(newline);
+    out.push_str(newline);
+    out
+}
+
+#[test]
+fn a_crlf_sheet_is_written_back_as_crlf() {
+    // Every KiCAD 10 demo sheet shipped by the Windows installer is CRLF.
+    // Writing plain LF into one reproduces the exact symptom P.6.9.4 fixes —
+    // the whole document in the diff — just via line endings instead of
+    // indentation.
+    let sch = load_source(&kicad_shaped_sch("\r\n"));
+    let out = sch.to_source();
+    assert!(out.contains("\r\n"), "CRLF source lost its CRLF:\n{out:?}");
+    assert_eq!(
+        out.matches('\n').count(),
+        out.matches("\r\n").count(),
+        "a bare LF leaked into a CRLF document:\n{out:?}"
+    );
+}
+
+#[test]
+fn an_lf_sheet_is_written_back_as_lf() {
+    let sch = load_source(&kicad_shaped_sch("\n"));
+    let out = sch.to_source();
+    assert!(!out.contains('\r'), "LF source gained a CR:\n{out:?}");
+}
+
+#[test]
+fn the_indent_unit_is_taken_from_the_source() {
+    let tabbed = load_source(&kicad_shaped_sch("\n")).to_source();
+    assert!(
+        tabbed.contains("\n\t(paper \"A4\")"),
+        "tab-indented source did not stay tab-indented:\n{tabbed}"
+    );
+    assert!(
+        !tabbed.contains("\n  (paper"),
+        "tab-indented source picked up space indentation:\n{tabbed}"
+    );
+
+    let spaced_src = kicad_shaped_sch("\n").replace('\t', "    ");
+    let spaced = load_source(&spaced_src).to_source();
+    assert!(
+        spaced.contains("\n    (paper \"A4\")"),
+        "four-space source did not stay four-space:\n{spaced}"
+    );
+    assert!(
+        !spaced.contains('\t'),
+        "space-indented source picked up a tab:\n{spaced}"
+    );
+}
+
+#[test]
+fn a_multi_line_node_closes_on_its_own_line_and_no_blank_lines_appear() {
+    let out = load_source(&kicad_shaped_sch("\n")).to_source();
+    assert!(
+        out.contains("\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")\n\t)"),
+        "closing paren did not land alone at the parent's depth:\n{out}"
+    );
+    assert!(
+        !out.contains("\n\n"),
+        "a blank line was inserted where KiCAD writes none:\n{out}"
+    );
+    assert!(
+        out.ends_with(")\n") && !out.ends_with(")\n\n"),
+        "document does not end with a single newline after the root:\n{out:?}"
+    );
+}

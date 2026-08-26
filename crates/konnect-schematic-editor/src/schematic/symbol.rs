@@ -14,17 +14,29 @@ fn bool_kw(v: bool) -> &'static str {
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
+    /// Name of the `lib_symbols` entry this instance actually resolves through,
+    /// when it differs from `lib_id`. KiCAD writes it for symbols whose library
+    /// definition was edited inside this sheet: the edited copy is stored under
+    /// a derived name (`"R_1"`) while `lib_id` keeps the upstream provenance
+    /// (`"Device:R"`). Resolve with [`Symbol::lib_symbol_name`], never `lib_id`
+    /// alone.
+    pub lib_name: Option<String>,
     pub lib_id: String,
     pub at: At,
     pub mirror: Option<String>,
     pub unit: u32,
+    /// `(exclude_from_sim …)`, present in KiCAD 8+ files. `None` for older
+    /// files that omit it, so a round-trip doesn't invent the token.
+    pub exclude_from_sim: Option<bool>,
     pub in_bom: bool,
     pub on_board: bool,
     pub dnp: bool,
     pub fields_autoplaced: bool,
     pub uuid: String,
     pub properties: Vec<Property>,
-    /// `pin` and `instances` sub-nodes preserved verbatim.
+    /// Every child `to_sexp` does not rebuild from a field above — `pin`,
+    /// `instances`, and anything else KiCAD writes that we don't model —
+    /// preserved verbatim.
     pub raw_sub_nodes: Vec<SexpNode>,
 }
 
@@ -32,10 +44,12 @@ impl Symbol {
     /// Create a new symbol with minimal required fields.
     pub fn new(lib_id: impl Into<String>, x: f64, y: f64) -> Self {
         Symbol {
+            lib_name: None,
             lib_id: lib_id.into(),
             at: At::new(x, y),
             mirror: None,
             unit: 1,
+            exclude_from_sim: None,
             in_bom: true,
             on_board: true,
             dnp: false,
@@ -47,6 +61,7 @@ impl Symbol {
     }
 
     pub fn from_sexp(node: &SexpNode) -> Result<Self> {
+        let lib_name = node.get_value("lib_name").map(str::to_owned);
         let lib_id = node
             .get_value("lib_id")
             .ok_or(Error::MissingField("lib_id"))?
@@ -65,6 +80,7 @@ impl Symbol {
             .get_value("unit")
             .and_then(|s| s.parse().ok())
             .unwrap_or(1);
+        let exclude_from_sim = node.get_bool("exclude_from_sim");
         let in_bom = node.get_bool("in_bom").unwrap_or(true);
         let on_board = node.get_bool("on_board").unwrap_or(true);
         let dnp = node.get_bool("dnp").unwrap_or(false);
@@ -77,19 +93,33 @@ impl Symbol {
             .filter_map(|n| Property::from_sexp(n))
             .collect();
 
-        const PRESERVE: &[&str] = &["pin", "instances"];
-        let raw_sub_nodes = node
-            .args()
-            .iter()
-            .filter(|n| n.tag().map(|t| PRESERVE.contains(&t)).unwrap_or(false))
-            .cloned()
-            .collect();
+        // Everything `to_sexp` rebuilds from a typed field. Every *other* child
+        // — `pin`, `instances`, and tokens we don't model such as `convert`
+        // and `default_instance` — is carried through verbatim rather than
+        // dropped (#143).
+        const MODELLED: &[&str] = &[
+            "lib_name",
+            "lib_id",
+            "at",
+            "mirror",
+            "unit",
+            "exclude_from_sim",
+            "in_bom",
+            "on_board",
+            "dnp",
+            "fields_autoplaced",
+            "uuid",
+            "property",
+        ];
+        let raw_sub_nodes = super::unmodelled_children(node, MODELLED);
 
         Ok(Symbol {
+            lib_name,
             lib_id,
             at,
             mirror,
             unit,
+            exclude_from_sim,
             in_bom,
             on_board,
             dnp,
@@ -100,14 +130,29 @@ impl Symbol {
         })
     }
 
+    /// The `lib_symbols` entry name this instance resolves through: `lib_name`
+    /// when KiCAD wrote one, otherwise `lib_id`. Mirrors eeschema's
+    /// `SCH_SYMBOL::GetSchSymbolLibraryName()`.
+    pub fn lib_symbol_name(&self) -> &str {
+        self.lib_name.as_deref().unwrap_or(&self.lib_id)
+    }
+
     pub fn to_sexp(&self) -> SexpNode {
         let mut c = vec![atom("symbol")];
+        // eeschema emits lib_name ahead of lib_id; keep the same order so a
+        // round-trip is a no-op for files it wrote.
+        if let Some(n) = &self.lib_name {
+            c.push(tagged("lib_name", vec![qstr(n.clone())]));
+        }
         c.push(tagged("lib_id", vec![qstr(self.lib_id.clone())]));
         c.push(self.at.to_sexp());
         if let Some(m) = &self.mirror {
             c.push(tagged("mirror", vec![atom(m.clone())]));
         }
         c.push(tagged("unit", vec![atom(self.unit.to_string())]));
+        if let Some(x) = self.exclude_from_sim {
+            c.push(tagged("exclude_from_sim", vec![atom(bool_kw(x))]));
+        }
         c.push(tagged("in_bom", vec![atom(bool_kw(self.in_bom))]));
         c.push(tagged("on_board", vec![atom(bool_kw(self.on_board))]));
         c.push(tagged("dnp", vec![atom(bool_kw(self.dnp))]));

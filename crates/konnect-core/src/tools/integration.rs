@@ -126,7 +126,15 @@ pub fn tools() -> Vec<ToolDef> {
                     "mpn": { "type": "string", "description": "Manufacturer part number (optional)" },
                     "lcsc_id": { "type": "string", "description": "LCSC part number (optional)" }
                 },
-                "required": []
+                // P.6.9.16: the handler needs `mpn` *or* `lcsc_id`, a contract
+                // `required` alone cannot express (it is a conjunction). The
+                // disjunction is published in `anyOf` instead, and `required`
+                // stays empty since neither key alone is mandatory.
+                "required": [],
+                "anyOf": [
+                    { "required": ["mpn"] },
+                    { "required": ["lcsc_id"] }
+                ]
             }),
             |args, ctx| async move { handle_get_datasheet_url(args, ctx).await }
         ),
@@ -141,7 +149,12 @@ pub fn tools() -> Vec<ToolDef> {
                     "timeout_seconds": { "type": "integer", "description": "Maximum autorouter runtime in seconds", "default": 120 },
                     "jar_path": { "type": "string", "description": "Path to freerouting.jar (optional, uses config default)" }
                 },
-                "required": ["board"]
+                // P.6.9.16: `handle_autoroute` takes `_args` and always answers
+                // `ManualStepRequired` — the DSN/SES round trip it needs was
+                // removed from kicad-cli in KiCAD 10. Nothing reads `board`, so
+                // nothing may be required; it stays in `properties` for the day
+                // the IPC round trip lands and the tool does real work again.
+                "required": []
             }),
             |args, ctx| async move { handle_autoroute(args, ctx).await }
         ),
@@ -617,6 +630,11 @@ async fn handle_search_jlcpcb_parts(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
+    // Arguments first, database second: a caller who forgot a `required`
+    // argument used to be sent to download a 2.5-million-part catalogue for a
+    // call that could never run. `query` is `required` and was substituted
+    // with "", which `LIKE '%%'` matches everywhere.
+    let query = try_arg!(require_str(args, "query")).to_string();
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
         return Ok(CallToolResult::error_kind(
@@ -627,7 +645,6 @@ async fn handle_search_jlcpcb_parts(
         ));
     }
 
-    let query = args["query"].as_str().unwrap_or("").to_string();
     let basic_only = args["basic_only"].as_bool().unwrap_or(false);
     let in_stock = args["in_stock"].as_bool().unwrap_or(true);
     let limit = args["limit"].as_u64().unwrap_or(20) as usize;
@@ -780,6 +797,7 @@ async fn handle_get_jlcpcb_part(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
+    let lcsc_id = try_arg!(require_str(args, "lcsc_id")).to_string();
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
         return Ok(CallToolResult::error_kind(
@@ -789,7 +807,6 @@ async fn handle_get_jlcpcb_part(
             "JLCPCB database not found. Run download_jlcpcb_database first.",
         ));
     }
-    let lcsc_id = try_arg!(require_str(args, "lcsc_id")).to_string();
 
     let key = cache_key("get_jlcpcb_part", &db_path, &[&lcsc_id]);
     if let Some(mut cached) = ctx.jlcpcb_cache.get(&key) {
@@ -838,6 +855,10 @@ async fn handle_suggest_alternatives(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
+    // Both are `required`; substituting "" made the query `LIKE '%%'` on both
+    // columns — every stocked part as an "alternative" — and cached it.
+    let value = try_arg!(require_str(args, "value")).to_string();
+    let footprint = try_arg!(require_str(args, "footprint")).to_string();
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
         return Ok(CallToolResult::error_kind(
@@ -847,8 +868,6 @@ async fn handle_suggest_alternatives(
             "JLCPCB database not found. Run download_jlcpcb_database first.",
         ));
     }
-    let value = args["value"].as_str().unwrap_or("").to_string();
-    let footprint = args["footprint"].as_str().unwrap_or("").to_string();
     let max_price = args["max_price_usd"].as_f64();
     let limit = args["limit"].as_u64().unwrap_or(5) as usize;
 
@@ -931,9 +950,17 @@ async fn handle_jlcpcb_stats(
 ) -> anyhow::Result<CallToolResult> {
     let db_path = resolve_db_path(args, ctx);
     if !db_path.exists() {
+        // P.6.9.20: `path` is reported here too, not only on the `exists: true`
+        // branch. `resolve_db_path` has three sources — an explicit
+        // `output_path`, the configured `jlcpcb_db_path`, and the machine-wide
+        // default — so "no database" without saying *which* one was looked for
+        // leaves the caller no way to tell a misconfigured path from a genuinely
+        // missing download, which is the same distinction this tool exists to
+        // draw between "no database" and "nothing found".
         return Ok(CallToolResult::text(
             serde_json::to_string(&json!({
                 "exists": false,
+                "path": db_path.to_string_lossy(),
                 "note": "Run download_jlcpcb_database to fetch the parts database"
             }))
             .unwrap(),
@@ -1456,7 +1483,7 @@ mod jlcpcb_cache_tests {
     /// query a `components` table with numeric `Price`, which no published
     /// database has ever had, and a fixture inventing that schema is what let
     /// the mismatch stand (J.2.4.4).
-    fn seed_test_db() -> (tempfile::TempDir, std::path::PathBuf) {
+    pub(super) fn seed_test_db() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("jlcpcb.db");
         let conn = rusqlite::Connection::open(&db_path).expect("open db");
@@ -2158,5 +2185,114 @@ mod jlcpcb_published_database_tests {
         }
         assert!(jlcpcb_library(DEFAULT_JLCPCB_LIBRARY).is_some());
         assert!(jlcpcb_library("nope").is_none());
+    }
+}
+
+/// The three JLCPCB query tools tested the database's existence before reading
+/// their own arguments, so a caller who forgot a `required` argument was sent
+/// to download a 2.5-million-part catalogue for a call that could never run.
+#[cfg(test)]
+mod jlcpcb_required_argument_tests {
+    use super::jlcpcb_cache_tests::response_json;
+    use super::*;
+    use crate::mcp::error::extract_error_kind;
+    use crate::router::ToolRouter;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    /// A path guaranteed to hold no database, so the answer proves the order:
+    /// argument first, database second.
+    fn absent_db(dir: &tempfile::TempDir) -> String {
+        dir.path().join("no-such.db").to_string_lossy().into_owned()
+    }
+
+    #[tokio::test]
+    async fn suggest_alternatives_refuses_its_missing_arguments_before_the_database_is_looked_for()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let res =
+            handle_suggest_alternatives(&json!({ "output_path": absent_db(&dir) }), &test_ctx())
+                .await
+                .unwrap();
+        assert!(res.is_error);
+        assert_eq!(
+            extract_error_kind(&res).as_deref(),
+            Some("invalid_argument"),
+            "the caller's own mistake must be named before the database's absence"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_jlcpcb_part_refuses_a_missing_lcsc_id_before_the_database_is_looked_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let res = handle_get_jlcpcb_part(&json!({ "output_path": absent_db(&dir) }), &test_ctx())
+            .await
+            .unwrap();
+        assert!(res.is_error);
+        assert_eq!(
+            extract_error_kind(&res).as_deref(),
+            Some("invalid_argument"),
+            "the caller's own mistake must be named before the database's absence"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_jlcpcb_parts_refuses_a_missing_query_before_the_database_is_looked_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let res =
+            handle_search_jlcpcb_parts(&json!({ "output_path": absent_db(&dir) }), &test_ctx())
+                .await
+                .unwrap();
+        assert!(res.is_error);
+        assert_eq!(
+            extract_error_kind(&res).as_deref(),
+            Some("invalid_argument"),
+            "the caller's own mistake must be named before the database's absence"
+        );
+    }
+
+    /// `suggest_jlcpcb_alternatives` caches. A refused call must not leave the
+    /// answer it never computed under the key its substituted arguments would
+    /// have built — an explicitly empty `value` afterwards is still a miss.
+    #[tokio::test]
+    async fn a_refused_suggestion_puts_nothing_in_the_cache() {
+        let (_dir, db_path) = super::jlcpcb_cache_tests::seed_test_db();
+        let ctx = test_ctx();
+        let path = db_path.to_str().unwrap().to_string();
+
+        let refused = handle_suggest_alternatives(
+            &json!({ "footprint": "Resistor_SMD:R_0402", "output_path": path.clone() }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(refused.is_error);
+
+        let explicit = handle_suggest_alternatives(
+            &json!({ "value": "", "footprint": "Resistor_SMD:R_0402", "output_path": path }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            response_json(&explicit)["cached"],
+            json!(false),
+            "the refused call cached an answer under the substituted key"
+        );
     }
 }

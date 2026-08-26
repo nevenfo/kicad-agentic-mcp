@@ -259,13 +259,30 @@ async fn a_layer_constraint_names_its_layer() {
     );
 }
 
-/// A netclass is created with the widths it was given, and a net assigned to it
-/// is recorded as a member — the assignment is the half that makes the class
-/// mean anything.
+/// A netclass is created with the widths it was given, and a net assigned to
+/// it is recorded as a member — the assignment is the half that makes the
+/// class mean anything. Both land in the sibling `.kicad_pro`: KiCad has kept
+/// net classes in the project's `net_settings` since v7, and the board file
+/// has no container for them at all — the pre-P.6.2 handlers inserted
+/// `(netclass …)` straight into the board, a node pcbnew's parser rejects.
 #[tokio::test]
 async fn a_netclass_takes_its_widths_and_its_members() {
     let h = Harness::new();
-    let board = harness::as_str(&h.fixture("test.kicad_pcb")).to_string();
+    let board_path = h.fixture("test.kicad_pcb");
+    let board = harness::as_str(&board_path).to_string();
+    // create_netclass refuses without a sibling project — a class written
+    // anywhere else is never read by KiCad.
+    h.write(
+        "test.kicad_pro",
+        "{\n  \"meta\": { \"filename\": \"test.kicad_pro\", \"version\": 3 }\n}\n",
+    );
+
+    // add_net legitimately writes the board — it is the netclass tools that
+    // must not — so the byte-identical check below is taken after it, not
+    // before.
+    h.json("add_net", json!({ "board": board, "net_name": "VBUS" }))
+        .await;
+    let board_before = std::fs::read_to_string(&board_path).expect("the board is readable");
 
     h.json(
         "create_netclass",
@@ -279,22 +296,44 @@ async fn a_netclass_takes_its_widths_and_its_members() {
         }),
     )
     .await;
-    h.json("add_net", json!({ "board": board, "net_name": "VBUS" }))
-        .await;
     h.json(
         "assign_net_to_class",
         json!({ "board": board, "net_name": "VBUS", "netclass": "Power" }),
     )
     .await;
 
-    let text = std::fs::read_to_string(&board).expect("the board is readable");
-    assert!(text.contains("Power"), "the netclass is not in the file");
-    assert!(
-        text.contains("0.5"),
-        "the netclass trace width was not written:\n{text}"
+    // The board is untouched — every byte of it, not just "still parses".
+    assert_eq!(
+        std::fs::read_to_string(&board_path).expect("the board is readable"),
+        board_before,
+        "create_netclass/assign_net_to_class must never write the board file"
     );
+
+    let project: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(board_path.with_extension("kicad_pro"))
+            .expect("the project file is readable"),
+    )
+    .expect("the project file is valid JSON");
+    let classes = project["net_settings"]["classes"]
+        .as_array()
+        .expect("net_settings.classes is an array");
+    let power = classes
+        .iter()
+        .find(|c| c["name"] == "Power")
+        .expect("the Power class is in net_settings.classes");
+    assert_eq!(
+        power["track_width"],
+        json!(0.5),
+        "the netclass track width was not written: {power}"
+    );
+
+    let patterns = project["net_settings"]["netclass_patterns"]
+        .as_array()
+        .expect("net_settings.netclass_patterns is an array");
     assert!(
-        text.contains("VBUS"),
-        "the net was not recorded as a member of the class:\n{text}"
+        patterns
+            .iter()
+            .any(|p| p["pattern"] == "VBUS" && p["netclass"] == "Power"),
+        "VBUS is not assigned to Power via netclass_patterns: {patterns:?}"
     );
 }

@@ -1,0 +1,32 @@
+(kicad_sch
+	(version 20250610)
+	(generator "konnect")
+	(generator_version "10.0")
+	(uuid "20000000-0000-4000-8000-000000000001")
+	(paper "A4")
+	(sheet
+		(at 40 50)
+		(size 80 25)
+		(uuid "20000000-0000-4000-8000-0000000000c1")
+		(property "Sheetname" "Clean"
+			(at 40 49.365 0)
+		)
+		(property "Sheetfile" "hier_sub_clean.kicad_sch"
+			(at 40 75.635 0)
+		)
+	)
+	(sheet
+		(at 140 50)
+		(size 80 25)
+		(uuid "20000000-0000-4000-8000-0000000000e3")
+		(property "Sheetname" "Missing"
+			(at 140 49.365 0)
+		)
+		(property "Sheetfile" "hier_sub_missing.kicad_sch"
+			(at 140 75.635 0)
+		)
+	)
+	(sheet_instances
+		(path "/" (page "1"))
+	)
+)

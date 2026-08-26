@@ -9,15 +9,16 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_str, project_name_for, require_f64, require_str,
-    ToolDef,
+    find_all_symbol_instance_blocks, find_symbol_instance_block, get_path, mm, opt_str,
+    require_f64, require_str, set_symbol_property_on_all_units, symbol_property_at_spans,
+    SetPropertyOutcome, ToolDef, RESERVED_PROPERTY_KEYS,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
     geometry::{point_on_segment, points_coincident, snap_point},
     schematic::{
-        extract_labels, extract_lib_pins, extract_symbol_instances, extract_wires,
-        format_net_label, format_wire, pin_endpoint, read_schematic,
+        extract_labels, extract_lib_pins_for_unit, extract_symbol_instances, extract_wires,
+        find_lib_symbol, format_net_label, format_wire, pin_endpoint, read_schematic,
     },
     writer::{
         apply_edits, find_block_with_leading_whitespace, find_enclosing_direct_child_block,
@@ -315,28 +316,20 @@ pub fn tools() -> Vec<ToolDef> {
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
-/// Find the `(symbol ...)` block for a reference designator, plus its leading
-/// whitespace so deletion leaves clean formatting.
-/// Returns `(block_start, block_end)` byte offsets in `content`.
-fn find_symbol_block(content: &str, reference: &str) -> Option<(usize, usize)> {
-    let (sym_start, _) = find_symbol_instance_block(content, reference)?;
-    find_block_with_leading_whitespace(content, sym_start)
-}
-
-/// Return `(val_start, val_end)` byte offsets in `content` for the *value* portion
-/// of a `(property "FieldName" "VALUE" ...)` node within the symbol identified by
-/// `reference`. Only the bytes inside the opening quote are included (i.e. the
-/// replacement does NOT need to include surrounding quotes).
-fn field_value_range(content: &str, reference: &str, field: &str) -> Option<(usize, usize)> {
-    let (sym_start, sym_end) = find_symbol_instance_block(content, reference)?;
-    let sym_block = &content[sym_start..sym_end];
-
-    let field_search = format!(r#"(property "{field}" ""#);
-    let field_rel = sym_block.find(&field_search)?;
-    let val_start = sym_start + field_rel + field_search.len();
-    // find the closing quote of the current value
-    let val_end = val_start + content[val_start..].find('"')?;
-    Some((val_start, val_end))
+/// Find the `(symbol ...)` block for every unit of a reference designator,
+/// plus each block's leading whitespace so deletion leaves clean formatting.
+/// Returns `(block_start, block_end)` byte offset pairs in `content`.
+///
+/// Every unit, not just the first: deleting a component must drop every unit
+/// sharing its designator, or the surviving units are a half-deleted
+/// component (P.6.8.2). Used by `batch_delete` and `batch_delete_components`,
+/// whose deletes have always been reference-wide by contract, unlike
+/// `move`/`rotate`.
+fn find_all_symbol_blocks(content: &str, reference: &str) -> Vec<(usize, usize)> {
+    find_all_symbol_instance_blocks(content, reference)
+        .into_iter()
+        .filter_map(|(sym_start, _)| find_block_with_leading_whitespace(content, sym_start))
+        .collect()
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -390,24 +383,38 @@ async fn handle_batch_connect_to_net(
             }
         };
 
-        let inst = match instances.iter().find(|i| i.reference == reference) {
-            Some(i) => i,
-            None => {
-                errors.push(format!("Component '{}' not found", reference));
-                continue;
-            }
-        };
-
-        let lib_sym = lib_syms
+        // A multi-unit symbol places one `SymbolInstance` per unit under the
+        // same `Reference` (e.g. two `U1` entries for an LM2904's two
+        // op-amps). Picking the first match ignored `unit` entirely, so a
+        // pin that only exists on unit 2 resolved through unit 1's placement
+        // — silently landing on whatever pin unit 1 happens to have at the
+        // same local coordinates (P.6.8.1). Try every instance carrying
+        // this reference and keep the one whose own unit actually declares
+        // the requested pin.
+        let candidates: Vec<&konnect_sexp::schematic::SymbolInstance> = instances
             .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+            .filter(|i| i.reference == reference)
+            .collect();
+        if candidates.is_empty() {
+            errors.push(format!("Component '{}' not found", reference));
+            continue;
+        }
 
-        let pin_ep = lib_sym.and_then(|sym| {
-            extract_lib_pins(sym)
+        let mut pin_ep = None;
+        let mut tried_units: Vec<u32> = Vec::new();
+        for inst in &candidates {
+            let Some(sym) = find_lib_symbol(&lib_syms, inst) else {
+                continue;
+            };
+            tried_units.push(inst.unit);
+            if let Some(p) = extract_lib_pins_for_unit(sym, inst.unit)
                 .into_iter()
                 .find(|p| p.number == pin_number)
-                .map(|p| pin_endpoint(&p, inst.pin_transform()))
-        });
+            {
+                pin_ep = Some(pin_endpoint(&p, inst.pin_transform()));
+                break;
+            }
+        }
 
         match pin_ep {
             Some((px, py)) => {
@@ -419,7 +426,18 @@ async fn handle_batch_connect_to_net(
                     "y": py
                 }));
             }
-            None => errors.push(format!("Pin '{}' not found on '{}'", pin_number, reference)),
+            // Two different failures, and telling them apart is the whole
+            // point of naming the units: the pin is on no unit, or no unit's
+            // library symbol resolved at all — in which case saying "units
+            // tried: []" would describe the wrong problem.
+            None if tried_units.is_empty() => errors.push(format!(
+                "No library symbol resolved for '{}', so pin '{}' could not be located",
+                reference, pin_number
+            )),
+            None => errors.push(format!(
+                "Pin '{}' not found on '{}' (units tried: {:?})",
+                pin_number, reference, tried_units
+            )),
         }
     }
 
@@ -467,8 +485,7 @@ async fn handle_batch_place_components(
     };
 
     let mut sch = cse::Schematic::load(&sch_path)?;
-    let root_uuid = crate::tools::ensure_root_uuid(&mut sch);
-    let project_name = project_name_for(&sch_path);
+    let (project_name, instance_paths) = crate::tools::instance_targets(&sch_path, &mut sch);
 
     let mut placed: Vec<serde_json::Value> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
@@ -489,7 +506,7 @@ async fn handle_batch_place_components(
 
         match place_one_component(
             &mut sch,
-            &root_uuid,
+            &instance_paths,
             &project_name,
             lib_id,
             x,
@@ -654,14 +671,23 @@ async fn handle_batch_delete(
                 Some(r) => r,
                 None => continue,
             };
-            match find_symbol_block(&content, reference) {
-                Some((del_start, del_end)) => {
-                    if delete_ranges.insert((del_start, del_end)) {
-                        edits.push(SexpEdit::delete(del_start, del_end));
-                        deleted.push(reference.to_string());
-                    }
+            // Every unit of the designator, not just the first — a
+            // reference-addressed delete must not leave a half-deleted
+            // multi-unit component behind (P.6.8.2).
+            let blocks = find_all_symbol_blocks(&content, reference);
+            if blocks.is_empty() {
+                errors.push(format!("Component '{}' not found", reference));
+                continue;
+            }
+            let mut any_new = false;
+            for (del_start, del_end) in blocks {
+                if delete_ranges.insert((del_start, del_end)) {
+                    edits.push(SexpEdit::delete(del_start, del_end));
+                    any_new = true;
                 }
-                None => errors.push(format!("Component '{}' not found", reference)),
+            }
+            if any_new {
+                deleted.push(reference.to_string());
             }
         }
     }
@@ -705,6 +731,35 @@ fn is_deletable_schematic_item(block: &str) -> bool {
     )
 }
 
+/// Byte range of the symbol's own `(at x y rot)` coordinate text (not a
+/// property's) inside `content[sym_start..sym_end]` — the first `(at ` in
+/// the block, since a symbol's non-property children always precede its
+/// first `(property …)`.
+///
+/// A block this malformed should not occur in practice: `sym_start..sym_end`
+/// always comes from a balanced-block finder, so the block's own text always
+/// ends in `)`, guaranteeing a `(at ` found inside it is eventually followed
+/// by one. But the scan does not rely on that guarantee to avoid panicking:
+/// before this, `close_rel` defaulted to 0 on a missing `)`, so `at_end`
+/// came out less than `at_abs` and slicing `content[at_abs..at_end]` panicked.
+fn symbol_own_at_span(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+) -> Result<(usize, usize), String> {
+    let sym_block = &content[sym_start..sym_end];
+    let at_pat = "(at ";
+    let at_rel = sym_block
+        .find(at_pat)
+        .ok_or_else(|| "No (at) in symbol".to_string())?;
+    let at_abs = sym_start + at_rel + at_pat.len();
+    let close_rel = sym_block[at_rel..]
+        .find(')')
+        .ok_or_else(|| "Unterminated (at) in symbol".to_string())?;
+    let at_end = sym_start + at_rel + close_rel;
+    Ok((at_abs, at_end))
+}
+
 async fn handle_bulk_move(
     args: &serde_json::Value,
     _ctx: &crate::tools::ToolContext,
@@ -734,6 +789,29 @@ async fn handle_bulk_move(
     for reference in &batch.references {
         let reference = reference.as_str();
 
+        // A multi-unit designator has no single "the" position to move by
+        // `reference` — moving unit 1 and leaving unit 2 behind (or vice
+        // versa) is legitimate on its own but silently picking the first
+        // unit here would move one the caller never named (P.6.8.2, see
+        // `refuse_ambiguous_multiunit_geometry` in sch_components.rs, whose
+        // uuid-addressed path this batch tool has no way to take). Refused,
+        // not guessed at.
+        let units = find_all_symbol_instance_blocks(&content, reference);
+        if units.len() > 1 {
+            let uuids: Vec<String> = units
+                .iter()
+                .filter_map(|&(s, e)| crate::tools::symbol_block_uuid(&content[s..e]))
+                .collect();
+            errors.push(format!(
+                "'{}' has {} units ({}); bulk_move cannot address one unit of a \
+                 multi-unit symbol — move it with move_schematic_component and a 'uuid'",
+                reference,
+                units.len(),
+                uuids.join(", ")
+            ));
+            continue;
+        }
+
         // Locate symbol block for this reference
         let (sym_start, sym_end) = match find_symbol_instance_block(&content, reference) {
             Some(r) => r,
@@ -743,19 +821,14 @@ async fn handle_bulk_move(
             }
         };
 
-        // Find first (at X Y [ROT]) inside this symbol block
-        let sym_block = &content[sym_start..sym_end];
-        let at_pat = "(at ";
-        let at_rel = match sym_block.find(at_pat) {
-            Some(r) => r,
-            None => {
-                errors.push(format!("No (at) in symbol '{}'", reference));
+        // Find the symbol's own (at X Y [ROT]) inside this symbol block.
+        let (at_abs, at_end) = match symbol_own_at_span(&content, sym_start, sym_end) {
+            Ok(r) => r,
+            Err(why) => {
+                errors.push(format!("{why} '{}'", reference));
                 continue;
             }
         };
-        let at_abs = sym_start + at_rel + at_pat.len();
-        let close_rel = sym_block[at_rel..].find(')').unwrap_or(0);
-        let at_end = sym_start + at_rel + close_rel;
 
         let at_str = &content[at_abs..at_end];
         let parts: Vec<&str> = at_str.split_whitespace().collect();
@@ -778,6 +851,46 @@ async fn handle_bulk_move(
             at_end,
             format!("{new_x} {new_y} {rot}"),
         ));
+
+        // Every field's text carries its own absolute `(at …)`; moving only
+        // the symbol's own anchor above leaves field text sitting where the
+        // symbol used to be. Shift each by the delta actually applied to the
+        // symbol — after `snap_point`, not the raw `dx`/`dy` — and leave its
+        // rotation alone: a hidden field's `(at … 0)` does not track the
+        // symbol's own rotation (measured on KiCad's demo schematics; see
+        // `symbol_insertion_site`'s doc comment).
+        let applied_dx = new_x - x;
+        let applied_dy = new_y - y;
+        // A move that snapped back to where the symbol already was must not
+        // rewrite a single field byte: an edit that changes nothing still
+        // shows up in the file (a `(at x y)` with no rotation would come back
+        // as `(at x y 0)`), which is the reformatting P.6.9.4 just removed.
+        let symbol_actually_moved = applied_dx != 0.0 || applied_dy != 0.0;
+        for (val_start, val_end) in symbol_property_at_spans(&content, sym_start, sym_end) {
+            if !symbol_actually_moved {
+                break;
+            }
+            let field_at = &content[val_start..val_end];
+            let field_parts: Vec<&str> = field_at.split_whitespace().collect();
+            let fx = field_parts
+                .first()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let fy = field_parts
+                .get(1)
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let f_rot = field_parts
+                .get(2)
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            edits.push(SexpEdit::replace(
+                val_start,
+                val_end,
+                format!("{} {} {f_rot}", mm(fx + applied_dx), mm(fy + applied_dy)),
+            ));
+        }
+
         moved.push(json!({
             "reference": reference,
             "old_x": x, "old_y": y,
@@ -794,6 +907,22 @@ async fn handle_bulk_move(
         "dx": dx, "dy": dy,
         "errors": errors
     })))
+}
+
+/// One batch entry's field work: both the standard fields ("value",
+/// "footprint") and the free-form `fields` map, all routed through
+/// `set_symbol_property` (P.6.9.18).
+struct PendingProperties {
+    reference: String,
+    /// `(field, stored text)` pairs, standard fields first, then `fields`
+    /// map entries in their given order — so a spec naming the same key
+    /// both ways (e.g. `"footprint"` and `fields.Footprint`) has the
+    /// `fields` entry win, matching `edit_schematic_component`'s order of
+    /// named argument then `fields` map (P.6.9.18).
+    updates: Vec<(String, String)>,
+    /// What this component changed, filled in as `updates` is applied. Every
+    /// field write lands here now, standard fields included (P.6.9.18).
+    changes: Vec<String>,
 }
 
 async fn handle_batch_edit(
@@ -816,9 +945,11 @@ async fn handle_batch_edit(
 
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
-    let mut file_edits: Vec<SexpEdit> = Vec::new();
     let mut changed: Vec<serde_json::Value> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
+    // Every spec's field writes (standard fields and `fields` map alike),
+    // applied once the whole batch has been walked and validated.
+    let mut pending_properties: Vec<PendingProperties> = Vec::new();
 
     // One index for the whole batch, consulted only by the entries that
     // carry a `uuid` (D.4.1.6); `reference` entries never reach it.
@@ -851,48 +982,106 @@ async fn handle_batch_edit(
             }
         };
 
-        let mut component_changes: Vec<String> = Vec::new();
-
-        // Standard fields
+        // Standard fields ("value", "footprint") now go through the same
+        // `updates` vector as "fields" below (P.6.9.18): they used to be
+        // resolved as byte ranges via `field_value_range` and refused outright
+        // when the property did not exist, which made a bare-placed symbol
+        // (no `Footprint` property at all) unable to receive one through
+        // batch edit — exactly the case J.2.4.1 fixed on the single-component
+        // path via `set_symbol_property`'s insert-when-missing behaviour.
+        // Pushed first, so a `fields.Footprint` on the same spec is applied
+        // after and wins, mirroring `edit_schematic_component`'s order
+        // (named argument, then the `fields` map, last write wins — see
+        // l.757-765 of sch_components.rs).
+        let mut updates: Vec<(String, String)> = Vec::new();
         for (field, key) in &[("Value", "value"), ("Footprint", "footprint")] {
             if let Some(new_val) = edit_spec[key].as_str() {
-                match field_value_range(&content, reference, field) {
-                    Some((start, end)) => {
-                        file_edits.push(SexpEdit::replace(start, end, new_val.to_string()));
-                        component_changes.push(format!("{} → {}", field, new_val));
-                    }
-                    None => errors.push(format!("Field '{}' not found on '{}'", field, reference)),
-                }
+                updates.push((field.to_string(), new_val.to_string()));
             }
         }
 
-        // Arbitrary extra fields from "fields" object
-        if let Some(fields_obj) = edit_spec["fields"].as_object() {
-            for (field_name, field_val) in fields_obj {
-                if let Some(new_val) = field_val.as_str() {
-                    match field_value_range(&content, reference, field_name) {
-                        Some((start, end)) => {
-                            file_edits.push(SexpEdit::replace(start, end, new_val.to_string()));
-                            component_changes.push(format!("{} → {}", field_name, new_val));
-                        }
+        // Arbitrary extra fields from "fields". This is the same generic
+        // property path `edit_schematic_component` has, so it answers the same
+        // way (P.6.9.14): a number or a boolean is stored as its text form,
+        // anything with no text form is refused out loud rather than silently
+        // dropped, a key the symbol does not carry yet is inserted rather than
+        // refused (J.2.4.1), and `Reference` is refused outright because its
+        // designator lives in `(instances …)` too and this path would only
+        // rewrite the property half of it (D124).
+        match edit_spec.get("fields") {
+            None | Some(serde_json::Value::Null) => {}
+            Some(serde_json::Value::Object(map)) => {
+                for (key, raw) in map {
+                    match crate::tools::sch_components::property_text(raw) {
+                        Some(text) => updates.push((key.clone(), text)),
                         None => errors.push(format!(
-                            "Field '{}' not found on '{}'",
-                            field_name, reference
+                            "'{}' on '{}': value must be a string, number or boolean",
+                            key, reference
                         )),
                     }
                 }
             }
+            Some(_) => errors.push(format!(
+                "'fields' on '{}' must be an object of key:value pairs",
+                reference
+            )),
         }
 
-        if !component_changes.is_empty() {
+        pending_properties.push(PendingProperties {
+            reference: reference.to_string(),
+            updates,
+            changes: Vec::new(),
+        });
+    }
+
+    // A single pass now: standard fields ("value", "footprint") and the
+    // `fields` map both end up in the same `updates` vector and are both
+    // written through `set_symbol_property`, which re-locates the symbol
+    // by reference on every call and returns an already-spliced document —
+    // exactly what `set_field` does on the single-component path. There is
+    // no offset-based phase left to run first (P.6.9.18 removed the last one,
+    // which used to resolve "value"/"footprint" as byte ranges via
+    // `field_value_range` and refuse them outright when the property did not
+    // exist yet). Walking `updates` over the growing string keeps every
+    // insertion's position and indentation correct without ever
+    // reserialising the document, so a one-field edit is still a one-line
+    // diff (P.6.9.4).
+    let mut new_content = content;
+    for pending in &mut pending_properties {
+        for (field, value) in &pending.updates {
+            // Every unit sharing `pending.reference`, not just the first
+            // (P.6.8.2): `Value`/`Footprint`/custom fields are the
+            // component's, not one unit's, and this is the same generic
+            // property path `edit_schematic_component`'s `set_field` uses.
+            if find_all_symbol_instance_blocks(&new_content, &pending.reference).is_empty() {
+                errors.push(format!("Component '{}' not found", pending.reference));
+                continue;
+            }
+            match set_symbol_property_on_all_units(
+                &new_content,
+                &pending.reference,
+                field,
+                value,
+                RESERVED_PROPERTY_KEYS,
+            ) {
+                Ok((updated, outcome)) => {
+                    new_content = updated;
+                    pending.changes.push(match outcome {
+                        SetPropertyOutcome::Updated => format!("{} → {}", field, value),
+                        SetPropertyOutcome::Inserted => format!("{} → {} (added)", field, value),
+                    });
+                }
+                Err(why) => errors.push(format!("'{}' on '{}': {why}", field, pending.reference)),
+            }
+        }
+        if !pending.changes.is_empty() {
             changed.push(json!({
-                "reference": reference,
-                "changes": component_changes
+                "reference": pending.reference,
+                "changes": pending.changes
             }));
         }
     }
 
-    let new_content = apply_edits(content, file_edits);
     write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
 
     Ok(CallToolResult::json(&json!({
@@ -921,13 +1110,16 @@ async fn handle_batch_delete_components(
 
     for reference in &batch.references {
         let reference = reference.as_str();
-        match find_symbol_block(&content, reference) {
-            Some((del_start, del_end)) => {
-                edits.push(SexpEdit::delete(del_start, del_end));
-                deleted.push(reference.to_string());
-            }
-            None => errors.push(format!("Component '{}' not found", reference)),
+        // Every unit of the designator (P.6.8.2) — see `handle_batch_delete`.
+        let blocks = find_all_symbol_blocks(&content, reference);
+        if blocks.is_empty() {
+            errors.push(format!("Component '{}' not found", reference));
+            continue;
         }
+        for (del_start, del_end) in blocks {
+            edits.push(SexpEdit::delete(del_start, del_end));
+        }
+        deleted.push(reference.to_string());
     }
 
     let new_content = apply_edits(content, edits);
@@ -1171,12 +1363,10 @@ async fn handle_validate_wire_connections(
     // Collect all valid pin endpoints
     let mut pin_points: Vec<(f64, f64)> = Vec::new();
     for inst in &instances {
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(&lib_syms, inst);
         if let Some(sym) = lib_sym {
             let t = inst.pin_transform();
-            for pin in extract_lib_pins(sym) {
+            for pin in extract_lib_pins_for_unit(sym, inst.unit) {
                 pin_points.push(pin_endpoint(&pin, t));
             }
         }
@@ -1319,12 +1509,10 @@ async fn handle_validate_component_connections(
         if !filter_refs.is_empty() && !filter_refs.contains(&inst.reference) {
             continue;
         }
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(&lib_syms, inst);
         if let Some(sym) = lib_sym {
             let t = inst.pin_transform();
-            for pin in extract_lib_pins(sym) {
+            for pin in extract_lib_pins_for_unit(sym, inst.unit) {
                 let (px, py) = pin_endpoint(&pin, t);
 
                 // Skip intentional no-connects
@@ -1740,5 +1928,392 @@ mod midwire_pin_tests {
                 "with_junction={with_junction}: {body}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod bulk_move_property_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::{ServerConfig, ToolContext};
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    const DEVICE_R: &str = "    (symbol \"Device:R\"\n      (property \"Reference\" \"R\" (at 0 0 0))\n      (property \"Value\" \"R\" (at 0 0 0))\n    )\n";
+
+    fn seeded_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("move.kicad_sch");
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n{DEVICE_R}  )\n)\n"
+            ),
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    /// Byte range (relative to `content`) of the coordinate text inside the
+    /// `(at …)` of the direct-child property named `field` on symbol
+    /// `reference`, for asserting on where a field's text ended up.
+    fn property_at_text<'a>(content: &'a str, reference: &str, field: &str) -> &'a str {
+        let (start, end) = find_symbol_instance_block(content, reference).expect("symbol");
+        let prop = crate::tools::find_symbol_property(content, start, end, field)
+            .unwrap_or_else(|| panic!("{field} property"));
+        // find_symbol_property gives the *value* span; walk forward to this
+        // property's own `(at …)` instead.
+        let spans = crate::tools::symbol_property_at_spans(content, start, end);
+        let value_line_end = content[prop.value_end..]
+            .find('\n')
+            .map(|o| prop.value_end + o)
+            .unwrap_or(prop.value_end);
+        spans
+            .into_iter()
+            .find(|&(s, _)| s > prop.value_end && s < value_line_end + 200)
+            .map(|(s, e)| &content[s..e])
+            .unwrap_or_else(|| panic!("{field} has no (at …) child"))
+    }
+
+    /// Before the fix, `handle_bulk_move` rewrote only the symbol's own `(at
+    /// …)`; every property's field text — which carries its own absolute
+    /// `(at x y rot)` — stayed where the symbol used to be.
+    #[tokio::test]
+    async fn bulk_move_shifts_property_anchors_by_the_snapped_delta() {
+        let (_d, path) = seeded_schematic();
+        handle_batch_place_components(
+            &json!({
+                "schematic": path.display().to_string(),
+                "components": [
+                    { "lib_id": "Device:R", "x": 100.3, "y": 100.3, "reference": "R1" }
+                ]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        let before = std::fs::read_to_string(&path).unwrap();
+        let value_before = property_at_text(&before, "R1", "Value");
+        let value_before_xy: Vec<f64> = value_before
+            .split_whitespace()
+            .take(2)
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let value_rot_before = value_before.split_whitespace().nth(2).unwrap().to_string();
+
+        let sch = cse::Schematic::load(&path).unwrap();
+        let sym = sch.symbols.by_reference("R1").unwrap();
+        let (sym_x_before, sym_y_before) = sym.position();
+
+        let result = handle_bulk_move(
+            &json!({ "schematic": path.display().to_string(), "references": ["R1"], "dx": 5.0, "dy": 5.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let sch = cse::Schematic::load(&path).unwrap();
+        let sym = sch.symbols.by_reference("R1").unwrap();
+        let (sym_x_after, sym_y_after) = sym.position();
+        let applied_dx = sym_x_after - sym_x_before;
+        let applied_dy = sym_y_after - sym_y_before;
+        // Grid-snapped, so not exactly (5.0, 5.0) — the point of using the
+        // *applied* delta rather than the raw dx/dy.
+        assert_ne!((applied_dx, applied_dy), (0.0, 0.0));
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        let value_after = property_at_text(&after, "R1", "Value");
+        let value_after_xy: Vec<f64> = value_after
+            .split_whitespace()
+            .take(2)
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let value_rot_after = value_after.split_whitespace().nth(2).unwrap().to_string();
+
+        assert!(
+            (value_after_xy[0] - (value_before_xy[0] + applied_dx)).abs() < 1e-6,
+            "Value field x must move by the applied delta: before={value_before_xy:?} after={value_after_xy:?} applied_dx={applied_dx}"
+        );
+        assert!(
+            (value_after_xy[1] - (value_before_xy[1] + applied_dy)).abs() < 1e-6,
+            "Value field y must move by the applied delta"
+        );
+        assert_eq!(
+            value_rot_after, value_rot_before,
+            "a field's own rotation must not change on a move"
+        );
+        assert_ne!(
+            (sym_x_before, sym_y_before),
+            (0.0, 0.0),
+            "sanity: symbol actually has a nonzero starting position"
+        );
+    }
+
+    /// A symbol block whose `(at` is never closed with `)` must produce an
+    /// error, not panic on a slice with `end < start`.
+    ///
+    /// `symbol_own_at_span` is exercised directly (not through
+    /// `handle_bulk_move`) because reaching this from the handler would
+    /// require a `sym_start..sym_end` range whose text has no `)` at all —
+    /// impossible for a range `find_symbol_instance_block` itself hands
+    /// back, since that range always comes from a balanced-block finder and
+    /// therefore always ends in `)`. The scan must not rely on that
+    /// guarantee to stay panic-free, which is exactly what this proves.
+    #[test]
+    fn symbol_own_at_span_reports_unterminated_at_instead_of_panicking() {
+        let content = "(symbol\n  (lib_id \"Device:R\")\n  (at 10 10 0";
+        let result = symbol_own_at_span(content, 0, content.len());
+        assert!(
+            matches!(&result, Err(msg) if msg.contains("Unterminated")),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn symbol_own_at_span_finds_the_symbols_own_at_not_a_propertys() {
+        let content = "(symbol\n  (lib_id \"Device:R\")\n  (at 10 10 90)\n  (property \"Reference\" \"R1\"\n    (at 12 8 0)\n  )\n)";
+        let (start, end) = symbol_own_at_span(content, 0, content.len()).unwrap();
+        assert_eq!(&content[start..end], "10 10 90");
+    }
+
+    /// A property anchor is moved by a plain addition, so unlike the symbol's
+    /// own anchor it is not protected by `snap_point`. Adding the applied
+    /// delta to a field at 241.3 yields `246.38000000000002` in binary
+    /// floating point, and writing that puts noise in the file for a byte the
+    /// caller never asked to change — the class of damage P.6.9.4 removed.
+    #[tokio::test]
+    async fn bulk_move_does_not_leak_float_noise_into_property_anchors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("noise.kicad_sch");
+        // Written by hand rather than placed through the handler: the noise
+        // only appears for particular coordinate/delta pairs, and the point
+        // of this test is to pin one of them rather than hope placement
+        // happens to produce one. 139.7 + 5 snaps to 144.78, an applied
+        // delta of 5.0800000000000125.
+        let sheet = "(kicad_sch\n\t(version 20250114)\n\t(generator \"konnect\")\n\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n\t(paper \"A4\")\n\t(lib_symbols\n\t)\n\t(symbol\n\t\t(lib_id \"Device:R\")\n\t\t(at 139.7 100.33 0)\n\t\t(unit 1)\n\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")\n\t\t(property \"Reference\" \"R1\"\n\t\t\t(at 241.3 3.556 0)\n\t\t)\n\t\t(property \"Value\" \"10k\"\n\t\t\t(at 100.33 241.3 0)\n\t\t)\n\t)\n)\n";
+        std::fs::write(&path, sheet).unwrap();
+
+        let result = handle_bulk_move(
+            &json!({ "schematic": path.display().to_string(), "references": ["R1"], "dx": 5.0, "dy": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        let noisy: Vec<&str> = after
+            .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+            .filter(|tok| {
+                tok.split_once('.').is_some_and(|(_, frac)| {
+                    frac.len() > 6 && frac.chars().all(|c| c.is_ascii_digit())
+                })
+            })
+            .collect();
+        assert!(
+            noisy.is_empty(),
+            "float noise written into the sheet: {noisy:?}\n{after}"
+        );
+        // And the move itself still happened, so the assertion above is not
+        // passing because nothing was written.
+        assert!(
+            after.contains("(at 144.78 100.33 0)"),
+            "the symbol did not move as expected:\n{after}"
+        );
+    }
+
+    /// A move that snaps back to the symbol's current position must leave the
+    /// file byte-identical: an edit that changes nothing still shows up, since
+    /// a `(at x y)` with no rotation would be rewritten as `(at x y 0)`.
+    #[tokio::test]
+    async fn a_move_that_snaps_to_a_standstill_rewrites_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("standstill.kicad_sch");
+        let sheet = "(kicad_sch\n\t(version 20250114)\n\t(generator \"konnect\")\n\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n\t(paper \"A4\")\n\t(lib_symbols\n\t)\n\t(symbol\n\t\t(lib_id \"Device:R\")\n\t\t(at 139.7 100.33 0)\n\t\t(unit 1)\n\t\t(uuid \"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\")\n\t\t(property \"Reference\" \"R1\"\n\t\t\t(at 241.3 3.556)\n\t\t)\n\t)\n)\n";
+        std::fs::write(&path, sheet).unwrap();
+
+        // Well under half a grid step, so `snap_point` returns the symbol
+        // where it already is.
+        let result = handle_bulk_move(
+            &json!({ "schematic": path.display().to_string(), "references": ["R1"], "dx": 0.1, "dy": 0.0 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            after, sheet,
+            "a standstill move rewrote the sheet instead of leaving it alone"
+        );
+    }
+}
+
+#[cfg(test)]
+mod multiunit_connect_tests {
+    //! P.6.8.1: `batch_connect_to_net`'s instance lookup picked the *first*
+    //! `SymbolInstance` matching a reference, ignoring `unit`. On a
+    //! multi-unit symbol (two `U1` entries, one per unit) that always meant
+    //! unit 1's placement, even for a pin unit 1 doesn't have. The
+    //! `Amplifier_Operational:LM2904` fixture makes this measurable: unit 1's
+    //! pin 3 and unit 2's pin 5 sit at the identical local point `(-7.62,
+    //! 2.54)`, so the old code silently mislabeled unit 2's pin 5 at unit 1's
+    //! pin 3 position — a wrong answer that looked plausible.
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::{ServerConfig, ToolContext};
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    const MULTIUNIT_LM2904: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/multiunit_lm2904.kicad_sch"
+    );
+
+    fn temp_copy_of_fixture(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        std::fs::copy(MULTIUNIT_LM2904, &path).unwrap();
+        (dir, path)
+    }
+
+    /// Red before the fix: pin 5 (unit 2, at x=160) resolved through unit 1's
+    /// placement (x=100) because both `U1` instances tied for the first
+    /// `find()` match, and unit 1 happens to declare no pin 5 — except the
+    /// unit-blind `extract_lib_pins` would have reported one anyway by
+    /// superimposing unit 2's pins onto unit 1. The fixed lookup must place
+    /// pin 5's label near x=160 (unit 2's placement), and explicitly not at
+    /// unit 1's pin 3 coordinate.
+    #[tokio::test]
+    async fn pin_5_connects_through_its_own_unit_not_unit_1() {
+        let (_dir, path) = temp_copy_of_fixture("pin5.kicad_sch");
+        let result = handle_batch_connect_to_net(
+            &json!({
+                "schematic": path.display().to_string(),
+                "net_name": "NET5",
+                "pins": [{ "reference": "U1", "pin_number": "5" }]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        let out: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(out["errors"].as_array().unwrap().len(), 0, "{out}");
+        let added = &out["added"][0];
+        let px = added["x"].as_f64().unwrap();
+
+        // Unit 1 sits at x=100, unit 2 at x=160 (see the fixture). Pin 3
+        // (unit 1) and pin 5 (unit 2) share the same *local* point, so a
+        // resolution through unit 1 lands near x=100 - 7.62, not near
+        // x=160 - 7.62.
+        assert!(
+            (px - (160.0 - 7.62)).abs() < 0.01,
+            "pin 5 must resolve through unit 2's placement (x~=152.38), got x={px} \
+             (x~=92.38 would mean it was mislabeled onto unit 1's pin 3, #P.6.8.1)"
+        );
+        assert!(
+            (px - (100.0 - 7.62)).abs() > 1.0,
+            "pin 5's label landed on unit 1's pin 3 position (x={px}) — the exact \
+             regression #P.6.8.1 describes"
+        );
+    }
+
+    /// Mirror of the test above: the fix must not disturb what already
+    /// worked. Pin 3 (unit 1) still resolves through unit 1's own placement.
+    #[tokio::test]
+    async fn pin_3_on_unit_1_is_unaffected() {
+        let (_dir, path) = temp_copy_of_fixture("pin3.kicad_sch");
+        let result = handle_batch_connect_to_net(
+            &json!({
+                "schematic": path.display().to_string(),
+                "net_name": "NET3",
+                "pins": [{ "reference": "U1", "pin_number": "3" }]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        let out: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(out["errors"].as_array().unwrap().len(), 0, "{out}");
+        let added = &out["added"][0];
+        let px = added["x"].as_f64().unwrap();
+
+        assert!(
+            (px - (100.0 - 7.62)).abs() < 0.01,
+            "pin 3 (unit 1) must still resolve through unit 1's placement (x~=92.38), got x={px}"
+        );
+    }
+
+    /// A pin number that exists on neither unit still errors by name, not
+    /// silently — the multi-candidate loop must not swallow a genuine miss.
+    #[tokio::test]
+    async fn a_pin_absent_from_every_unit_still_errors() {
+        let (_dir, path) = temp_copy_of_fixture("missing.kicad_sch");
+        let result = handle_batch_connect_to_net(
+            &json!({
+                "schematic": path.display().to_string(),
+                "net_name": "NETX",
+                "pins": [{ "reference": "U1", "pin_number": "99" }]
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text result");
+        };
+        let out: serde_json::Value = serde_json::from_str(text).unwrap();
+        let errors: Vec<&str> = out["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e.as_str().unwrap())
+            .collect();
+        assert_eq!(errors.len(), 1, "{out}");
+        assert!(errors[0].contains("99"), "{errors:?}");
+        assert!(errors[0].contains("U1"), "{errors:?}");
     }
 }

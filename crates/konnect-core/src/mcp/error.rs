@@ -75,6 +75,35 @@ impl TransientClass {
     }
 }
 
+/// Marker error carried (via anyhow's error chain) when a call never supplied
+/// an argument the handler cannot proceed without.
+///
+/// The `require_*` helpers answer that case with a structured
+/// [`ToolErrorKind::InvalidArgument`] directly; the helpers that return
+/// `anyhow::Result` — [`crate::tools::get_path`] — cannot, because their
+/// callers return `anyhow::Result` and `?` erases everything but the message.
+/// Attaching this type to the chain carries the distinction to
+/// [`ToolErrorKind::from_anyhow`], which downcasts it, so a client sees one
+/// vocabulary whichever helper the handler happened to reach for.
+///
+/// Strictly "the key was not supplied". A path that *is* there but cannot be
+/// used — the file is absent, unreadable, malformed — is the tool trying and
+/// failing, and keeps the error it already had. Callers must classify by
+/// downcast, never by matching message text.
+#[derive(Debug)]
+pub struct MissingArgument {
+    /// The argument key the call did not supply.
+    pub key: String,
+}
+
+impl std::fmt::Display for MissingArgument {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Missing required argument: '{}'", self.key)
+    }
+}
+
+impl std::error::Error for MissingArgument {}
+
 /// Structured error for tool call failures.
 ///
 /// Serializes with `kind` as a stable discriminant — the single field a client
@@ -303,6 +332,25 @@ impl ToolErrorKind {
         }
     }
 
+    /// The argument this error is about, for the one kind that is about an
+    /// argument.
+    ///
+    /// P.6.9.17: `error_kind` alone tells a caller that *an* argument is
+    /// invalid, which is not enough to fix the call. Where the structured body
+    /// travels whole — `CallToolResult::error_kind` serializes the variant's
+    /// own fields beside `kind` — the field rides along for free; where a
+    /// result is flattened into a summary, as `kicad_invoke` flattens a batch
+    /// entry that failed through `Err(anyhow)`, it has to be lifted out
+    /// deliberately. Returns `None` for every other kind rather than an empty
+    /// string, so a caller can tell "not about an argument" from "about an
+    /// argument nobody named".
+    pub fn field(&self) -> Option<&str> {
+        match self {
+            Self::InvalidArgument { field, .. } => Some(field),
+            _ => None,
+        }
+    }
+
     /// Whether retrying this exact call can help.
     pub fn transient_class(&self) -> TransientClass {
         match self {
@@ -375,7 +423,20 @@ impl ToolErrorKind {
     /// carries a stable `io` code instead of only the OS's localized prose
     /// (progress.md E9). Anything unrecognised stays `HandlerError` rather than
     /// being given a class it has not earned.
+    ///
+    /// A [`MissingArgument`] marker is read first and answers as
+    /// `InvalidArgument`: it is a statement about the *request*, and an
+    /// incomplete request never got far enough to produce the io failure the
+    /// next pass would look for. Never matched on message text.
     pub fn from_anyhow(err: &anyhow::Error) -> Self {
+        for cause in err.chain() {
+            if let Some(missing) = cause.downcast_ref::<MissingArgument>() {
+                return Self::InvalidArgument {
+                    field: missing.key.clone(),
+                    reason: "missing".to_string(),
+                };
+            }
+        }
         for cause in err.chain() {
             // Checked before the io::Error case below: a write conflict
             // carries no io::Error at all — write_atomic_if_unchanged

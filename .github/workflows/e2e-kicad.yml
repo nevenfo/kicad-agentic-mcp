@@ -6,14 +6,23 @@ name: E2E (real KiCAD)
 #   - the conformance suite round-trips every schematic in KiCAD's demo corpus
 #   - the PCM package is assembled and schema-validated
 #
-# Runs weekly, on release tags, and on demand. Not per-PR: installing KiCAD
-# costs several minutes and the per-PR suite already covers everything that
-# doesn't need a real KiCAD.
+# Runs weekly, on demand, and — through `workflow_call` — as the release gate
+# invoked by release.yml. Not per-PR: installing KiCAD costs several minutes
+# and the per-PR suite already covers everything that doesn't need a real
+# KiCAD.
 #
-# NOTE: at tag time this runs IN PARALLEL with release.yml and does not gate
-# it — a red E2E next to a published release is advisory signal, not a
-# contradiction (it happened at v0.2.0). Fold into release.yml as a `needs:`
-# if release gating is ever wanted.
+# GATING (P.5): this file used to carry its own `push: tags` trigger, so at tag
+# time it ran IN PARALLEL with release.yml and could go red beside a published
+# release — advisory signal, not a contradiction (it happened at v0.2.0). It is
+# now called BY release.yml instead, and `release` needs it, so a red critical
+# E2E stops the publication. The tag trigger is gone on purpose: keeping it
+# would run the whole suite twice per tag.
+#
+# `gating: true` (set only by release.yml) drops the `live-ipc` job. That job
+# drives a real pcbnew GUI on a cold runner and its failure mode is "the API
+# pipe never appeared", which is a runner-liveness question, not a statement
+# about the artifact being published. It stays on the weekly and on-demand
+# runs, where a red result is read by a human rather than blocking a release.
 #
 # On demand, name the fork explicitly — `gh` resolves a bare invocation to the
 # `upstream` remote, where a dispatch is a 403:
@@ -24,9 +33,14 @@ on:
   schedule:
     - cron: "17 6 * * 1" # Mondays 06:17 UTC
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      gating:
+        description: >-
+          Set by release.yml. Runs only the critical kicad-cli path, whose
+          result gates publication.
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -67,17 +81,122 @@ jobs:
           "KICAD_CLI=$cli" | Out-File $env:GITHUB_ENV -Append
           $demos = Join-Path (Split-Path (Split-Path $cli)) "share\kicad\demos"
           if (Test-Path $demos) { "KICAD_DEMOS=$demos" | Out-File $env:GITHUB_ENV -Append }
+          $footprints = Join-Path (Split-Path (Split-Path $cli)) "share\kicad\footprints"
+          if (Test-Path $footprints) { "KICAD_FOOTPRINTS=$footprints" | Out-File $env:GITHUB_ENV -Append }
           & $cli --version
 
+      # Every probe below runs even when an earlier one failed, and the job
+      # still goes red — the workflow's own version of P.7.3. Each is its own
+      # `cargo test` invocation with nothing shared but the install, so a red
+      # step tells you nothing about the ones behind it: two runs were spent
+      # discovering one defect each, in order. `steps.kicad.outcome` keeps that
+      # from turning a failed install into a dozen identical failures.
       - name: E2E design loop (create → wire → ERC → Gerber → DRC)
         env:
           KONNECT_E2E_KEEP_DIR: ${{ github.workspace }}/e2e-artifacts
         run: cargo test -p konnect --test e2e_kicad -- --ignored --nocapture
 
       - name: Demo-corpus conformance (115+ eeschema-authored schematics)
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-core --test conformance_test -- --nocapture
 
+      # Every layer KiCad's own footprints draw on must be representable in the
+      # IPC enum. A name that is not gets sent as the BL_UNDEFINED sentinel,
+      # which KiCAD indexes its layer bitset with and faults on, discarding the
+      # user's unsaved board (P.6.9.1). The corpus is the only oracle for which
+      # names occur, and it grows with every KiCad release.
+      - name: Footprint-library layer corpus (15k+ .kicad_mod)
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-ipc --test layer_corpus_test -- --nocapture
+
+      # The two fidelity regressions whose oracle can only be KiCAD itself:
+      # a `(paper "User" W H)` page this engine wrote must still load (#209),
+      # and an unrelated edit to a `(lib_name …)`-derived sheet must leave
+      # every net exactly as KiCAD derived it (#144). Both files parse and
+      # both assertions are internal-consistency-proof only up to the point
+      # where KiCAD disagrees — which is what happened: on the derived
+      # fixture, dropping `lib_name` loses four of six nets and KiCAD reports
+      # nothing at all. In this job because it gates the release.
+        # Quoted: an unquoted `#` after a space starts a YAML comment, which
+        # silently truncated this name to "… (#144,".
+      - name: "Schematic fidelity against real KiCAD (#144, #209)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test schematic_fidelity_live -- --ignored --nocapture
+
+      # A symbol placed on a child sheet is written with one instance path per
+      # placement of that sheet, keyed to the project root. complex_hierarchy
+      # places the same child twice, so this is where KiCAD says whether it
+      # accepts that shape (P.6.9.3). The probe's own doc comment records what
+      # it cannot show: no CLI here distinguishes the old derivation.
+      - name: "A symbol on a child sheet keeps the hierarchy loadable (e7b0c54)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable
+
+      # A no-connect marks a pin, and the grid snap used to move one aimed at
+      # an off-grid pin 0.33 mm away, where it marks nothing (P.6.8.9). KiCad
+      # is the only authority on the consequence: it stops reporting the pin
+      # when the marker lands, and emits no_connect_dangling when it does not.
+      - name: "A no-connect on an off-grid pin silences KiCad's own ERC (P.6.8.9)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_no_connect_on_an_off_grid_pin_silences_kicads_own_erc
+
+      # A placed symbol takes its Reference/Value from the library symbol's own
+      # anchor, transformed by the placement (P.6.8.8). The unit tests prove
+      # the arithmetic against stub libraries; only a real install has the
+      # anchors and the effects nodes KiCad actually ships, and only kicad-cli
+      # says whether the property block that comes out still loads.
+      - name: "A rotated symbol with library-placed fields still loads (P.6.8.8)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_rotated_symbol_with_library_placed_fields_still_loads
+
+      # run_erc refuses a sheet that belongs to a project rooted elsewhere,
+      # because kicad-cli never reads that project's sym-lib-table and reports
+      # every project-library symbol as an unknown library (P.6.7.8). That
+      # refusal is decided before kicad-cli is reached, so nothing else in the
+      # suite would notice a KiCad that stopped producing those artefacts — the
+      # refusal would go on blocking a call that works. In THIS job, gating,
+      # because red here means the shipped artifact refuses a legitimate call:
+      # it is a statement about our behaviour, not about runner liveness. The
+      # probe asserts the root/sub-sheet asymmetry, not a violation count.
+      - name: "ERC on a sub-sheet reports library artefacts its root does not (P.6.7.11)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not
+
+      # A board with open copper is reported by kicad-cli under
+      # `unconnected_items`, a sibling of `violations` this fork read alone
+      # until P.6.1 — so the evidence gate approved unrouted boards and every
+      # reported position was null. Only KiCAD can produce the three-array
+      # report, so the proof belongs here, in the job that gates the release.
+      - name: "DRC reads all three report categories (unrouted copper is an error)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture an_unrouted_board_reports_unconnected_copper_as_an_error
+
+      # create_netclass used to insert a (netclass ...) node into the board
+      # itself, a token pcbnew's parser rejects on any modern board, so the
+      # board no longer loaded. Only a real kicad-cli load proves the board
+      # still opens after create_netclass/assign_net_to_class (P.6.2, 9a56233).
+      # A pour on a KiCad 10 board (no net table) names its net instead of
+      # numbering it, which is a different zone shape. If pcbnew rejected it,
+      # the board would stop loading rather than the pour failing (P.6.9.2).
+      - name: "A pour on a KiCad 10 board leaves it loadable (f2372ca)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_pour_on_a_kicad_10_board_still_loads_in_kicad_cli
+
+      - name: "Netclass tools leave the board loadable by kicad-cli (9a56233)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture netclass_tools_leave_the_board_loadable_by_kicad_cli
+
+      # P.6.9.4 changed the shape of every byte the typed writer emits — tab
+      # indent, closing paren on its own line, no blank lines, the source's own
+      # line ending. The conformance job measures how little of the file that
+      # disturbs; this one is the other half, and only KiCAD can answer it: the
+      # new shape must still be a sheet KiCAD will load (f8a8db0).
+      - name: "A sheet rewritten by the typed writer still loads in KiCAD (f8a8db0)"
+        if: always() && steps.kicad.outcome == 'success'
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_sheet_rewritten_by_the_typed_writer_is_still_loadable_by_kicad
+
       - name: IPC wedge timeout regression
+        if: always() && steps.kicad.outcome == 'success'
         run: cargo test -p konnect-ipc --test mock_server_test -- --ignored --nocapture
 
       - uses: actions/setup-python@v7
@@ -110,6 +229,8 @@ jobs:
   # distinguishable at a glance.
   live-ipc:
     name: Live IPC against a running pcbnew
+    # Advisory, never a release gate — see the GATING note at the top.
+    if: ${{ !inputs.gating }}
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

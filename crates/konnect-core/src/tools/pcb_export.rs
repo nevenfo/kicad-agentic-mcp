@@ -6,8 +6,9 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::ipc_boundary::{ipc_error_result, with_ipc};
-use crate::tools::{get_path, ToolContext, ToolDef};
+use crate::tools::ipc_boundary::guarded_ipc as ipc;
+use crate::tools::{get_path, require_array, ToolContext, ToolDef};
+use crate::try_arg;
 use serde_json::json;
 
 use super::cli;
@@ -60,7 +61,7 @@ pub fn tools() -> Vec<ToolDef> {
                     "format": { "type": "string", "description": "'excellon' (default) or 'gerber'", "default": "excellon" },
                     "units": { "type": "string", "description": "Excellon coordinate units: 'mm' (default) or 'in'", "default": "mm" },
                     "drill_origin": { "type": "string", "description": "'absolute' (default) or 'plot'", "default": "absolute" },
-                    "separate_plated": { "type": "boolean", "description": "Write plated (PTH) and non-plated (NPTH) holes to separate files", "default": false },
+                    "separate_plated": { "type": "boolean", "description": "Write plated (PTH) and non-plated (NPTH) holes to separate files. Default true: in one file the two are told apart only by a comment, which an Excellon reader may drop, and the fab plates a hole that must not be", "default": true },
                     "generate_map": { "type": "boolean", "description": "Also write a drill map", "default": false },
                     "map_format": { "type": "string", "description": "Map format when generate_map is set: 'pdf' (default), 'gerberx2', 'ps', 'dxf', or 'svg'", "default": "pdf" }
                 },
@@ -302,8 +303,10 @@ async fn handle_export_gerber(
     if drill {
         // kicad-cli also has a dedicated drill export, into the same directory
         // — its `--output` is a directory and it names the file after the
-        // board. For anything beyond the defaults, call `export_drill`.
-        let _ = cli::export_drill(cli, &board, &output_dir, &cli::DrillOptions::default()).await;
+        // board. These are Gerbers for a fabricator, so the holes are split
+        // the way the fab package splits them (`cli::SEPARATE_PLATED_HOLES`);
+        // for anything else, call `export_drill`.
+        let _ = cli::export_drill(cli, &board, &output_dir, &cli::fab_drill_options()).await;
         // best-effort
     }
 
@@ -455,7 +458,9 @@ async fn handle_export_drill(
         format: args["format"].as_str().unwrap_or("excellon"),
         units: args["units"].as_str().unwrap_or("mm"),
         origin: args["drill_origin"].as_str().unwrap_or("absolute"),
-        separate_th: args["separate_plated"].as_bool().unwrap_or(false),
+        separate_th: args["separate_plated"]
+            .as_bool()
+            .unwrap_or(cli::SEPARATE_PLATED_HOLES),
         generate_map: args["generate_map"].as_bool().unwrap_or(false),
         map_format: args["map_format"].as_str().unwrap_or("pdf"),
     };
@@ -516,14 +521,13 @@ async fn handle_export_dxf(
 ) -> anyhow::Result<CallToolResult> {
     let board = get_path(args, "board")?;
     let output_dir = get_path(args, "output_dir")?;
-    let layers: Vec<String> = args["layers"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    // `layers` is `required` in the schema, and an empty list makes
+    // `cli::export_dxf` omit `--layers` altogether, leaving the layer set to
+    // kicad-cli's own default. Absence is refused; an explicit `[]` is not.
+    let layers: Vec<String> = try_arg!(require_array(args, "layers"))
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
     let layer_refs: Vec<&str> = layers.iter().map(|s| s.as_str()).collect();
 
     tokio::fs::create_dir_all(&output_dir).await?;
@@ -623,30 +627,22 @@ async fn handle_refill_zones(
 
     // kicad-cli pcb export gerber triggers zone fills as a side-effect,
     // but the proper command is kicad-cli pcb --refill-zones (not in all versions).
-    // Use IPC refill_zones when available, otherwise fall back to file-level
-    // zone fill marker update.
-    let addr = ctx.config.ipc_address.clone();
-    let result = with_ipc(addr, move |client| {
-        client.refill_zones()?;
-        Ok(())
-    })
-    .await?;
+    // Refilling zones has no file-level equivalent — the fill geometry is
+    // computed by KiCAD — so this always goes over IPC, board-guarded (`ipc!`
+    // = `ipc_boundary::guarded_ipc`) so it cannot silently refill whichever
+    // board KiCAD happens to have open first: `KiCadIpcClient::refill_zones`
+    // itself resolves the board via `get_board_document` (its first open
+    // document), not the one this call named (P.6.9.23).
+    ipc!(ctx, args, |client| client.refill_zones());
 
-    match result {
-        Ok(()) => Ok(CallToolResult::text(
-            serde_json::to_string(&json!({
-                "success": true,
-                "method": "ipc",
-                "board": board.to_str().unwrap_or("")
-            }))
-            .unwrap(),
-        )),
-        // Refilling zones has no file-level equivalent — the fill geometry is
-        // computed by KiCAD — so there is nothing to fall back to, and the
-        // failure is reported as itself rather than as a success carrying a
-        // note nobody branches on.
-        Err(failure) => Ok(ipc_error_result(&failure)),
-    }
+    Ok(CallToolResult::text(
+        serde_json::to_string(&json!({
+            "success": true,
+            "method": "ipc",
+            "board": board.to_str().unwrap_or("")
+        }))
+        .unwrap(),
+    ))
 }
 
 async fn handle_get_drc_violations(
@@ -659,27 +655,49 @@ async fn handle_get_drc_violations(
 
     let cli = &ctx.config.kicad_cli;
     let refill = args["refill_zones"].as_bool().unwrap_or(false);
-    let violations = cli::run_drc(cli, &board, refill).await?;
+    let report = cli::run_drc(cli, &board, refill).await?;
+    let all = report.all();
 
     // Optionally write report
     if let Some(out_path) = args["output"].as_str() {
-        let report = serde_json::to_string_pretty(&violations)?;
-        tokio::fs::write(out_path, report).await?;
+        let text = serde_json::to_string_pretty(&all)?;
+        tokio::fs::write(out_path, text).await?;
     }
 
-    let filtered: Vec<_> = violations
+    let filtered: Vec<_> = all
         .iter()
         .filter(|v| severity_rank(&v.severity) >= min_rank)
         .collect();
 
+    // A category the JSON did not include a key for is not "zero findings" —
+    // it is a pass kicad-cli did not run; a fabrication package built on this
+    // summary needs that distinction, not just a smaller total.
+    let missing: Vec<&str> = report
+        .missing_categories()
+        .iter()
+        .map(|c| c.json_key())
+        .collect();
+
     let summary = json!({
-        "total": violations.len(),
+        "total": all.len(),
         "filtered_count": filtered.len(),
         "severity_filter": severity_filter,
+        "by_category": {
+            "violations": report.violations.as_ref().map(Vec::len),
+            "unconnected_items": report.unconnected_items.as_ref().map(Vec::len),
+            "schematic_parity": report.schematic_parity.as_ref().map(Vec::len),
+        },
+        "missing_categories": missing,
         "violations": filtered.iter().map(|v| json!({
             "severity": v.severity,
             "description": v.description,
-            "pos": v.pos.as_ref().map(|p| json!({ "x": p.x, "y": p.y }))
+            "category": v.category,
+            "pos": v.pos.as_ref().map(|p| json!({ "x": p.x, "y": p.y })),
+            "items": v.items.iter().map(|item| json!({
+                "description": item.description,
+                "pos": item.pos.as_ref().map(|p| json!({ "x": p.x, "y": p.y })),
+                "uuid": item.uuid,
+            })).collect::<Vec<_>>()
         })).collect::<Vec<_>>()
     });
 
@@ -738,6 +756,27 @@ mod new_export_format_tests {
         // kicad_cli is "" in test_ctx, so spawning must fail — but as a
         // returned error, not a panic.
         assert!(handle_export_dxf(&args, &ctx).await.is_err());
+    }
+
+    /// An absent `layers` used to become an empty list, and an empty list
+    /// makes `cli::export_dxf` omit `--layers` entirely — so kicad-cli picked
+    /// its own layer set and the caller got files they never asked for.
+    #[tokio::test]
+    async fn export_dxf_without_layers_is_refused_not_left_to_kicad_cli() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ctx = test_ctx();
+        let args = json!({
+            "board": dir.path().join("board.kicad_pcb").to_str().unwrap(),
+            "output_dir": dir.path().join("out").to_str().unwrap()
+        });
+        let res = handle_export_dxf(&args, &ctx)
+            .await
+            .expect("the refusal is a result, not a transport error");
+        assert!(res.is_error);
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
     }
 
     #[tokio::test]
@@ -861,6 +900,41 @@ mod new_export_format_tests {
         for other in ["kicad", "kicadxml", "spice", "orcadpcb2", "pads"] {
             assert!(!is_ipc_d356(other), "'{other}' is a sch netlist format");
         }
+    }
+
+    /// The published default and the one the handler falls back on have to be
+    /// the same value, and both have to be the fab policy. A schema that
+    /// announces one default while the handler applies another is a defect in
+    /// its own right (P.6.9.15), and here it would be a silent one: the caller
+    /// reads `false`, the board comes back with its mounting holes plated.
+    #[test]
+    fn the_published_drill_default_is_the_one_the_handler_applies() {
+        let schema = tools()
+            .into_iter()
+            .find(|t| t.name == "export_drill")
+            .expect("export_drill is registered")
+            .input_schema;
+        assert_eq!(
+            schema["properties"]["separate_plated"]["default"],
+            json!(cli::SEPARATE_PLATED_HOLES),
+            "the schema's default has drifted from cli::SEPARATE_PLATED_HOLES"
+        );
+
+        // The handler's own fallback: it spawns kicad-cli, so there is no
+        // value to read back without one. What can be asserted is that the
+        // fallback is the constant and not a literal that would drift from it
+        // in silence — the same lexical guard `ipc_boundary` uses.
+        // The needle is split on purpose: written whole, it would sit in this
+        // file and satisfy its own search whatever the handler does (D133).
+        let needle = concat!(".unwrap_or(cli::SEPARATE_", "PLATED_HOLES)");
+        assert!(
+            include_str!("pcb_export.rs").contains(needle),
+            "handle_export_drill's separate_plated fallback must be the constant"
+        );
+        assert!(
+            cli::fab_drill_options().separate_th,
+            "the fab package and the Gerber companion must separate too"
+        );
     }
 
     #[tokio::test]

@@ -7,11 +7,14 @@
 
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::{get_path, ToolContext, ToolDef};
+use crate::tools::{drc_gate, get_path, invalid_arg, ToolContext, ToolDef};
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
     parser::parse_sexp,
-    schematic::{extract_lib_pins, extract_symbol_instances, pin_endpoint, read_schematic},
+    schematic::{
+        extract_lib_pins_for_unit, extract_symbol_instances, find_lib_symbol, pin_endpoint,
+        read_schematic,
+    },
 };
 use serde_json::json;
 use std::collections::HashSet;
@@ -99,7 +102,17 @@ pub fn tools() -> Vec<ToolDef> {
                         "default": "warning"
                     }
                 },
-                "required": ["schematic"]
+                // P.6.9.16: `schematic` alone was never the contract. A
+                // board-only review is intended and tested
+                // (`a_board_review_without_drc_evidence_cannot_look_good`),
+                // so listing `schematic` as required made the dispatch refuse
+                // a legitimate call. The real rule is the same disjunction
+                // `get_datasheet_url` publishes: one of the two, or both.
+                "required": [],
+                "anyOf": [
+                    { "required": ["schematic"] },
+                    { "required": ["board"] }
+                ]
             }),
             |args, ctx| async move { handle_run_design_review(args, ctx).await }
         ),
@@ -155,15 +168,13 @@ async fn handle_audit_decoupling(
 
     // For each IC (non-passive, non-connector component), check power pins
     for inst in &instances {
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(&lib_syms, inst);
         let lib_sym = match lib_sym {
             Some(s) => s,
             None => continue,
         };
 
-        let pins = extract_lib_pins(lib_sym);
+        let pins = extract_lib_pins_for_unit(lib_sym, inst.unit);
         let is_passive = inst.lib_id.contains("R_")
             || inst.lib_id.contains("C_")
             || inst.lib_id.contains("L_")
@@ -255,15 +266,12 @@ async fn handle_audit_connections(
     let mut findings = Vec::new();
 
     for inst in &instances {
-        let lib_sym = match lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        {
+        let lib_sym = match find_lib_symbol(&lib_syms, inst) {
             Some(s) => s,
             None => continue,
         };
 
-        let pins = extract_lib_pins(lib_sym);
+        let pins = extract_lib_pins_for_unit(lib_sym, inst.unit);
 
         // Check for I2C pull-ups
         if has_i2c_pins(&pins) {
@@ -526,6 +534,41 @@ async fn handle_run_design_review(
     args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
+    // P.6.9.16: both halves of this tool's contract were wrong, in opposite
+    // directions. `run_design_review_with` only *tests*
+    // `args["schematic"].is_string()` / `args["board"].is_string()`, so a call
+    // carrying neither quietly skipped every audit and came back "LOOKS GOOD"
+    // with nothing reviewed — reachable through `kicad_invoke`, whose batch
+    // entries skip `first_missing_required` (D131). Meanwhile the schema said
+    // `required: ["schematic"]`, which made the dispatch refuse a board-only
+    // review that `a_board_review_without_drc_evidence_cannot_look_good`
+    // proves is intended. The contract is `schematic` *or* `board`; the schema
+    // now says so via `anyOf`, and this guard closes the case that `anyOf`
+    // cannot reach on its own — a batch entry with neither.
+    if !args["schematic"].is_string() && !args["board"].is_string() {
+        return Ok(invalid_arg(
+            "schematic",
+            "a review needs something to review: pass 'schematic', 'board', or both",
+        ));
+    }
+    // A review with no board in it never had anything to run DRC on, and must
+    // come back exactly as it did before DRC entered the verdict.
+    let drc = match get_path(args, "board") {
+        Ok(board) if args["board"].is_string() => {
+            Some(drc_gate::gather(&ctx.config.kicad_cli, &board, false).await)
+        }
+        _ => None,
+    };
+    run_design_review_with(args, ctx, drc.as_ref()).await
+}
+
+/// The review itself, against a DRC report someone else gathered — split from
+/// the handler for the same reason as `validate_for_manufacturing_with`.
+async fn run_design_review_with(
+    args: &serde_json::Value,
+    ctx: &ToolContext,
+    drc: Option<&drc_gate::DrcEvidence>,
+) -> anyhow::Result<CallToolResult> {
     info!("[BETA] Running full design review");
     let severity_filter = args["severity_filter"].as_str().unwrap_or("warning");
     let min_rank = match severity_filter {
@@ -535,27 +578,91 @@ async fn handle_run_design_review(
     };
 
     let mut all_findings: Vec<serde_json::Value> = Vec::new();
-    let mut audit_results = Vec::new();
+    // Each entry is (audit name, findings), where every finding already
+    // carries a "sheet" key naming the file it came from — a finding with no
+    // sheet key would be indistinguishable from one that was actually checked
+    // on every sheet.
+    let mut audit_results: Vec<(&str, Vec<serde_json::Value>)> = Vec::new();
 
-    // Run schematic audits
-    if args["schematic"].is_string() {
-        let decoupling = handle_audit_decoupling(args, ctx).await?;
-        audit_results.push(("decoupling", extract_findings(&decoupling)));
+    // P.6.8.4: a schematic with sub-sheets used to be audited on its root
+    // file alone — the four schematic audits never followed a `(sheet …)`
+    // reference, so a defect living only on a sub-sheet was invisible to
+    // `run_design_review` no matter how loud it was. Every reachable sheet
+    // gets its own pass now, and every sheet a `(sheet …)` reference named
+    // but this walk could not load is reported rather than silently skipped.
+    let mut sheets_reachable = 0usize;
+    let mut sheets_audited = 0usize;
+    let mut unaudited_sheets: Vec<serde_json::Value> = Vec::new();
+    if let Some(schematic_arg) = args["schematic"].as_str() {
+        let root = std::path::Path::new(schematic_arg);
+        let walk = super::reachable_sheets(root);
+        sheets_reachable = walk.sheets.len() + walk.unloadable.len();
+        sheets_audited = walk.sheets.len();
+        for (path, reason) in &walk.unloadable {
+            unaudited_sheets.push(json!({
+                "sheet": path.display().to_string(),
+                "reason": reason,
+            }));
+        }
 
-        let connections = handle_audit_connections(args, ctx).await?;
-        audit_results.push(("connections", extract_findings(&connections)));
+        let mut decoupling_findings = Vec::new();
+        let mut connections_findings = Vec::new();
+        let mut power_findings = Vec::new();
+        let mut bom_findings = Vec::new();
+        for sheet in &walk.sheets {
+            let sheet_label = sheet.display().to_string();
+            let mut sheet_args = args.clone();
+            sheet_args["schematic"] = json!(sheet_label);
 
-        let power = handle_audit_power_rails(args, ctx).await?;
-        audit_results.push(("power_rails", extract_findings(&power)));
+            let decoupling = handle_audit_decoupling(&sheet_args, ctx).await?;
+            decoupling_findings.extend(tag_with_sheet(extract_findings(&decoupling), &sheet_label));
 
-        let bom = handle_check_bom_health(args, ctx).await?;
-        audit_results.push(("bom_health", extract_findings(&bom)));
+            let connections = handle_audit_connections(&sheet_args, ctx).await?;
+            connections_findings
+                .extend(tag_with_sheet(extract_findings(&connections), &sheet_label));
+
+            let power = handle_audit_power_rails(&sheet_args, ctx).await?;
+            power_findings.extend(tag_with_sheet(extract_findings(&power), &sheet_label));
+
+            let bom = handle_check_bom_health(&sheet_args, ctx).await?;
+            bom_findings.extend(tag_with_sheet(extract_findings(&bom), &sheet_label));
+        }
+        audit_results.push(("decoupling", decoupling_findings));
+        audit_results.push(("connections", connections_findings));
+        audit_results.push(("power_rails", power_findings));
+        audit_results.push(("bom_health", bom_findings));
     }
 
     // Run PCB audits
     if args["board"].is_string() {
         let dfm = handle_audit_manufacturing(args, ctx).await?;
         audit_results.push(("manufacturing", extract_findings(&dfm)));
+    }
+
+    // DRC — the one audit that reads the board the way the fab will, and the
+    // only one that can tell a board routed all but one net from a finished
+    // one.
+    let mut drc_summary = serde_json::Value::Null;
+    let mut drc_incomplete = false;
+    if let Some(evidence) = drc {
+        let gate = drc_gate::assess(evidence);
+        drc_summary = gate.summary;
+        drc_incomplete = gate.incomplete;
+        audit_results.push((
+            "drc",
+            gate.findings
+                .iter()
+                .map(|f| {
+                    json!({
+                        "severity": f.severity,
+                        "category": "drc",
+                        "component": serde_json::Value::Null,
+                        "issue": f.issue,
+                        "recommendation": f.fix,
+                    })
+                })
+                .collect(),
+        ));
     }
 
     // Collect and filter findings
@@ -604,25 +711,59 @@ async fn handle_run_design_review(
     });
 
     let verdict = if error_count > 0 {
-        "NOT READY — critical issues must be fixed before manufacturing"
+        "NOT READY — critical issues must be fixed before manufacturing".to_string()
+    } else if !unaudited_sheets.is_empty() {
+        // Nothing found on the sheets that were audited — but at least one
+        // sheet this hierarchy references was never looked at, so absence of
+        // findings there proves nothing. Name it, the way `drc_incomplete`
+        // names the missing DRC pass below.
+        let names: Vec<String> = unaudited_sheets
+            .iter()
+            .map(|u| {
+                format!(
+                    "{} ({})",
+                    u["sheet"].as_str().unwrap_or("?"),
+                    u["reason"].as_str().unwrap_or("could not be loaded")
+                )
+            })
+            .collect();
+        format!("INCOMPLETE — sheet(s) not audited: {}", names.join(", "))
+    } else if drc_incomplete {
+        // Nothing found — but a pass of DRC never ran, so this review has not
+        // seen the board the fab will see. "LOOKS GOOD" here would be a
+        // clearance nobody earned.
+        "INCOMPLETE — DRC did not run, so the board is unverified".to_string()
     } else if warning_count > 0 {
-        "NEEDS ATTENTION — review warnings before manufacturing"
+        "NEEDS ATTENTION — review warnings before manufacturing".to_string()
     } else {
-        "LOOKS GOOD — no critical issues found"
+        "LOOKS GOOD — no critical issues found".to_string()
     };
 
+    let mut review = json!({
+        "verdict": verdict,
+        "errors": error_count,
+        "warnings": warning_count,
+        "info": info_count,
+        "severity_filter": severity_filter,
+        "findings": all_findings
+    });
+    if args["schematic"].is_string() {
+        // Reported next to `drc` for the same reason `drc_incomplete` earned
+        // a verdict of its own: a caller reading only `verdict` and `findings`
+        // must still be able to tell a clean sheet from one nobody checked.
+        review["schematic_coverage"] = json!({
+            "sheets_reachable": sheets_reachable,
+            "sheets_audited": sheets_audited,
+            "unaudited": unaudited_sheets,
+        });
+    }
+    if drc.is_some() {
+        // `null` when DRC could not run — never zeroed counters.
+        review["drc"] = drc_summary;
+    }
+
     Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "design_review": {
-                "verdict": verdict,
-                "errors": error_count,
-                "warnings": warning_count,
-                "info": info_count,
-                "severity_filter": severity_filter,
-                "findings": all_findings
-            }
-        }))
-        .unwrap(),
+        serde_json::to_string(&json!({ "design_review": review })).unwrap(),
     ))
 }
 
@@ -759,11 +900,9 @@ fn collect_capacitor_nets(
         if !inst.reference.starts_with('C') || inst.reference.starts_with("CN") {
             continue; // Only capacitors
         }
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(lib_syms, inst);
         if let Some(sym) = lib_sym {
-            let pins = extract_lib_pins(sym);
+            let pins = extract_lib_pins_for_unit(sym, inst.unit);
             for pin in &pins {
                 let (px, py) = pin_endpoint(pin, inst.pin_transform());
                 if let Some(net) = find_net_at_point(content, px, py) {
@@ -803,11 +942,9 @@ fn collect_bulk_cap_nets(
             continue;
         }
 
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(lib_syms, inst);
         if let Some(sym) = lib_sym {
-            let pins = extract_lib_pins(sym);
+            let pins = extract_lib_pins_for_unit(sym, inst.unit);
             for pin in &pins {
                 let (px, py) = pin_endpoint(pin, inst.pin_transform());
                 if let Some(net) = find_net_at_point(content, px, py) {
@@ -919,11 +1056,9 @@ fn has_pull_up_on_net(
         if !inst.reference.starts_with('R') {
             continue;
         }
-        let lib_sym = lib_syms
-            .iter()
-            .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+        let lib_sym = find_lib_symbol(lib_syms, inst);
         if let Some(sym) = lib_sym {
-            let pins = extract_lib_pins(sym);
+            let pins = extract_lib_pins_for_unit(sym, inst.unit);
             let pin_nets: Vec<Option<String>> = pins
                 .iter()
                 .map(|p| {
@@ -1059,6 +1194,18 @@ fn find_design_rule_value(content: &str, rule_name: &str) -> Option<f64> {
     after[..end].trim().parse().ok()
 }
 
+/// Stamp every finding with the sheet it was found on — the piece of context
+/// that turns "a decoupling cap is missing somewhere" into "on `power.kicad_sch`".
+fn tag_with_sheet(
+    mut findings: Vec<serde_json::Value>,
+    sheet_label: &str,
+) -> Vec<serde_json::Value> {
+    for f in &mut findings {
+        f["sheet"] = json!(sheet_label);
+    }
+    findings
+}
+
 fn extract_findings(result: &CallToolResult) -> Vec<serde_json::Value> {
     if let Some(crate::mcp::protocol::ToolContent::Text { text }) = result.content.first() {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
@@ -1068,4 +1215,101 @@ fn extract_findings(result: &CallToolResult) -> Vec<serde_json::Value> {
         }
     }
     Vec::new()
+}
+
+#[cfg(test)]
+mod drc_in_the_review_tests {
+    use super::*;
+    use crate::router::ToolRouter;
+    use crate::tools::cli::{DrcCategory, DrcReport, DrcViolation};
+    use crate::tools::drc_gate::DrcEvidence;
+    use crate::tools::ServerConfig;
+    use std::sync::Arc;
+
+    fn test_ctx() -> ToolContext {
+        ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        )
+    }
+
+    async fn review(drc: DrcEvidence) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("board.kicad_pcb");
+        std::fs::write(
+            &path,
+            "(kicad_pcb (version 20260206) (layers (44 \"Edge.Cuts\" user)))\n",
+        )
+        .unwrap();
+        let result = run_design_review_with(
+            &json!({ "board": path.display().to_string() }),
+            &test_ctx(),
+            Some(&drc),
+        )
+        .await
+        .unwrap();
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text");
+        };
+        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        parsed["design_review"].clone()
+    }
+
+    /// One net left on the ratsnest is one DRC error, and one DRC error is a
+    /// review that does not say the design is fine.
+    #[tokio::test]
+    async fn an_unconnected_net_lands_in_the_review_as_an_error() {
+        let out = review(DrcEvidence::Measured(DrcReport {
+            violations: Some(vec![]),
+            unconnected_items: Some(vec![DrcViolation {
+                severity: "error".to_string(),
+                description: "Missing connection between items: Pad 2 [SCL] on C1".to_string(),
+                pos: None,
+                rule: Some("unconnected_items".to_string()),
+                category: DrcCategory::UnconnectedItems,
+                items: Vec::new(),
+            }]),
+            schematic_parity: Some(vec![]),
+        }))
+        .await;
+        assert_eq!(out["errors"], json!(1), "{out}");
+        assert!(
+            out["verdict"].as_str().unwrap().starts_with("NOT READY"),
+            "{out}"
+        );
+        assert_eq!(out["drc"]["unconnected_items"], json!(1), "{out}");
+        assert!(
+            out["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["audit"] == "drc"),
+            "{out}"
+        );
+    }
+
+    /// A DRC that ran every pass and found nothing is the one case where the
+    /// review may still say so.
+    #[tokio::test]
+    async fn a_complete_and_clean_drc_leaves_the_verdict_alone() {
+        let out = review(DrcEvidence::Measured(DrcReport {
+            violations: Some(vec![]),
+            unconnected_items: Some(vec![]),
+            schematic_parity: Some(vec![]),
+        }))
+        .await;
+        assert!(
+            out["verdict"].as_str().unwrap().starts_with("LOOKS GOOD"),
+            "{out}"
+        );
+        assert_eq!(out["drc"]["errors"], json!(0), "{out}");
+    }
 }

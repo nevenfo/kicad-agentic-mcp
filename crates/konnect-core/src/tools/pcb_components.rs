@@ -7,11 +7,12 @@
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
-use crate::tools::ipc_boundary::{ipc_error_result, ipc_error_result_with, with_ipc};
+use crate::tools::ipc_boundary::{guarded_ipc as ipc, ipc_error_result_with, with_ipc};
 use crate::tools::library::{
     footprint_lib_nickname_for_dir, is_lib_id, resolve_footprint_path, FootprintPathError,
 };
-use crate::tools::{get_path, require_f64, require_str, ToolContext, ToolDef};
+use crate::tools::{get_path, require_f64, require_str, require_u64, ToolContext, ToolDef};
+use crate::try_arg;
 use anyhow::Context;
 use konnect_sexp::writer::{
     apply_edits, find_balanced_block, find_block_starts, new_uuid, write_atomic,
@@ -22,22 +23,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 // ─── IPC helper ───────────────────────────────────────────────────────────────
-
-macro_rules! ipc {
-    ($ctx:expr, $args:expr, |$c:ident| $body:expr) => {{
-        let addr = $ctx.config.ipc_address.clone();
-        let requested_board = get_path($args, "board")?;
-        match with_ipc(addr, move |$c| {
-            $c.ensure_board_is_active(&requested_board)?;
-            $body
-        })
-        .await?
-        {
-            Ok(v) => v,
-            Err(failure) => return Ok(ipc_error_result(&failure)),
-        }
-    }};
-}
+//
+// P.6.9.22: `ipc!` used to be defined here, board-guarded. It now lives once,
+// shared with `pcb_routing.rs`, in `ipc_boundary::guarded_ipc` — see that
+// macro's doc comment for why two copies is what let one of them diverge.
 
 // ─── Footprint-library resolution ───────────────────────────────────────────
 
@@ -1026,7 +1015,7 @@ pub fn tools() -> Vec<ToolDef> {
                     "count_x":      { "type": "integer", "description": "Number of columns" },
                     "count_y":      { "type": "integer", "description": "Number of rows", "default": 1 },
                     "spacing_x":    { "type": "number", "description": "Column spacing in mm" },
-                    "spacing_y":    { "type": "number", "description": "Row spacing in mm", "default": 0 },
+                    "spacing_y":    { "type": "number", "description": "Row spacing in mm; omitted, it follows spacing_x, giving a square grid" },
                     "ref_prefix":   { "type": "string", "description": "Reference prefix (e.g. 'R')", "default": "U" },
                     "ref_start":    { "type": "integer", "description": "Starting reference number", "default": 1 }
                 },
@@ -1395,8 +1384,7 @@ async fn handle_get_component_pads(
                 konnect_sexp::geometry::transform_pad(local_x, local_y, fp_x, fp_y, fp_rot);
             let net = pad
                 .find("net")
-                .and_then(|n| n.get(2))
-                .and_then(|n| n.as_str())
+                .and_then(konnect_sexp::net::net_name)
                 .unwrap_or("")
                 .to_string();
             Some(json!({ "number": number, "x": board_x, "y": board_y, "net": net }))
@@ -1481,7 +1469,8 @@ async fn handle_place_array(
         Ok(v) => v,
         Err(e) => return Ok(e),
     };
-    let count_x = args["count_x"].as_u64().unwrap_or(1);
+    // `count_x` is `required` in the schema; `count_y` defaults to 1 there.
+    let count_x = try_arg!(require_u64(args, "count_x"));
     let count_y = args["count_y"].as_u64().unwrap_or(1);
     let Some(total_count) = count_x.checked_mul(count_y) else {
         return Ok(CallToolResult::error_kind(
@@ -1507,6 +1496,10 @@ async fn handle_place_array(
         Ok(v) => v,
         Err(e) => return Ok(e),
     };
+    // Falling back to `spacing_x` — a square grid — rather than to 0, which
+    // would stack every row on the same y. The schema used to publish a
+    // `"default": 0` this line has always overridden (P.6.9.15); the schema
+    // was the half that was wrong.
     let spacing_y = args["spacing_y"].as_f64().unwrap_or(spacing_x);
     let prefix = args["ref_prefix"].as_str().unwrap_or("U").to_string();
     let ref_start = args["ref_start"].as_u64().unwrap_or(1);
@@ -2581,6 +2574,39 @@ mod tests {
             "board file must be left untouched"
         );
     }
+
+    /// KiCAD 20260206 dropped the board's `(net <id> …)` table and writes
+    /// `(net "<name>")` directly on each pad. Reading the name at the old
+    /// fixed child index (2) used to return nothing on this form, so every
+    /// pad on a recent board reported an empty net (upstream #142).
+    #[tokio::test]
+    async fn get_component_pads_reads_net_names_on_the_id_less_form() {
+        let dir = tempfile::tempdir().unwrap();
+        let board = dir.path().join("b.kicad_pcb");
+        std::fs::write(
+            &board,
+            r#"(kicad_pcb
+  (version 20260206)
+  (generator "pcbnew")
+  (footprint "R_0402"
+    (at 10 20)
+    (property "Reference" "R1" (at 0 -1 0))
+    (pad "1" smd roundrect (at -0.5 0) (size 0.5 0.5) (layers "F.Cu") (net "VCC"))
+    (pad "2" smd roundrect (at 0.5 0) (size 0.5 0.5) (layers "F.Cu") (net "GND"))
+  )
+)
+"#,
+        )
+        .unwrap();
+
+        let args = json!({ "board": board.to_str().unwrap(), "reference": "R1" });
+        let res = handle_get_component_pads(&args, &test_ctx()).await.unwrap();
+        assert!(!res.is_error, "{}", result_text(&res));
+        let body: serde_json::Value = serde_json::from_str(&result_text(&res)).unwrap();
+        let pads = body["pads"].as_array().unwrap();
+        assert_eq!(pads[0]["net"], json!("VCC"));
+        assert_eq!(pads[1]["net"], json!("GND"));
+    }
 }
 
 #[cfg(test)]
@@ -2610,5 +2636,79 @@ mod field_placement_tests {
         let placement = extract_field_placement("(footprint \"bare\")");
         assert_eq!(placement.reference_at, None);
         assert_eq!(placement.value_at, None);
+    }
+
+    /// `count_x` is required by the schema, but the handler defaulted it to 1
+    /// — an agent that lost the field placed one column instead of hearing
+    /// about it.
+    #[tokio::test]
+    async fn placing_an_array_without_count_x_is_refused_not_reduced_to_one_column() {
+        use crate::router::ToolRouter;
+        use crate::tools::ServerConfig;
+        use std::sync::Arc;
+
+        let ctx = ToolContext::new(
+            ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: String::new(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            Arc::new(ToolRouter::new()),
+        );
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("board.kicad_pcb");
+        std::fs::write(&board, "(kicad_pcb (version 20240108))").unwrap();
+
+        let args = serde_json::json!({
+            "board": board.to_string_lossy(),
+            "footprint": "Resistor_SMD:R_0402",
+            "start_x": 10.0,
+            "start_y": 10.0,
+            "spacing_x": 2.0
+        });
+        let res = handle_place_array(&args, &ctx)
+            .await
+            .expect("the refusal is a result, not a transport error");
+        assert!(res.is_error);
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+        let body = match &res.content[0] {
+            crate::mcp::protocol::ToolContent::Text { text } => text.clone(),
+            _ => panic!(),
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["error"]["field"], "count_x");
+    }
+
+    /// The published schema is a contract, and it promised `spacing_y`
+    /// defaulted to 0 while the handler defaulted it to `spacing_x`. Zero is
+    /// not a defensible default here — it stacks every row on the same y — so
+    /// the schema was the half that was wrong, and it must not promise a
+    /// number the handler will not honour.
+    #[test]
+    fn the_schema_does_not_promise_a_spacing_y_default_the_handler_ignores() {
+        let schema = tools()
+            .into_iter()
+            .find(|t| t.name == "place_component_array")
+            .expect("the tool is registered")
+            .input_schema;
+        let spacing_y = &schema["properties"]["spacing_y"];
+        assert!(
+            spacing_y["default"].is_null(),
+            "the schema still publishes a spacing_y default the handler overrides: {spacing_y}"
+        );
+        let described = spacing_y["description"]
+            .as_str()
+            .expect("spacing_y is described");
+        assert!(
+            described.contains("spacing_x"),
+            "the description must say what an omitted spacing_y actually does: {described}"
+        );
     }
 }

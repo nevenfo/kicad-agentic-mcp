@@ -92,8 +92,33 @@ pub enum IpcGraphicDefinition {
     },
 }
 
+impl IpcGraphicDefinition {
+    /// The KiCad layer name this graphic is drawn on. Every variant carries
+    /// one, and a caller that validates layers before building must be able to
+    /// ask for it without matching the variant.
+    pub fn layer(&self) -> &str {
+        match self {
+            Self::Line { layer, .. }
+            | Self::Rect { layer, .. }
+            | Self::Circle { layer, .. }
+            | Self::Arc { layer, .. }
+            | Self::Poly { layer, .. }
+            | Self::Text { layer, .. } => layer,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcTrack {
+    /// KiCAD's own id for this segment, in the form `delete_track` and
+    /// `modify_trace` take. `None` only if KiCAD sent a track without one,
+    /// which it does not do — an `Option` rather than an empty string so that
+    /// case cannot be mistaken for a usable id and handed back to a delete.
+    ///
+    /// Without it there was no path from listing a trace to acting on one:
+    /// `query_traces` reported net, layer, width and endpoints, and every tool
+    /// that touches a single track requires a uuid (#162).
+    pub uuid: Option<String>,
     pub net_name: String,
     pub layer: String,
     pub width: f64,

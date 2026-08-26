@@ -26,6 +26,18 @@ async fn the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothin
     let h = Harness::new();
 
     let stats = h.json("get_jlcpcb_database_stats", json!({})).await;
+    // P.6.9.20: assert *which* database was looked at before asserting that it
+    // is absent. With `jlcpcb_db_path: None` the handler fell back to
+    // `%APPDATA%\konnect\jlcpcb.db`, so this test measured the machine while
+    // its message claimed to measure the harness — and failed the day a real
+    // database landed there. The path assertion is what keeps the fixture
+    // honest if someone puts the fallback back.
+    assert!(
+        stats["path"]
+            .as_str()
+            .is_some_and(|p| p.contains("no-such-jlcpcb.db")),
+        "the harness must name its own absent database, not the machine's: {stats}"
+    );
     assert_eq!(
         stats["exists"], false,
         "no database is configured in this harness: {stats}"
@@ -179,6 +191,49 @@ async fn the_dfm_check_shows_the_board_facts_behind_its_verdict() {
     assert!(
         validated["verdict"].as_str().is_some_and(|v| !v.is_empty()),
         "a DFM check without a verdict is a description: {validated}"
+    );
+}
+
+/// P.6.7.9: `copper_layers` used to be a `content.matches("signal)")` /
+/// `matches("signal \"")` substring scan of the whole file, wrong in both
+/// directions — a plane marked `power`/`mixed`/`jumper` (KiCAD's other three
+/// copper kinds) was never counted, and a match anywhere else in the file
+/// (e.g. inside a net name) was. `unrouted_power_planes.kicad_pcb` carries
+/// both at once: `F.Cu`/`In1.Cu`/`In2.Cu`/`B.Cu` with the two inner layers
+/// marked `power`, plus a net literally named `TEST_signal)_PROBE`. The old
+/// probe read 3 (missed both `power` planes, then picked up one match from
+/// the net name); the real stack is 4.
+#[tokio::test]
+async fn copper_layer_count_is_read_from_the_stackup_not_guessed_from_the_word_signal() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("unrouted_power_planes.kicad_pcb")).to_string();
+
+    let validated = h
+        .json(
+            "validate_for_manufacturing",
+            json!({ "board": board, "fab_house": "jlcpcb" }),
+        )
+        .await;
+    assert_eq!(
+        validated["board_info"]["copper_layers"], 4,
+        "F.Cu, In1.Cu (power), In2.Cu (power), B.Cu are all copper: {validated}"
+    );
+}
+
+/// Same bug, second site: `estimate_cost`'s `layers` fallback drove the price
+/// bracket straight off the same substring scan, so a 4-layer board with
+/// power planes was quoted at the 2-layer rate.
+#[tokio::test]
+async fn cost_estimate_layer_fallback_is_read_from_the_stackup_not_guessed_from_the_word_signal() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.fixture("unrouted_power_planes.kicad_pcb")).to_string();
+
+    let estimated = h
+        .json("estimate_cost", json!({ "board": board, "quantity": 5 }))
+        .await;
+    assert_eq!(
+        estimated["board"]["copper_layers"], 4,
+        "no 'layers' argument was given — it must fall back to the real stack: {estimated}"
     );
 }
 

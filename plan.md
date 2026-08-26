@@ -2839,3 +2839,2062 @@ documents send a reader to another repository's releases.
 
 ### Validation
 There is no Phase P. Nothing in this phase added a capability.
+
+# Phase P — Schematic round-trip fidelity — DONE
+
+Opened 2026-08-24 by an explicit user request after V1 closure. Phase O said
+there is no Phase P; that statement described the V1 scope, and the user has
+opened work beyond it. Nothing in Phase O is reopened or re-marked.
+
+## Objectif
+
+Close the two demonstrated schematic information losses inherited from the
+`5cd6454` baseline, bound the rest of upstream's correctness work to a
+classified list, and make the real-KiCad E2E a condition of publishing a
+release. No new feature, no architecture change, no upstream bulk merge.
+
+## Dépendances
+
+None outside the repository. The KiCad oracle is `kicad-cli` 10.0.3 locally
+(`C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe`) and
+10.0.5 in `e2e-kicad.yml`, which stays the pinned CI baseline.
+
+## Upstream anchors (verified in this repository, not from a description)
+
+- `#144` = merge `8dd54e8`, *fix(schematic): preserve (lib_name …) and resolve
+  lib_symbols like KiCad*, 2026-08-14. Fixes issue `#143`. 15 files.
+- `#209` = merge `1d31ad4`, *fix(schematic): preserve custom paper dimensions
+  and portrait flag*, 2026-08-15. 2 files.
+- Fork baseline = `5cd6454` (2026-08-05), the merge-base with `upstream/main`.
+  Neither fix is present here: `find_lib_symbol`, `lib_name` (as a `Symbol`
+  field), `paper_args` and `unmodelled_children` all return zero hits.
+
+## P.1 — Discriminating regressions, written first — DONE
+
+### Objectif
+Prove the two defects on today's code before touching production, so the fix
+is measured against a red test and not against an argument.
+
+### Tâches
+- [x] P.1.1 `paper` regression: `(paper "User" 292.1 205.105)` and
+      `(paper "A4" portrait)` through ≥3 load/write cycles, in
+      `konnect-schematic-editor/tests/integration.rs`
+- [x] P.1.2 `lib_name` regression: a derived-symbol fixture whose pins resolve
+      differently under `lib_name` and under `lib_id`, asserted at the
+      `konnect-schematic-editor` level and at the `konnect-core` netlist level
+- [x] P.1.3 Both suites run red on `HEAD` with the exact failure recorded
+
+### Validation
+`cargo test` shows the new tests failing, and failing for the modelled reason.
+
+## P.2 — `paper` fidelity (#209) — DONE
+
+### Objectif
+`(paper …)` keeps every argument KiCad wrote after the page-size name.
+
+### Tâches
+- [x] P.2.1 `Schematic.paper_args: Vec<SexpNode>`, filled from
+      `child.args()[1..]` on load and re-emitted after the name on write
+- [x] P.2.2 P.1.1 turns green; a plain `(paper "A4")` gains no token
+- [x] P.2.3 A custom-paper fixture is accepted by a real `kicad-cli`
+
+### Validation
+Targeted tests green; `kicad-cli sch export netlist` accepts the custom-paper
+fixture locally, and the same check runs in `e2e-kicad.yml`.
+
+## P.3 — `lib_name` fidelity and symbol resolution (#144) — DONE
+
+### Objectif
+A symbol resolves through the `lib_symbols` entry KiCad resolves it through,
+and a load/write cycle stops deleting children the model does not know.
+
+### Tâches
+- [x] P.3.1 `Symbol.lib_name`, `Symbol.exclude_from_sim`,
+      `Symbol::lib_symbol_name()`, emitted in eeschema's order
+- [x] P.3.2 Allow-list → deny-list for preserved children of `Symbol` and
+      `Sheet` (`unmodelled_children`)
+- [x] P.3.3 `konnect_sexp::schematic`: `SymbolInstance.lib_name`,
+      `lib_symbol_name()`, `find_lib_symbol()`
+- [x] P.3.4 Every `lib_syms.iter().find(… == inst.lib_id)` call site in
+      `konnect-core` routed through `find_lib_symbol`
+- [x] P.3.5 `ensure_lib_symbol`'s presence check made structural instead of a
+      `{:?}` substring search
+- [x] P.3.6 P.1.2 turns green: netlist identical before/after an unrelated
+      edit, no net merged or lost
+
+### Validation
+Targeted tests green, full workspace test suite green, and the derived fixture
+produces the same `kicad-cli` netlist before and after an unrelated edit.
+
+## P.4 — Bounded upstream differential audit — DONE
+
+### Objectif
+Classify — not synchronise — upstream's correctness and safety fixes since
+`5cd6454`, restricted to data loss, wrong connectivity, wrong symbol/net
+resolution, false success, wrong ERC/DRC, KiCad incompatibility, wrong exports,
+and infidelity with a functional effect.
+
+### Tâches
+- [x] P.4.1 Enumerate candidate upstream fixes in those categories
+- [x] P.4.2 For each: does the faulty mechanism still exist here?
+- [x] P.4.3 Classify `BACKPORT NOW` / `LATER` / `NOT APPLICABLE` with impact,
+      plausible frequency, cost and regression risk
+- [x] P.4.4 Implement only the `BACKPORT NOW` items that stay small,
+      independent and proven, each with its own discriminating test
+- [x] P.4.5 Record the classification in `docs/upstream-audit.md`
+
+### Validation
+Every `BACKPORT NOW` item carries a test that is red before it and green after.
+Anything larger is documented with a precise next action, not started.
+
+## P.5 — Release gate — DONE
+
+### Objectif
+A red mandatory real-KiCad E2E must stop the publication of a release. Today
+`release.yml`'s `release` job needs only `[build, pcm-package]`, and
+`e2e-kicad.yml` runs beside it on the same tag without gating it — confirmed by
+reading both files.
+
+### Tâches
+- [x] P.5.1 Make the critical real-KiCad E2E a prerequisite of publication
+      without duplicating jobs or forking the CI structure
+- [x] P.5.2 KiCad stays pinned at 10.0.5
+- [x] P.5.3 The P.2/P.3 regressions that genuinely need KiCad run inside that
+      gating path
+
+### Validation
+Reading the workflow shows no path from a red mandatory E2E to a published
+release; the workflow files stay valid YAML and the local gate stays green.
+
+## P.6 — Deferred upstream correctness backlog — DONE
+
+### Objectif
+P.4 was scoped as a classification and produced one: 15 `BACKPORT NOW` items,
+roughly 1600 lines of production change across the PCB, export, ERC/DRC and
+connectivity paths. Implementing them inside P.4 would have turned a bounded
+audit into the general upstream synchronisation the phase brief forbids, so
+only #174 was carried out there. This section holds the remainder so the
+classification does not decay into a document nobody acts on.
+
+Full reasoning, mechanism-by-mechanism, in `docs/upstream-audit.md`. Two items
+came from outside the strategic review's candidate list: they landed directly
+on upstream `main`, so a `--merges` enumeration never saw them, and both
+outrank everything the review named.
+
+### Dépendances
+None. Each item below is independent of the others except where stated.
+
+### Tâches
+- [x] P.6.1 `e7eeeac` — `run_drc` reads only the `violations` array and drops
+      `unconnected_items` (unrouted copper, severity `error`) and
+      `schematic_parity`; `pos` is read at the violation level, a field KiCad
+      never writes, so every reported position is null. This fork's own
+      evidence gate approves boards with unrouted copper.
+      `konnect-core/src/tools/cli.rs`, gates in `evidence/validators.rs`,
+      `pcb_export.rs`, `verification.rs`. Highest priority of the whole audit.
+      DONE. Measured on the oracle first: `kicad-cli` 10.0.3 on a two-net
+      unrouted board writes both errors under `unconnected_items` and no
+      violation-level `pos` at all, so the old parser saw 0 errors out of 2
+      and every position null. `DrcReport` now carries the three arrays as
+      `Option<Vec<_>>` — an absent key is a pass that did not run, an empty
+      one is a clean measurement — and `validators.rs` refuses a report with
+      a missing category rather than counting it as zero findings.
+      `crates/konnect-core/tests/fixtures/unrouted.kicad_pcb` is the KiCad 10
+      board that produces it; the probe runs in the gating E2E job.
+- [x] P.6.2 `9a56233` + #220 — `create_netclass` writes a `(netclass …)` node
+      into the `.kicad_pcb`; KiCad 10 reads netclasses from `.kicad_pro` only,
+      and the insertion point is `rfind(')')` when no `(net_classes` block
+      exists — a block KiCad has not written since v6. Produces boards KiCad
+      refuses to open. `pcb_routing.rs`.
+      DONE. Corruption confirmed on the oracle first: the exact block the
+      handler inserted makes `kicad-cli` exit 3 with "Échec du chargement de
+      la carte" and write no report at all. Both handlers now edit the sibling
+      `.kicad_pro` — `net_settings.classes` for the class, `netclass_patterns`
+      for membership, the shape a real KiCad 10 project file uses — and refuse
+      when no project file exists rather than writing where nothing reads. The
+      board is no longer written by either tool, asserted byte for byte. #220
+      on top: an update moves only the fields the call named.
+- [x] P.6.3 #262 — power symbols absent from the schematic net graph: every
+      `power:` rail reads as unconnected. Needs `extract_power_symbol_labels`
+      and `LibPin::electrical_type`; `LabelKind::PowerSymbol` is already a dead
+      variant here. Largest of the remaining items.
+      DONE. `LibPin` reads the electrical type — the first atom of
+      `(pin power_in line …)` — and only `power_in` pins name a net, so a
+      `PWR_FLAG`'s `power_out` pin does not rename the rail it flags, which the
+      fixture and its assertion prove. Every net-graph consumer now goes
+      through `extract_all_net_labels`, except `find_orphan_items`, left on
+      `extract_labels` as upstream left it. On
+      `tests/fixtures/power_symbol_divider.kicad_sch` the tools see 3 nets
+      instead of 1, and `get_net_connections("GND")` stops reporting zero.
+      Anti-regression: the 115-schematic eeschema corpus still parses 115/115.
+      `sch_bridge.rs` is untouched, as the audit asks.
+- [x] P.6.4 #297 + #298 — only `items[0]` of an ERC/DRC violation is kept.
+      Done: `ReportItem { description, pos, uuid }` and one shared decoder
+      `parse_report_items` feed both `parse_erc_json` and `parse_drc_json`;
+      `items: Vec<ReportItem>` lands on `ErcViolation` and `DrcViolation`,
+      and the three tool outputs (`sch_export`, `verification`, `pcb_export`)
+      carry it. `pos` stays as the derived `items[0]` convenience, so no
+      consumer breaks, and `rule` stays `Option<String>` as this fork has it.
+      The `pos` correction was already folded in by P.6.1, so nothing was
+      owed here. Discriminating tests: a `pin_to_pin` conflict keeps both
+      pins, and the fixture's two `unconnected_items` — same rule, same
+      description — are now told apart by their second item.
+- [x] P.6.5 #142 — KiCad 10 pad net read at a fixed index, so every pad
+      reports an empty net; net counts and `add_net` ids by substring.
+      Done: new `konnect-sexp/src/net.rs` reads both forms by *shape* rather
+      than by a version threshold — `get(1)` is a `Str` on the id-less form
+      `(net "VCC")` and an `Atom` on `(net 6 "HDMI_+5V")`. It exports
+      `net_name`, `net_id`, `board_uses_net_table`, `count_distinct_nets` and
+      `next_net_id`. The three sites are fixed: the pad read in
+      `pcb_components.rs`, `net_count` in `pcb_board.rs`, and `add_net` in
+      `pcb_routing.rs`, which now derives its id from the parsed table and
+      refuses a board that has none — there a net is created by connecting an
+      item, not by a file-level insert.
+      Oracle, measured over the 18 KiCad 10 demo boards: version **20260206**
+      is the cutover — it drops the net table and writes `(net "<name>")` on
+      each item, every version up to 20250907 keeps `(net <id> "<name>")`.
+      On the 17 old-form boards the new count equals the old formula exactly,
+      so nothing regresses; on `pic_programmer.kicad_pcb` (20260206) the net
+      count goes from 0 to 111 and **236 of its 247 pads stop reporting an
+      empty net**.
+- [x] P.6.10 `parse_sexp` reports success on a document it could not consume.
+      Found while measuring P.6.5's oracle, not in upstream's audit.
+      `crates/konnect-sexp/src/parser.rs:89-111`: when the first form does not
+      consume the input, the parser wraps whatever fragments it managed into
+      an implicit `List` and returns `Ok`, and its `Err(_) => break` drops the
+      remainder silently. Reproduction, on a board KiCad 10 itself ships —
+      `demos/royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb`, 3.6 MB:
+      the file is genuinely unbalanced (its root closes at byte 14735, and the
+      document ends 349 closing parens ahead), and `parse_sexp` answers `Ok`
+      with a 3-child root whose `head()` is `None` and **3 pads out of ~1000**.
+      Every tool reading that board therefore reports success on a fraction of
+      it — the same false-clean shape as P.6.1 and P.5. A paren-balance scan
+      over `interf_u` and `pic_programmer` returns depth 0 on both, so the
+      measurement is the file's, not the scanner's.
+      Two parts: make `parse_sexp` reject input it cannot consume as one
+      document instead of fabricating a root, and add a board-corpus
+      conformance test over the demo boards that fails loudly rather than
+      skipping in silence — see D113 for why silence is the trap here.
+      Decide deliberately what the implicit-`List` fallback was for before
+      removing it; some caller may rely on it for multi-form fragments.
+      DONE, and that decision was measured rather than argued. Both halves of
+      the fallback were made unreachable in turn and the whole suite re-run:
+      **nothing depends on either**. Every site that parses a fragment instead
+      of a file already wraps it in an explicit root — `(kicad_sch …)` in
+      `sch_wiring`, `(kicad_pcb …)` in `layers` — and no KiCad file format has
+      more than one top-level form. So the fallback is gone entirely rather
+      than half-fixed: `parse_sexp` returns `Err` for input it cannot consume
+      as one document, carrying the **byte offset** where reading stopped,
+      which on a multi-megabyte board is the only practical way to find the
+      damage.
+      Second part, the board-corpus conformance: `conformance_test.rs` gains
+      `collect_boards` and a board test, and its demo lookup learns the
+      per-user `%LOCALAPPDATA%` install — the omission behind D113, which is
+      why these tests reported "passed" in 0.00 s on a machine that had KiCad
+      all along. They now find the corpus with no `KICAD_DEMOS` set, an
+      explicit-but-missing `KICAD_DEMOS` asserts instead of skipping, and the
+      counts are printed and asserted so a run seeing zero files fails.
+      Measured: **115/115 schematics, 18/19 boards**, the nineteenth being
+      D116's genuinely malformed `RoyalBlue54L-Feather.kicad_pcb`, named in a
+      `KNOWN_BAD_BOARDS` allow-list with the measurement that justifies it.
+      That entry is two-sided: a known-bad file that starts parsing fails the
+      test too, so neither a fixed KiCad nor a parser that began accepting
+      damage can pass silently. Cross-proof, run both ways: with the old
+      parser restored, that board "parses" and the board test fails saying so.
+- [x] P.6.6 #153 (write half) — `add_layer` locates the block close with a
+      literal newline-plus-two-spaces, so on tab-indented KiCad 10 boards the
+      layer is written
+      inside the first entry, producing an unopenable board. The read half is
+      already implemented here.
+      Done: new `konnect-sexp/src/layers.rs` (ported from upstream) carries
+      `Layer`, `layers`, `copper` and `is_canonical_name`; the local
+      `board_layers` helper is gone and `get_layer_list`, the id allocator and
+      `get_board_info` all read through it — `layer_count` stops being `0` on
+      every board and `copper_layer_count` joins it. The write half uses two
+      new helpers in `pcb_board.rs`: `close_of_block`, which balances parens
+      while skipping quoted strings, and `entry_indent`, which copies the
+      file's own indent instead of hardcoding spaces. `add_layer` also fails
+      closed on a non-canonical name, since KiCad's layer set is closed and a
+      board carrying an unknown name does not open at all.
+      Red-before/green-after, verified by restoring the old insertion: the
+      non-live test loses `In1.Cu` from the reparsed stackup (it was written
+      inside `(0 "F.Cu" signal)`), and the live probe
+      `add_layer_leaves_the_board_loadable_by_kicad_cli` fails at
+      `kicad-cli` load. Both green after.
+      Left alone deliberately: the id allocator still takes the first free id
+      in `1..=30`, which is right on the old numbering but not on KiCad's
+      current one — see P.6.11.
+- [x] P.6.11 `add_layer` allocates an id that need not match the canonical
+      name it writes. Measured while closing P.6.6, on KiCad's own demos:
+      boards from `20241229` on number copper in **evens** — `CM5_MINIMA_3`
+      and `video` both write `(0 "F.Cu") (4 "In1.Cu") (6 "In2.Cu") (2 "B.Cu")`
+      — while the older scheme this fork's fixtures use puts `B.Cu` at 31 and
+      inner copper at 1..30. The allocator takes the first free id in
+      `1..=30` regardless, so on a modern board it can pair an odd id with an
+      `In<n>.Cu` name, or hand `In1.Cu` a second id on a board that already
+      has one. P.6.6's live probe passes because `unrouted.kicad_pcb` is on
+      the old scheme. The id has to be derived from the requested canonical
+      name under the numbering the board actually uses; the discriminating
+      test is `add_layer` against a board whose `B.Cu` is `2`, reloaded by
+      `kicad-cli`.
+      Done, with one correction to this task's own text, measured before
+      writing anything: **`kicad-cli` is not a discriminating oracle here.**
+      10.0.3 loads a board with a non-canonical id, with a duplicated id, and
+      even with the same layer name declared twice — `pcb drc` succeeds and
+      `export gerbers` produces byte-identical output for `In1.Cu` at 4 and at
+      24. Its loader keys the stackup by name, which is also why this fork's
+      legacy-numbered `unrouted.kicad_pcb` opens in KiCad 10 at all. So the
+      "reloaded by kicad-cli" test proposed above cannot fail, and the real
+      consequences are the ones this server can see: a name declared twice
+      makes `konnect_sexp::layers::copper()` — the copper count this toolset
+      reports to a fab — count it twice, and a board already carrying
+      `In1.Cu`..`In14.Cu` had `In15.Cu` **refused** with "1-30 are all in use"
+      although its own id is 32.
+      Both numberings are now derived rather than assumed.
+      `konnect_sexp::layers` gains `Numbering{Modern,Legacy}`,
+      `canonical_id(name, numbering)` and `numbering(stack)`, which decides
+      from what the table already contains — best score, ties to `Modern` —
+      rather than from a version. The legacy table is exactly the `BoardLayer`
+      proto value minus the three sentinels ahead of `BL_F_Cu`, asserted
+      variant by variant inside the existing
+      `layers_canonical_names_match_kicads_own_enum`. The modern one is
+      measured across the 18 demo boards of the 10.0.3 install: `In<n>.Cu` =
+      `2n+2`, `User.<n>` = `37+2n`, and the fixed layers on the odd slots
+      1..35. **`Rescue` is left without a modern ordinal on purpose**: no demo
+      declares it, and the proto's ordering (between `User.9` and `User.10`)
+      names no slot the `User.<n>` formula leaves free, so `canonical_id`
+      returns `None` and `add_layer` refuses rather than guessing a value no
+      caller could tell from a measured one.
+      `add_layer` now refuses a name already in the table (naming its id),
+      refuses a canonical id already held by another layer, and drops the
+      "1-30 all in use" branch, which is unreachable once the id comes from
+      the name. Red before, each half neutered in turn: the derivation (three
+      tests, all writing id 1), the duplicate-name guard, the taken-id guard.
+      The last two needed their tests rewritten to discriminate — asking for
+      `B.Cu` on a board whose `B.Cu` sits at its canonical id is caught by the
+      *other* guard, so the duplicate test now uses `(9 "In1.Cu" …)`, the very
+      file the old allocator produced.
+      New corpus check in `conformance_test.rs`: the detected numbering must
+      explain **every** entry of every demo board's table, not a majority —
+      18 boards, 496 entries, counts printed (D113), `RoyalBlue54L-Feather`
+      excluded as the known-malformed file (D116).
+      Stated bound: no live probe proves the id is right, because KiCAD
+      offers no way to observe it from the CLI. The assertions are on what
+      this server writes and on what KiCAD's own files contain.
+- [x] P.6.7 Smaller, independent, each with its own discriminating test. Split
+      into one id per item so a commit closes exactly one: all eleven are closed,
+      each by its own commit and its own discriminating test.
+  - [x] P.6.7.1 #212 — one junction dot per wire instead of per T. Done: a
+        single `add_missing_junctions` helper in `sch_wiring.rs` guards on a
+        coincident dot, and the three unguarded loops call it —
+        `handle_add_wire`, `handle_batch_add_wire`, `handle_connect_to_net`
+        (upstream had the same three). Each was already followed by a
+        correctly guarded mid-segment-pin loop, now folded into the same
+        helper. Discriminating tests: a rail with three taps, drawn wire by
+        wire and again as one batch — red before at **3 dots stacked on the
+        first T**, one dot per T after.
+  - [x] P.6.7.2 #213 — `#PWR{count+1}` re-issues a live designator. Done:
+        `next_pwr_number` collects the numbers actually in use and hands out
+        the lowest free one, so a deletion's number is refilled rather than
+        skipped; `add_power_symbol`'s own description now says so. Red before
+        at `["#PWR001", "#PWR003", "#PWR003"]` — three symbols added,
+        `#PWR002` deleted, and the fourth add duplicated `#PWR003`.
+  - [x] P.6.7.3 #214 — deleted wires leave orphaned junction dots. Done:
+        `prune_orphaned_junctions` drops the dots a removed wire left with
+        nothing to justify them, on both `delete_schematic_wire` and the batch
+        path (which reports `junctions_pruned_count`); `locate_wire_for_delete`
+        and `wires_in_ranges` come with it. `locate_wire_for_delete` is adapted
+        rather than copied — this fork resolves the uuid through
+        `find_schematic_item_by_uuid`, not upstream's standalone block scan.
+        `split_wire_at_point` no longer routes through `handle_delete_wire`:
+        its two halves cover the same segment, so every dot stays justified,
+        and going through the pruning path would drop dots in the gap between
+        the delete and the re-insert. It also becomes a single write.
+        Conservation rule, and it is tested in both directions: a dot needs two
+        wires, or one wire plus a pin landing mid-segment. Red before at
+        `[(63.5, 50.8), (25.4, 25.4)]` against `[(25.4, 25.4)]` — the ghost dot
+        survives the delete; and with the rule dropped the other way, the
+        mid-segment pin's dot is wrongly pruned (`[]` against
+        `[(101.6, 76.2)]`).
+  - [x] P.6.7.4 #274 — pad count and courtyard by substring. Done:
+        `get_footprint_info` reads all three properties off the parsed
+        footprint — `find_all("pad")`, a `layer` of `B.CrtYd`/`F.CrtYd` on a
+        direct child, `find_all("model")` — instead of probing the source text.
+        Red before on a reduced but unrewritten KiCad 10 stock footprint (tabs
+        and CRLF): `pad_count` **0 instead of 6**, and a footprint whose only
+        mention of the courtyard is inside its `descr` reported
+        `has_courtyard: true`.
+  - [x] P.6.7.5 #140 — net and track counts by substring. Done:
+        `count_nets_and_tracks` in `manufacturing.rs` reads the parsed tree —
+        nets through `konnect_sexp::net::count_distinct_nets` (P.6.5's shared
+        accessor, so a KiCad 9 net counts once rather than through its
+        declaration *and* every reference), tracks as the direct
+        `segment`/`via`/`arc` children of `(kicad_pcb …)`. Arcs are counted
+        there and not by walking, since `(arc …)` also appears inside a zone
+        outline's `(pts …)` — a polygon corner, not routed copper, and its own
+        test. Red before, measured end to end: a routed KiCad 10 board reported
+        `net_count` **0 instead of 2** and `track_count` **0 instead of 4**,
+        and an unrouted one reported 0 nets instead of 4 — so the
+        `net_count > 3 && track_count == 0` guard could never fire, and the
+        last check before fabrication passed a board that was never routed.
+  - [x] P.6.7.9 `validate_for_manufacturing` counted copper layers by substring
+        too: `content.matches("signal)") + content.matches("signal \"")`
+        (`manufacturing.rs`). Found while closing P.6.7.5, not in upstream's
+        audit. KiCad marks copper with four kinds — `signal`, `power`, `mixed`,
+        `jumper` — so a board using `power` for a plane was undercounted, and
+        the probe also matched the word anywhere else in the file. The `.Cu`
+        suffix is the invariant, and `konnect_sexp::layers` already decides by
+        it (P.6.6); `Layer::is_copper` was checked first to confirm it does.
+        Measured on the installed KiCad 10 demo corpus before writing the test,
+        and both directions are real: `complex_hierarchy` 1 against 2 (one
+        `power`), `One-Air-Max` 2 against 4 (two `power`),
+        `jetson-agx-thor-baseboard` 9 against 10 (one `jumper`), and
+        `multichannel_mixer-unrouted` **11 against 2** — the word counted all
+        over the file. The dead `let _layers = …` binding went at the same time.
+        Second site, outside this item's wording and found by that measurement:
+        `handle_estimate_cost` carries the same probe as its fallback when the
+        `layers` argument is absent, and there the count picks the **price**
+        bracket. Both are routed through `konnect_sexp::layers` now. `.max(2)`
+        stays but changes job: it is no longer compensating for a miscount, it
+        is the floor for a board whose `(layers …)` genuinely cannot be read,
+        where 0 would price as free.
+        Fixture `unrouted_power_planes.kicad_pcb`, derived from
+        `unrouted.kicad_pcb` so it keeps that file's version and its old
+        ordinal scheme (D117): `F.Cu` signal, `In1.Cu`/`In2.Cu` power, `B.Cu`
+        signal, plus a net named `TEST_signal)_PROBE` so the fixture is wrong
+        in *both* directions at once, as the real boards are. `kicad-cli`
+        10.0.3 loads it — the honest oracle, and the check D111 exists to
+        force.
+        Red before, on both: `left: Number(3) right: 4`. The cost half printed
+        the consequence in the open — 3 fell through to the `_ =>` pricing
+        branch and quoted `pcb_fabrication: $30.00` where the 4-layer bracket
+        is $7.00.
+  - [x] P.6.7.6 #139 — `export_bom` ignores `exclude_dnp` and `format`, both
+        advertised in its schema. Done: `BomOptions` and a `bom_args` the flag
+        can be asserted against without KiCad; the handler reads `exclude_dnp`
+        (schema default `true`) and passes `--exclude-dnp`. Ground truth first:
+        `kicad-cli sch export bom --help` on 10.0.3 has **no `--format` flag at
+        all** — it offers `--fields`, `--labels`, `--group-by`, `--sort-field`,
+        `--filter`, `--exclude-dnp` and delimiters. So `format` was not given
+        an invented mapping: it is a closed set of `"csv"`, declared as an
+        `enum` in the schema and refused otherwise, rather than accepted and
+        dropped. `manufacturing.rs`'s package keeps its prior behaviour through
+        `BomOptions::default()` (DNP included), since its own schema exposes no
+        such knob. Note the deliberate contract change: `export_bom` called
+        without `exclude_dnp` now honours the `true` its schema always
+        advertised, so DNP parts stop appearing by default.
+        Red before on the only honest oracle — the CSV KiCad writes: with
+        `exclude_dnp: true` the DNP part **R2 was still in the BOM**.
+  - [x] P.6.7.10 `export_bom` exposed none of `--fields`, `--labels` or
+        `--group-by`, which `kicad-cli sch export bom --help` does offer
+        (verified on 10.0.3 while closing P.6.7.6). Upstream's #139 carried
+        them; this fork's item named only `exclude_dnp` and `format`, so they
+        were left out rather than folded in silently. This item asked to decide
+        before implementing: **yes, expose all three.** Without `--fields` the
+        BOM comes out as KiCad's default `Reference,Value,Footprint,QUANTITY,DNP`
+        — no MPN column, no LCSC column, so a BOM nobody can order from, on a
+        server that carries a whole sourcing toolset.
+        Form follows P.6.7.7's `--layers`: arrays of strings in the schema,
+        joined into the single comma-separated value the CLI takes. A field
+        left out pushes no flag at all, so kicad-cli applies its own default
+        rather than one this repository invented — and the schema descriptions
+        quote those real defaults.
+        Three behaviours measured against 10.0.3 before any code, because each
+        decided whether a guard was owed. Two said no:
+        * `--fields` longer than `--labels` does **not** shift columns — the
+          unlabelled column takes the field's own name as its header; more
+          labels than fields simply ignores the extras;
+        * `--labels` without `--fields` applies to the leading default fields
+          and leaves the rest with their default labels.
+        Guarding either would be a guard that guards nothing (D126). The third
+        said yes: `--group-by` naming a field absent from the effective field
+        set is accepted, exits 0, and **silently groups nothing** — measured
+        with two resistors sharing a value that stayed unmerged. So that one is
+        refused server-side, before kicad-cli is spawned, as an
+        `invalid_argument` on `group_by` naming the exported fields; `${}`
+        delimiters are normalised first, since the CLI accepts a field either
+        way. The default set is mirrored in our code to make that check
+        possible, which couples us to a CLI default — stated rather than
+        hidden.
+        Red before: the unit half by `BomOptions` failing to compile against
+        the new argument vector, the guard half with the check disabled. The
+        honest oracle is a `#[ignore]`d probe like P.6.7.6's — a temporary copy
+        of the fixture with an `MPN` field added to R1, exported with a custom
+        label, and the column checked in the CSV KiCad actually wrote. Run here
+        against 10.0.3: passes. `BomOptions` loses `Copy` (it now holds
+        `Vec<String>`), which no caller depended on, and `manufacturing.rs`
+        keeps its behaviour through `default()`.
+  - [x] P.6.7.7 #266 — `--layers` repeated per layer, no `--mode-single`.
+        Done: `single_file_pcb_export_args` joins the layers into the one
+        comma-separated value KiCad 10 takes and asks for `--mode-single`, so
+        `--output` is the file the caller named rather than a directory;
+        `export_pdf` and `export_svg_pcb` both go through it. An empty layer
+        list passes no `--layers` at all, since `--layers ""` would ask for
+        nothing. `cli_failure_diagnostics` is the other half and is worth
+        having on its own: kicad-cli writes argument errors to **stdout**, and
+        the error path reported stderr only.
+        Ground truth, measured directly on 10.0.3 before coding: `--layers` is
+        documented `[nargs=0..1]` as "Comma separated list", and repeating it
+        exits 1 with "Duplicate argument --layers" on stdout and **an empty
+        stderr**. Red before, on the live probe: `export_pdf` with two layers
+        failed, and with the old stderr-only diagnostic the whole message read
+        `kicad-cli exited with 1:` — nothing at all. The pre-existing board
+        export probe passed throughout because it asks for a single layer; it
+        takes two to make the duplicate.
+  - [x] P.6.7.8 #263 — `run_erc` on a sub-sheet reports invocation artefacts.
+        Reproduced against KiCad 10.0.3 before writing anything, on a copy of
+        `demos/complex_hierarchy`: `sch erc` on the sub-sheet `ampli_ht`
+        returns **67 violations, 46 of them `lib_symbol_issues`** ("the current
+        configuration does not include the symbol library"), against **0** on
+        the project's own root sheet. Confirmed as described.
+        Done: `owning_project_root` recognises a sheet that belongs to a
+        project rooted elsewhere and `run_erc` refuses it with a structured
+        `invalid_argument` on `schematic` naming the root to retry against.
+        The audit is wrong on one point — `project_root_for` does **not**
+        exist in this fork's `library.rs` — so nothing was made `pub(crate)`
+        there; only `MAX_HIERARCHY_DEPTH` was, and the detection looks in the
+        file's own directory rather than walking ancestors. Stated bound: a
+        sheet moved out of its project's directory is not caught, and that is
+        deliberate, not a gap to fix silently.
+        The refusal is the only behaviour change, and the reverse bound is
+        tested as explicitly as the defect: a root, a project-less schematic, an
+        unreferenced neighbour and a directory holding several projects are all
+        left alone. Red before: the sub-sheet resolved to `None`, so no refusal
+        was raised at all.
+  - [x] P.6.7.11 The measurement P.6.7.8 rests on lives only in a comment.
+        The refusal is decided before `kicad-cli` is reached, so the unit tests
+        prove the server's own logic and no live probe was owed — but nothing
+        in the suite would notice if a future KiCad stopped producing those
+        `lib_symbol_issues`, which would leave the refusal unjustified and
+        invisible. Same shape as D113. A probe over a copied demo hierarchy,
+        asserting the sub-sheet/root asymmetry rather than an absolute count,
+        would anchor it. Decide whether it belongs in the gating E2E job.
+        Done: `erc_on_a_sub_sheet_reports_library_artefacts_its_root_does_not`
+        (`tests/cli_tools.rs`) goes around the server's own refusal on purpose
+        — it calls `cli::run_erc` directly on both sheets of a copied
+        `complex_hierarchy` — and asserts the asymmetry: zero
+        `lib_symbol_issues` on the root, at least one on `ampli_ht`. Re-measured
+        here on 10.0.3 before writing it, and reproduced by the probe itself:
+        **0 violations on the root, 67 on the sub-sheet, 46 of them
+        `lib_symbol_issues`** — P.6.7.8's numbers exactly. The counts are
+        printed, not asserted (D113: a probe must show what it measured), since
+        the totals move with the demo's cleanliness and with KiCad's rule set
+        while the asymmetry is all the refusal claims. Second half closes the
+        loop the first opens: the artefacts are still produced, *and* the
+        server still refuses that sheet naming the root to retry against —
+        which is what turns "KiCad changed" into "we now block a call that
+        works". Red before, by pointing the sub-sheet call at the root: the
+        `child_issues > 0` assertion fires with its own message.
+        The demo copy is now one helper, `copied_complex_hierarchy`, shared
+        with P.6.9.3's probe rather than a second hand-written loop (D136).
+        Decision on the gating job: **yes, in `e2e`**. A red here is a
+        statement about the artifact's own behaviour — it refuses a legitimate
+        call — not about runner liveness, which is the criterion that keeps
+        `live-ipc` advisory. The other candidate homes do not fit: `live-ipc`
+        is the IPC path and this is kicad-cli, and there is no non-gating CLI
+        job to put it in.
+- [x] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
+      carries its precise next action in `docs/upstream-audit.md`; re-read it
+      rather than re-deriving. #271 depends on P.6.3, which is closed, so
+      nothing here is blocked any more. Split into one id per item, ordered by
+      consequence and not by issue number, so a commit closes exactly one — the
+      shape P.6.7 and P.6.9 used. All eight `LATER` items are closed, and so is
+      P.6.8.9, which belongs to no upstream issue: it was found while measuring
+      P.6.8.5.
+  - [x] P.6.8.1 #179 pin half — fifteen call sites still resolve pins with the
+        unit-blind `extract_lib_pins`, and `sch_batch.rs:390-399` finds an
+        instance by `reference` alone. Together they compute unit 2's pin
+        against unit 1's placement transform, so `batch_connect_to_net` on the
+        second half of an op-amp drops its net label at the wrong coordinate.
+        Wrong connectivity, not a wrong report — first for that reason. The
+        unit-aware extractor already exists here
+        (`konnect_sexp::schematic::extract_lib_pins_for_unit`, and
+        `SymbolInstance::unit` carries the number), so this is a sweep plus a
+        candidates loop, not a port. No fixture in this repo has a multi-unit
+        symbol at all: the discriminating test needs one built from a real
+        KiCad library symbol.
+        Done. `batch_connect_to_net` now collects **every** instance carrying
+        the reference and keeps the one whose own unit declares the requested
+        pin, and all fifteen call sites take
+        `extract_lib_pins_for_unit(sym, inst.unit)`. The mixed verdict this
+        task expected did not survive contact: every one of the fifteen already
+        had a `SymbolInstance` in hand, so none was inspecting a library
+        definition outside a placement and none was left blind.
+        `extract_lib_pins` itself is untouched — it has legitimate callers.
+        The fixture is the real `Amplifier_Operational:LM2904` copied out of
+        the installed library, with `U1` placed twice (unit 1 at x=100, unit 2
+        at x=160); `kicad-cli sch erc` accepts it — 12 unconnected-pin
+        violations, exit 0. What makes it discriminating is a coincidence in
+        KiCad's own symbol: unit 1's pin 3 and unit 2's pin 5 sit at the same
+        local point, so the defect did not produce an obviously wrong result,
+        it produced a plausible one.
+        Red before: with the lookup neutered the pin-5 label lands at
+        **x=92.38** — unit 1's pin 3 — instead of **x=152.38**; with the
+        unit-aware extractor reverted, `get_component_nets` reports **8 pins
+        for unit 1 instead of 3**. The mirror is asserted too (pin 3 on unit 1
+        does not move), and a pin on no unit still errors, naming the units
+        tried; the "no library symbol resolved at all" case was split off from
+        that message, since "units tried: []" described the wrong problem.
+        `docs/capability-matrix.md` moved one line, exactly D128's case: the
+        new unit test is a lexicographically smaller evidence source for
+        `get_component_nets` than `tests/nets_and_wires.rs`. Status unchanged
+        (`PARTIAL`, `test`), so it is regenerated rather than fought.
+  - [x] P.6.8.2 #179 edit half — `find_symbol_instance_block`
+        (`tools/mod.rs:651`) and `sch_batch.rs:321`/`:330` return the first
+        match only. Port `find_all_symbol_instance_blocks` / `field_value_ranges`
+        as a separate change, after P.6.8.1.
+        Done, and the task turned out to need a design rather than a port:
+        the four operation families do **not** share a per-unit meaning.
+        Measured first, on P.6.8.1's fixture: desynchronise `Value` between the
+        two units and export the netlist, and KiCad reports the **first**
+        block's value — `CHANGED` when unit 1 was edited, the stale `LM2904`
+        when only unit 2 was. So editing the first block alone produced a
+        correct netlist *by accident* while leaving a file that contradicts
+        itself: every unit past the first still shows the old value in
+        eeschema, and every by-unit read — ours included — returns it. Not a
+        netlist defect, a file-consistency one, and the doc says so.
+        The four families: **property writes** by reference now touch every
+        unit (`edit_schematic_component`, `batch_edit`,
+        `add_component_annotation`, and `replace_component`'s `lib_id` — its
+        `unit` stays per block, being a per-unit fact); **deletes** by
+        reference remove every unit, since half a component is not a thing
+        KiCad can open; **geometry** by reference is **refused** on a
+        multi-unit symbol, naming the units and their uuids, because moving
+        U1A without U1B is legitimate — it is all eeschema ever does — while
+        silently picking the first is not; **reads** answer with the unit they
+        resolved, plus the sibling uuids for `get_schematic_component`.
+        That refusal is INV8's **first** clause, not a breach of its second:
+        an input with two meanings stays refused, and the second clause
+        governs widenings, where this is the withdrawal of an acceptance that
+        should not have been granted. The test that pinned the old behaviour
+        (`move_by_reference_still_addresses_the_first_unit`) was pinning the
+        defect; it is rewritten, not deleted, and carries that reasoning.
+        `find_all_symbol_instance_blocks` is the one definition of "an
+        instance block" and `find_symbol_instance_block` is now its `.next()`;
+        `symbol_block_uuid` likewise moved to `tools/mod.rs`, since the
+        single-symbol refusal and the batch one were reading uuids by two
+        copies of the same search (D136). Property edits are applied in
+        descending offset order, so an earlier block's range is never
+        invalidated by a later block's rewrite.
+        Red before, verified again after the fact: with the multi-block write
+        truncated to one block, `editing_value_by_reference_updates_every_unit`
+        fails and the other five stay green.
+        Stated bound: `bulk_move`, `batch_edit` and `add_component_annotation`
+        translate a `uuid` to a `reference` before acting — pre-existing, not
+        introduced here — so a uuid-addressed `bulk_move` on a multi-unit
+        symbol is refused with the rest. The refusal names
+        `move_schematic_component` with a `uuid`, which does reach one unit.
+  - [x] P.6.8.3 #271 — `find_orphan_items` counts wire endpoints and label
+        positions and nothing else, so a wire ending on a pin is reported
+        dangling and an unconnected pin is never reported at all: false
+        positives and false negatives on any sheet with components. ~470 lines
+        plus two `konnect-sexp` extractors; needs `LibPin::electrical_type`,
+        which P.6.3 landed.
+        Done, and far cheaper than the audit's ~470 lines: this fork already
+        had the machinery upstream had to build. `find_isolated_pins` — the
+        finder behind `find_single_pin_nets` — already resolved pins per unit,
+        honoured `no_connect` markers and asked the net graph, so the fix is to
+        *use* it rather than port `PointIndex`/`WireIndex`. What was extracted
+        is `placed_pins`, one definition of "the pins this sheet really has",
+        now shared by both (D136).
+        Measured against 10.0.3 before writing anything, on the new fixture
+        `orphan_items.kicad_sch`: `sch erc` reports exactly three
+        `pin_not_connected` — R1 pin 2, R2 pin 1, R2 pin 2 — and leaves R1
+        pin 1 out because a wire ends on it; `label_dangling` for the label in
+        empty space; `isolated_pin_label` for the one sitting mid-wire, which
+        is KiCAD saying that one *is* attached. A second probe settled the
+        mid-segment question: a wire end touching another wire's **body** is
+        `unconnected_wire_endpoint`, and adding the junction makes it go away —
+        so touching a body rescues a pin or a label, never another wire's end.
+        The handler now reports `unconnected_pin` alongside the two old kinds,
+        stops calling a wire end on a pin dangling, and stops calling a
+        mid-wire label floating — the net graph carries every label as a node
+        of its own, so asking it whether a label is attached always answered
+        yes, and the geometric test `on_a_wire` is the one that means
+        something.
+        Red before, each half neutered in turn: without the pin rescue the
+        wire's pin end comes back as a second `dangling_wire_end`; without the
+        pin finder the three unconnected pins vanish from the report.
+        Stated bound: ERC's own rule names are not modelled. `wire_dangling`
+        fires on these fixtures in cases the three measured facts do not
+        explain, and its `pos` is the wire's anchor rather than the offending
+        end; this tool reports geometric attachment, which is what "orphan"
+        means here, and `run_erc` stays the verdict (E7).
+        `docs/capability-matrix.md` moves one line again (D128): the new test
+        lives in `nets_and_wires.rs`, lexicographically ahead of
+        `symbols_and_schematic.rs`. Status unchanged.
+  - [x] P.6.8.4 #185 — `run_design_review` runs its four audits against the
+        single `schematic` path and derives the verdict from finding counts, so
+        "LOOKS GOOD" is what a caller gets when the audits inspected one sheet
+        of twelve. Decide **first** whether the verdict belongs in
+        `design_review` or in this fork's `evidence/` validators — upstream has
+        no such layer — then port the coverage structs. Same principle as
+        P.6.9.16, different evidence.
+        Decided, then done: **the verdict stays in `design_review`**, not in
+        `evidence/`. The precedent was already in the same function —
+        `drc_incomplete` turns a missing DRC pass into `INCOMPLETE` from
+        evidence the handler gathered — and `evidence/` serves the gating
+        validators, a different consumer. The coverage gap is the same shape of
+        fact, so it takes the same shape of answer.
+        The four schematic audits now run once per reachable sheet, every
+        finding carries the sheet it came from, and the review reports
+        `schematic_coverage` beside `drc`: sheets reachable, sheets audited,
+        and each sheet a `(sheet …)` reference named but could not load, with
+        the reason. A coverage gap makes the verdict
+        `INCOMPLETE — sheet(s) not audited: …`, **naming** them, and it sits
+        above warnings for the same reason `drc_incomplete` does: a warning
+        must not stand in front of a review that did not look.
+        No fourth walker: `reachable_sheets` is added once in `tools/mod.rs`
+        and `sch_export::sheet_tree_contains` is reduced to a call on it
+        (D136). That brings a stated widening — the walk includes the root, so
+        a target that *is* the root now answers true; its single caller,
+        `owning_project_root`, has already returned for that case before
+        asking, and P.6.7.8's tests hold unchanged.
+        No hierarchical fixture existed in this repo; four were built, with the
+        defect on a sub-sheet only, and `kicad-cli sch erc` accepts the root.
+        Red before: with the walk truncated to the root, the sub-sheet defect
+        goes back to `LOOKS GOOD` with an empty finding list, and the missing
+        sub-sheet stops being reported. Single-sheet reviews are unchanged —
+        the nine existing tests never moved.
+  - [x] P.6.8.5 #148 — the net-label stub direction defaults to `"right"`
+        (`sch_wiring.rs:1975`), so connecting a left-edge pin drives the stub
+        across the symbol body, over other pins, and the mid-segment-pin loop
+        then plants junction dots on them. The `justify` half is already done
+        here. Port `pin_outward_at`/`stub_direction` as the default, leaving an
+        explicit `direction` authoritative.
+        Done. `pin_outward_at` derives the direction from the pin itself — the
+        dominant axis of `pin - instance_origin` — and needs no rotation or
+        mirror bookkeeping of its own, because both points are already in sheet
+        space: the vector between them points outward in whatever orientation
+        the symbol was placed in. A caller's explicit `direction` stays
+        authoritative, and a coordinate with no placed pin under it keeps the
+        historical `"right"`. The response says which of the three happened
+        (`direction_source`: `requested` / `derived_from_pin` /
+        `default_no_pin_here`) — a silent default and a derived direction must
+        not read alike to a caller.
+        The lookup runs against the caller's own `(pin_x, pin_y)` **before**
+        `snap_reporting`: real pin positions are what `placed_pins` holds, so
+        looking up the snapped point missed every pin whose sheet was not
+        grid-exact.
+        No fourth walker (D136): `placed_pins` moves from `sch_analysis` to
+        `tools/mod.rs`, where `all_pin_endpoints` was the same "for each
+        instance, for each pin of its unit" loop, and becomes that function's
+        body. It gains `origin_x`/`origin_y`, which is what the direction is
+        measured against.
+        Fixture built for it, because none here had two rows facing opposite
+        ways: `conn_double_row.kicad_sch`, a real
+        `Connector_Generic:Conn_02x05_Odd_Even` as `J1`. Positions are
+        `kicad-cli sch erc`'s, not assumed — odd pins at x = 96.52, even pins
+        at x = 109.22, so pin 9 and pin 10 share y = 101.6; the sheet loads
+        clean, with 10 `pin_not_connected` errors and nothing else.
+        Red before, with the derivation neutralised: the three derived-default
+        tests fail, and on the double-row sheet the stub off pin 9 runs through
+        the body to x = 111.52 and the mid-segment pass writes a junction at
+        `(109.22 101.6)` — exactly on pin 10. That is the defect, observed in
+        the file rather than argued from the code.
+  - [x] P.6.8.6 #138 residual — the doc comment above `export_drill` claims the
+        directory form of `--output` was verified against KiCAD 10, while
+        upstream appends a trailing separator because kicad-cli otherwise reads
+        the last component as a file name. The two claims contradict each other
+        and only a kicad-cli run settles it. Separately: `separate_th` defaults
+        to `false` here, where upstream always separates because a single
+        `MixedPlating` file distinguishes NPTH by a comment most Excellon
+        readers drop.
+        Done, and both halves are settled by measurement rather than by
+        reading a diff.
+        The trailing separator is **not needed** on 10.0.3: all four cases —
+        output directory present or missing, with and without a trailing
+        separator — write `<board>.drl` *inside* the named directory, creating
+        it when absent, for drill and for gerbers alike. This fork's doc
+        comment was right, upstream's `MAIN_SEPARATOR` workaround does not
+        apply to this version, and `a_file_path_as_output_would_have_become_a_directory`
+        was already the standing proof. No code change; the doc now carries the
+        measurement and says what upstream does differently.
+        `separate_plated` now defaults to **true**, but not in
+        `DrillOptions::default()`, which must keep mirroring `kicad-cli` — two
+        live probes assert KiCAD's own defaults through it. The policy lives in
+        one place instead, `cli::SEPARATE_PLATED_HOLES` and
+        `cli::fab_drill_options()`, shared by the three paths that hand a
+        fabricator a file: the `export_drill` tool, the Gerber export's drill
+        companion, and the manufacturing package (D136 — one definition, or it
+        drifts).
+        What decides it, measured on a board carrying one plated `thru_hole`
+        and one `np_thru_hole`: in a single file the two are told apart **only**
+        by a comment line above the tool definition
+        (`; #@! TA.AperFunction,NonPlated,NPTH,ComponentDrill`), while the body
+        is plain Excellon — `T1`/`T2` and coordinates, no plating information
+        at all. A reader that drops comments plates the mounting hole. With
+        `--excellon-separate-th` the distinction moves into the file itself,
+        `-PTH.drl` and `-NPTH.drl`, each with its own `TF.FileFunction`. The
+        failure mode of one file is silent and physical; of two, a fab receives
+        a file it already knows.
+        Tests: the published schema default must equal the constant the
+        handler falls back on — a divergence there would be P.6.9.15's defect
+        with a physical consequence — plus a lexical guard that the fallback is
+        the constant and not a literal, its needle split by `concat!` so it
+        cannot satisfy its own search (D133). Live probe added:
+        `fab_drill_options` writes `-PTH`/`-NPTH`. Measured and not assumed:
+        KiCAD writes **both** files even on a board with no non-plated hole.
+  - [x] P.6.8.7 #162 — `query_traces` emits no uuid while `delete_trace`
+        requires one, so there is no path from listing a trace to deleting it.
+        Twelve lines across three files; the audit says to bundle it into the
+        next PCB change rather than schedule it alone.
+        Done, on its own after all: the twelve lines are a decode, and their
+        proof is a mock-server round-trip that no other PCB change would have
+        carried. `IpcTrack` gains `uuid: Option<String>`, filled from the
+        `Track` message's own `id` — KiCAD sent it all along and the decode
+        dropped it — and `query_traces` puts it first in each entry. `Option`
+        rather than an empty string on purpose: a track without an id must not
+        read as one with a usable id and be handed to a delete.
+        Red before: with the field forced to `None`, the mock test fails on
+        the assertion that says why the id matters.
+  - [x] P.6.8.8 #186 — `Reference` and `Value` are placed at a hard-coded
+        ±3.81 mm at rotation 0, whatever the symbol and whatever the placement
+        rotation. Visual only, no electrical effect and no data loss: last on
+        purpose.
+        Done. `library::field_anchor` reads the anchor from the **embedded**
+        `lib_symbols` entry — the definition this sheet will actually be drawn
+        with, already flattened by `ensure_lib_symbol` — and
+        `tools::push_placed_fields` runs it through `transform_pin`, the same
+        transform a pin goes through: library Y-up flipped, placement rotation
+        and mirror applied, translated to the instance origin, rounded to six
+        decimals (D125). All four fields, at both sites that place a symbol
+        (`add_schematic_component` and `add_power_symbol`), through one helper
+        rather than two copies of the same four lines (D136); `mm` moves up to
+        `tools/mod.rs` for the same reason.
+        What decides the design is a measurement over the KiCad 10 demo
+        corpus — 12 894 placed `Reference`/`Value` fields, each compared with
+        the position its file actually carries:
+
+        | rule                                        | reproduces |
+        |---------------------------------------------|------------|
+        | fixed `y ∓ 3.81`, angle 0 (what this did)   | 7.5 %      |
+        | library anchor **transformed**               | 41.4 %     |
+        | library anchor translated, rotation ignored  | 24.2 %     |
+
+        The absolute numbers do not settle it and are not meant to: the
+        remainder is fields a human dragged, which no rule reproduces and none
+        should (D138). What settles it is the rotated buckets, where the old
+        rule is essentially never right — 10 of 2 440 at 90° — and rotating
+        the anchor beats not rotating it by more than ten to one.
+        Two further properties, measured the same way but only over the fields
+        the corpus shows eeschema itself placed (position reproduced exactly,
+        so nobody moved them): the field's **text angle is the library's**, not
+        the placement's — lib 0° → 0° in 4 906 of 5 071, lib 90° → 90° in all
+        261 — and the library's `(effects …)` comes across whole, justification
+        included, in the overwhelming majority. A `left`-justified reference
+        written without its justify shifts by half its own width.
+        Fallback kept and tested: a library entry that declares no such field
+        keeps the historical offsets, which is exactly the case the old rule
+        was the only rule for.
+        Red before, with the anchor lookup neutralised: the three new
+        placement tests and the power-symbol test fail; the fallback test
+        stays green, as it must. Live: `Device:R` — whose reference anchor is
+        off-axis (`at 2.032 0 90`) and whose text angle is 90, not the 0 this
+        used to write — placed at 0° and at 90° on a demo sub-sheet, and
+        kicad-cli still loads the hierarchy. Gating step added to
+        `e2e-kicad.yml`.
+  - [x] P.6.8.9 — found while measuring P.6.8.5, and not part of it: when a
+        pin does not sit on the 1.27 grid, `connect_to_net` snaps the caller's
+        `(pin_x, pin_y)` and then draws the stub from the **snapped** point, so
+        the wire starts beside the pin instead of on it and the tool answers
+        success for a connection the file does not carry. Measured on
+        `multiunit_lm2904.kicad_sch`, whose `U1` is placed at x = 100: the pin
+        `placed_pins` reports at x = 92.38 gets a wire starting at x = 92.71,
+        0.33 mm away.
+        Done, and the first thing measured was how much it matters — the
+        premise that off-grid pins are exotic is **false**: across the KiCad 10
+        demo corpus, **3 670 of 48 068** placed pin endpoints do not sit on the
+        1.27 mm grid (7.6 %), from 127 off-grid placements out of 6 447 and
+        from pin lengths that are not grid multiples. The defect is ordinary,
+        not a corner case.
+        The rule chosen, of the two the entry offered: **the snap yields to a
+        pin actually found at the requested point**. The alternative — report
+        that the wire did not start where asked — is already half-present
+        (`snap_reporting` returns `requested`) and it does not help: the caller
+        asked for the right point, and being told the server moved it does not
+        put the wire on the pin.
+        One helper, `tools::snap_unless_pin`, taking the pin list the caller
+        already holds so nothing re-parses a sheet (D136). Six sites, all in
+        `sch_wiring.rs`, chosen because each writes something whose *meaning*
+        is the connection point: `add_wire` and `batch_add_wire` (both
+        endpoints), `connect_to_net`, `add_junction`, `batch_add_junction`,
+        `add_no_connect`. Deliberately not `add_power_symbol` or the component
+        placers: those position a *symbol*, whose own anchor KiCad wants on the
+        grid, and E6 put the snap there for a reason. `add_schematic_connection`
+        never snapped at all.
+        Red before, with the pin check disabled: the three off-grid tests fail
+        and the live probe fails on KiCad's own count.
+        Live, and this is the item's real proof: `kicad-cli sch erc` on the
+        fixture reports one fewer `pin_not_connected` after a no-connect is
+        placed on the off-grid pin — and with the snap restored it not only
+        keeps reporting that pin but adds `no_connect_dangling` at the snapped
+        point, KiCad's own name for a marker that marks nothing. Gating step
+        added to `e2e-kicad.yml`.
+        Measured and left alone: KiCad also warns `endpoint_off_grid` about
+        such a pin. That is the sheet author's choice; moving our marker
+        somewhere else was never a fix for it.
+- [x] P.6.9 The 16 direct-to-`main` upstream fixes of Appendix A are triaged,
+      by P.4's method and against this fork's own code: **8 BACKPORT NOW, 4
+      LATER, 4 NOT APPLICABLE**, each verdict carrying a `file:line` citation
+      in `docs/upstream-audit.md`. The four that do not apply are excluded
+      because the mechanism is absent here, not because it was judged minor:
+      this fork has no sync path at all (`2904841`, `59d0ead`), no ancestor
+      walk for a `.kicad_pro` (`ec705c3`, and `rg '\.ancestors\(\)'` over the
+      tree returns nothing), and no board-coverage block (`d5774b3`, whose
+      `find_all` trap was swept for and found nowhere else). Three items are
+      cheaper here than upstream because P.6 already landed the half they rest
+      on — `f2372ca` on `konnect_sexp::net`, `977f0c5` on `DrcReport`,
+      `de70351`/`8591707` on `update_field`/`insert_property` — and one is
+      worse here than upstream's own starting point: `ff518c8`, whose layer
+      table is shorter in this fork than in the code upstream fixed. The order
+      below is by consequence and is not the table's order.
+  - [x] P.6.9.1 `ff518c8` — `layer_from_name`
+        (`crates/konnect-ipc/src/builders.rs:42-61`) maps every unknown name to
+        `BL_UNDEFINED`, and the graphic, text and footprint-instance paths send
+        it (`builders.rs:198`, `:374`, `client.rs:1398`) where the pad path
+        drops it (`client.rs:1305-1307`). KiCAD indexes its layer bitset with
+        whatever arrives and faults at `0xc0000005`, taking the session's
+        unsaved board with it; Konnect sees only an NNG timeout. Reached by
+        placing any official-library footprint carrying a `Dwgs.User` child,
+        since `pcb_components.rs:353` reads the graphics out of the real
+        `.kicad_mod`. Widen the table by computation (`BL_Rescue = 62` sits
+        between `BL_User_9` and `BL_User_10`), add a fallible
+        `try_layer_from_name`, and validate the root, pad and graphic layers
+        before a single child is built. First: it is the only item that
+        destroys work the tool never touched.
+        Done, and not the way upstream did it: the mapping is derived
+        instead of listed. The proto enum's own names *are* the KiCad names
+        with `.` replaced by `_` behind a `BL_` prefix, so `from_str_name`
+        answers for every layer the schema knows — inner copper to
+        `In30.Cu`, `User.1` through `User.45` across the `BL_Rescue = 62`
+        gap, and whatever a future KiCad adds — with no arithmetic to get
+        wrong. `try_layer_from_name` refuses the three sentinels by name as
+        well, since `BL_UNDEFINED` is exactly what must never be sent, and
+        `build_footprint_item` checks the footprint's own layer, every pad
+        layer and every graphic layer before it builds a single child.
+        Measured over the installed corpus rather than estimated: **915 of
+        the 15,433 official footprints (5.9%) name a layer the old
+        fifteen-entry table did not know** — `Dwgs.User`, `Cmts.User`,
+        `F.Adhes`, `Margin`, `User.2`, and every inner copper layer past
+        `In2.Cu`. That measurement is now
+        `crates/konnect-ipc/tests/layer_corpus_test.rs`, in the gating E2E
+        job, so the next name KiCad adds fails a test instead of an editor.
+        The corpus found what the earlier sample had not: `*.SilkS`, a
+        fourth pad-layer wildcard nobody had expanded (NPTH pads in
+        `Connector_RJ` and `Heatsink`). It was silently dropped from the pad
+        before, and once layers are validated it would have failed the whole
+        placement instead, so it is expanded to both silkscreen sides here.
+        Red before, each half neutered in turn: the derived table (four
+        tests), the validation (one), the `*.SilkS` expansion (one).
+        Stated bound: no live probe. The upstream measurement is KiCAD
+        faulting at `0xc0000005`, which needs a GUI session with the API
+        enabled, so the assertions are on what leaves this process — the
+        layer actually emitted, and the refusal that stops an
+        unrepresentable one.
+  - [x] P.6.9.2 `f2372ca` — zone net references written as net 0. Two private
+        `find_net_id` copies resolve a net name by string offset
+        (`pcb_board.rs:113`/`:909`, `pcb_routing.rs:52`/`:546`) and a KiCad 10
+        board has no ids to find, so every pour is written
+        `(net 0) (net_name "GND")` onto the unconnected pseudo-net and reported
+        as success. Write-side counterpart of P.6.5's read-side fix, so the
+        shape detection to reuse is already in `konnect_sexp::net` (D115): add
+        the write-side sibling, emit plural `(layers …)` on KiCad 10, refuse a
+        net a legacy board does not declare instead of zeroing it, and delete
+        both copies. Upstream's second half — refusing the edit when KiCAD
+        holds that board open — is a separate task, not this one.
+        Done, with one correction to this task's own text, measured on
+        KiCad's demos before writing anything: `(layer …)` versus
+        `(layers …)` is **not** a difference between the two file forms. It
+        is a matter of how many layers the zone covers — `vme-wren`
+        (20241229) writes both — so a single-layer pour, which is all these
+        tools can make, stays singular on every board. What does differ is
+        the net node, and by more than the id: `pic_programmer` (20260206)
+        writes `(zone (net "GND") …)` with **no** `net_name` sibling, while
+        `StickHub` (20250907) and `CM5_MINIMA_3` (20250513) write
+        `(net <id>)` with the name in a sibling `(net_name …)` — not
+        `(net <id> "<name>")`, which is the pad form. See D121.
+        `konnect_sexp::net` gained `NetRef`, `net_ref_for_write` and
+        `NetRef::zone_tokens`, sharing P.6.5's by-shape discriminant so read
+        and write cannot disagree; both `find_net_id` copies are gone; and
+        `add_zone` reports `net_id` only on a board that has one, since 0
+        named the unconnected pseudo-net as though the zone had landed there
+        on purpose.
+        The refusal is scoped to the form that can justify it: a legacy
+        board that does not declare the net is refused, naming `add_net`,
+        and the file is asserted byte-identical afterwards; a table-less
+        board declares nothing, so a name it has never seen is written as-is
+        and KiCad creates the net on load — both directions tested.
+        New fixture `kicad10_no_net_table.kicad_pcb`, a 20260206 board with
+        nets named on the pads, verified to load in kicad-cli 10.0.3 (0
+        errors, 0 unconnected) before being used as an oracle.
+        Red before: `net_ref_for_write` neutered to the old zero-or-id
+        behaviour fails three of the four integration tests.
+        Live probe added to the gating job: a pour on that board leaves a
+        file kicad-cli still opens. Its bound is stated in the test — it
+        proves file validity, not that the copper is electrically on GND,
+        which DRC cannot show on a net with a single pad.
+  - [x] P.6.9.3 `e7b0c54` — a child sheet's `(instances (project … (path …)))`
+        is keyed to the child instead of the root: `project_name_for`
+        (`tools/mod.rs:452`) returns the file's own stem and `ensure_root_uuid`
+        (`:497`) its own uuid, used as the whole path. Both are right on a root
+        sheet and name nothing KiCad matches on a sub-sheet, so every symbol
+        placed there reads as unannotated while the tool reports success. Sites:
+        `sch_components.rs:492`, `sch_batch.rs:468`, `sch_wiring.rs:1754`.
+        Resolve the sheet's real place in its project — nearest `.kicad_pro`,
+        its sibling root `.kicad_sch`, then a depth-bounded walk recording each
+        stepped-through `(sheet …)` uuid — reusing `owning_project_root`
+        (`sch_export.rs:582`, P.6.7.8) and widening its directory-only bound if
+        the measurement requires it. Anything unresolvable falls back to
+        today's standalone behaviour, which must stay tested.
+        Done. `sheet_instance_context` resolves the sheet's place in its
+        project — nearest `.kicad_pro` for the name, its sibling root
+        `.kicad_sch` for the head uuid, then a depth-bounded backtracking
+        walk that records each stepped-through `(sheet …)` uuid — and
+        `instance_targets` is the single place the three write sites now ask
+        for the answer, falling back to today's derivation when nothing
+        resolves. `owning_project_root`'s directory-only bound was **not**
+        widened: the same `project_root_schematic` is reused, so a sheet
+        moved out of its project's directory still keeps standalone
+        behaviour, and that stays a stated bound rather than a silent gap.
+        Beyond the upstream fix, from reading the demo rather than the
+        commit: `complex_hierarchy` places `ampli_ht.kicad_sch` **twice**,
+        and its symbols carry one `(path …)` per placement. Upstream builds
+        a single path; a symbol written with one of two is annotated in one
+        instance and invisible in the other, so this emits one entry per
+        placement, sorted so two identical calls produce identical files.
+        Measured, and it corrects this task's own impact claim: with the old
+        derivation restored, `kicad-cli sch erc` reports **zero** violations
+        (it does not run the annotation check) and the exported netlist
+        **still lists** the symbol, because KiCad falls back to the
+        Reference property when no instance path matches. The real
+        consequence is per-instance annotation inside eeschema, which no CLI
+        available here can observe. The live probe was therefore rewritten
+        to claim only what it proves — that KiCad accepts a two-path block
+        and still builds a netlist containing the symbol — and its doc
+        comment records the measurement so nobody re-derives it.
+        Red before: `sheet_instance_context` neutered to `None` fails three
+        of the four tests in `tests/sheet_instances.rs`.
+  - [x] P.6.9.4 `f8a8db0` — every typed write reformats the whole sheet. The
+        writer indents two spaces where KiCad writes tabs
+        (`konnect-schematic-editor/src/sexp/writer.rs:109-113`), collapses each
+        closing paren onto the last child (`:104`), and inserts blank lines
+        before 22 tags (`:3-24`) where a KiCad sheet has one, at the end.
+        `Schematic::overwrite` (`schematic/mod.rs:163-165`) sends the whole
+        document through it, and ~20 production sites reach it, so a one-line
+        edit arrives as a few-thousand-line diff. Sniff the indent unit at load
+        and carry it on `Schematic`; fix the paren and the blank lines. The
+        largest item of the eight and the only one whose blast radius is every
+        byte-level assertion in the suite — land it alone, with upstream's
+        demo-corpus reduction as the acceptance number. KiCad's width-based
+        packing of `(xy …)` inside `(pts …)` stays out of scope, and the task
+        must say so rather than leave it looking forgotten.
+        Done. `WriteStyle { indent, crlf }` is sniffed from `original_source`
+        in `Schematic::from_sexp` and carried on `Schematic`; `save` and
+        `to_source` go through `write_styled`, while `write` keeps the
+        default (tab, LF) for the six sites that serialize a bare fragment
+        outside any file. `BLANK_BEFORE` is gone and the multi-line branch
+        closes on its own line at the parent's depth.
+        A **fourth** cause, not in this task's own statement and found by
+        measuring rather than by reading the commit: every KiCAD 10 demo
+        sheet shipped by the Windows installer is **CRLF**. Writing LF into
+        one reproduces this task's exact symptom — the whole document in the
+        diff — by a different axis, and would also have flattered the
+        acceptance measurement, since `str::lines()` drops a trailing `\r`.
+        It is therefore its own field on `WriteStyle`, and its own tests: the
+        demo-corpus measurement cannot see it. See D123.
+        Measured on eight demo sheets, one per demo project, `add_junction`
+        then `to_source`, counted as insertions+deletions over an LCS: before
+        170.71%–175.97% of lines (over 100% because near-every indented line
+        differs in content *and* position, so each counts twice); after
+        3.18%–17.22%. Bound asserted at 25%, set from the measured range and
+        not from upstream's 3151→360 on a corpus we do not have.
+        Residual, characterised rather than assumed: a no-op round-trip of
+        `ecc83-pp.kicad_sch` differs on 315 of 3545 lines, and every one of
+        them is either an unpacked `(xy …)` — the out-of-scope divergence,
+        documented in the writer — or the two lines of `(embedded_fonts no)`
+        moving, which is `to_sexp`'s child order, not the writer. Nothing is
+        lost or duplicated.
+        Red before: the demo measurement fails on the first sampled file
+        (`CM5.kicad_sch`, 175.97%); neutering `sniff_write_style` to the
+        default fails the CRLF and indent-unit tests while the paren and
+        blank-line tests stay green, which is the split those tests exist to
+        make.
+        Live probe added to the gating job: a sheet re-laid in eeschema's own
+        formatting, round-tripped through the typed model with a one-element
+        edit, is still a sheet KiCAD loads and builds a netlist from. The
+        conformance suite measures how little the new shape disturbs; only
+        KiCAD can say the shape is legal.
+  - [x] P.6.9.5 `de70351` — two text-path handlers never got the fix their
+        typed sibling has. `add_component_annotation`
+        (`sch_components.rs:1432`) appends a `(property …)` unconditionally, at
+        a hardcoded `(at 0 0 0)` and a hardcoded indent (`:1477`), so a repeated
+        key leaves two fields with one name and the text renders at the sheet
+        origin; and it does not refuse the reserved keys, so a `Reference` set
+        this way skips the instances rewrite. `bulk_move` (`sch_batch.rs:706`)
+        rewrites only the symbol's own `(at …)` (`:747-757`) while property
+        coordinates are absolute, so field text stays where the part used to
+        be. Lift the in-place branch out of `edit_schematic_component`
+        (`update_field` `:795`, `insert_property` `:825`) into a shared helper;
+        move each property anchor by the delta the symbol actually moved — the
+        snapped one — leaving its rotation alone, and locate property blocks
+        with a string-aware scan. Stay on the `SexpEdit` path: the typed model
+        would import P.6.9.4's reserialisation.
+        Done. `tools/mod.rs` gained the shared scanners — `symbol_property_blocks`,
+        `quoted_string_after`, `find_symbol_property`, `symbol_property_at_spans`,
+        `symbol_insertion_site`, `set_symbol_property` — all walking by nesting
+        depth and quote/escape state through `find_direct_child_blocks`, never
+        by substring. `update_field`/`insert_property` collapsed into `set_field`
+        over the same helper, so both paths update-or-insert identically and
+        the naive `find` that a property *value* containing `(property "` could
+        derail is gone.
+        Reserved keys are **`Reference` alone**, and the narrowing is the
+        finding, not a concession: it is the only key stored twice — in the
+        property *and* in `(instances …)` — so it is the only one this generic
+        path can desynchronise. `Value`/`Footprint`/`Datasheet` have a dedicated
+        argument on `edit_schematic_component` but no second copy, and the BOM
+        audit legitimately sets `Footprint` through this tool. A four-key list
+        broke `the_bom_audit_finds_missing_footprints_and_lets_go_when_they_are_assigned`;
+        the test was right and the list was wrong.
+        Anchor for a new property, measured on `CM5.kicad_sch` rather than
+        assumed: a hidden `Description` on a symbol at `(at 139.7 241.3 0)` is
+        written at `(at 139.7 241.3 0)`, and on a symbol rotated 270° at
+        `(at 119.38 238.76 270)` it is written at `(at 119.38 238.76 0)` — the
+        symbol's own (x, y), rotation always 0. `(at 0 0 0)` was right only for
+        a symbol that happened to sit at the origin. Indentation is read off an
+        existing sibling, so a tab-indented sheet stays tab-indented (P.6.9.4).
+        Two defects the fix introduced, caught in review and fixed with the
+        task: the property anchor is a plain addition, so unlike the symbol's
+        own anchor it is not covered by `snap_point`, and a field at 241.3 came
+        out as `246.38000000000002` — float noise written into a file, the
+        exact damage P.6.9.4 removed. Coordinates now go through `mm()`,
+        rounding to six decimals: measured across 126 933 `(at …)` values in
+        the demo corpus, every one but `59.209102362204725` (an inch
+        conversion, not noise) carries at most four decimals, while addition
+        noise appears around the thirteenth. And a move that snapped back to a
+        standstill still rewrote every field, turning `(at x y)` into
+        `(at x y 0)`; it now writes nothing. `add_component_annotation` also
+        answered `added_property` after *updating* one, so a `created` flag now
+        says which of the two happened.
+        Red before: two same-key calls leave two `(property "MPN" …)`; a
+        lookalike value derails `find_symbol_property`; `bulk_move` moves only
+        the symbol; `symbol_own_at_span` on an unterminated `(at` panics with
+        `byte range starts at 36 but ends at 32`; the noise and standstill
+        tests fail against the unrounded, unguarded write.
+  - [x] P.6.9.6 `8591707` (residual half only) — `edit_schematic_component`
+        declares `fields` in its schema (`sch_components.rs:92-95`) and the
+        handler never reads it (`:666-770`), so a call passing only `fields`
+        returns `{"changes": []}` as a success: `changed` is empty, but so is
+        `errors`, and the fork's own "changed nothing is a failure" guard
+        (`:734-746`) requires a non-empty `errors` to fire. The `new_reference`
+        half of the upstream commit is already fixed here
+        (`update_instance_reference`, `:860`). Loop the object's keys through
+        the same helpers P.6.9.5 shares out, refusing the reserved names.
+        Measure before copying upstream's macro rewrite of the apply closure —
+        it was forced by their borrow shape, which may not be ours.
+        Done. The `fields` map is parsed into `Vec<(&str, String)>` before the
+        `apply` closure is built (`sch_components.rs:686-720`), through a new
+        `property_text` helper: a JSON string is stored as-is, a number or
+        boolean as its text form — KiCAD stores every property as text — and
+        anything with no text form is refused rather than stringified into
+        nonsense. A `fields` that is present but not an object is an
+        `InvalidArgument` on `fields`, not a silence.
+        `apply` gained a `reject` parameter: the named arguments pass `&[]`,
+        the `fields` loop passes `RESERVED_PROPERTY_KEYS`, so a `Reference`
+        smuggled through the generic map is refused instead of rewriting the
+        property while `(instances …)` keeps the old designator (D124). The
+        loop sits after `datasheet` and before `new_reference`, because the
+        rename must stay last — it is what makes the symbol findable by
+        designator for every field before it.
+        The guard is now `changed.is_empty()` alone, with the reason
+        `no editable field was given` when `errors` is empty. It previously
+        required a non-empty `errors` to fire, which is exactly what let a
+        `fields`-only call — and a call with no editable argument at all —
+        report `{"changes": []}` as a success.
+        Upstream's macro rewrite was measured and not copied, as the item
+        required. A first version looping `apply` directly and pushing invalid
+        values into `errors` failed with
+        `error[E0499]: cannot borrow 'errors' as mutable more than once at a
+        time` — the closure holds the borrow live until `new_reference`. The
+        conversion pass up front resolves it with no macro.
+        Red before: six tests, among them
+        `a_fields_only_edit_writes_the_property_the_symbol_lacks`
+        (`left: Array [] right: Array [String("MPN → RC0805FR-074K7L (added)")]`)
+        and `an_edit_that_changes_nothing_is_a_failure`
+        (`an empty edit reported success: {"changes":[],"reference":"R1"}`).
+  - [x] P.6.9.7 `6ed6cac` — five write paths run on substituted required
+        arguments, because nothing enforces `required` server-side and the
+        handlers read with `unwrap_or`: `create_footprint`
+        (`library.rs:625-633`; `name` → "Footprint", `pads` → empty, then
+        `write_atomic` over the target), `create_symbol` (`:2293-2302`),
+        `copy_routing_pattern` (`verification.rs:556-566`; omitting only
+        `dest_x`/`dest_y` duplicates the source region onto the board origin),
+        `export_dxf` (`pcb_export.rs:513-527`; an empty `layers` makes P.6.7.7
+        pass no `--layers` at all, so kicad-cli picks its own set) and
+        `place_component_array` (`pcb_components.rs:1483-1484`, `count_x`/
+        `count_y` → 1, the rest already guarded). The root cause is that
+        `tools/mod.rs:414-441` has `require_str` and `require_f64` and no
+        `require_array`/`require_u64`, so every array- and integer-typed
+        required argument here is hand-rolled. Add both helpers. An explicitly
+        empty array stays accepted; only absence is refused. Assert the target
+        file is byte-identical after a refused `create_footprint` — asserting
+        the error alone would pass even if the write happened first.
+        Done. `tools/mod.rs:438-461` gained `require_array` and `require_u64`
+        beside the two that existed. `require_array` returns a borrowed
+        `&[Value]`, not an owned `Vec`: it removes `create_footprint`'s
+        `.cloned()` and feeds `export_dxf`'s `.iter()` directly. An explicitly
+        empty array passes — "a footprint with no pads" is an answer; only
+        absence or a non-array is refused, because that is the caller who never
+        said. `require_u64` leans on `serde_json::as_u64`, which already
+        rejects negative, fractional and string.
+        The five sites route strictly by their own schema's `required` list,
+        not by what looked risky: `create_footprint` (`library.rs:625`) takes
+        `name` and `pads`, `create_symbol` (`:2297`) `name` and
+        `reference_prefix`, `copy_routing_pattern` (`verification.rs:559`) all
+        six coordinates, `export_dxf` (`pcb_export.rs:523`) `layers`, and
+        `place_component_array` (`pcb_components.rs:1485`) `count_x` alone —
+        `count_y` carries `"default": 1` in the schema and stays optional.
+        `docs/capability-matrix.md` moved one line: the scanner keeps the
+        lexicographically smallest source (`capability/coverage.rs:93`), and
+        the new unit test in `verification.rs` sorts before the integration
+        test that had been proving `copy_routing_pattern`. Status `SUPPORTED`
+        unchanged; regenerated with `KAM_UPDATE_MATRIX=1`.
+        Red before, five tests, among them
+        `create_footprint_without_pads_leaves_the_target_file_byte_identical`
+        (panic `a call with no pads must be refused`) and
+        `copying_a_pattern_without_a_destination_is_refused_not_dropped_on_the_origin`
+        (panic `a copy with no destination must be refused`). The byte-identity
+        assertion is the point: asserting the error alone would pass even if
+        the write happened first.
+        Known contract change: a caller that omitted `pads`, `layers`,
+        `dest_x`/`dest_y`, `count_x`, `name` or `reference_prefix` now gets
+        `invalid_argument` instead of a silent write. That is the item.
+  - [x] P.6.9.8 `977f0c5` — `run_design_review` (`design_review.rs:522-625`)
+        and `validate_for_manufacturing` (`manufacturing.rs:281-390`) both
+        answer "is my board ready?" and neither has ever run DRC; the second's
+        only routing test is still `net_count > 3 && track_count == 0`
+        (`:351`), which fires only on a board with no tracks at all, so a board
+        routed except for one net reads `READY`. P.6.7.5 corrected how those
+        numbers are counted, not what the predicate concludes. Run DRC when a
+        board is in scope and fold errors, unconnected items and
+        schematic-parity findings into both verdicts; when DRC cannot run, the
+        verdict is INCOMPLETE / NOT READY naming the missing evidence, and the
+        DRC summary is null rather than zeroed. `DrcReport` and
+        `missing_categories()` already exist from P.6.1, which is the hard
+        half. Schematic-only reviews stay unchanged. Sequence against P.6.8's
+        #185 so neither undoes the other.
+        Done. A new `tools/drc_gate.rs` is the single place that turns a DRC
+        report into words, so both verdicts say the same thing:
+        `DrcEvidence::{Measured(DrcReport), Unavailable(String)}`,
+        `gather(cli, board, refill)` — which turns every failure mode (no
+        configured binary, spawn error, unreadable board) into `Unavailable`
+        carrying the reason verbatim, rather than an error that would abort
+        the whole review — and `assess(&DrcEvidence) -> DrcGate { summary,
+        findings, incomplete, connectivity_measured }`.
+        `summary` is `Value::Null` when nothing was measured, and each absent
+        category stays `null` inside it when some were: never an object of
+        zeroes standing in for a report nobody has. An absent category also
+        emits its own finding — "its absence is not zero findings" — and sets
+        `incomplete`.
+        Each handler now only gathers evidence and delegates to
+        `validate_for_manufacturing_with(args, &DrcEvidence)` and
+        `run_design_review_with(args, ctx, Option<&DrcEvidence>)`. That is what
+        makes P.6.8's #185 compose with this instead of re-deriving it, and it
+        is also what lets every verdict be proved on an injected `DrcReport`
+        with no KiCAD in the environment — no gated test was added, and D111 is
+        sidestepped entirely because no proof goes through `kicad-cli`.
+        Verdict vocabulary, each extended in its own idiom: manufacturing gains
+        `INCOMPLETE` beside `NOT READY` / `NEEDS REVIEW` / `READY`; design
+        review gains `INCOMPLETE — DRC did not run, so the board is unverified`
+        beside its sentence-form verdicts. Precedence is measured error >
+        incompleteness > warning, and the incompleteness finding is itself a
+        `warning`, so it cannot masquerade as a blocker under `NOT READY`.
+        `net_count > 3 && track_count == 0` is kept, but **only** when
+        `!gate.connectivity_measured`. The measurement behind that choice: once
+        `unconnected_items` is `Some`, the heuristic is strictly subsumed — a
+        board with nets and no copper cannot have an empty unconnected list —
+        so running it anyway could only add a false positive contradicting a
+        measurement. Proved by `the_track_count_heuristic_yields_to_a_measured_drc`
+        (4 nets, 0 tracks, clean DRC injected → no "no traces routed" issue).
+        Red before: `a_board_review_without_drc_evidence_cannot_look_good`
+        (`tests/design_review.rs:325`) —
+        `left: String("LOOKS GOOD — no critical issues found")`,
+        `right: "INCOMPLETE — DRC did not run, so the board is unverified"`.
+        No existing test was modified. `an_unrouted_kicad_10_board_is_flagged`
+        stays green on its own terms: its context carries
+        `kicad_cli: String::new()`, so DRC is unavailable and the heuristic
+        fallback applies — the one case where it still has something to say.
+        Known cost, unmeasured here for want of KiCAD: both tools now spawn a
+        `kicad-cli pcb drc` process per call when a binary is configured.
+  - [x] P.6.9.9 `4536d10` (LATER) — the read-only and batch half of the same
+        root cause as P.6.9.7: an omitted `query` becomes `""` and
+        `contains("")` is always true, so `search_symbols`
+        (`library.rs:2807`), `search_footprints` (`:2960`) and
+        `search_templates` (`templates.rs:287`, which has no limit) return
+        everything; `suggest_alternatives` (`integration.rs:837-853`) defaults
+        `value` and `footprint` to `""`, becomes `LIKE '%%'` on both columns
+        and caches the result; both JLCPCB handlers check the database before
+        the arguments, sending a caller who forgot `query` to download a
+        2.5M-part catalogue; and `batch_add_wire` (`sch_wiring.rs:579-584`)
+        re-serialises the file for a call that added nothing. Bundle with
+        P.6.9.7 if that item is already open in the same modules.
+        Done, on P.6.9.7's helpers — every site routes through
+        `try_arg!(require_*)`, strictly by its own schema's `required` list
+        (D127). All five schemas already declared the argument required; the
+        handlers simply never read it that way.
+        `search_symbols` (`library.rs:2812`), `search_footprints` (`:2965`)
+        and `search_templates` (`templates.rs:287`) take `require_str` on
+        `query`; `search_footprints`'s echoed `"query"` in the result now
+        reads the validated value rather than a second `unwrap_or("")`.
+        `search_templates` gained the limit it never had, copying its two
+        siblings' convention exactly — argument `limit`, integer, default 50,
+        `if results.len() >= limit { break }`.
+        The JLCPCB ordering defect turned out to have **three** occurrences,
+        not the two the item named, and all three are fixed:
+        `suggest_alternatives` (`integration.rs:837`) now validates `value`
+        and `footprint` before `db_path.exists()` — so also before
+        `cache_key`/`get`/`put`, which is what stops a refused query from
+        polluting the cache; `get_jlcpcb_part` (`:779`) had `require_str` on
+        `lcsc_id` already but ran it *after* the database test; and
+        `search_jlcpcb_parts` (`:616`) had both defects at once — a `required`
+        `query` read with `unwrap_or("")`, checked after the database.
+        `batch_add_wire` (`sch_wiring.rs:582`) takes `require_array` on
+        `wires`; an explicitly empty batch stays legitimate and now returns
+        `{"added_wires": 0}` without loading or rewriting the file at all.
+        Red before, ten tests, among them
+        `suggest_alternatives_refuses_its_missing_arguments_before_the_database_is_looked_for`
+        (`left: Some("file_not_found") right: Some("invalid_argument")` — the
+        ordering proof, and it holds with no JLCPCB database installed),
+        `a_refused_suggestion_puts_nothing_in_the_cache`, and
+        `an_empty_batch_of_wires_leaves_the_schematic_byte_identical`
+        (`a batch that added nothing reserialised the file` — the red showed
+        `sheet_instances` reflowed onto several lines).
+        `docs/capability-matrix.md` moved, and this time it is a **gain**, not
+        a displacement: `search_footprints` goes from `NOT_TESTED | gated` — an
+        `#[ignore]`d test was its only proof — to `SUPPORTED | test`. Domain
+        `footprints` 85.7 % → 100 %, KiCAD domains 120 → 121 supported
+        (73.2 % → 73.8 %), fork proved 135 → 136 (72.6 % → 73.1 %).
+        One adjacent change: `seed_test_db` (`integration.rs:1459`) became
+        `pub(super)` to be shared with the new test module, matching
+        `create_published_schema`/`response_json` beside it.
+        Contract change, deliberate: omitting `query`, `value`, `footprint`,
+        `lcsc_id` or `wires` now returns `invalid_argument` instead of a whole
+        catalogue or an empty rewrite.
+  - [x] P.6.9.10 `791f95b` (LATER) — nothing validates `required` at the
+        dispatch: `execute_tool` (`mcp/handler.rs:210`) turns absent arguments
+        into `{}`. This is the floor beneath P.6.9.7 and P.6.9.9 and must land
+        *after* them — added first it fires before any handler runs, and a
+        per-tool test could no longer tell a fixed handler from a broken one.
+        Presence only; an explicit `null` counts as absent.
+        Done. `tools/mod.rs:425` gained `first_missing_required(schema, args)`
+        — presence only, `args.get(k).unwrap_or(&Value::Null).is_null()`, so an
+        explicit `null` counts as absent — and `handler.rs` wraps it in
+        `missing_required_refusal`, which returns the same
+        `ToolErrorKind::InvalidArgument` shape the `require_*` helpers produce.
+        One vocabulary of refusal, wherever it happens.
+        Placed **after** the mode gate on both paths, and the placement was
+        measured rather than assumed: moving it ahead of the domain gate turns
+        `the_mode_gate_still_answers_first` red (`invalid_argument` instead of
+        `write_refused_by_mode`) and moves nothing else. The gate answers
+        first — a `ReadOnly` caller gets no argument coaching on a call that
+        would be refused anyway. For domain tools the check also sits after
+        `get_tool`, hence after auto-load, which is what makes it reachable at
+        all for a toolset not yet loaded.
+        `kicad_invoke`: envelope only. The check reads the **top-level**
+        `required` of the published schema (`["calls"]`) and never the nested
+        `required: ["tool"]` inside `items` — batch entries stay validated and
+        gated one by one inside `handle_kicad_invoke`, exactly as the mode gate
+        treats them.
+        Lying schemas found: **none**. The single pre-existing test that
+        flipped is not one: `auto_load_toolsets_config_loads_and_executes_on_miss`
+        (`crates/konnect/tests/protocol_stdio.rs:424`) calls `route_trace` with
+        `{}` and asserted `field == "net_name"`, the first key the *handler*
+        checks. The schema declares `required: ["board", "net_name", …]`
+        (`pcb_routing.rs:83`) and `board` is genuinely mandatory, so the
+        refusal now names `board`. The assertion moved to `"board"`; `kind` is
+        unchanged and the test's intent — proving auto-load happened — is
+        preserved and in fact strengthened, since only a loaded tool has a
+        schema to consult.
+        Red before: `a_missing_required_key_is_refused_before_the_handler_runs`
+        (`left: String("not_found") right: "invalid_argument"`) — observability
+        chosen so "the handler ran" is visible: `move_schematic_component`
+        addressed by an unknown `uuid`, whose `not_found` can only come from a
+        resolver that already read the file.
+  - [x] P.6.9.11 `c6a6407` (LATER) — `get_path` (`tools/mod.rs:442-447`)
+        returns `anyhow::Result` so handlers can use `?`, and the dispatch
+        stringifies it through the `handler_error` fallback
+        (`mcp/handler.rs:338`), while `require_str` returns a structured
+        `InvalidArgument`. Whether a caller can tell "you forgot an argument"
+        from "the tool tried and failed" therefore depends on which helper the
+        handler reached for first. Carry the distinction in the error chain and
+        downcast at the dispatch, as `konnect_ipc::TransportUnreachable`
+        already does — classify by type, never by matching message text. A path
+        that is present but unusable stays a handler error.
+        Done, and the measurement came first because P.6.9.10 might have
+        emptied the item. Static pass over all 202 `tool!(…)` registrations —
+        name → top-level `required` → the handler's `get_path` keys, callees
+        followed one level — found **zero** sites still reachable through
+        `tools/call`: the two raw candidates (`expand_bus` `sch_buses.rs:306`,
+        `run_design_review` `design_review.rs:528`/`:420`) are both already
+        guarded by an `is_string()`/`Some(_)` check.
+        The item is not moot, though, and the reason is worth recording:
+        `handle_kicad_invoke` calls `(def.handler)(&call_args, …)` **without**
+        `first_missing_required` — the deliberate envelope-only exemption
+        P.6.9.10 chose and froze in
+        `the_gateway_envelope_is_checked_but_not_its_entries`. All **172**
+        `get_path` sites are therefore observable through the gateway, where an
+        entry missing its path key answered `handler_error` while an entry
+        missing a `require_*` argument answered `invalid_argument` — the exact
+        split this item is about, surviving in the one place the dispatch check
+        does not reach.
+        `MissingArgument { key }` lives in `mcp/error.rs` beside
+        `TransportUnreachable`/`BoardNotOpen` and is read by a downcast pass in
+        `ToolErrorKind::from_anyhow`, ahead of the `io::Error`/`Conflict`
+        passes — an incomplete request never got far enough to produce the io
+        failure the later pass looks for. Both dispatch paths already funnel
+        through `from_anyhow`, so one downcast covers them. No message text is
+        matched anywhere, and
+        `get_path_missing_classifies_as_invalid_argument_by_type` proves the
+        classification by `downcast_ref` alone.
+        "Present but unusable" is deliberately not reclassified: `get_path`
+        tests no existence, so a bad path stays an `io::Error` in the chain and
+        keeps `Io { code: "not_found" }` — guarded by
+        `a_path_that_is_present_but_unusable_is_still_the_tools_failure`.
+        Red before: `an_absent_path_argument_is_an_invalid_argument_like_any_other`
+        (`missing_path_argument.rs:85`) —
+        `left: String("handler_error") right: "invalid_argument"`.
+        Two side effects handled rather than papered over:
+        `docs/capability-matrix.md` moved one line — a **displacement**, not a
+        gain: `list_schematic_wires`'s evidence goes to the alphabetically
+        first test file, now `tests/missing_path_argument.rs` (D128). And
+        `error_catalog_debt.rs` went 2 → 3 because the new unit test wrote
+        `ToolErrorKind::HandlerError` literally, which the debt scanner counts;
+        rewritten as a negative assertion (`!matches!(…, InvalidArgument{..})`)
+        so the guard is identical and the debt ceiling was **not** raised.
+  - [x] P.6.9.12 `6693681` (LATER) — `register_in_lib_table`
+        (`library.rs:1549-1583`) returns `Ok(())` the moment the nickname
+        exists, and both handlers — footprint (`:1355-1385`) and symbol
+        (`:1442-1478`) — report a bare `"success": true`, so a no-op is
+        indistinguishable from a registration and a stale project URI cannot be
+        corrected at all. Upstream had already fixed the footprint half under
+        #205 before this commit; here neither half is fixed, so there is no
+        asymmetry to repair — one path reporting inserted/unchanged/updated,
+        with a `replace_existing` policy preserving the entry's own
+        `options`/`descr`. Check what `tool-directory.md` promises before
+        changing the contract.
+        Done, one path for both halves.
+        `enum LibTableRegistration { Inserted, Unchanged, Updated{previous_uri},
+        UriConflict{existing_uri} }` is returned by `register_in_lib_table`
+        (fifth parameter `replace_existing`), and a single shared
+        `registration_result(…)` converts it for both handlers:
+        `{"success", "result": "inserted|unchanged|updated", "nickname",
+        "scope", "table", "uri"}`, plus `previous_uri` on an update.
+        `UriConflict` answers `InvalidArgument { field: "replace_existing" }`
+        naming the existing URI, the requested one and the remedy — a call that
+        needs re-parameterising is exactly what `InvalidArgument` means, and no
+        `HandlerError` literal was written (the debt scanner counts those).
+        `replace_existing` defaults to **false**, and the default is the
+        argument: the old behaviour touched nothing, so defaulting to `true`
+        would turn every repeated call into a silent rewrite of someone else's
+        entry. Correcting a URI is an explicit request, and the refusal names
+        the flag that grants it.
+        Lookup no longer uses `content.contains("(name \"X\")")` over the
+        whole file — a substring test that a `descr` quoting the nickname was
+        enough to fool. `find_lib_entry` reuses `find_block_starts` +
+        `find_balanced_block` from `konnect_sexp::writer`, the same pair
+        `parse_lib_table` already uses on these tables in this very file, so no
+        second parser was written. An update rewrites the located `(uri …)`
+        sub-block and nothing else, so the entry's own `options`/`descr` and
+        its formatting survive; `unchanged` returns before any `write_atomic`,
+        which is what makes the file byte-identical.
+        Both schemas gained `replace_existing` (boolean, default false) and
+        both `tool-directory.md` lines (l.304, l.309) now state the `result`
+        vocabulary and the policy.
+        Red before, five tests, each looping over both tools:
+        `a_first_registration_reports_inserted` (`left: Null right: "inserted"`),
+        `a_different_uri_without_replace_existing_is_refused`
+        (`register_footprint_library answered success for a URI it did not write`)
+        and `a_nickname_quoted_inside_a_descr_is_not_a_registration`
+        (`mistook a quoted nickname in a descr for a registration`). The
+        `updated` fixture carries a non-empty `(options "hand-written")` and
+        `(descr "the caller's own note")`, without which the preservation
+        assertion would prove nothing.
+        One existing test took the new argument
+        (`registering_a_symbol_library_scaffolds_a_sym_root`); its assertions
+        are unchanged, and no test asserted the bare `"success": true`.
+        Contract change: the body gains `result`/`uri`, and a nickname
+        registered against a different URI is now refused where it used to
+        answer success.
+  - [x] P.6.9.13 — `handle_group_components` (`sch_components.rs:1553-1562`)
+        has P.6.9.5's defect A verbatim and was outside its scope: it inserts
+        `(property "Group" …)` unconditionally, at a hardcoded `(at 0 0 0)` and
+        a hardcoded two-space indent, so grouping the same component twice
+        leaves two `Group` properties, the text renders at the sheet origin,
+        and the indentation is wrong for every eeschema-authored sheet. The
+        helper it needs already exists — route it through `set_symbol_property`
+        like the other two. Proof to reproduce first: two `group_components`
+        calls naming the same component yield two `Group` properties.
+        Done, and small: the hand-rolled insert — locate `(instances`, splice a
+        `format!`ed property with a hardcoded anchor and indent — is replaced by
+        one `set_symbol_property` call, the helper P.6.9.5 shared out. `reject`
+        is empty because the key is the literal "Group": no caller-supplied
+        name can collide with a reserved one here.
+        One knock-on handled: an entry that now fails is a per-reference error,
+        so `batch.unresolved` became a mutable `batch_errors` the loop can add
+        to, and the response's `errors` reports both kinds instead of only the
+        unresolved references.
+        Red before, two tests:
+        `regrouping_a_component_updates_its_group_rather_than_adding_a_second`
+        (`left: 2 right: 1` — two `(property "Group"` after two calls) and
+        `a_group_property_is_anchored_on_the_symbol_not_the_sheet_origin`
+        (`left: "0 0 0"`).
+  - [x] P.6.9.14 — `batch_edit_schematic_components` carries the same family
+        of defect on `fields` that P.6.9.6 just closed on the single-component
+        path, and was outside its scope. `sch_batch.rs:950-965` guards with
+        `if let Some(new_val) = field_val.as_str()`, so a number or boolean
+        value is **silently dropped** — no write, no error, and the component
+        can still report success from another field in the same spec. It
+        resolves through `field_value_range` rather than `set_symbol_property`,
+        so a key the symbol does not carry yet fails with
+        `Field 'X' not found on 'R1'` instead of being inserted — the very
+        refusal J.2.4.1 removed from the single path. And it opposes no
+        rejection to `Reference`, so the batch path can rewrite the property
+        while `(instances …)` keeps the old designator (D124). Route it through
+        the shared helpers and the same `property_text` conversion. Proof to
+        reproduce first: a batch spec with `fields: {"Qty": 2}` reports success
+        and writes nothing.
+        Done. The technical difficulty was not the diagnosis but reconciling
+        two write models: this handler accumulates `SexpEdit`s whose byte
+        ranges index the *original* content and are only correct applied at
+        once, while `set_symbol_property` returns an already-spliced document —
+        it must, since an insertion's position and indentation are read off the
+        symbol as it stands.
+        Resolved in two phases. Phase 1 is unchanged: the standard fields stay
+        offset edits applied in a single `apply_edits`. Phase 2 walks the
+        validated `(field, text)` pairs — parked per component in a new
+        `PendingProperties` — over the resulting string, re-locating the symbol
+        with `find_symbol_instance_block` before every write, exactly as
+        `set_field` does on the single-component path and for the same reason:
+        a previous insertion in the same batch has moved everything after it.
+        Every phase-1 offset stays valid, nothing is ever reserialised, and a
+        one-field edit is still a one-line diff (P.6.9.4).
+        `property_text` went `fn` → `pub(crate) fn` — matching
+        `place_one_component`, the file's only other exported neighbour —
+        rather than being duplicated, so both paths refuse the same values.
+        `RESERVED_PROPERTY_KEYS` is the `reject`, so `Reference` is turned away
+        before any write. A `fields` that is present but not an object is now
+        an error instead of being ignored.
+        Red before, four of the six: `a_batch_edit_writes_a_field_given_as_a_number`
+        (`{"errors":[],"updated":[],"updated_count":0}` — success, nothing
+        written), `a_batch_edit_adds_a_field_the_symbol_does_not_carry_yet`
+        (`errors: ["Field 'MPN' not found on 'R1'"]`) and
+        `a_batch_edit_refuses_to_rewrite_the_reference_property`
+        (`changes: ["Reference → R9"]`). The other two — in-place update, and
+        the one-line-diff bound — were green before and after, and stand as
+        non-regression guards.
+        Behaviour note: the `fields` path's error message changes shape
+        (`Field 'X' not found on 'R1'` → `'X' on 'R1': …`); no test or doc
+        asserted the old one.
+  - [x] P.6.9.15 — `place_component_array`'s schema and handler disagree on
+        `spacing_y`. The schema documents `"spacing_y": { "default": 0 }`
+        (`pcb_components.rs:1030`); the handler reads
+        `args["spacing_y"].as_f64().unwrap_or(spacing_x)` (`:1511`). A caller
+        who trusts the published schema and omits `spacing_y` asks for a single
+        row and gets a square grid — every part of an N×M array placed at the
+        wrong y. Found while doing P.6.9.7 and deliberately left there: it is
+        an *optional* argument whose default is wrong, not a required one being
+        substituted, so it is a different defect. Decide which of the two is
+        right — measure what a row array is normally asked for — then make the
+        other match, and cover it with a test that places a 3×2 array without
+        `spacing_y` and asserts the y coordinates.
+        Done. The **schema** was the half that was wrong. A default of 0 is not
+        defensible: it stacks every row of an N x M array on the same y, which
+        nobody asks for, while the handler's fallback to `spacing_x` gives a
+        square grid — the ordinary reading of "place these in a grid, 2.54
+        apart". So `"default": 0` is gone and the description now says what an
+        omitted `spacing_y` actually does; the handler is unchanged apart from
+        a comment recording which half was wrong.
+        The test is a schema-contract test rather than a placement test,
+        because the behaviour was never broken: `place_component_array` is an
+        IPC tool whose y coordinates cannot be observed without a live KiCAD,
+        and the defect was entirely in what the published contract promised.
+        Red before: `the_schema_does_not_promise_a_spacing_y_default_the_handler_ignores`
+        — `the schema still publishes a spacing_y default the handler
+        overrides: {"default":0,"description":"Row spacing in mm","type":"number"}`.
+        `docs/capability-matrix.md` gained a line: `place_component_array` goes
+        `NOT_TESTED | gated` to `SUPPORTED | test`, placement 9.1 % to 18.2 %,
+        KiCAD domains 121 to 122 supported. The gain is real but the mechanism
+        is not flattering, and it is what turned up P.6.9.19: the tool has been
+        exercised since P.6.9.7, and the scanner simply could not see it,
+        because it recognises `"<tool>"` or `handle_<tool>` and this handler is
+        named `handle_place_array`.
+  - [x] P.6.9.16 — P.6.9.10 validates `required` at the dispatch, but nothing
+        proved a schema's `required` list *honest*: that every key it names is
+        genuinely mandatory, and that no argument the handler cannot do without
+        is missing from it. Done as `required_schema_honesty.rs`, one pass over
+        the whole registry — but not in the shape this item proposed. The
+        proposed shape, calling each tool with `{}` **through dispatch**, was
+        written first and measured tautological: `missing_required_refusal`
+        (`handler.rs:344`) refuses before the handler runs and builds the
+        refusal *from the required list itself*, so "the refusal names a key
+        from its own `required` list" is true by construction and can never go
+        red. It passed on 215 tools in 0.41 s and proved nothing.
+        The shape that works calls `(tool.handler)(&{}, ctx)` **directly**,
+        bypassing the dispatch gate, so the handler's own answer is what is
+        scored — both directions in one call per tool: a handler that succeeds
+        despite a non-empty `required` over-promises; one that refuses
+        `invalid_argument` on a field absent from its own list is the omission
+        class of P.6.9.7/P.6.9.9. `Err(anyhow)` is reconverted through
+        `ToolErrorKind::from_anyhow` first, as `dispatch_tool` does, or the
+        `get_path`/`MissingArgument` path shows up as ~90 false positives.
+        Cost measured: 0.25 s, 215 tools, 191 with a `required` list checked,
+        21 without, 3 excluded. The exclusions are what the shape costs:
+        without dispatch in front, a handler that does I/O, spawns a process or
+        reaches the network on `{}` now really does — `download_jlcpcb_database`
+        (fetches hundreds of MB), `launch_kicad_ui` (spawns the GUI),
+        `save_project` (writes a live session's board).
+        Red before, by mutation: `list_footprint_libraries` `"required": []` →
+        `["bogus_field"]` gives `list_footprint_libraries: requires
+        ["bogus_field"] but succeeded on an empty argument object — the schema
+        over-promises, or the handler ignores the key`.
+        Five sites came out of the first run. Four schemas were wrong, one
+        handler was, and one of the five was not a lie at all:
+        * `get_datasheet_url` — not lying: the handler needs `mpn` **or**
+          `lcsc_id`, which `required` cannot express, so `required: []` was the
+          only correct answer and the refusal names `mpn` as a representative.
+          The schema now publishes the real contract as
+          `anyOf: [{required:[mpn]}, {required:[lcsc_id]}]`, and the pass reads
+          `anyOf` branches as honest. Handler unchanged.
+        * `autoroute` — schema wrong. `handle_autoroute` takes `_args` and
+          always answers `ManualStepRequired`: the tool has been a stub since
+          kicad-cli 10 dropped the DSN/SES round trip. `required: ["board"]`
+          made the dispatch demand an argument nothing reads, for a tool that
+          will do nothing either way. Now `required: []`, `board` kept in
+          `properties` against the day IPC lands.
+        * `get_nets_list` — schema wrong. Handler takes `_args`: it queries the
+          **open KiCAD session** over IPC, never a file. `board` was neither
+          read nor readable, and publishing it suggested the caller was
+          querying *that* file. Removed from `required` and `properties`.
+        * `query_traces` — same mechanism: the handler reads only `net_name`
+          and `layer`. Same fix.
+        * `run_design_review` — both halves wrong, in opposite directions.
+          `run_design_review_with` only *tests* `args["schematic"].is_string()`
+          and skips every schematic audit when it is absent, so a call carrying
+          neither `schematic` nor `board` came back `{"ok":true,"verdict":"LOOKS
+          GOOD — no critical issues found","findings":[]}` — a passed review of
+          nothing. Dispatch hid it; `kicad_invoke` did not, its batch entries
+          skipping `first_missing_required` (D131), which is how it was proved
+          red. But `required: ["schematic"]` could not be the fix either:
+          `a_board_review_without_drc_evidence_cannot_look_good` calls the
+          handler with `board` alone and asserts success, so a board-only
+          review is intended and the schema was refusing a legitimate call. The
+          contract is `schematic` **or** `board`: schema now `required: []` plus
+          the same `anyOf` shape as `get_datasheet_url`, and the handler refuses
+          only when both are absent — the case `anyOf` cannot reach, since a
+          batch entry never gets schema-validated at all.
+        Two things the shape does **not** reach, both written into the test's
+        own docs: a `required` list naming several keys is only ever proved on
+        the *first* key the handler happens to check (see P.6.9.21), and the
+        exclusion list has to hide its own tool names from the coverage scanner
+        (D133).
+  - [x] P.6.9.17 — a `kicad_invoke` entry that failed through the
+        `Err(anyhow)` path reported `error_kind` but no field, while the same
+        failure on the `Ok(CallToolResult::error_kind)` path reported both.
+        Found during P.6.9.11 and left alone then as out of scope: the
+        asymmetry predates it, affects every kind rather than the new one, and
+        is in the gateway's result assembly, not in the classification. The
+        consequence is that a batch caller can be told an argument is invalid
+        without being told which — the field P.6.9.11 took care to carry all
+        the way through `from_anyhow`.
+        The mechanism: the `Ok` arm hands back the handler's whole structured
+        body under `result`, so the variant's own fields ride along for free;
+        the `Err` arm summarises into `error_kind` + `transient` + `error`, and
+        kept only the discriminant. Which arm a refusal takes is an
+        implementation detail of the handler — `get_path` returns
+        `anyhow::Result`, `require_str` a `CallToolResult` — so a batch caller
+        cannot know in advance whether it will be told the field. It matters
+        most here of all places, because batch entries skip the dispatch's
+        `required` check by design (D131), making this the only refusal they
+        get.
+        `ToolErrorKind::field()` lifts it out — `Option<&str>`, `None` for
+        every kind that is not about an argument, so "not about an argument" is
+        distinguishable from "about an argument nobody named". `InvalidArgument`
+        is the only variant carrying one. The gateway emits it as
+        `error_field`, matching the flattened `error_kind` beside it rather
+        than inventing a nested object the `Ok` arm does not have either.
+        Fixed in the same pass, same class: the one entry the gateway assembles
+        by hand rather than classifying — a call with no `tool` key — also said
+        `invalid_argument` and named nothing. It is the single refusal that
+        cannot even report which tool it is about, so it now names `tool`.
+        Red before: `an entry told its argument is invalid must be told which
+        one: {"error":"Missing required argument: 'schematic'","error_kind":
+        "invalid_argument","index":0,"ok":false,"tool":"audit_decoupling",
+        "transient":"none"}` — the message carried the name in prose, and
+        nothing structured did.
+  - [x] P.6.9.18 — `batch_edit_schematic_components` still refused `footprint`
+        on a symbol carrying no `Footprint` property, through the "standard
+        fields" loop that resolved by `field_value_range` (`sch_batch.rs`).
+        J.2.4.1 removed exactly that refusal from the single-component path,
+        because a part placed without a footprint has no such property at all
+        and assigning one is the most common edit after placement; P.6.9.14
+        fixed the `fields` half of this handler but left the standard-field
+        half, which was a separate loop. Found while doing P.6.9.14 and left
+        alone then as out of scope.
+        Fixed by routing `value` and `footprint` into the same `updates` vector
+        the `fields` map uses, written through `set_symbol_property`, which
+        inserts a property the symbol does not carry yet instead of refusing.
+        `Reference` keeps its own path — `new_reference` still has to rewrite
+        `(instances …)` (D124), and the generic property path would only do
+        half the job.
+        Collision rule, taken from the single-component path rather than
+        invented: `edit_schematic_component` applies its named `value` /
+        `footprint` / `datasheet` arguments first and its `fields` map second
+        (`sch_components.rs:754-763`), so the map wins there. The batch pushes
+        standard fields into `updates` before the map for the same result, and
+        a test freezes it — a spec naming the same property both ways is no
+        longer left to iteration order.
+        Falls out of the fix: `field_value_range` had no caller left and is
+        gone, and with it the last offset-based edit in this handler, so the
+        two-phase split it forced is gone too. Everything is one pass over
+        `updates` now, each write re-locating the symbol by reference against
+        the growing string, exactly as `set_field` does on the single path — a
+        one-field edit is still a one-line diff (P.6.9.4).
+        Red before: `{"errors":["Field 'Footprint' not found on 'R1'"],
+        "updated":[],"updated_count":0}` on the fixture `bus_two_resistors`,
+        which carries no `(property "Footprint" …)`. Two tests added, both
+        integration (no D128 evidence shift):
+        `a_batch_edit_sets_a_footprint_the_symbol_does_not_carry_yet` and
+        `a_batch_edit_resolves_a_footprint_collision_the_same_way_the_single_component_path_does`.
+  - [x] P.6.9.19 — the capability scanner recognises a tool by `"<tool>"` or
+        `handle_<tool>` (`capability/coverage.rs:210`), and 24 of the 198
+        registered tools have a handler whose name does not match their own:
+        `place_component_array` is `handle_place_array`,
+        `batch_edit_schematic_components` is `handle_batch_edit`,
+        `route_differential_pair` is `handle_route_diff_pair`,
+        `list_schematic_wires` is `handle_list_wires`, and twenty more. The
+        item assumed those tools read `NOT_TESTED` while a test exercises them,
+        and asked for the real number first: **for each of the 24, does a test
+        already exercise it?**
+        Measured, and the answer closes the item differently than it proposed:
+        the hidden coverage is **zero**. 22 of the 24 are already `SUPPORTED`,
+        `PARTIAL` or `EXTERNAL_TOOL` because a test names the tool as a string
+        — the scan's *other* criterion, untouched by the handler mismatch. The
+        remaining two, `route_differential_pair` and `open_schematic_viewer`,
+        have no test at all: nothing in the repository mentions either the tool
+        name or the handler name outside the tool definition. Their
+        `NOT_TESTED` is correct, not hidden.
+        What makes the mismatch harmless is therefore not luck and not the
+        naming: it is this repository's testing convention. `tests/harness/mod.rs`
+        goes through `ToolRouter` by name rather than calling a private handler,
+        on purpose — "the tool has to be registered, findable by name, and take
+        the arguments its schema advertises". Every test written that way trips
+        the first criterion regardless of what the handler is called. The
+        exposure is real but narrow and currently empty: a tool proved *only*
+        by a unit test calling its handler directly would read `NOT_TESTED`.
+        So neither remedy the item floated is worth doing. Renaming the 24
+        handlers moves **zero** matrix lines and zero percentage points, and one
+        of the 24 cannot be renamed at all: `handle_get_pin_connections` serves
+        both `get_pin_connections` and `get_pin_net_name`
+        (`sch_analysis.rs:83,95`), so making it match one name unmatches the
+        other. An alias table buys the same nothing and adds a hand-written list
+        to keep in sync — the exact failure mode D120 rejects elsewhere.
+        What the measurement *did* find worth fixing is the matrix's own
+        preamble, which claimed the scan errs in one direction only: "That
+        direction is deliberate: a scanner that guesses wide inflates the number
+        it exists to keep honest." D133 had already disproved that — a tool name
+        quoted in a test that does not call it counts as proof, which is why
+        `required_schema_honesty.rs` splits three names with `concat!`. A
+        document whose whole claim is that its percentage is measured cannot
+        describe its own method as safer than it is. The preamble
+        (`capability/render.rs`) now states both directions, names the
+        `ToolRouter` convention that keeps the under-reporting empty, and tells
+        a future test author to break a tool name they mention without calling.
+        No status or percentage changes: the regenerated matrix differs by its
+        preamble alone.
+  - [x] P.6.9.20 — `the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
+        (`sourcing_and_manufacturing.rs:25`) asserted `stats["exists"] == false`
+        on the grounds that "no database is configured in this harness" — but
+        the harness set `jlcpcb_db_path: None`, and `resolve_db_path`
+        (`tools/integration.rs:248`) reads that as *fall back to the
+        machine-wide default*, `%APPDATA%\konnect\jlcpcb.db`. The test therefore
+        asserted a fact about the machine while its message claimed one about
+        the fixture, and it started failing the day a real database was
+        downloaded here — 2026-08-25, `downloaded_at_unix 1787658362`, 1 581
+        parts, 1,66 MB. Same family as D113: not a test that skips in silence,
+        but one that measures something other than what it says.
+        The harness now names a path under `CARGO_TARGET_TMPDIR` that is never
+        created (`absent_jlcpcb_db`), so absence is a property of the fixture
+        the way `kicad_cli: ""` already makes "no kicad-cli" one. The test
+        asserts *which* database was looked at before asserting it is absent,
+        which is what stops the fallback from creeping back.
+        That assertion turned up a second defect in the tool itself: the
+        `exists: false` branch of `handle_jlcpcb_stats` reported no `path` at
+        all, only the `exists: true` branch did. With three possible sources for
+        that path — an explicit `output_path`, the configured `jlcpcb_db_path`,
+        the machine-wide default — "no database" without saying which one leaves
+        a caller unable to tell a misconfigured path from a missing download:
+        the very distinction this tool exists to draw. `path` is now reported on
+        both branches.
+        Red before: `the harness must name its own absent database, not the
+        machine's: {"exists":false,"note":"Run download_jlcpcb_database to fetch
+        the parts database"}`. Found while validating P.6.9.16 and independent
+        of it — reproduced on a stashed tree.
+  - [x] P.6.9.21 — `required_schema_honesty.rs` calls each handler with `{}`,
+        which is missing *every* required key at once, so it only ever proves
+        the **first** key that handler happens to check. A schema listing
+        `["board", "uuid"]` whose handler reads only `uuid` passes that pass
+        exactly like one that reads both. The class is real and wider than what
+        P.6.9.16 caught: measured in `pcb_routing.rs`, `"board"` appears in 33
+        tool schemas and is read by 5 handlers.
+        The shape this item floated — omit each required key in turn, filling
+        the others with placeholder values — was rejected on measurement rather
+        than tried: a plausible-looking path that does not exist makes a
+        perfectly correct handler answer `file_not_found` before it ever looks
+        at the omitted key, so "does not require it" and "requires it after
+        some other check" are indistinguishable. The only unambiguous signal
+        would be a *success* despite a missing key, and almost nothing succeeds
+        on placeholder values. Near-zero yield, massive false positives.
+        Done instead as `required_schema_static_honesty.rs`: a key the schema
+        declares `required` and the handler's body never reads is a lie with no
+        execution needed and no dangerous false positive. It reads the handler
+        body out of `src/tools/*.rs` — the handler is located through the
+        `tool!` block, never by assuming `handle_<tool>` (P.6.9.19) — and looks
+        for each required key in the argument-reading forms this codebase
+        actually uses. Precedent for scanning our own sources: the coverage
+        scanner does it already.
+        Measured: 193 tools, 416 required keys, 19 resolved only through one
+        level of indirection (the `ipc!` macro, and `handle_add_bus`'s loop
+        over a literal `[x1, y1, x2, y2]`), 0 handlers unmapped. Five liars,
+        all in `pcb_routing.rs` — see P.6.9.22, which is what they turned out
+        to be.
+        The limit, written into the test's own docs: it proves a key is
+        **read**, not that it is **honoured**. `route_pad_to_pad` reads `board`
+        with `get_path` to find its pads in the file, so the scan clears it,
+        and then routed over IPC without checking that KiCAD holds that board —
+        it could read A's pads and lay copper on B. That case is what the guard
+        in P.6.9.22 closes instead.
+  - [x] P.6.9.22 — the five keys P.6.9.21 found were not five careless schemas.
+        They were one missing guard, and the worst defect of this phase.
+        `pcb_components.rs` defined an `ipc!` macro that resolves `board` from
+        the arguments and calls `ensure_board_is_active` before the body runs.
+        `pcb_routing.rs` defined a *second* `ipc!`, two-argument, that read no
+        `board` and checked nothing, falling through to `get_board_document()`
+        — KiCAD's **first** open document. So a caller naming a board in a
+        schema that requires it had the request executed against whatever board
+        happened to be in front. Six of the eight handlers on that path write
+        copper: vias, traces, differential pairs.
+        This is not inference. `find_open_board` exists precisely for it, and
+        its doc comment records the live symptom: "with the user's own project
+        focused and the target board open behind it, first-document targeting
+        either fails or, worse, would mutate the wrong board." The guard was
+        written, and one file stayed beside it.
+        One definition now — `ipc_boundary::guarded_ipc`, in the module whose
+        whole premise is that this boundary is typed once and no handler
+        re-derives it — imported `as ipc` by both files. Two copies are what
+        let one diverge.
+        Reverses P.6.9.16 on two tools, deliberately. I had dropped `board`
+        from `query_traces` and `get_nets_list`, concluding they query the open
+        session rather than a file. That described the defect as if it were the
+        intent: the handlers ignored `board` because their macro never resolved
+        one, not because a caller naming a board meant nothing. `board` is
+        restored to both schemas, `required` included, and now honoured. The
+        comments I left there are rewritten to say so, reversal included.
+        Guard that closes the class rather than the eight sites:
+        `no_ipc_call_bypasses_the_guarded_macro_in_pcb_routing` requires zero
+        textual `with_ipc(` in `pcb_routing.rs`. Red before at `left: 1, right:
+        0`, green after. It is what would have caught `route_pad_to_pad`, whose
+        `board` *is* read and was never honoured, and what catches a future
+        handler written next to the path instead of through it.
+        Proof is structural throughout: the behaviour needs a live KiCAD with
+        two boards open, and `e2e-kicad.yml` has no routing probe to hang one
+        on.
+  - [x] P.6.9.23 — the same unguarded shape survived outside `pcb_routing.rs`:
+        nine direct `with_ipc(` calls no macro guarded, in `pcb_board.rs`,
+        `pcb_export.rs` and `pcb_components.rs`, eight of them writing.
+        Measured one at a time rather than guarded in bulk, and the nine split
+        three ways.
+        Six were real instances of P.6.9.22. Five in `pcb_board.rs`
+        (`set_board_size`, `get_board_extents`, `add_board_outline`,
+        `add_board_text`, `import_svg_logo`) and one in `pcb_export.rs`
+        (`refill_zones`, whose `KiCadIpcClient::refill_zones` calls
+        `get_board_document()` internally — the first open document again).
+        Three in `pcb_components.rs` were already correct, and by two different
+        mechanisms worth distinguishing: `place_array` and `align_components`
+        already carried the inline check, while `place_component` is guarded a
+        level down, `place_footprint` calling `find_open_board` itself. No
+        schema was missing `board`; no schema defect in the nine.
+        Two shapes of guard, because one of them does not fit everywhere.
+        `guarded_ipc` answers `ipc_error_result` and returns, which is right
+        where there is nothing else to try — that is `refill_zones`, routed
+        through it. But `pcb_board.rs` has a deliberate file fallback, and
+        returning would make it unreachable, so those five take the check
+        inline inside the closure and let the failure travel as a value.
+        `IpcFailure::allows_file_fallback()` then does exactly the right thing
+        without being asked twice: `BoardMismatch` returns `false` alongside
+        `Rejected`, because both prove KiCAD answered and editing the file
+        underneath a live editor would race it.
+        `get_board_extents` is the one read among the six, and it inverts:
+        its fallback is unconditional, so a `BoardMismatch` now falls through
+        to computing extents from the file the caller actually named. Before
+        the guard, a KiCAD holding some *other* board answered with that
+        board's extents, reported as `"source": "ipc"` as though they were the
+        requested board's.
+        The guard is generalised rather than copied — the lesson of P.6.9.22
+        was that two copies diverge. `no_ipc_call_bypasses_the_guarded_macro_or_an_inline_board_check`
+        scans every file in `src/tools` except the definition site, and fails
+        any `with_ipc(` whose paren-balanced argument span contains neither
+        `ensure_board_is_active(` nor — as one named, justified exception —
+        `place_footprint(`. Red before at `total_violations left: 6, right: 0`,
+        naming `pcb_board.rs` lines 364, 475, 735, 823, 961 and
+        `pcb_export.rs` line 629; green after.
+        Structural proof again: the behaviour needs a live KiCAD holding two
+        boards, which no probe here provides. The guard is textual, so a future
+        handler that embeds one of those substrings without actually guarding
+        would pass — the same accepted limit as this file's other pass, and
+        written in its docs.
+### Validation
+Each implemented item carries a test that is red before it and green after,
+and — where KiCad is the only honest oracle — a probe in
+`schematic_fidelity_live.rs` or its PCB equivalent, inside the gating E2E job.
+No item is closed on "the existing suite still passes".
+
+## P.7 — The suite must prove itself on CI's machine, not this one — DONE
+
+### Objectif
+P.6 closed with `cargo test --workspace` green here and the PR pushed. The
+gating CI run on the very same commit (`8aeaff7`) was **red on all three
+OSes**, and had been since the commit that introduced the test. The local
+suite and the CI suite were measuring two different machines, and the local
+one was the one with KiCad installed. Close that gap where it is: in the test,
+in the harness that let it stay silent, and in the CI command that hid
+whatever was behind it.
+
+### Dépendances
+None. The defect is in test code and one workflow line; no production path
+changes.
+
+### Tâches
+- [x] P.7.1 — `a_component_placed_on_a_child_sheet_is_written_with_the_roots_path`
+      (`crates/konnect-core/tests/sheet_instances.rs`) placed `Device:R` into a
+      child built from `blank_schematic_template()`, whose `lib_symbols` is
+      empty. `library::ensure_lib_symbol` therefore had to resolve the id from
+      the **installed** libraries, which exist on the machine the test was
+      written on and on no CI runner — `cargo test` in `ci.yml` installs no
+      KiCad. The tool answered `Library 'Device' not found`, wrote nothing,
+      and the assertion then read a file it had never touched, reporting the
+      absence of `(project "proj"` as an instance-derivation defect.
+      Fixed by making the placement a property of the fixture: the child is
+      `harness::TWO_RESISTORS`, which embeds `Device:R` and is already the
+      repository's answer to this exact question — its doc comment says "so no
+      installed libraries are needed". Red before under a simulated
+      KiCad-less machine, green after, and green with KiCad present.
+      Scope measured rather than assumed: the whole workspace suite was run
+      with `ProgramFiles`, `ProgramFiles(x86)`, `LOCALAPPDATA`, `APPDATA` and
+      the three `KICAD<major>_SYMBOL_DIR` variables pointed at an empty
+      directory — every root `kicad_paths::share_roots` knows on Windows. One
+      test failed. The class is this one test, not a family.
+- [x] P.7.2 — the harness let it stay silent. `Harness::json`'s doc said
+      "Panics if the tool errored", and it only ever checked `Result::Err` —
+      but a refusing handler here returns `Ok(CallToolResult { is_error: true
+      })`: `require_str`, `get_path` and `lib_symbol_not_found_error` all build
+      a result rather than an error. So a test could assert a tool's effect on
+      a file while the tool had refused to act, and the failure it eventually
+      produced named the wrong thing. `json` now asserts `!is_error` and
+      prints the refusal body. Measured against the whole `konnect-core`
+      suite on a KiCad-less machine: no other test depended on the old
+      leniency. It turns P.7.1's failure message from a dump of an untouched
+      file into `'add_schematic_component' refused: Library 'Device' not
+      found …`.
+- [x] P.7.3 — `ci.yml`'s test step ran `cargo test` without `--no-fail-fast`,
+      so the run stopped at the first failing binary. `sheet_instances` sits
+      two thirds down the alphabet, and the log said nothing either way about
+      the eleven binaries after it — the red run could not be read as evidence
+      of scope. Added `--no-fail-fast`, matching the command this project
+      already uses locally.
+
+- [x] P.7.4 — the gating E2E was red for the same reason, one layer out. It is
+      not a per-PR job, so `conformance_test`'s board half — added in this
+      phase — had never run in CI at all; the run dispatched by hand on this
+      branch is its first. It failed on
+      `every_installed_demo_board_parses_or_is_a_known_bad_file`:
+      `RoyalBlue54L-Feather.kicad_pcb` **parses** on the 10.0.5 CI pins, while
+      `KNOWN_BAD_BOARDS` — measured on the local 10.0.3 (D116) — says it must
+      not. The list stated a fact about one KiCad install and read as a fact
+      about the parser, so the test failed on a machine where nothing was
+      wrong. Same family as P.7.1 and D113, one level up: not "is KiCad
+      installed" but "which KiCad".
+      Fixed by measuring instead of listing. `paren_balance` walks the file's
+      own bytes, honouring quoted strings and their escapes, and
+      `malformation` reports why a file is not one balanced s-expression —
+      root closing early, a non-blank tail after it, or a depth that never
+      returns to zero. The test then asserts the parser *agrees* with that
+      measurement in both directions: a balanced file it refuses is our bug, a
+      malformed file it accepts is the silent damage the test exists to catch.
+      No file name appears in it, so which board is damaged travels with the
+      install. Renamed to
+      `the_parser_agrees_with_each_demo_boards_own_paren_balance`, since that
+      is now what it proves.
+      The scanner reproduces D116's numbers exactly on 10.0.3 — "root closes at
+      byte 14735 of 3618800, ending at depth -349" — which is what makes it
+      trustworthy as a replacement for the list it removes.
+      `numbering_detection_explains_every_layer_entry_in_the_demo_corpus` loses
+      its by-name skip too: it already skipped anything that fails to parse.
+
+- [x] P.7.5 — with the conformance step green, the next E2E run reached the
+      probes behind it — none of which had ever run in CI either — and
+      `a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable` failed on
+      its opening guard, `before["total"] == 0`, with 40 violations. All 40
+      were `warning`, all "The current configuration does not include the
+      footprint library …", `errors: 0`. A KiCad that has never been launched
+      has no user `fp-lib-table`, and every runner is one. The third machine
+      fact in this section, after "is KiCad installed" and "which KiCad":
+      "has KiCad ever been run".
+      The guard was also inert. Its comment said "anything reported afterwards
+      is this call's doing", and the probe never read ERC again — it took one
+      measurement and asserted a constant against it. So it is replaced by the
+      comparison it described: every violation that does not name `R999` must
+      be exactly as numerous after the edit as before, and at least one must
+      name `R999` — which is the root seeing the symbol the child sheet was
+      given, an assertion the probe did not previously make at all.
+      `errors == 0` was tried first and measured false: `R999` goes in unwired,
+      and KiCad rates `pin_not_connected` an **error**, not a warning — 2 of
+      them. "Nothing else moved" is the shape that survives both machines.
+      The axis has no local oracle. `%APPDATA%` was pointed at an empty
+      directory and `kicad-cli sch erc` still reported 0 violations against
+      `complex_hierarchy`, the redirected directory staying empty: KiCad
+      resolves its config through the Windows shell API, not the environment
+      variable. So this fix is proved by CI and by nothing else, which is
+      exactly what a gating E2E job is for.
+- [x] P.7.6 — the E2E workflow hid the same way `ci.yml` did. Its probes are
+      twelve separate `cargo test` steps, so a red one stops the job and says
+      nothing about the eleven behind it: two full runs were spent finding one
+      defect each, in order, when both were visible from the start. Every probe
+      step now carries `if: always() && steps.kicad.outcome == 'success'` — it
+      runs even after an earlier failure, the job still goes red, and a failed
+      install does not turn into a dozen identical failures. P.7.3 at the
+      workflow's scale.
+
+### Validation
+- `cargo test --workspace --locked --lib --tests --no-fail-fast` on a
+  simulated KiCad-less machine (every Windows share root and the three symbol
+  env vars pointed at an empty directory): **57 suites, 1385 tests, 0 failed**
+- the same command in the normal environment, KiCad 10.0.3 installed:
+  **57 suites, 1385 tests, 0 failed**
+- `cargo fmt --all -- --check` and
+  `cargo clippy --workspace --locked --all-targets -- -D warnings`: PASS, 0
+- the CI run on the pushed commit (`1ff991b`, run `32937415695`) is green on
+  all three OSes — the check that was red is the one that had to turn, and it
+  did: `Check & Test` passes on ubuntu, macos and windows, where the same
+  workflow on `8aeaff7` (run `32936272573`) failed on all three.
+- `cargo test -p konnect-core --test conformance_test` locally, KiCad 10.0.3:
+  **6 passed**, the corpus reporting 18/19 boards parsed and one malformed
+  with D116's own numbers.
+- the gating E2E, dispatched by hand on this branch (it has no per-PR
+  trigger): run `32939555970` on `6ae15c2` is **green on every step** — the
+  design loop, conformance, the layer corpus, all nine probes, the IPC wedge
+  and the PCM package, with nothing skipped but "upload artifacts on failure".
+  It is the only oracle for P.7.4 and P.7.5: which KiCad ships a demo, and
+  whether that KiCad has ever been launched, are not observable from here.
+  Runs `32937438691` and `32938428303` are the two red ones it replaces.
+- the PR checks on the same commit: green on all three OSes, plus Clippy,
+  Format, PCM packaging and the schematic viewer (run `32939559816`).

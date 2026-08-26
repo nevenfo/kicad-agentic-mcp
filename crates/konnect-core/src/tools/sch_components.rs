@@ -8,8 +8,9 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    find_symbol_instance_block, get_path, opt_f64, opt_str, project_name_for, require_f64,
-    require_str, ToolContext, ToolDef,
+    find_all_symbol_instance_blocks, find_symbol_instance_block, get_path, opt_f64, opt_str,
+    require_f64, require_str, set_symbol_property, set_symbol_property_on_all_units,
+    SetPropertyError, SetPropertyOutcome, ToolContext, ToolDef, RESERVED_PROPERTY_KEYS,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -17,7 +18,8 @@ use konnect_sexp::{
     geometry::snap_point,
     parse_sexp,
     schematic::{
-        extract_lib_pins_for_unit, extract_symbol_instances, pin_endpoint, read_schematic,
+        extract_lib_pins_for_unit, extract_symbol_instances, find_lib_symbol, pin_endpoint,
+        read_schematic,
     },
     writer::{
         apply_edits, new_uuid, read_consistent, write_atomic_if_unchanged, write_new_atomic,
@@ -406,6 +408,65 @@ impl ComponentTarget {
             })
             .map(|item| (item.start, item.end))
     }
+
+    /// The uuid of every placed unit sharing this target's designator, in
+    /// document order — for a "not found" or refusal message that names the
+    /// units a plain designator lookup would otherwise silently collapse to
+    /// one of.
+    fn sibling_unit_uuids(&self, content: &str) -> Vec<String> {
+        find_all_symbol_instance_blocks(content, &self.reference)
+            .iter()
+            .filter_map(|&(start, end)| crate::tools::symbol_block_uuid(&content[start..end]))
+            .collect()
+    }
+}
+
+/// Refuse a geometry call (move / rotate) addressed by `reference` when the
+/// symbol has more than one placed unit.
+///
+/// Moving or rotating one unit of a multi-unit symbol without the others is
+/// legitimate — it is the only thing eeschema itself does, since a symbol's
+/// units can sit anywhere on the sheet — so writing to "every unit" the way
+/// a property edit does (P.6.8.2) would be wrong here. But silently picking
+/// the first unit, as a plain designator lookup does, is wrong too: it moves
+/// a unit the caller never named and leaves the others exactly where they
+/// were, with no sign anything but `reference` was addressed. Refusing names
+/// the units and their uuids and says to address one by `uuid` instead.
+///
+/// A `uuid`-addressed target already names one specific unit and a
+/// single-unit symbol has nothing to disambiguate, so both are let through
+/// unchanged.
+fn refuse_ambiguous_multiunit_geometry(
+    content: &str,
+    target: &ComponentTarget,
+) -> Result<(), CallToolResult> {
+    if target.uuid.is_some() {
+        return Ok(());
+    }
+    let blocks = find_all_symbol_instance_blocks(content, &target.reference);
+    if blocks.len() <= 1 {
+        return Ok(());
+    }
+    let uuids: Vec<String> = blocks
+        .iter()
+        .filter_map(|&(start, end)| crate::tools::symbol_block_uuid(&content[start..end]))
+        .collect();
+    let reference = &target.reference;
+    Err(CallToolResult::error_kind(
+        ToolErrorKind::InvalidArgument {
+            field: "reference".to_string(),
+            reason: format!(
+                "'{reference}' has {} units ({}); address one unit by its 'uuid' instead of by 'reference'",
+                blocks.len(),
+                uuids.join(", ")
+            ),
+        },
+        format!(
+            "'{reference}' has {} placed units ({}); move/rotate needs one 'uuid', not a shared 'reference'",
+            blocks.len(),
+            uuids.join(", ")
+        ),
+    ))
 }
 
 /// The symbol a call addresses by `reference` or `uuid` — whichever it
@@ -413,7 +474,10 @@ impl ComponentTarget {
 ///
 /// A call carrying `reference` is resolved without reading anything: the
 /// existing path, its "not found" errors included, stays exactly what it was
-/// (INV8). Only a `uuid` call pays for a read.
+/// (INV8). Only a `uuid` call pays for a read *here* — the geometry handlers
+/// read on their own account afterwards, for
+/// [`refuse_ambiguous_multiunit_geometry`], which cannot answer without
+/// seeing the document.
 ///
 /// # Errors
 ///
@@ -488,12 +552,11 @@ async fn handle_add_schematic_component(
     // The instance path below must be "/<root-uuid>" — KiCAD's netlister
     // resolves instances against the root sheet UUID and silently forms no
     // wire-only nets for symbols whose path doesn't resolve.
-    let root_uuid = crate::tools::ensure_root_uuid(&mut sch);
-    let project_name = project_name_for(&sch_path);
+    let (project_name, instance_paths) = crate::tools::instance_targets(&sch_path, &mut sch);
 
     let result = match place_one_component(
         &mut sch,
-        &root_uuid,
+        &instance_paths,
         &project_name,
         &lib_id,
         x,
@@ -529,7 +592,7 @@ async fn handle_add_schematic_component(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn place_one_component(
     sch: &mut cse::Schematic,
-    root_uuid: &str,
+    instance_paths: &[String],
     project_name: &str,
     lib_id: &str,
     x: f64,
@@ -589,29 +652,21 @@ pub(crate) fn place_one_component(
     sym.at.rotation = Some(rotation);
     sym.unit = unit;
 
-    // Reference above the component, Value below; Footprint/Datasheet hidden.
-    // Power symbols get their Reference hidden too, matching eeschema: a
-    // #PWR designator is never shown on the sheet.
+    // The four fields go where the library symbol puts them, transformed by
+    // this placement (P.6.8.8). Power symbols get their Reference hidden too,
+    // matching eeschema: a #PWR designator is never shown on the sheet, and
+    // the `power:` library already hides its own.
     let hide_reference = lib_id.starts_with("power:") || reference.starts_with("#PWR");
-    let positioned = crate::tools::positioned_property;
-    sym.properties.push(positioned(
-        "Reference",
-        reference,
-        x,
-        y - 3.81,
-        0.0,
-        hide_reference,
-    ));
-    sym.properties
-        .push(positioned("Value", val_str, x, y + 3.81, 0.0, false));
-    sym.properties
-        .push(positioned("Footprint", "", x, y, 0.0, true));
-    sym.properties
-        .push(positioned("Datasheet", "", x, y, 0.0, true));
+    crate::tools::push_placed_fields(sch, &mut sym, reference, val_str, hide_reference);
 
     // Instance entry, keyed to the root sheet UUID like eeschema writes it:
     // (instances (project "<name>" (path "/<root-uuid>" (reference ...) (unit 1))))
-    sym.set_instance_path(project_name, &format!("/{}", root_uuid), reference, unit);
+    // One entry per placement of this sheet in the hierarchy: a sheet
+    // instantiated twice carries two paths, and a symbol written with only one
+    // of them is annotated in one instance and invisible in the other.
+    for path in instance_paths {
+        sym.set_instance_path(project_name, path, reference, unit);
+    }
 
     let uuid = sym.uuid.clone();
     sch.add_symbol(sym);
@@ -646,13 +701,30 @@ async fn handle_delete_schematic_component(
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
-    match target
-        .index_in(&sch.symbols)
-        .and_then(|i| sch.symbols.remove_at(i))
-    {
-        Some(_) => {
+    // A reference-addressed delete drops every unit sharing that designator:
+    // leaving one behind is a half-deleted component. A uuid names one unit
+    // specifically and only that one is removed, matching `move`/`rotate`'s
+    // uuid path.
+    let deleted_units: Option<usize> = if target.uuid.is_some() {
+        target
+            .index_in(&sch.symbols)
+            .and_then(|i| sch.symbols.remove_at(i))
+            .map(|_| 1)
+    } else {
+        let before = sch.symbols.len();
+        sch.symbols
+            .retain(|s| s.reference() != Some(reference.as_str()));
+        let removed = before - sch.symbols.len();
+        (removed > 0).then_some(removed)
+    };
+
+    match deleted_units {
+        Some(units_deleted) => {
             sch.overwrite()?;
-            Ok(CallToolResult::json(&json!({ "deleted": reference })))
+            Ok(CallToolResult::json(&json!({
+                "deleted": reference,
+                "units_deleted": units_deleted
+            })))
         }
         None => Ok(component_not_found(
             &sch_path,
@@ -678,6 +750,41 @@ async fn handle_edit_schematic_component(
     let mut changed = Vec::new();
 
     let mut errors: Vec<String> = Vec::new();
+
+    // The `fields` map was declared in the schema and never read, so a call
+    // carrying only custom properties wrote nothing and still reported success
+    // (P.6.9.6). Values are turned into their stored text here, before the
+    // `apply` closure below borrows `errors`: a rejected value and a rejected
+    // key both belong in the same list, and doing the conversion first is what
+    // keeps one mutable borrow of `errors` live at a time.
+    let mut field_updates: Vec<(&str, String)> = Vec::new();
+    match args.get("fields") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::Object(map)) => {
+            for (key, raw) in map {
+                // KiCAD stores every property as text, so a JSON number or
+                // boolean is written as its text form; anything with no text
+                // form is refused rather than stringified into nonsense.
+                match property_text(raw) {
+                    Some(text) => field_updates.push((key.as_str(), text)),
+                    None => {
+                        errors.push(format!("{key}: value must be a string, number or boolean"))
+                    }
+                }
+            }
+        }
+        Some(_) => {
+            let reason = "'fields' must be an object of key:value pairs";
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::InvalidArgument {
+                    field: "fields".to_string(),
+                    reason: reason.to_string(),
+                },
+                reason.to_string(),
+            ));
+        }
+    }
+
     // Set a property, adding it when the symbol has none.
     //
     // A symbol carries only the properties it was given: a part placed without
@@ -685,40 +792,45 @@ async fn handle_edit_schematic_component(
     // made the tool unable to do the single most common edit after placement
     // (J.2.4.1). A missing property is now created, exactly as
     // `add_component_annotation` creates one.
-    let mut apply = |content: &mut String, field: &str, new_val: &str| match update_field(
-        content, &target, field, new_val,
-    ) {
-        Ok(updated) => {
-            *content = updated;
-            changed.push(format!("{} → {}", field, new_val));
-        }
-        Err(FieldError::MissingProperty) => {
-            match insert_property(content, &target, field, new_val) {
-                Ok(updated) => {
-                    *content = updated;
-                    changed.push(format!("{} → {} (added)", field, new_val));
-                }
-                Err(why) => errors.push(format!("{field}: {why}")),
+    //
+    // `reject` is empty for the named arguments — they are exactly the fields
+    // this handler is meant to set this way, `Reference` included: it goes
+    // through `update_instance_reference` right after. The free-form `fields`
+    // map passes `RESERVED_PROPERTY_KEYS`, because that generic path rewrites
+    // only the property and would desynchronise the designator copy that lives
+    // in `(instances …)`.
+    let mut apply =
+        |content: &mut String, field: &str, new_val: &str, reject: &[&str]| match set_field(
+            content, &target, field, new_val, reject,
+        ) {
+            Ok((updated, outcome)) => {
+                *content = updated;
+                changed.push(match outcome {
+                    SetPropertyOutcome::Updated => format!("{} → {}", field, new_val),
+                    SetPropertyOutcome::Inserted => format!("{} → {} (added)", field, new_val),
+                });
             }
-        }
-        Err(other) => errors.push(format!("{field}: {other}")),
-    };
+            Err(why) => errors.push(format!("{field}: {why}")),
+        };
 
     // On the designator path every field is located by looking the symbol up
     // by `reference`, so the rename has to go last: renaming first made the
     // symbol unfindable and every other field in the same call came back
     // "symbol 'R2' not found".
     if let Some(val) = opt_str(args, "value") {
-        apply(&mut content, "Value", val);
+        apply(&mut content, "Value", val, &[]);
     }
     if let Some(fp) = opt_str(args, "footprint") {
-        apply(&mut content, "Footprint", fp);
+        apply(&mut content, "Footprint", fp, &[]);
     }
     if let Some(ds) = opt_str(args, "datasheet") {
-        apply(&mut content, "Datasheet", ds);
+        apply(&mut content, "Datasheet", ds, &[]);
+    }
+    for (key, value) in &field_updates {
+        apply(&mut content, key, value, RESERVED_PROPERTY_KEYS);
     }
     if let Some(new_ref) = opt_str(args, "new_reference") {
-        apply(&mut content, "Reference", new_ref);
+        apply(&mut content, "Reference", new_ref, &[]);
         // KiCAD resolves a symbol's designator from its `instances` block, not
         // from the Reference property. Renaming only the property left
         // `kicad-cli sch export netlist` still emitting the old designator
@@ -730,34 +842,49 @@ async fn handle_edit_schematic_component(
     }
 
     // A request that changed nothing is a failure, not a success — silently
-    // reporting `"changes": []` is what let the tab-indentation bug hide.
-    if changed.is_empty() && !errors.is_empty() {
+    // reporting `"changes": []` is what let the tab-indentation bug hide, and
+    // what let an edit with no editable argument at all look like it worked.
+    if changed.is_empty() {
+        let reason = if errors.is_empty() {
+            "no editable field was given".to_string()
+        } else {
+            errors.join("; ")
+        };
         return Ok(CallToolResult::error_kind(
             ToolErrorKind::InvalidArgument {
                 field: "fields".to_string(),
-                reason: errors.join("; "),
+                reason: reason.clone(),
             },
-            format!(
-                "No fields were updated on '{}': {}",
-                reference,
-                errors.join("; ")
-            ),
+            format!("No fields were updated on '{reference}': {reason}"),
         ));
     }
 
-    if !changed.is_empty() {
+    // Past the guard above, `changed` is never empty: something was written.
+    //
+    // A reference-addressed target has every one of its units' properties
+    // rewritten in `content` above (P.6.8.2), so committing only the first
+    // unit's `ItemId` here would drop the other units' writes on the floor —
+    // present in `content`, never reaching disk. Every sibling unit's own
+    // `ItemId` (read from `expected`, before any edit) is committed in the
+    // same atomic change instead. A uuid-addressed target still names one.
+    let item_ids: Vec<ItemId> = if target.uuid.is_none() {
+        find_all_symbol_instance_blocks(&expected, &reference)
+            .iter()
+            .map(|&(s, e)| symbol_block_item_id(&expected[s..e]))
+            .collect::<anyhow::Result<Vec<_>>>()?
+    } else {
         let (start, end) = target
             .block_in(&expected)
             .ok_or_else(|| anyhow::anyhow!("component '{reference}' not found"))?;
-        let item_id = symbol_block_item_id(&expected[start..end])?;
-        let command = SchematicCommand::replace_item_from_document(
-            &expected,
-            &content,
-            item_id,
-            format!("Edit {reference}"),
-        )?;
-        commit_command(&sch_path, &command)?;
-    }
+        vec![symbol_block_item_id(&expected[start..end])?]
+    };
+    let command = SchematicCommand::replace_items_from_document(
+        &expected,
+        &content,
+        item_ids,
+        format!("Edit {reference}"),
+    )?;
+    commit_command(&sch_path, &command)?;
 
     let mut result = json!({
         "reference": reference,
@@ -769,13 +896,26 @@ async fn handle_edit_schematic_component(
     Ok(CallToolResult::json(&result))
 }
 
-/// Why a property edit could not be applied. Separated from a plain string so
-/// the caller can tell "the symbol has no such property" — which is fixable by
-/// adding one — from a failure that is not.
+/// The text KiCAD would store for a JSON property value: a string as-is, a
+/// number or boolean as its text form, nothing at all for `null`, an object or
+/// an array, which have no single-line text form a property could hold.
+///
+/// Shared with `batch_edit_schematic_components` (P.6.9.14): the batch path's
+/// `fields` map is the same generic property path and has to accept, and
+/// refuse, exactly the same values.
+pub(crate) fn property_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+/// Why a property edit could not be applied.
 enum FieldError {
     SymbolNotFound(String),
-    MissingProperty,
-    Malformed(String),
+    Set(SetPropertyError),
 }
 
 impl std::fmt::Display for FieldError {
@@ -784,69 +924,48 @@ impl std::fmt::Display for FieldError {
             FieldError::SymbolNotFound(reference) => {
                 write!(f, "symbol '{reference}' not found in this schematic")
             }
-            FieldError::MissingProperty => write!(f, "the symbol has no such property"),
-            FieldError::Malformed(field) => write!(f, "'{field}' property is malformed"),
+            FieldError::Set(e) => write!(f, "{e}"),
         }
     }
 }
 
-/// Replace the value of a property the symbol already carries.
-fn update_field(
-    content: &str,
-    target: &ComponentTarget,
-    field: &str,
-    new_val: &str,
-) -> Result<String, FieldError> {
-    let (sym_start, sym_end) = target
-        .block_in(content)
-        .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
-    let sym_block = &content[sym_start..sym_end];
-    let field_search = format!(r#"(property "{field}" ""#);
-    let field_offset = sym_block
-        .find(&field_search)
-        .map(|o| sym_start + o + field_search.len())
-        .ok_or(FieldError::MissingProperty)?;
-    let val_end = content[field_offset..]
-        .find('"')
-        .map(|o| field_offset + o)
-        .ok_or_else(|| FieldError::Malformed(field.to_string()))?;
-    Ok(format!(
-        "{}{}{}",
-        &content[..field_offset],
-        new_val,
-        &content[val_end..]
-    ))
-}
-
-/// Add a property the symbol does not carry yet, hidden and at the origin —
-/// the same shape `add_component_annotation` writes, so a field added by
-/// either tool looks the same in the file.
-fn insert_property(
+/// Set a property on the addressed symbol: update it in place if it already
+/// has one, insert a new hidden one at the symbol's own position otherwise
+/// ([`set_symbol_property`]). `reject` is the keys this call refuses to
+/// touch even if the symbol already carries one — empty for the
+/// `edit_schematic_component` fields, which are exactly the fields meant to
+/// be set this way; [`RESERVED_PROPERTY_KEYS`] for `add_component_annotation`,
+/// which is not.
+///
+/// Locates the symbol fresh in `content` every call rather than once up
+/// front: on the designator path a preceding call in the same batch (e.g. a
+/// rename) can have moved the block, and re-resolving by `target` here is
+/// what keeps every subsequent field call landing on the right bytes.
+///
+/// A designator-addressed target (`target.uuid.is_none()`) writes `field` to
+/// every unit sharing that designator, not just the first: `Value` /
+/// `Footprint` / `Datasheet` and any custom field belong to the component,
+/// not to one unit's placement (P.6.8.2, see
+/// [`set_symbol_property_on_all_units`]). A uuid-addressed target names one
+/// specific unit and only that one is written, unchanged from before.
+fn set_field(
     content: &str,
     target: &ComponentTarget,
     field: &str,
     value: &str,
-) -> Result<String, FieldError> {
+    reject: &[&str],
+) -> Result<(String, SetPropertyOutcome), FieldError> {
+    if target.uuid.is_none() {
+        if find_all_symbol_instance_blocks(content, &target.reference).is_empty() {
+            return Err(FieldError::SymbolNotFound(target.reference.clone()));
+        }
+        return set_symbol_property_on_all_units(content, &target.reference, field, value, reject)
+            .map_err(FieldError::Set);
+    }
     let (sym_start, sym_end) = target
         .block_in(content)
         .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
-    let sym_block = &content[sym_start..sym_end];
-    // Before `instances` if there is one, otherwise before the block's close.
-    let insert_rel = sym_block
-        .find("(instances")
-        .or_else(|| sym_block.rfind(')'))
-        .ok_or_else(|| FieldError::Malformed(field.to_string()))?;
-    let insert_abs = sym_start + insert_rel;
-
-    let property = format!(
-        "(property \"{field}\" \"{value}\"\n      (at 0 0 0)\n      (effects (font (size 1.27 1.27)) (hide yes))\n    )\n    "
-    );
-    Ok(format!(
-        "{}{}{}",
-        &content[..insert_abs],
-        property,
-        &content[insert_abs..]
-    ))
+    set_symbol_property(content, sym_start, sym_end, field, value, reject).map_err(FieldError::Set)
 }
 
 /// Point a renamed symbol's `instances` entries at its new designator.
@@ -856,18 +975,47 @@ fn insert_property(
 /// carry. Every entry is rewritten, because a symbol placed on several sheets
 /// has one per sheet and leaving any of them behind means KiCAD reports two
 /// different designators for the same symbol.
+///
+/// A designator-addressed target repoints every unit's own `instances`
+/// entry, not just the first block that carries `new_ref`: `set_field`
+/// already renamed the `Reference` property on every unit above, and leaving
+/// unit 2's `instances` entry pointed at `old_ref` would desync it from its
+/// own now-renamed property the same way the pre-P.6.8.2 single-block write
+/// did for `Value`. A uuid-addressed target still repoints only its one unit.
 fn update_instance_reference(
     content: &str,
     target: &ComponentTarget,
     new_ref: &str,
     old_ref: &str,
 ) -> Result<String, String> {
+    let needle = format!(r#"(reference "{old_ref}")"#);
+    let replacement = format!(r#"(reference "{new_ref}")"#);
+
+    if target.uuid.is_none() {
+        let mut blocks = find_all_symbol_instance_blocks(content, new_ref);
+        if blocks.is_empty() {
+            return Err(format!("symbol '{new_ref}' not found after the rename"));
+        }
+        blocks.sort_by_key(|b| std::cmp::Reverse(b.0));
+        let mut updated = content.to_string();
+        for (start, end) in blocks {
+            let block = &updated[start..end];
+            if !block.contains(&needle) {
+                continue;
+            }
+            updated = format!(
+                "{}{}{}",
+                &updated[..start],
+                block.replace(&needle, &replacement),
+                &updated[end..]
+            );
+        }
+        return Ok(updated);
+    }
+
     let (start, end) = target
         .block_by(content, new_ref)
         .ok_or_else(|| format!("symbol '{new_ref}' not found after the rename"))?;
-
-    let needle = format!(r#"(reference "{old_ref}")"#);
-    let replacement = format!(r#"(reference "{new_ref}")"#);
     let block = &content[start..end];
     if !block.contains(&needle) {
         // Nothing to repoint: a symbol with no instances block is already
@@ -892,6 +1040,11 @@ async fn handle_get_schematic_component(
         Err(e) => return Ok(*e),
     };
     let reference = target.reference.clone();
+    // A designator-addressed call resolves to the first unit's block
+    // (`find_symbol_instance_block`'s documented behaviour); the sibling
+    // uuids say so explicitly instead of leaving the caller to assume there
+    // is only one.
+    let sibling_units = target.sibling_unit_uuids(&read_consistent(&sch_path)?);
 
     let sch = cse::Schematic::load(&sch_path)?;
 
@@ -913,7 +1066,12 @@ async fn handle_get_schematic_component(
                 "rotation": rotation,
                 "mirror_x": mirror.contains('x'),
                 "mirror_y": mirror.contains('y'),
-                "uuid": sym.uuid
+                "uuid": sym.uuid,
+                "unit": sym.unit,
+                "sibling_unit_uuids": sibling_units
+                    .into_iter()
+                    .filter(|u| u != &sym.uuid)
+                    .collect::<Vec<_>>()
             })))
         }
         None => Ok(component_not_found(
@@ -971,6 +1129,10 @@ async fn handle_move_schematic_component(
         Err(e) => return Ok(*e),
     };
     let reference = target.reference.clone();
+    let guard_content = read_consistent(&sch_path)?;
+    if let Err(e) = refuse_ambiguous_multiunit_geometry(&guard_content, &target) {
+        return Ok(e);
+    }
     let new_x = match require_f64(args, "x") {
         Ok(v) => v,
         Err(e) => return Ok(e),
@@ -1008,6 +1170,10 @@ async fn handle_rotate_schematic_component(
         Err(e) => return Ok(*e),
     };
     let reference = target.reference.clone();
+    let guard_content = read_consistent(&sch_path)?;
+    if let Err(e) = refuse_ambiguous_multiunit_geometry(&guard_content, &target) {
+        return Ok(e);
+    }
     let rotation = match require_f64(args, "rotation") {
         Ok(v) => v,
         Err(e) => return Ok(e),
@@ -1051,10 +1217,7 @@ fn pin_positions(
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
-    let Some(sym) = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-    else {
+    let Some(sym) = find_lib_symbol(&lib_syms, inst) else {
         return Vec::new();
     };
     let transform = inst.pin_transform();
@@ -1220,9 +1383,7 @@ async fn handle_get_schematic_pin_locations(
         .find("lib_symbols")
         .map(|n| n.find_all("symbol"))
         .unwrap_or_default();
-    let lib_sym = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+    let lib_sym = find_lib_symbol(&lib_syms, inst);
 
     // A missing embedded definition is an error, not an empty pin list —
     // silently returning [] hid every bad-lib_id component until wiring or
@@ -1243,7 +1404,8 @@ async fn handle_get_schematic_pin_locations(
                  doesn't exist in the installed libraries, so it is invisible to \
                  KiCAD's netlister. Re-add it with a valid lib_id \
                  (delete_schematic_component + add_schematic_component).",
-                reference, inst.lib_id
+                reference,
+                inst.lib_symbol_name()
             ),
         ));
     };
@@ -1272,7 +1434,10 @@ async fn handle_get_schematic_pin_locations(
                  part). Re-add the component (delete_schematic_component + \
                  add_schematic_component) so the definition is embedded in \
                  full, or place the parent symbol '{}' directly.",
-                    reference, inst.lib_id, parent, parent
+                    reference,
+                    inst.lib_symbol_name(),
+                    parent,
+                    parent
                 ),
             ));
         }
@@ -1296,6 +1461,11 @@ async fn handle_get_schematic_pin_locations(
         "component_x": inst.x,
         "component_y": inst.y,
         "rotation": inst.rotation,
+        // A designator-addressed call resolves to the first unit's block; this
+        // says which unit (and which uuid) the pins below actually belong to,
+        // since a multi-unit symbol's units sit at different positions.
+        "unit": inst.unit,
+        "uuid": inst.uuid,
         "pins": pins
     })))
 }
@@ -1360,9 +1530,7 @@ async fn handle_batch_get_pin_locations(
                 Some(i) => i,
                 None => return json!({ "reference": reference, "error": "not found" }),
             };
-            let lib_sym = lib_syms
-                .iter()
-                .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id));
+            let lib_sym = find_lib_symbol(&lib_syms, inst);
             // Per-entry error rather than a silent empty pin list (#34).
             let Some(sym) = lib_sym else {
                 return json!({
@@ -1370,7 +1538,7 @@ async fn handle_batch_get_pin_locations(
                     "error": format!(
                         "no embedded definition for '{}' in lib_symbols — \
                          likely added with a nonexistent lib_id",
-                        inst.lib_id
+                        inst.lib_symbol_name()
                     )
                 });
             };
@@ -1385,7 +1553,7 @@ async fn handle_batch_get_pin_locations(
                             "embedded definition for '{}' is an (extends \"{}\") \
                              stub with no pins — re-add the component so it is \
                              embedded in full",
-                            inst.lib_id, parent
+                            inst.lib_symbol_name(), parent
                         )
                     });
                 }
@@ -1451,6 +1619,7 @@ async fn handle_add_component_annotation(
     // Find the symbol block for this address. `reference` keeps its own lookup
     // and its own "not found" message (INV8); `uuid` goes through the shared
     // resolver, which hands back the exact unit's byte range.
+    let is_reference_addressed = opt_str(args, "reference").is_some();
     let (reference, sym_start, sym_end) = match opt_str(args, "reference") {
         Some(reference) => match find_symbol_instance_block(&content, reference) {
             Some((start, end)) => (reference.to_string(), start, end),
@@ -1468,34 +1637,95 @@ async fn handle_add_component_annotation(
         },
     };
 
-    // Find the position just before (instances in the symbol block, or before closing paren
-    let sym_block = &content[sym_start..sym_end];
-    let insert_rel = sym_block
-        .find("(instances")
-        .unwrap_or(sym_block.rfind(')').unwrap_or(sym_block.len() - 1));
-    let insert_abs = sym_start + insert_rel;
+    // `Reference` is refused — and it alone. Its designator lives twice in
+    // the file, in the property and in `(instances …)`, and only
+    // `edit_schematic_component`'s `new_reference` path repoints the second
+    // one; setting it here would leave KiCAD reading the stale designator.
+    // `Value` / `Footprint` / `Datasheet` have a dedicated argument there too
+    // but carry no such second copy, so writing one through this tool is
+    // legitimate — the BOM audit already does exactly that with `Footprint`.
+    // See `RESERVED_PROPERTY_KEYS`.
+    if RESERVED_PROPERTY_KEYS.contains(&key.as_str()) {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "key".to_string(),
+                reason: format!(
+                    "'{key}' is a reserved property; use edit_schematic_component to change it"
+                ),
+            },
+            format!("'{key}' is a reserved property; use edit_schematic_component to change it"),
+        ));
+    }
 
-    // Build the property S-expression
-    let prop_sexp = format!(
-        "    (property \"{key}\" \"{value}\"\n      (at 0 0 0)\n      (effects (font (size 1.27 1.27)) (hide yes))\n    )\n    "
-    );
-
-    let new_content = apply_edits(content, vec![SexpEdit::insert(insert_abs, prop_sexp)]);
-    // From the resolved block, not from a second lookup by `reference`: the
-    // units of a multi-unit symbol share a designator, and this call meant one
-    // of them.
-    let item_id = symbol_block_item_id(&expected[sym_start..sym_end])?;
-    let command = SchematicCommand::replace_item_from_document(
+    // Update the existing property in place if the symbol already has one
+    // named `key` — a second call with the same key must not leave two
+    // fields of the same name — otherwise insert a new hidden one at the
+    // symbol's own position.
+    //
+    // A reference-addressed call writes every unit of that designator, for
+    // the same reason `edit_schematic_component`'s `set_field` does
+    // (P.6.8.2): this custom property is a component-level fact, not a
+    // per-unit one. A uuid-addressed call still means one specific unit.
+    let (new_content, outcome) = if is_reference_addressed {
+        match set_symbol_property_on_all_units(&content, &reference, &key, &value, &[]) {
+            Ok(r) => r,
+            Err(why) => {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::InvalidArgument {
+                        field: "key".to_string(),
+                        reason: why.to_string(),
+                    },
+                    why.to_string(),
+                ))
+            }
+        }
+    } else {
+        match set_symbol_property(&content, sym_start, sym_end, &key, &value, &[]) {
+            Ok(r) => r,
+            Err(why) => {
+                return Ok(CallToolResult::error_kind(
+                    ToolErrorKind::InvalidArgument {
+                        field: "key".to_string(),
+                        reason: why.to_string(),
+                    },
+                    why.to_string(),
+                ))
+            }
+        }
+    };
+    // From the resolved blocks in `expected` (pre-edit), not from a second
+    // text search of `key` in `new_content`: the units of a multi-unit
+    // symbol share a designator, and only these are the ones this call
+    // meant to touch.
+    let item_ids: Vec<ItemId> = if is_reference_addressed {
+        find_all_symbol_instance_blocks(&expected, &reference)
+            .iter()
+            .map(|&(s, e)| symbol_block_item_id(&expected[s..e]))
+            .collect::<anyhow::Result<Vec<_>>>()?
+    } else {
+        vec![symbol_block_item_id(&expected[sym_start..sym_end])?]
+    };
+    let verb = match outcome {
+        SetPropertyOutcome::Updated => "Update",
+        SetPropertyOutcome::Inserted => "Add",
+    };
+    let command = SchematicCommand::replace_items_from_document(
         &expected,
         &new_content,
-        item_id,
-        format!("Add {key} property to {reference}"),
+        item_ids,
+        format!("{verb} {key} property on {reference}"),
     )?;
     commit_command(&sch_path, &command)?;
 
+    // `added_property` keeps its historical name — nothing in this repo reads
+    // it, but it is part of a published tool's answer. What it can no longer
+    // do is imply a creation that did not happen: this call now updates a
+    // property the symbol already had instead of duplicating it, so `created`
+    // says which of the two occurred.
     Ok(CallToolResult::json(&json!({
         "reference": reference,
         "added_property": key,
+        "created": matches!(outcome, SetPropertyOutcome::Inserted),
         "value": value
     })))
 }
@@ -1545,6 +1775,7 @@ async fn handle_group_components(
 
     let mut grouped = Vec::new();
     let mut item_ids = Vec::new();
+    let mut batch_errors = batch.unresolved.clone();
 
     for reference in &refs {
         let (sym_start, sym_end) = match find_symbol_instance_block(&content, reference) {
@@ -1552,17 +1783,20 @@ async fn handle_group_components(
             None => continue,
         };
 
-        let sym_block = &content[sym_start..sym_end];
-        let insert_rel = sym_block
-            .find("(instances")
-            .unwrap_or(sym_block.rfind(')').unwrap_or(sym_block.len() - 1));
-        let insert_abs = sym_start + insert_rel;
-
-        let prop_sexp = format!(
-            "    (property \"Group\" \"{group_name}\"\n      (at 0 0 0)\n      (effects (font (size 1.27 1.27)) (hide yes))\n    )\n    "
-        );
-
-        content = apply_edits(content, vec![SexpEdit::insert(insert_abs, prop_sexp)]);
+        // The same shared helper the other two text paths use (P.6.9.5): it
+        // updates an existing `Group` instead of stacking a second one,
+        // anchors a new property on the symbol's own position rather than the
+        // sheet origin, and reads its indentation off a sibling. `reject` is
+        // empty because the key is the literal "Group" — there is no
+        // caller-supplied name here that could collide with a reserved one.
+        content = match set_symbol_property(&content, sym_start, sym_end, "Group", &group_name, &[])
+        {
+            Ok((updated, _)) => updated,
+            Err(why) => {
+                batch_errors.push(format!("{reference}: {why}"));
+                continue;
+            }
+        };
         item_ids.push(symbol_item_id(&expected, reference)?);
         grouped.push(reference.clone());
     }
@@ -1581,7 +1815,7 @@ async fn handle_group_components(
         "group_name": group_name,
         "grouped_count": grouped.len(),
         "grouped": grouped,
-        "errors": batch.unresolved
+        "errors": batch_errors
     })))
 }
 
@@ -1602,6 +1836,7 @@ async fn handle_replace_component(
     // Find the symbol block for this address. `reference` keeps its own lookup
     // and its own "not found" message (INV8); `uuid` goes through the shared
     // resolver, which hands back the exact unit's byte range.
+    let is_reference_addressed = opt_str(args, "reference").is_some();
     let (reference, sym_start, sym_end) = match opt_str(args, "reference") {
         Some(reference) => match find_symbol_instance_block(&content, reference) {
             Some((start, end)) => (reference.to_string(), start, end),
@@ -1702,6 +1937,36 @@ async fn handle_replace_component(
             }
             content = apply_edits(content, edits);
         }
+    }
+
+    // A reference-addressed replace repoints every sibling unit's `(lib_id
+    // …)` too, not just the primary block edited above: every unit of a
+    // multi-unit symbol is placed from the same library part, so leaving a
+    // sibling on `old_lib_id` would point it at a definition this call just
+    // replaced (P.6.8.2). `unit` is deliberately left alone on siblings — it
+    // selects *which* library unit each placed block shows and is a
+    // per-block fact, unlike `lib_id`. The already-updated primary block no
+    // longer contains `old_lib_id`'s text, so this pass never touches it
+    // twice.
+    if is_reference_addressed {
+        let mut sibling_edits = Vec::new();
+        for (s, e) in find_all_symbol_instance_blocks(&content, &reference) {
+            let block = &content[s..e];
+            if let Some(rel) = block.find(lib_id_pat) {
+                let abs = s + rel + lib_id_pat.len();
+                if let Some(close_rel) = content[abs..].find('"') {
+                    let old_here = &content[abs..abs + close_rel];
+                    if old_here == old_lib_id {
+                        sibling_edits.push(SexpEdit::replace(
+                            abs,
+                            abs + close_rel,
+                            new_lib_id.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+        content = apply_edits(content, sibling_edits);
     }
 
     // Ensure the new library symbol definition is present. Bail BEFORE writing:
@@ -2160,6 +2425,57 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn pin_locations_resolve_through_lib_name_not_lib_id() {
+        // eeschema stores a locally edited library symbol under a derived name
+        // and points the instance at it with (lib_name …). Resolving on lib_id
+        // alone picks the *base* definition, whose pins sit elsewhere — the
+        // wrong answer is returned silently, and every wire placed from it
+        // lands off-pin (#143).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("derived.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n\t(version 20250114)\n\t(generator \"eeschema\")\n\t(uuid \"11111111-2222-3333-4444-555555555555\")\n\t(lib_symbols\n\t\t(symbol \"Device:R\"\n\t\t\t(symbol \"R_1_1\"\n\t\t\t\t(pin passive line (at 0 3.81 270) (length 1.27) (name \"~\") (number \"1\"))\n\t\t\t)\n\t\t)\n\t\t(symbol \"R_1\"\n\t\t\t(symbol \"R_1_1_1\"\n\t\t\t\t(pin passive line (at 0 6.35 270) (length 1.27) (name \"~\") (number \"1\"))\n\t\t\t)\n\t\t)\n\t\t(symbol \"C_1\"\n\t\t\t(symbol \"C_1_1_1\"\n\t\t\t\t(pin passive line (at 0 3.81 270) (length 3.048) (name \"~\") (number \"1\"))\n\t\t\t)\n\t\t)\n\t)\n\t(symbol\n\t\t(lib_name \"R_1\")\n\t\t(lib_id \"Device:R\")\n\t\t(at 88.9 63.5 0)\n\t\t(unit 1)\n\t\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-000000000001\")\n\t\t(property \"Reference\" \"R2\" (at 91.44 62.23 0))\n\t)\n\t(symbol\n\t\t(lib_name \"C_1\")\n\t\t(lib_id \"Device:C\")\n\t\t(at 139.7 63.5 0)\n\t\t(unit 1)\n\t\t(uuid \"aaaaaaaa-bbbb-cccc-dddd-000000000002\")\n\t\t(property \"Reference\" \"C1\" (at 142.24 62.23 0))\n\t)\n)\n",
+        )
+        .unwrap();
+        let ctx = test_ctx();
+
+        let res = handle_get_schematic_pin_locations(
+            &json!({ "schematic": path.display().to_string(), "reference": "R2" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!res.is_error, "{}", content_text(&res));
+        let out: serde_json::Value = serde_json::from_str(&content_text(&res)).unwrap();
+        // R_1's pin sits at local +6.35 => 63.5 - 6.35; Device:R's would be
+        // 63.5 - 3.81 = 59.69.
+        assert_eq!(out["pins"][0]["y"].as_f64().unwrap(), 57.15);
+
+        // Device:C is not embedded at all — only the derived C_1 is. Matching
+        // on lib_id reported "no embedded definition ... nonexistent lib_id",
+        // which is both wrong and dangerous advice.
+        let batch = handle_batch_get_pin_locations(
+            &json!({
+                "schematic": path.display().to_string(),
+                "references": ["C1"]
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let out: serde_json::Value = serde_json::from_str(&content_text(&batch)).unwrap();
+        assert!(
+            out["components"][0]["error"].is_null(),
+            "C1 must resolve through C_1: {out}"
+        );
+        assert_eq!(
+            out["components"][0]["pins"][0]["y"].as_f64().unwrap(),
+            59.69
+        );
+    }
+
+    #[tokio::test]
     async fn replace_component_sets_validated_unit() {
         let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
@@ -2352,6 +2668,179 @@ pub(crate) mod tests {
         assert!(msg.contains("no embedded definition"));
     }
 
+    /// A sheet carrying one library symbol whose fields sit somewhere other
+    /// than the old hard-coded offsets: `Reference` right and above the
+    /// origin, `Value` right and below, both left-justified, and the whole
+    /// thing in the library's Y-up space.
+    fn sheet_with_fielded_symbol(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("fielded.kicad_sch");
+        std::fs::write(
+            &path,
+            concat!(
+                "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n",
+                "  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n",
+                "  (lib_symbols\n    (symbol \"Test:FIELDED\"\n",
+                "      (property \"Reference\" \"U\" (at 2.54 3.81 0)",
+                " (effects (font (size 1.27 1.27)) (justify left)))\n",
+                "      (property \"Value\" \"FIELDED\" (at 2.54 -3.81 0)",
+                " (effects (font (size 1.27 1.27)) (justify left)))\n",
+                "    )\n  )\n)\n"
+            ),
+        )
+        .unwrap();
+        path
+    }
+
+    async fn place_fielded(path: &std::path::Path, rotation: f64) -> cse::Symbol {
+        let result = handle_add_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "lib_id": "Test:FIELDED",
+                "x": 101.6,
+                "y": 88.9,
+                "rotation": rotation,
+                "reference": "U1",
+                "value": "FIELDED"
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+        cse::Schematic::load(path)
+            .unwrap()
+            .symbols
+            .iter()
+            .find(|s| s.reference() == Some("U1"))
+            .expect("the placed symbol")
+            .clone()
+    }
+
+    fn field_at(sym: &cse::Symbol, name: &str) -> String {
+        let prop = sym
+            .properties
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("no {name} property"));
+        cse::sexp::writer::write(&prop.to_sexp())
+    }
+
+    /// P.6.8.8: the fields go where the library symbol says, not to a fixed
+    /// ±3.81 under the placement. At rotation 0 that is the anchor flipped
+    /// from Y-up to Y-down and translated — including its x, which the old
+    /// hard-coded rule dropped entirely.
+    #[tokio::test]
+    async fn placed_fields_take_the_library_anchor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = sheet_with_fielded_symbol(dir.path());
+        let sym = place_fielded(&path, 0.0).await;
+
+        // (2.54, 3.81) Y-up → (101.6 + 2.54, 88.9 - 3.81).
+        assert!(
+            field_at(&sym, "Reference").contains("(at 104.14 85.09 0)"),
+            "{}",
+            field_at(&sym, "Reference")
+        );
+        assert!(
+            field_at(&sym, "Value").contains("(at 104.14 92.71 0)"),
+            "{}",
+            field_at(&sym, "Value")
+        );
+    }
+
+    /// The rotated case, which is the one the old rule could never get right:
+    /// it wrote the same two points whatever the placement rotation. The
+    /// anchor goes through the pin transform, so (2.54, 3.81) at 90° lands at
+    /// (x - 3.81, y - 2.54).
+    #[tokio::test]
+    async fn placed_fields_rotate_with_the_symbol() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = sheet_with_fielded_symbol(dir.path());
+        let sym = place_fielded(&path, 90.0).await;
+
+        assert!(
+            field_at(&sym, "Reference").contains("(at 97.79 86.36"),
+            "{}",
+            field_at(&sym, "Reference")
+        );
+        assert!(
+            field_at(&sym, "Value").contains("(at 105.41 86.36"),
+            "{}",
+            field_at(&sym, "Value")
+        );
+    }
+
+    /// The text angle is the library's, not the placement's — measured on the
+    /// demo corpus — and the library's justification comes across with it: a
+    /// `left`-justified reference written without its justify shifts by half
+    /// its own width.
+    #[tokio::test]
+    async fn a_placed_field_keeps_the_library_text_angle_and_justification() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = sheet_with_fielded_symbol(dir.path());
+        let sym = place_fielded(&path, 90.0).await;
+
+        let reference = field_at(&sym, "Reference");
+        assert!(
+            reference.contains("(at 97.79 86.36 0)"),
+            "the field angle is the library's 0, not the placement's 90: {reference}"
+        );
+        assert!(
+            reference.contains("(justify left)"),
+            "the library justification must survive the placement: {reference}"
+        );
+    }
+
+    /// A library entry that declares no `Reference`/`Value` of its own keeps
+    /// the historical offsets: this is the fallback, and it must stay, because
+    /// a symbol with no anchor to read is exactly where the old rule was the
+    /// only rule available.
+    #[tokio::test]
+    async fn a_symbol_without_field_anchors_keeps_the_old_offsets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("anchorless.kicad_sch");
+        std::fs::write(
+            &path,
+            concat!(
+                "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n",
+                "  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n",
+                "  (lib_symbols\n    (symbol \"Test:BARE\"\n    )\n  )\n)\n"
+            ),
+        )
+        .unwrap();
+
+        let result = handle_add_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "lib_id": "Test:BARE",
+                "x": 101.6,
+                "y": 88.9,
+                "reference": "U1",
+                "value": "BARE"
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{result:?}");
+        let sch = cse::Schematic::load(&path).unwrap();
+        let sym = sch
+            .symbols
+            .iter()
+            .find(|s| s.reference() == Some("U1"))
+            .expect("the placed symbol");
+        assert!(
+            field_at(sym, "Reference").contains("(at 101.6 85.09 0)"),
+            "{}",
+            field_at(sym, "Reference")
+        );
+        assert!(
+            field_at(sym, "Value").contains("(at 101.6 92.71 0)"),
+            "{}",
+            field_at(sym, "Value")
+        );
+    }
+
     #[tokio::test]
     async fn add_schematic_component_hides_power_reference() {
         // Pre-seed lib_symbols so ensure_lib_symbol succeeds without KiCad.
@@ -2414,6 +2903,183 @@ pub(crate) mod tests {
     /// Two byte-identical schematics, one per directory so the file stem — and
     /// with it the project name written into every instance path — stays the
     /// same. Each holds R1 and R2; the returned uuid is R1's.
+    fn ok_body(result: &CallToolResult) -> serde_json::Value {
+        let crate::mcp::protocol::ToolContent::Text { text } = result.content.first().unwrap()
+        else {
+            panic!("text content expected");
+        };
+        serde_json::from_str::<serde_json::Value>(text).unwrap()
+    }
+
+    /// The `fields` argument was declared in the schema and never read, so a
+    /// call carrying only custom properties reported `"changes": []` as a
+    /// success and wrote nothing (P.6.9.6).
+    #[tokio::test]
+    async fn a_fields_only_edit_writes_the_property_the_symbol_lacks() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": { "MPN": "RC0805FR-074K7L" }
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!edited.is_error, "{:?}", edited.content);
+        let body = ok_body(&edited);
+        assert_eq!(
+            body["changes"],
+            json!(["MPN → RC0805FR-074K7L (added)"]),
+            "the fields edit must be reported as a change: {body}"
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("(property \"MPN\" \"RC0805FR-074K7L\""),
+            "the property was not written:\n{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fields_key_the_symbol_already_has_is_updated_in_place() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        for value in ["RC0805", "RC0603"] {
+            let edited = handle_edit_schematic_component(
+                &json!({
+                    "schematic": path.display().to_string(),
+                    "reference": "R1",
+                    "fields": { "MPN": value }
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert!(!edited.is_error, "{:?}", edited.content);
+        }
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text.matches("(property \"MPN\"").count(),
+            1,
+            "the second write duplicated the property instead of updating it:\n{text}"
+        );
+        assert!(
+            text.contains("\"RC0603\"") && !text.contains("\"RC0805\""),
+            "the property still carries the first value:\n{text}"
+        );
+    }
+
+    /// `Reference` is stored twice — in the property and in `(instances …)` —
+    /// so the generic `fields` path, which rewrites only the property, must
+    /// refuse it and leave `new_reference` as the one way to rename.
+    #[tokio::test]
+    async fn reference_in_fields_is_refused_and_writes_nothing() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": { "Reference": "R9" }
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(edited.is_error, "{:?}", edited.content);
+        assert_eq!(error_body(&edited)["kind"], json!("invalid_argument"));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "a reserved key must not reach the file"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_edit_that_changes_nothing_is_a_failure() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        for args in [
+            json!({ "schematic": path.display().to_string(), "reference": "R1", "fields": {} }),
+            json!({ "schematic": path.display().to_string(), "reference": "R1" }),
+        ] {
+            let edited = handle_edit_schematic_component(&args, &ctx).await.unwrap();
+            assert!(
+                edited.is_error,
+                "an empty edit reported success: {:?}",
+                edited.content
+            );
+            assert_eq!(error_body(&edited)["kind"], json!("invalid_argument"));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_non_object_fields_argument_is_an_invalid_argument() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": "MPN=RC0805"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(edited.is_error, "{:?}", edited.content);
+        let body = error_body(&edited);
+        assert_eq!(body["kind"], json!("invalid_argument"));
+        assert_eq!(body["field"], json!("fields"));
+    }
+
+    /// KiCAD stores every property as text, so a JSON number or boolean is
+    /// written as its text form; a value with no text form is reported.
+    #[tokio::test]
+    async fn numeric_and_boolean_field_values_are_stored_as_text() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let (_dir, path, _b, _uuid) = twin_schematics(&ctx).await;
+
+        let edited = handle_edit_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "reference": "R1",
+                "fields": { "Tolerance": 1, "DNP": true, "Bad": null }
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!edited.is_error, "{:?}", edited.content);
+        let body = ok_body(&edited);
+        assert_eq!(
+            body["errors"],
+            json!(["Bad: value must be a string, number or boolean"]),
+            "an unrepresentable value must be reported: {body}"
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("(property \"Tolerance\" \"1\"")
+                && text.contains("(property \"DNP\" \"true\""),
+            "scalar values were not stored as text:\n{text}"
+        );
+    }
+
     async fn twin_schematics(
         ctx: &ToolContext,
     ) -> (
@@ -2852,14 +3518,29 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn move_by_reference_still_addresses_the_first_unit() {
-        // INV8: the designator path means exactly what it always meant — the
-        // first symbol carrying it, which is unit 1 here.
+    async fn move_by_reference_on_a_multiunit_symbol_is_refused_not_silently_the_first_unit() {
+        // Superseded by P.6.8.2: this test used to assert INV8's "the
+        // designator means the first symbol carrying it" for a *geometry*
+        // call, moving unit 1 while silently leaving unit 2 exactly where it
+        // was. That is not a safe reading of a multi-unit `reference` — the
+        // caller never said "unit 1", and eeschema itself only ever moves
+        // one unit at a time by picking it directly, never by designator.
+        // INV8's own first clause is what decides it: an input with two
+        // meanings is genuine ambiguity and stays refused. Its second clause
+        // ("a widened acceptance must never turn a previously compiling input
+        // into a failure") governs widenings, and this is the opposite — an
+        // acceptance that should never have been granted. A
+        // reference-addressed geometry call on a multi-unit symbol is now
+        // refused, naming the units so the caller can retry with `uuid`; the
+        // uuid-addressed path (`move_by_uuid_moves_the_named_unit` above and
+        // `rotate_and_edit_by_uuid_reach_the_named_unit` below) is
+        // unaffected and still moves exactly the named unit.
         let (_symdir, _env) = stub_symbol_dir().await;
         let dir = tempfile::tempdir().unwrap();
         let ctx = test_ctx();
         let (path, u1, u2) = multi_unit_schematic(&dir, &ctx).await;
 
+        let before_1 = unit_state(&path, &u1, &ctx).await;
         let before_2 = unit_state(&path, &u2, &ctx).await;
         let moved = handle_move_schematic_component(
             &json!({ "schematic": path.display().to_string(), "reference": "U1", "x": 200.0, "y": 120.0 }),
@@ -2867,17 +3548,20 @@ pub(crate) mod tests {
         )
         .await
         .unwrap();
-        assert!(!moved.is_error, "{:?}", moved.content);
-
-        let after_1 = unit_state(&path, &u1, &ctx).await;
         assert!(
-            (after_1.0 - 200.0).abs() < 1.27 && (after_1.1 - 120.0).abs() < 1.27,
-            "the designator must still move unit 1, unit 1 is at {after_1:?}"
+            moved.is_error,
+            "a multi-unit reference move must be refused"
+        );
+
+        assert_eq!(
+            unit_state(&path, &u1, &ctx).await,
+            before_1,
+            "a refused move must not touch unit 1"
         );
         assert_eq!(
             unit_state(&path, &u2, &ctx).await,
             before_2,
-            "unit 2 must not have moved"
+            "a refused move must not touch unit 2"
         );
     }
 
@@ -2984,5 +3668,172 @@ pub(crate) mod tests {
             .map(|c| c["uuid"].as_str().unwrap())
             .collect();
         assert_eq!(remaining, vec![u1.as_str()], "unit 2 is the one deleted");
+    }
+
+    // ─── P.6.9.5: add_component_annotation dedup / reserved keys ───────────
+
+    /// Two calls with the same key must leave exactly one property of that
+    /// name, not two — the bug being that `handle_add_component_annotation`
+    /// used to insert unconditionally, with no lookup for an existing one.
+    #[tokio::test]
+    async fn add_annotation_same_key_twice_yields_one_property() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dup.kicad_sch");
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        handle_add_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "lib_id": "Device:R", "x": 100.0, "y": 80.0, "reference": "R1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        for (value, expect_created) in [("RC0805-first", true), ("RC0805-second", false)] {
+            let r = handle_add_component_annotation(
+                &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": "MPN", "value": value }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert!(!r.is_error, "{:?}", r.content);
+            // The answer must say which of the two happened: the second call
+            // updated a property that already existed, and reporting that as
+            // a creation is how a caller ends up believing it has two.
+            let text = format!("{:?}", r.content);
+            assert!(
+                text.contains(&format!(r#"created\":{expect_created}"#)),
+                "expected created={expect_created} for {value}: {text}"
+            );
+        }
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            content.matches("(property \"MPN\" ").count(),
+            1,
+            "two calls with the same key must leave one property, not two:\n{content}"
+        );
+        assert!(
+            content.contains("(property \"MPN\" \"RC0805-second\""),
+            "the second call's value must win"
+        );
+    }
+
+    /// `Reference` has a dedicated, invariant-preserving path
+    /// (`edit_schematic_component`'s `new_reference`, which also repoints
+    /// `(instances …)`); `add_component_annotation` must refuse it rather
+    /// than write around that path. `Value`/`Footprint`/`Datasheet` carry no
+    /// such invariant and are not reserved — setting them through this tool
+    /// is exactly what `design_review.rs`'s BOM audit test already relies
+    /// on, unchanged by this fix.
+    #[tokio::test]
+    async fn add_annotation_refuses_reserved_keys() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reserved.kicad_sch");
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        handle_add_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "lib_id": "Device:R", "x": 100.0, "y": 80.0, "reference": "R1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        for key in ["Reference"] {
+            let r = handle_add_component_annotation(
+                &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": key, "value": "X" }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert!(r.is_error, "'{key}' must be refused, not silently accepted");
+            assert_eq!(
+                error_body(&r)["kind"],
+                json!("invalid_argument"),
+                "key={key}"
+            );
+            assert_eq!(error_body(&r)["field"], json!("key"), "key={key}");
+        }
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "a refused key must not touch the file"
+        );
+
+        // Value/Footprint/Datasheet are not reserved: they must still work.
+        let r = handle_add_component_annotation(
+            &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": "Footprint", "value": "Resistor_SMD:R_0603_1608Metric" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !r.is_error,
+            "Footprint must not be reserved: {:?}",
+            r.content
+        );
+    }
+
+    /// A property inserted into an eeschema-style, tab-indented schematic
+    /// must itself be tab-indented, not the crate's own hard-coded
+    /// two/six-space literal.
+    #[tokio::test]
+    async fn add_annotation_matches_tab_indentation_of_the_file() {
+        let (_symdir, _env) = stub_symbol_dir().await;
+        let ctx = test_ctx();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tabs.kicad_sch");
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+        handle_add_schematic_component(
+            &json!({ "schematic": path.display().to_string(), "lib_id": "Device:R", "x": 100.0, "y": 80.0, "reference": "R1" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // Re-tab the file this crate wrote (two-space indent) into the shape
+        // eeschema itself writes (tabs, one per nesting level, P.6.9.4),
+        // without changing its structure.
+        let original = std::fs::read_to_string(&path).unwrap();
+        let retabbed: String = original
+            .lines()
+            .map(|line| {
+                let spaces = line.len() - line.trim_start_matches(' ').len();
+                format!(
+                    "{}{}\n",
+                    "\t".repeat(spaces / 2),
+                    line.trim_start_matches(' ')
+                )
+            })
+            .collect();
+        std::fs::write(&path, &retabbed).unwrap();
+
+        let r = handle_add_component_annotation(
+            &json!({ "schematic": path.display().to_string(), "reference": "R1", "key": "MPN", "value": "RC0805" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!r.is_error, "{:?}", r.content);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let idx = content
+            .find("(property \"MPN\" \"RC0805\"")
+            .expect("inserted property");
+        let line_start = content[..idx].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert!(
+            !content[line_start..idx].is_empty()
+                && content[line_start..idx].chars().all(|c| c == '\t'),
+            "inserted property must be tab-indented to match the file: {:?}",
+            &content[line_start..idx]
+        );
     }
 }

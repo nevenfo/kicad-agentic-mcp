@@ -7,15 +7,15 @@ use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
 use crate::tool;
 use crate::tools::{
-    get_path, opt_f64, opt_str, project_name_for, require_f64, require_str, ToolContext, ToolDef,
+    get_path, opt_f64, opt_str, require_array, require_f64, require_str, ToolContext, ToolDef,
 };
+use crate::try_arg;
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
-    geometry::snap_point,
     parser::parse_sexp,
     schematic::{
-        extract_symbol_instances, extract_wires, find_t_junctions, format_junction, format_wire,
-        parse_at, pin_endpoint, read_schematic,
+        extract_symbol_instances, extract_wires, find_lib_symbol, find_t_junctions,
+        format_junction, format_wire, parse_at, pin_endpoint, read_schematic, Wire,
     },
     writer::{
         apply_edits, find_balanced_block, find_block_starts, find_block_with_leading_whitespace,
@@ -68,7 +68,8 @@ pub fn tools() -> Vec<ToolDef> {
             "delete_schematic_wire",
             "Delete a wire segment by its UUID, or by matching BOTH endpoints \
              (all four of x1/y1/x2/y2, either direction). Fails without deleting \
-             anything when no wire matches.",
+             anything when no wire matches. Junction dots the wire leaves \
+             unjustified are removed with it.",
             json!({
                 "type": "object",
                 "properties": {
@@ -84,7 +85,9 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "batch_delete_schematic_wire",
-            "Delete multiple wire segments in a single file read/write cycle.",
+            "Delete multiple wire segments in a single file read/write cycle. \
+             Junction dots the wires leave unjustified are removed with them, \
+             reported as junctions_pruned_count.",
             json!({
                 "type": "object",
                 "properties": {
@@ -211,7 +214,7 @@ pub fn tools() -> Vec<ToolDef> {
         tool!(
             "add_power_symbol",
             "Add a power symbol (VCC, GND, etc.) to the schematic. Auto-numbers the \
-             internal #PWR reference.",
+             internal #PWR reference to the lowest number free on the sheet.",
             json!({
                 "type": "object",
                 "properties": {
@@ -432,6 +435,24 @@ fn pins_mid_segment(pins: &[(f64, f64)], x1: f64, y1: f64, x2: f64, y2: f64) -> 
         .collect()
 }
 
+/// Add a junction dot at each position that does not already carry one.
+///
+/// `find_t_junctions` reports every T on the sheet, not only the ones the new
+/// wire made, so an unguarded loop re-emits a dot at every existing T on every
+/// call — quadratic in a batch. `insert_wire_with_junctions` guards the same
+/// way on the string path.
+fn add_missing_junctions(sch: &mut cse::Schematic, positions: &[(f64, f64)]) {
+    for &(x, y) in positions {
+        if !sch
+            .junctions
+            .iter()
+            .any(|j| konnect_sexp::geometry::points_coincident(x, y, j.x, j.y, 0.01))
+        {
+            sch.add_junction(x, y);
+        }
+    }
+}
+
 pub(crate) fn insert_wire_with_junctions(
     content: String,
     x1: f64,
@@ -526,8 +547,13 @@ async fn handle_add_wire(
         Err(e) => return Ok(e),
     };
 
-    let (x1, y1) = snap_point(x1, y1, 1.27);
-    let (x2, y2) = snap_point(x2, y2, 1.27);
+    // The pin list is needed below for the mid-segment junction pass; reading
+    // it first also lets an endpoint that is already a pin keep its exact
+    // coordinate instead of being snapped off it (P.6.8.9).
+    let (_, tree) = read_schematic(&sch_path)?;
+    let pins = crate::tools::all_pin_endpoints(&tree);
+    let ((x1, y1), _) = crate::tools::snap_unless_pin(&pins, x1, y1);
+    let ((x2, y2), _) = crate::tools::snap_unless_pin(&pins, x2, y2);
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
@@ -543,21 +569,9 @@ async fn handle_add_wire(
     let junctions = find_t_junctions(&existing_wires, 0.01);
 
     sch.add_wire(x1, y1, x2, y2);
-    for (jx, jy) in &junctions {
-        sch.add_junction(*jx, *jy);
-    }
+    add_missing_junctions(&mut sch, &junctions);
     // Pins the new wire passes over mid-segment also need junction dots.
-    let (_, tree) = read_schematic(&sch_path)?;
-    let pins = crate::tools::all_pin_endpoints(&tree);
-    for (px, py) in pins_mid_segment(&pins, x1, y1, x2, y2) {
-        if !sch
-            .junctions
-            .iter()
-            .any(|j| konnect_sexp::geometry::points_coincident(px, py, j.x, j.y, 0.01))
-        {
-            sch.add_junction(px, py);
-        }
-    }
+    add_missing_junctions(&mut sch, &pins_mid_segment(&pins, x1, y1, x2, y2));
     sch.overwrite()?;
 
     Ok(CallToolResult::json(
@@ -570,7 +584,12 @@ async fn handle_batch_add_wire(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
-    let wires = args["wires"].as_array().cloned().unwrap_or_default();
+    // `wires` is `required`. An explicitly empty batch stays a legitimate
+    // answer; only absence is refused.
+    let wires = try_arg!(require_array(args, "wires"));
+    if wires.is_empty() {
+        return Ok(CallToolResult::json(&json!({ "added_wires": 0 })));
+    }
 
     let mut sch = cse::Schematic::load(&sch_path)?;
     let mut added = 0usize;
@@ -580,13 +599,16 @@ async fn handle_batch_add_wire(
         .map(|(_, tree)| crate::tools::all_pin_endpoints(&tree))
         .unwrap_or_default();
 
-    for w in &wires {
+    for w in wires {
         let x1 = w["x1"].as_f64().unwrap_or(0.0);
         let y1 = w["y1"].as_f64().unwrap_or(0.0);
         let x2 = w["x2"].as_f64().unwrap_or(0.0);
         let y2 = w["y2"].as_f64().unwrap_or(0.0);
-        let (x1, y1) = snap_point(x1, y1, 1.27);
-        let (x2, y2) = snap_point(x2, y2, 1.27);
+        // Same rule as the single add: a pin's own coordinate is not snapped
+        // off the pin (P.6.8.9). `pins` is already in hand for the junction
+        // pass below.
+        let ((x1, y1), _) = crate::tools::snap_unless_pin(&pins, x1, y1);
+        let ((x2, y2), _) = crate::tools::snap_unless_pin(&pins, x2, y2);
 
         // T-junction detection for each wire added incrementally.
         let mut existing_wires = cse_wires_to_sexp(&sch);
@@ -600,19 +622,9 @@ async fn handle_batch_add_wire(
         let junctions = find_t_junctions(&existing_wires, 0.01);
 
         sch.add_wire(x1, y1, x2, y2);
-        for (jx, jy) in &junctions {
-            sch.add_junction(*jx, *jy);
-        }
+        add_missing_junctions(&mut sch, &junctions);
         // Pins this wire passes over mid-segment also need junction dots.
-        for (px, py) in pins_mid_segment(&pins, x1, y1, x2, y2) {
-            if !sch
-                .junctions
-                .iter()
-                .any(|j| konnect_sexp::geometry::points_coincident(px, py, j.x, j.y, 0.01))
-            {
-                sch.add_junction(px, py);
-            }
-        }
+        add_missing_junctions(&mut sch, &pins_mid_segment(&pins, x1, y1, x2, y2));
         added += 1;
     }
 
@@ -628,109 +640,201 @@ async fn handle_delete_wire(
     let content = read_consistent(&sch_path)?;
     let expected = content.clone();
 
-    let delete_range = if let Some(uuid) = opt_str(args, "uuid") {
-        match crate::tools::find_schematic_item_by_uuid(&content, uuid) {
+    let (del_start, del_end) = match locate_wire_for_delete(&content, args, &sch_path) {
+        Ok(range) => range,
+        Err(e) => return Ok(e),
+    };
+
+    let removed = wires_in_ranges(&content, &[(del_start, del_end)]);
+    let edits = vec![SexpEdit::delete(del_start, del_end)];
+    let new_content = apply_edits(content, edits);
+    let (new_content, pruned) = prune_orphaned_junctions(new_content, &removed);
+    write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
+    Ok(CallToolResult::text(match pruned {
+        0 => "Wire deleted.".to_string(),
+        n => format!("Wire deleted. Removed {n} orphaned junction(s)."),
+    }))
+}
+
+/// Byte range of the wire block the `uuid` or `x1/y1/x2/y2` arguments name.
+///
+/// Ported from upstream #214's `locate_wire_for_delete`, but resolved through
+/// this fork's shared `item_locations` uuid index rather than a standalone
+/// `wire_block_with_leading_whitespace` scan, so a uuid naming a non-wire item
+/// reports `NotFound` here the same way the batch path already does.
+fn locate_wire_for_delete(
+    content: &str,
+    args: &serde_json::Value,
+    sch_path: &std::path::Path,
+) -> Result<(usize, usize), CallToolResult> {
+    if let Some(uuid) = opt_str(args, "uuid") {
+        return match crate::tools::find_schematic_item_by_uuid(content, uuid) {
             Ok(Some((_start, _end, kind))) if kind.as_deref() == Some("wire") => {
-                crate::tools::find_schematic_item_block_for_delete(&content, uuid)
+                crate::tools::find_schematic_item_block_for_delete(content, uuid)
                     .ok()
                     .flatten()
                     .map(|(start, end, _kind)| (start, end))
+                    .ok_or_else(|| {
+                        CallToolResult::error_kind(
+                            crate::mcp::error::ToolErrorKind::NotFound {
+                                document: sch_path.display().to_string(),
+                                item_kind: "wire".to_string(),
+                                key: uuid.to_string(),
+                                candidates: Vec::new(),
+                            },
+                            "Cannot locate a wire block matching the requested identity",
+                        )
+                    })
             }
             // Exists but isn't a wire: falls through to the generic "cannot
             // locate a wire block" branch below, same as an unresolved
             // enclosing-tag search did before this lookup was unified.
-            Ok(Some(_)) => None,
-            Ok(None) => {
-                return Ok(CallToolResult::error_kind(
-                    crate::mcp::error::ToolErrorKind::NotFound {
-                        document: sch_path.display().to_string(),
-                        item_kind: "wire".to_string(),
-                        key: uuid.to_string(),
-                        candidates: Vec::new(),
-                    },
-                    format!("Wire UUID '{uuid}' not found"),
-                ));
-            }
-            Err(err) => {
-                return Ok(CallToolResult::error_kind(
-                    ToolErrorKind::MalformedDocument {
-                        path: sch_path.display().to_string(),
-                        detail: err.to_string(),
-                    },
-                    "Cannot parse schematic document",
-                ));
-            }
-        }
-    } else {
-        let Some(x1) = opt_f64(args, "x1") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "x1".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        let Some(y1) = opt_f64(args, "y1") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "y1".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        let Some(x2) = opt_f64(args, "x2") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "x2".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        let Some(y2) = opt_f64(args, "y2") else {
-            return Ok(CallToolResult::error_kind(
-                crate::mcp::error::ToolErrorKind::InvalidArgument {
-                    field: "y2".to_string(),
-                    reason: "required when uuid is not given".to_string(),
-                },
-                "Provide either uuid or all x1/y1/x2/y2 coordinates",
-            ));
-        };
-        find_wire_block_by_endpoints(&content, x1, y1, x2, y2)
-    };
-
-    let (del_start, del_end) = match delete_range {
-        Some(r) => r,
-        None => {
-            let identity = opt_str(args, "uuid")
-                .map(str::to_string)
-                .unwrap_or_else(|| {
-                    format!(
-                        "({:?},{:?})-({:?},{:?})",
-                        opt_f64(args, "x1"),
-                        opt_f64(args, "y1"),
-                        opt_f64(args, "x2"),
-                        opt_f64(args, "y2")
-                    )
-                });
-            return Ok(CallToolResult::error_kind(
+            Ok(Some(_)) | Ok(None) => Err(CallToolResult::error_kind(
                 crate::mcp::error::ToolErrorKind::NotFound {
                     document: sch_path.display().to_string(),
                     item_kind: "wire".to_string(),
-                    key: identity,
+                    key: uuid.to_string(),
                     candidates: Vec::new(),
                 },
-                "Cannot locate a wire block matching the requested identity",
-            ));
-        }
+                format!("Wire UUID '{uuid}' not found"),
+            )),
+            Err(err) => Err(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: sch_path.display().to_string(),
+                    detail: err.to_string(),
+                },
+                "Cannot parse schematic document",
+            )),
+        };
+    }
+
+    let (Some(x1), Some(y1), Some(x2), Some(y2)) = (
+        opt_f64(args, "x1"),
+        opt_f64(args, "y1"),
+        opt_f64(args, "x2"),
+        opt_f64(args, "y2"),
+    ) else {
+        return Err(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::InvalidArgument {
+                field: "x1".to_string(),
+                reason: "required when uuid is not given".to_string(),
+            },
+            "Provide either uuid or all x1/y1/x2/y2 coordinates",
+        ));
     };
 
-    let edits = vec![SexpEdit::delete(del_start, del_end)];
-    let new_content = apply_edits(content, edits);
-    write_atomic_if_unchanged(&sch_path, &expected, &new_content)?;
-    Ok(CallToolResult::text("Wire deleted."))
+    find_wire_block_by_endpoints(content, x1, y1, x2, y2).ok_or_else(|| {
+        CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "wire".to_string(),
+                key: format!("({x1:?},{y1:?})-({x2:?},{y2:?})"),
+                candidates: Vec::new(),
+            },
+            "Cannot locate a wire block matching the requested identity",
+        )
+    })
+}
+
+/// The wires inside the given byte ranges of the document.
+fn wires_in_ranges(content: &str, ranges: &[(usize, usize)]) -> Vec<Wire> {
+    // `extract_wires` expects wires as direct children of the parsed document
+    // root, so wrap every range in one minimal root and parse it once.
+    let mut wrapped = String::from("(kicad_sch ");
+    for &(start, end) in ranges {
+        wrapped.push_str(&content[start..end]);
+    }
+    wrapped.push(')');
+    parse_sexp(&wrapped)
+        .map(|node| extract_wires(&node))
+        .unwrap_or_default()
+}
+
+/// Drop the junction dots the removed wires left with nothing to justify them.
+///
+/// Deleting a wire used to leave its dots behind, so a tap deleted off a rail
+/// left the dot on the rail alone, and KiCad reads that leftover dot as a
+/// connection between whatever still crosses it there — silently joining two
+/// wires that only ever touched because of the tap that is now gone. A dot
+/// needs two wires to mean anything, with one exception: one wire plus a pin
+/// landing mid-segment, which is exactly what `pins_mid_segment` creates. So a
+/// junction is pruned when no wire is left through it, or one is and no pin
+/// sits there. Junctions no removed wire touched are left alone.
+fn prune_orphaned_junctions(content: String, removed: &[Wire]) -> (String, usize) {
+    const TOL: f64 = 0.01;
+    // Two is as high as this needs to count, so it stops there.
+    let wires_through = |wires: &[Wire], jx: f64, jy: f64| {
+        wires
+            .iter()
+            .filter(|w| {
+                konnect_sexp::geometry::point_on_segment(jx, jy, w.x1, w.y1, w.x2, w.y2, TOL)
+            })
+            .take(2)
+            .count()
+    };
+
+    // The dots the removed wires ran through, with the block to delete. Most
+    // deletions find none, and the document parse below is only for those.
+    let mut candidates: Vec<((usize, usize), (f64, f64))> = Vec::new();
+    for start in find_block_starts(&content, "junction") {
+        let Some((ws_start, block_end)) = find_block_with_leading_whitespace(&content, start)
+        else {
+            continue;
+        };
+        let Ok(node) = parse_sexp(&content[start..block_end]) else {
+            continue;
+        };
+        let Some((jx, jy, _)) = parse_at(&node) else {
+            continue;
+        };
+        if wires_through(removed, jx, jy) > 0 {
+            candidates.push(((ws_start, block_end), (jx, jy)));
+        }
+    }
+    if candidates.is_empty() {
+        return (content, 0);
+    }
+
+    let Ok(tree) = parse_sexp(&content) else {
+        return (content, 0);
+    };
+    let remaining = extract_wires(&tree);
+    // Resolving pins walks every symbol against `lib_symbols`, so it waits
+    // until a dot is down to its last wire and the answer decides the case.
+    let mut pins: Option<(Vec<(f64, f64)>, bool)> = None;
+
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for (range, (jx, jy)) in candidates {
+        let orphaned = match wires_through(&remaining, jx, jy) {
+            0 => true,
+            1 => {
+                let (pins, pins_known) = pins.get_or_insert_with(|| {
+                    let pins = crate::tools::all_pin_endpoints(&tree);
+                    // A sheet with symbols but no resolvable pin means the
+                    // `lib_symbols` lookup failed, not that nothing is
+                    // connected. Only the unambiguous zero-wire case prunes
+                    // then, rather than guess a pin isn't there.
+                    let known = !pins.is_empty() || extract_symbol_instances(&tree).is_empty();
+                    (pins, known)
+                });
+                *pins_known
+                    && !pins.iter().any(|&(px, py)| {
+                        konnect_sexp::geometry::points_coincident(px, py, jx, jy, TOL)
+                    })
+            }
+            _ => false,
+        };
+        if orphaned {
+            ranges.push(range);
+        }
+    }
+
+    let pruned = ranges.len();
+    let edits = ranges
+        .into_iter()
+        .map(|(s, e)| SexpEdit::delete(s, e))
+        .collect();
+    (apply_edits(content, edits), pruned)
 }
 
 async fn handle_batch_delete_wire(
@@ -826,14 +930,17 @@ async fn handle_batch_delete_wire(
         });
     }
 
+    let removed = wires_in_ranges(&content, &ranges);
     let edits: Vec<SexpEdit> = ranges
         .into_iter()
         .map(|(s, e)| SexpEdit::delete(s, e))
         .collect();
     let content = apply_edits(content, edits);
+    let (content, pruned) = prune_orphaned_junctions(content, &removed);
     write_atomic_if_unchanged(&sch_path, &expected, &content)?;
     Ok(CallToolResult::json(&json!({
         "deleted": deleted,
+        "junctions_pruned_count": pruned,
         "errors": errors
     })))
 }
@@ -882,7 +989,7 @@ fn splittable_at(w: &konnect_sexp::schematic::Wire, px: f64, py: f64) -> bool {
 
 async fn handle_split_wire_at_point(
     args: &serde_json::Value,
-    ctx: &ToolContext,
+    _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let sch_path = get_path(args, "schematic")?;
     let px = match require_f64(args, "x") {
@@ -894,7 +1001,9 @@ async fn handle_split_wire_at_point(
         Err(e) => return Ok(e),
     };
 
-    let (content, tree) = read_schematic(&sch_path)?;
+    let content = read_consistent(&sch_path)?;
+    let expected = content.clone();
+    let tree = parse_sexp(&content)?;
     let wires = extract_wires(&tree);
 
     // The point alone only identifies a wire while nothing else crosses it:
@@ -944,25 +1053,34 @@ async fn handle_split_wire_at_point(
         }
     };
 
-    // Delete the original wire and insert two halves + junction
-    let del_args = if let Some(uuid) = &w.uuid {
-        json!({ "schematic": sch_path.display().to_string(), "uuid": uuid })
-    } else {
-        json!({
-            "schematic": sch_path.display().to_string(),
-            "x1": w.x1,
-            "y1": w.y1,
-            "x2": w.x2,
-            "y2": w.y2
-        })
+    // Delete the original wire and insert two halves + junction. Not through
+    // `handle_delete_wire`: the two halves cover the same segment, so every
+    // junction the original wire justified is still justified after the
+    // split, and running it through the pruning `handle_delete_wire` now does
+    // would drop dots in the gap between the delete and the re-insert below.
+    let block = match &w.uuid {
+        Some(uuid) => crate::tools::find_schematic_item_block_for_delete(&content, uuid)
+            .ok()
+            .flatten()
+            .map(|(start, end, _kind)| (start, end)),
+        None => find_wire_block_by_endpoints(&content, w.x1, w.y1, w.x2, w.y2),
     };
-    let delete_result = handle_delete_wire(&del_args, ctx).await?;
-    if delete_result.is_error {
-        return Ok(delete_result);
-    }
+    let Some((del_start, del_end)) = block else {
+        return Ok(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::NotFound {
+                document: sch_path.display().to_string(),
+                item_kind: "wire".to_string(),
+                key: w
+                    .uuid
+                    .clone()
+                    .unwrap_or_else(|| format!("({},{})-({},{})", w.x1, w.y1, w.x2, w.y2)),
+                candidates: Vec::new(),
+            },
+            "Cannot locate a wire block matching the requested identity",
+        ));
+    };
+    let content = apply_edits(content, vec![SexpEdit::delete(del_start, del_end)]);
 
-    let content = read_consistent(&sch_path)?;
-    let expected = content.clone();
     let w1 = format_wire(w.x1, w.y1, px, py);
     let w2 = format_wire(px, py, w.x2, w.y2);
     let junc = format_junction(px, py);
@@ -1549,6 +1667,22 @@ async fn handle_batch_rotate_labels(
     ))
 }
 
+/// The lowest `#PWR` number no symbol on the sheet is using.
+///
+/// Counting the power symbols instead re-issues a live designator after a
+/// deletion: drop `#PWR028` from a sheet of 29 and the count is 28, so the
+/// next symbol is handed `#PWR029` — still in use, silently duplicated.
+fn next_pwr_number(sch: &cse::Schematic) -> u32 {
+    let used: std::collections::HashSet<u32> = sch
+        .symbols
+        .iter()
+        .filter_map(|s| s.reference())
+        .filter_map(|r| r.strip_prefix("#PWR"))
+        .filter_map(|n| n.parse::<u32>().ok())
+        .collect();
+    (1u32..).find(|n| !used.contains(n)).unwrap_or(1)
+}
+
 async fn handle_add_power_symbol(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -1577,17 +1711,7 @@ async fn handle_add_power_symbol(
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
-    // Auto-number the #PWR reference by counting existing power symbols
-    let pwr_count = sch
-        .symbols
-        .iter()
-        .filter(|s| {
-            s.reference()
-                .map(|r| r.starts_with("#PWR"))
-                .unwrap_or(false)
-        })
-        .count();
-    let pwr_ref = format!("#PWR{:03}", pwr_count + 1);
+    let pwr_ref = format!("#PWR{:03}", next_pwr_number(&sch));
 
     // Embed the power symbol definition in lib_symbols. `power_net` arrives as
     // the caller wrote it — `5V` for `+5V`, `+GND` for `GND` — and the polarity
@@ -1621,30 +1745,23 @@ async fn handle_add_power_symbol(
     sym.on_board = true;
     sym.uuid = uuid::Uuid::new_v4().to_string();
 
-    // Property (at …) is absolute sheet coords — same as add_schematic_component.
-    // Bare Property::new writes no (at); KiCad then defaults to (0,0) and every
-    // #PWR piles up in the top-left corner. Hide Reference like eeschema does
-    // (property-level `(hide yes)`, matching what KiCad 10 itself writes).
-    let positioned = crate::tools::positioned_property;
-    sym.properties
-        .push(positioned("Reference", &pwr_ref, x, y - 3.81, 0.0, true));
-    sym.properties
-        .push(positioned("Value", &power_net, x, y + 3.81, 0.0, false));
-    sym.properties
-        .push(positioned("Footprint", "", x, y, 0.0, true));
-    sym.properties
-        .push(positioned("Datasheet", "", x, y, 0.0, true));
+    // Property (at …) is absolute sheet coords — same as add_schematic_component,
+    // and through the same helper, which reads where the library symbol puts
+    // each field and transforms it by this placement (P.6.8.8). Bare
+    // Property::new writes no (at); KiCad then defaults to (0,0) and every
+    // #PWR piles up in the top-left corner. Reference is hidden like eeschema
+    // does (property-level `(hide yes)`, matching what KiCad 10 itself writes).
+    crate::tools::push_placed_fields(&sch, &mut sym, &pwr_ref, &power_net, true);
 
     // Instance entry, keyed to the root sheet UUID like eeschema writes it —
     // without a resolvable "/<root-uuid>" path KiCAD's netlister drops the
     // symbol from net formation.
-    let root_uuid = crate::tools::ensure_root_uuid(&mut sch);
-    sym.set_instance_path(
-        &project_name_for(&sch_path),
-        &format!("/{}", root_uuid),
-        &pwr_ref,
-        1,
-    );
+    let (project_name, instance_paths) = crate::tools::instance_targets(&sch_path, &mut sch);
+    // One entry per placement of this sheet: a power symbol on a sheet
+    // instantiated twice belongs to both instances.
+    for path in &instance_paths {
+        sym.set_instance_path(&project_name, path, &pwr_ref, 1);
+    }
 
     sch.add_symbol(sym);
     sch.overwrite()?;
@@ -1671,6 +1788,19 @@ async fn handle_add_power_symbol(
     Ok(CallToolResult::json(&result))
 }
 
+/// Every placed pin endpoint on the sheet, or an empty list when the sheet
+/// cannot be read.
+///
+/// The empty case degrades to plain [`crate::tools::snap_reporting`] rather
+/// than failing: these handlers load the file again immediately afterwards
+/// and report a real error from there, and a lookup that cannot answer must
+/// not be the thing that refuses the call.
+fn pin_endpoints_or_empty(path: &std::path::Path) -> Vec<(f64, f64)> {
+    read_schematic(path)
+        .map(|(_, tree)| crate::tools::all_pin_endpoints(&tree))
+        .unwrap_or_default()
+}
+
 async fn handle_add_no_connect(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -1685,7 +1815,11 @@ async fn handle_add_no_connect(
         Err(e) => return Ok(e),
     };
 
-    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
+    // The one that matters most: a no-connect marks a *pin*, and a marker
+    // snapped 0.635 mm off the pin it was meant for marks nothing at all,
+    // while ERC goes on reporting that pin (P.6.8.9).
+    let pins = pin_endpoints_or_empty(&sch_path);
+    let ((x, y), requested) = crate::tools::snap_unless_pin(&pins, x, y);
     let mut sch = cse::Schematic::load(&sch_path)?;
     // The uuid goes back to the caller because `delete_no_connect` now takes
     // one: an address this server accepts has to be an address it hands out,
@@ -1920,7 +2054,10 @@ async fn handle_add_junction(
         Err(e) => return Ok(e),
     };
 
-    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
+    // A junction dot belongs on the connection point, so a point that already
+    // is one is written verbatim rather than snapped off it (P.6.8.9).
+    let pins = pin_endpoints_or_empty(&sch_path);
+    let ((x, y), requested) = crate::tools::snap_unless_pin(&pins, x, y);
     let mut sch = cse::Schematic::load(&sch_path)?;
     sch.add_junction(x, y);
     sch.overwrite()?;
@@ -1939,11 +2076,13 @@ async fn handle_batch_add_junction(
     let sch_path = get_path(args, "schematic")?;
     let positions = args["positions"].as_array().cloned().unwrap_or_default();
     let mut sch = cse::Schematic::load(&sch_path)?;
+    // One read for the whole batch; the positions are what changes.
+    let pins = pin_endpoints_or_empty(&sch_path);
     let mut snapped_any = false;
     for pos in &positions {
         let x = pos["x"].as_f64().unwrap_or(0.0);
         let y = pos["y"].as_f64().unwrap_or(0.0);
-        let ((sx, sy), requested) = crate::tools::snap_reporting(x, y);
+        let ((sx, sy), requested) = crate::tools::snap_unless_pin(&pins, x, y);
         snapped_any |= requested.is_some();
         sch.add_junction(sx, sy);
     }
@@ -1971,13 +2110,47 @@ async fn handle_connect_to_net(
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
     };
-    let direction = opt_str(args, "direction").unwrap_or("right");
     let stub_length = opt_f64(args, "stub_length").unwrap_or(2.54);
     let label_type = opt_str(args, "label_type").unwrap_or("net_label");
-    // pin_x/pin_y should already be on-grid (real pin positions come from
-    // snapped component placements), but don't trust callers blindly — same
-    // defect class as E6 if a caller derives this coordinate itself.
-    let ((pin_x, pin_y), requested) = crate::tools::snap_reporting(pin_x, pin_y);
+
+    // A caller's explicit `direction` is always authoritative. Otherwise, a
+    // stub defaulting to "right" runs through the symbol body whenever the
+    // targeted pin faces some other way (P.6.8.5) — measured on
+    // `Conn_02x05_Odd_Even`: an unqualified "right" default drew the stub
+    // straight through the body onto the opposite row's pin, and the
+    // mid-segment junction pass then dropped a junction dot on that crossed
+    // pin. Deriving the direction from the pin itself (`pin_outward_at`)
+    // avoids the crossing at its source; a coordinate with no placed pin
+    // keeps the historical "right" default, unchanged.
+    //
+    // Looked up against the caller's own (pin_x, pin_y), before snapping —
+    // that is the coordinate `placed_pins` holds.
+    //
+    // One read answers both questions: which way the stub leaves, and whether
+    // a pin is there at all, which is also what decides the snap below.
+    let tree = read_schematic(&sch_path).ok().map(|(_, tree)| tree);
+    let (direction, direction_source): (&str, &str) = match opt_str(args, "direction") {
+        Some(d) => (d, "requested"),
+        None => match tree
+            .as_ref()
+            .and_then(|tree| crate::tools::pin_outward_at(tree, pin_x, pin_y))
+        {
+            Some(d) => (d, "derived_from_pin"),
+            None => ("right", "default_no_pin_here"),
+        },
+    };
+
+    // A caller who derived this coordinate loosely still gets the grid snap
+    // (the E6 defect class), but a coordinate that *is* a pin is left exactly
+    // where it is: 7.6 % of the pins in the KiCad demo corpus do not sit on
+    // the 1.27 mm grid, and snapping one of those wrote a stub starting
+    // beside its pin instead of on it, for a call that answered success
+    // (P.6.8.9).
+    let pins = tree
+        .as_ref()
+        .map(crate::tools::all_pin_endpoints)
+        .unwrap_or_default();
+    let ((pin_x, pin_y), requested) = crate::tools::snap_unless_pin(&pins, pin_x, pin_y);
 
     // Compute label endpoint and label rotation based on direction.
     // Label rotation follows KiCAD convention: 0° = text reads left-to-right,
@@ -2004,22 +2177,15 @@ async fn handle_connect_to_net(
 
     // Add wire stub
     sch.add_wire(pin_x, pin_y, label_x, label_y);
-    for (jx, jy) in &junctions {
-        sch.add_junction(*jx, *jy);
-    }
+    add_missing_junctions(&mut sch, &junctions);
     // Pins the stub passes over mid-segment also need junction dots.
     let pins = read_schematic(&sch_path)
         .map(|(_, tree)| crate::tools::all_pin_endpoints(&tree))
         .unwrap_or_default();
-    for (px, py) in pins_mid_segment(&pins, pin_x, pin_y, label_x, label_y) {
-        if !sch
-            .junctions
-            .iter()
-            .any(|j| konnect_sexp::geometry::points_coincident(px, py, j.x, j.y, 0.01))
-        {
-            sch.add_junction(px, py);
-        }
-    }
+    add_missing_junctions(
+        &mut sch,
+        &pins_mid_segment(&pins, pin_x, pin_y, label_x, label_y),
+    );
 
     // Add label
     match label_type {
@@ -2041,6 +2207,7 @@ async fn handle_connect_to_net(
     let mut result = json!({
         "connected": net,
         "direction": direction,
+        "direction_source": direction_source,
         "wire": { "x1": pin_x, "y1": pin_y, "x2": label_x, "y2": label_y },
         "label": { "x": label_x, "y": label_y, "rotation": label_rot }
     });
@@ -2112,10 +2279,8 @@ pub(crate) fn resolve_pin_endpoint(
         .iter()
         .find(|i| i.reference == reference)
         .ok_or_else(|| anyhow::anyhow!("Component '{}' not found", reference))?;
-    let lib_sym = lib_syms
-        .iter()
-        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(&inst.lib_id))
-        .ok_or_else(|| anyhow::anyhow!("Library symbol '{}' not found", inst.lib_id))?;
+    let lib_sym = find_lib_symbol(lib_syms, inst)
+        .ok_or_else(|| anyhow::anyhow!("Library symbol '{}' not found", inst.lib_symbol_name()))?;
 
     // Unit-aware (#35): only this instance's unit owns the pin — asking unit 1
     // of an LM2904 for pin 7 must fail, not wire to a superimposed phantom.
@@ -2274,6 +2439,10 @@ mod unit_aware_wiring_tests {
     fn single_pin_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pin.kicad_sch");
+        // The anchors are the installed `power:GND`'s own, so the fields
+        // land where KiCad would put them (P.6.8.8): Reference at
+        // (0, -6.35) and Value at (0, -3.81) in library Y-up space, both
+        // *below* the symbol once flipped into sheet space.
         std::fs::write(
             &path,
             "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols\n\t\t(symbol \"Test:P1\"\n\t\t\t(symbol \"P1_1_1\"\n\t\t\t\t(pin passive line (at 0 0 0) (length 2.54)\n\t\t\t\t\t(name \"~\" (effects (font (size 1.27 1.27))))\n\t\t\t\t\t(number \"1\" (effects (font (size 1.27 1.27))))\n\t\t\t\t)\n\t\t\t)\n\t\t)\n\t)\n\t(symbol\n\t\t(lib_id \"Test:P1\")\n\t\t(at 101.6 76.2 0)\n\t\t(unit 1)\n\t\t(uuid \"u1\")\n\t\t(property \"Reference\" \"U1\"\n\t\t\t(at 101.6 71.12 0)\n\t\t)\n\t)\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n",
@@ -2305,6 +2474,124 @@ mod unit_aware_wiring_tests {
                 .iter()
                 .any(|&(x, y)| (x - 101.6).abs() < 0.01 && (y - 76.2).abs() < 0.01),
             "junction expected at the mid-wire pin, got {juncs:?}"
+        );
+    }
+
+    // ─── One junction per T, however many wires arrive ─────────────────────
+
+    /// An empty sheet: these tests only need somewhere to put wires.
+    fn bare_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bare.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols)\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n",
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    /// A rail plus three taps hanging off it: each tap makes one T, and every
+    /// later wire sees the earlier Ts again.
+    fn rail_and_taps() -> (Vec<serde_json::Value>, Vec<(f64, f64)>) {
+        let rail = json!({ "x1": 101.6, "y1": 101.6, "x2": 127.0, "y2": 101.6 });
+        let taps: Vec<f64> = vec![106.68, 111.76, 116.84];
+        let wires = std::iter::once(rail)
+            .chain(
+                taps.iter()
+                    .map(|&x| json!({ "x1": x, "y1": 101.6, "x2": x, "y2": 106.68 })),
+            )
+            .collect();
+        (wires, taps.into_iter().map(|x| (x, 101.6)).collect())
+    }
+
+    fn junctions_at(path: &std::path::Path, x: f64, y: f64) -> usize {
+        let tree = konnect_sexp::parse_sexp(&std::fs::read_to_string(path).unwrap()).unwrap();
+        konnect_sexp::schematic::extract_junction_points(&tree)
+            .iter()
+            .filter(|&&(jx, jy)| (jx - x).abs() < 0.01 && (jy - y).abs() < 0.01)
+            .count()
+    }
+
+    /// `find_t_junctions` reports every T on the sheet, so each call used to
+    /// re-emit a dot at every T already there — the third tap stacked three
+    /// dots on the first T.
+    #[tokio::test]
+    async fn repeated_add_wire_leaves_one_junction_per_t() {
+        let (_d, path) = bare_schematic();
+        let (wires, tees) = rail_and_taps();
+        for w in &wires {
+            let mut args = json!({ "schematic": path.display().to_string() });
+            for (k, v) in w.as_object().unwrap() {
+                args[k] = v.clone();
+            }
+            let result = handle_add_wire(&args, &test_ctx()).await.unwrap();
+            assert!(!result.is_error, "{:?}", result.content);
+        }
+        for (x, y) in tees {
+            assert_eq!(junctions_at(&path, x, y), 1, "T at ({x}, {y})");
+        }
+    }
+
+    /// The same in one batch, where the duplication was quadratic: n wires
+    /// over a sheet holding m Ts wrote n·m dots.
+    #[tokio::test]
+    async fn batch_add_wire_leaves_one_junction_per_t() {
+        let (_d, path) = bare_schematic();
+        let (wires, tees) = rail_and_taps();
+        let result = handle_batch_add_wire(
+            &json!({ "schematic": path.display().to_string(), "wires": wires }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{:?}", result.content);
+        for (x, y) in tees {
+            assert_eq!(junctions_at(&path, x, y), 1, "T at ({x}, {y})");
+        }
+    }
+
+    /// `wires` is `required`, and was read with `unwrap_or_default()`: a call
+    /// that forgot it added nothing and rewrote the file anyway.
+    #[tokio::test]
+    async fn batch_add_wire_without_wires_is_refused() {
+        let (_d, path) = bare_schematic();
+        let res = handle_batch_add_wire(
+            &json!({ "schematic": path.display().to_string() }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            res.is_error,
+            "a batch with no wires argument must be refused"
+        );
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&res).as_deref(),
+            Some("invalid_argument")
+        );
+    }
+
+    /// An explicitly empty batch stays a legitimate answer, but it must not
+    /// reserialise the schematic. Asserting the success alone would pass even
+    /// if the rewrite happened, so the bytes are what this pins.
+    #[tokio::test]
+    async fn an_empty_batch_of_wires_leaves_the_schematic_byte_identical() {
+        let (_d, path) = bare_schematic();
+        let before = std::fs::read(&path).unwrap();
+
+        let res = handle_batch_add_wire(
+            &json!({ "schematic": path.display().to_string(), "wires": [] }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!res.is_error, "{:?}", res.content);
+
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "a batch that added nothing reserialised the file"
         );
     }
 }
@@ -2744,6 +3031,116 @@ mod wire_delete_tests {
         assert!(after.contains("(junction"));
         assert!(!wires.iter().any(|wire| wire.x1 == 0.0 && wire.x2 == 10.0));
     }
+
+    // ─── Deleting a wire takes its junction dots with it (upstream #214) ───
+
+    /// The same two wires the fixtures above use, named for their role here.
+    const RAIL: &str = WIRE_1;
+    const TAP: &str = WIRE_2;
+
+    /// A rail with one tap onto it, the dot at the T, and a second dot far
+    /// away that no delete below touches.
+    fn t_junction_schematic() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("junction-prune.kicad_sch");
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols)\n\t(wire\n\t\t(pts (xy 50.8 50.8) (xy 76.2 50.8))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{RAIL}\")\n\t)\n\t(wire\n\t\t(pts (xy 63.5 50.8) (xy 63.5 63.5))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{TAP}\")\n\t)\n\t(junction (at 63.5 50.8) (diameter 0) (color 0 0 0 0) (uuid \"aaaa0000-0000-0000-0000-000000000001\"))\n\t(junction (at 25.4 25.4) (diameter 0) (color 0 0 0 0) (uuid \"aaaa0000-0000-0000-0000-000000000002\"))\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n"
+            ),
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    fn junctions_in(path: &std::path::Path) -> Vec<(f64, f64)> {
+        let content = std::fs::read_to_string(path).unwrap();
+        let tree = konnect_sexp::parse_sexp(&content).unwrap();
+        konnect_sexp::schematic::extract_junctions(&tree)
+            .into_iter()
+            .map(|j| (j.x, j.y))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn deleting_every_wire_through_a_junction_removes_the_dot() {
+        let (_dir, path) = t_junction_schematic();
+        let result = handle_batch_delete_wire(
+            &json!({ "schematic": path.display().to_string(), "uuids": [RAIL, TAP] }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        // The far dot is on no deleted wire, so it stays whatever justifies it.
+        assert_eq!(junctions_in(&path), vec![(25.4, 25.4)]);
+        let crate::mcp::protocol::ToolContent::Text { text } = &result.content[0] else {
+            panic!("expected text content");
+        };
+        let body: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(body["junctions_pruned_count"], json!(1));
+    }
+
+    #[tokio::test]
+    async fn deleting_the_tap_removes_the_dot_left_on_the_rail() {
+        let (_dir, path) = t_junction_schematic();
+        let result = handle_delete_wire(
+            &json!({ "schematic": path.display().to_string(), "uuid": TAP }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(after.contains(RAIL), "the rail must survive: {after}");
+        assert_eq!(junctions_in(&path), vec![(25.4, 25.4)]);
+        assert!(konnect_sexp::parse_sexp(&after).is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_dot_on_a_mid_segment_pin_survives_losing_its_second_wire() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pin-junction.kicad_sch");
+        // U1's pin tip is at (101.6, 76.2): a rail straight through it, a stub
+        // arriving from below, and the dot the T needs.
+        std::fs::write(
+            &path,
+            format!(
+                "(kicad_sch\n\t(version 20260306)\n\t(generator \"eeschema\")\n\t(uuid \"root\")\n\t(lib_symbols\n\t\t(symbol \"Test:P1\"\n\t\t\t(symbol \"P1_1_1\"\n\t\t\t\t(pin passive line (at 0 0 0) (length 2.54)\n\t\t\t\t\t(name \"~\" (effects (font (size 1.27 1.27))))\n\t\t\t\t\t(number \"1\" (effects (font (size 1.27 1.27))))\n\t\t\t\t)\n\t\t\t)\n\t\t)\n\t)\n\t(symbol\n\t\t(lib_id \"Test:P1\")\n\t\t(at 101.6 76.2 0)\n\t\t(unit 1)\n\t\t(uuid \"u1\")\n\t\t(property \"Reference\" \"U1\"\n\t\t\t(at 101.6 71.12 0)\n\t\t)\n\t)\n\t(wire\n\t\t(pts (xy 96.52 76.2) (xy 106.68 76.2))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{RAIL}\")\n\t)\n\t(wire\n\t\t(pts (xy 101.6 76.2) (xy 101.6 68.58))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid \"{TAP}\")\n\t)\n\t(junction (at 101.6 76.2) (diameter 0) (color 0 0 0 0) (uuid \"aaaa0000-0000-0000-0000-000000000003\"))\n\t(sheet_instances (path \"/\" (page \"1\")))\n)\n"
+            ),
+        )
+        .unwrap();
+
+        let result = handle_delete_wire(
+            &json!({ "schematic": path.display().to_string(), "uuid": TAP }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        // One wire left through the dot, but the pin lands mid-segment there —
+        // that is the connection, and pruning it would silently break the net.
+        assert_eq!(junctions_in(&path), vec![(101.6, 76.2)]);
+    }
+
+    #[tokio::test]
+    async fn split_wire_keeps_the_dots_on_the_wire_it_replaces() {
+        let (_dir, path) = t_junction_schematic();
+        let result = handle_split_wire_at_point(
+            &json!({ "schematic": path.display().to_string(), "x": 68.58, "y": 50.8 }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error);
+
+        let mut juncs = junctions_in(&path);
+        juncs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(juncs, vec![(25.4, 25.4), (63.5, 50.8), (68.58, 50.8)]);
+    }
 }
 
 #[cfg(test)]
@@ -2775,7 +3172,7 @@ mod power_symbol_tests {
         let path = dir.path().join("power.kicad_sch");
         std::fs::write(
             &path,
-            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 0 0))\n      (property \"Value\" \"GND\" (at 0 0 0))\n    )\n  )\n)\n",
+            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 -6.35 0))\n      (property \"Value\" \"GND\" (at 0 -3.81 0))\n    )\n  )\n)\n",
         )
         .unwrap();
 
@@ -2805,10 +3202,11 @@ mod power_symbol_tests {
             .find(|p| p.name == "Reference")
             .unwrap();
         let ref_sexp = cse::sexp::writer::write(&ref_prop.to_sexp());
-        // Input (100, 80) snaps to the 1.27mm grid (E6): (100.33, 80.01).
+        // Input (100, 80) snaps to the 1.27mm grid (E6): (100.33, 80.01), and
+        // the library's own -6.35 anchor flips to +6.35 in sheet space.
         assert!(
-            ref_sexp.contains("(at 100.33") && ref_sexp.contains("76.2"),
-            "Reference must sit near the symbol, not sheet origin: {ref_sexp}"
+            ref_sexp.contains("(at 100.33 86.36"),
+            "Reference must sit where the library puts it, not at the sheet origin and not at a fixed offset: {ref_sexp}"
         );
         let hide_at = ref_sexp
             .find("(hide yes)")
@@ -2821,8 +3219,8 @@ mod power_symbol_tests {
         let val_prop = sym.properties.iter().find(|p| p.name == "Value").unwrap();
         let val_sexp = cse::sexp::writer::write(&val_prop.to_sexp());
         assert!(
-            val_sexp.contains("(at 100.33") && val_sexp.contains("83.82"),
-            "Value must sit near the symbol: {val_sexp}"
+            val_sexp.contains("(at 100.33 83.82"),
+            "Value must sit where the library puts it: {val_sexp}"
         );
         assert!(
             !val_sexp.contains("hide"),
@@ -2968,6 +3366,50 @@ mod power_symbol_tests {
         assert_eq!(value["y"].as_f64(), Some(80.01));
         assert!(value.get("snapped_to_grid").is_none());
         assert!(value.get("requested").is_none());
+    }
+
+    /// Numbering by count re-issued a designator that was still on the sheet:
+    /// delete `#PWR002` of three and the next add produced a second `#PWR003`.
+    #[tokio::test]
+    async fn add_power_symbol_fills_a_freed_number_instead_of_duplicating() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gnd.kicad_sch");
+        std::fs::write(
+            &path,
+            "(kicad_sch\n  (version 20250610)\n  (generator \"konnect\")\n  (uuid \"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\")\n  (paper \"A4\")\n  (lib_symbols\n    (symbol \"power:GND\"\n      (property \"Reference\" \"#PWR\" (at 0 -6.35 0))\n      (property \"Value\" \"GND\" (at 0 -3.81 0))\n    )\n  )\n)\n",
+        )
+        .unwrap();
+
+        let add = |x: f64| {
+            let args = json!({
+                "schematic": path.display().to_string(),
+                "power_net": "GND",
+                "x": x,
+                "y": 80.0
+            });
+            async move {
+                let result = handle_add_power_symbol(&args, &test_ctx()).await.unwrap();
+                assert!(!result.is_error, "{result:?}");
+            }
+        };
+        add(100.0).await;
+        add(110.0).await;
+        add(120.0).await;
+
+        let mut sch = cse::Schematic::load(&path).unwrap();
+        sch.symbols.retain(|s| s.reference() != Some("#PWR002"));
+        sch.overwrite().unwrap();
+
+        add(130.0).await;
+
+        let sch = cse::Schematic::load(&path).unwrap();
+        let mut refs: Vec<&str> = sch.symbols.iter().filter_map(|s| s.reference()).collect();
+        refs.sort_unstable();
+        assert_eq!(
+            refs,
+            ["#PWR001", "#PWR002", "#PWR003"],
+            "the freed number belongs to the new symbol, and nothing may repeat"
+        );
     }
 }
 

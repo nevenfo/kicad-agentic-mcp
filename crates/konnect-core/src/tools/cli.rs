@@ -27,32 +27,178 @@ pub struct ErcViolation {
     pub severity: String,
     pub description: String,
     pub sheet: Option<String>,
+    /// The first item's position, kept for backward compatibility with
+    /// callers that only ever cared about "where". Derived from `items[0]`.
     pub pos: Option<ErcPos>,
     /// KiCAD's own rule name (`pin_not_connected`, …). Prose is reworded
     /// between versions; the rule name is what a stable finding id can be
     /// built on, so it is kept rather than folded into the description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule: Option<String>,
+    /// Every item KiCAD named for this violation. A `pin_to_pin` conflict
+    /// names both pins that conflict; `items[0]` alone loses the pin that
+    /// explains the finding.
+    #[serde(default)]
+    pub items: Vec<ReportItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ErcPos {
     pub x: f64,
     pub y: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// One entry of a violation's `items` array, shared by ERC and DRC reports
+/// (schema `{ description, pos: { x, y }, uuid }`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pos: Option<ErcPos>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uuid: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrcViolation {
     pub severity: String,
     pub description: String,
+    /// The first item's position, kept for backward compatibility with
+    /// callers that only ever cared about "where". Derived from `items[0]`.
     pub pos: Option<ErcPos>,
     /// KiCAD's own rule name (`clearance`, `courtyards_overlap`, …). See
     /// [`ErcViolation::rule`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule: Option<String>,
+    /// Which top-level array of the DRC report this came from. A `clearance`
+    /// violation and an unrouted net are both "errors", but they are found by
+    /// different passes of `kicad-cli`, live under different JSON keys, and a
+    /// caller ventilating a report by category needs to tell them apart.
+    pub category: DrcCategory,
+    /// Every item KiCAD named for this violation. Two `unconnected_items`
+    /// entries can share rule, description and first position while naming
+    /// different pads on the second item — `items[0]` alone made them
+    /// indistinguishable.
+    #[serde(default)]
+    pub items: Vec<ReportItem>,
+}
+
+/// The three top-level arrays `kicad-cli pcb drc --format json` may emit.
+///
+/// `violations` covers board-geometry rules (clearance, courtyard overlap,
+/// …); `unconnected_items` is unrouted copper — nets with a ratsnest line
+/// still open, always severity `error`; `schematic_parity` is a netlist
+/// mismatch between the PCB and its schematic. All three are siblings in the
+/// report, not nested under `violations` — reading only `violations` made
+/// open copper invisible to every caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrcCategory {
+    Violations,
+    UnconnectedItems,
+    SchematicParity,
+}
+
+impl DrcCategory {
+    /// The report's own key for this category.
+    #[must_use]
+    pub fn json_key(self) -> &'static str {
+        match self {
+            Self::Violations => "violations",
+            Self::UnconnectedItems => "unconnected_items",
+            Self::SchematicParity => "schematic_parity",
+        }
+    }
+
+    const ALL: [Self; 3] = [
+        Self::Violations,
+        Self::UnconnectedItems,
+        Self::SchematicParity,
+    ];
+}
+
+/// The parsed shape of a `kicad-cli pcb drc --format json` report.
+///
+/// Each field is `None` when the key is absent from the JSON — not measured —
+/// and `Some(vec![])` when the key is present but empty — measured, clean.
+/// Collapsing the two would turn "this pass did not run" into "this pass
+/// found nothing", which is exactly the false-clean report this type exists
+/// to rule out.
+#[derive(Debug, Clone, Default)]
+pub struct DrcReport {
+    pub violations: Option<Vec<DrcViolation>>,
+    pub unconnected_items: Option<Vec<DrcViolation>>,
+    pub schematic_parity: Option<Vec<DrcViolation>>,
+}
+
+impl DrcReport {
+    fn category(&self, category: DrcCategory) -> &Option<Vec<DrcViolation>> {
+        match category {
+            DrcCategory::Violations => &self.violations,
+            DrcCategory::UnconnectedItems => &self.unconnected_items,
+            DrcCategory::SchematicParity => &self.schematic_parity,
+        }
+    }
+
+    /// Every finding across all three categories, in report order.
+    #[must_use]
+    pub fn all(&self) -> Vec<&DrcViolation> {
+        DrcCategory::ALL
+            .iter()
+            .filter_map(|c| self.category(*c).as_ref())
+            .flatten()
+            .collect()
+    }
+
+    /// How many findings, across all categories, are severity `error`.
+    #[must_use]
+    pub fn error_count(&self) -> usize {
+        self.all().iter().filter(|v| v.severity == "error").count()
+    }
+
+    /// Categories the report did not include a key for. A validator that
+    /// found this non-empty ran an incomplete check and must say so, rather
+    /// than let the missing category read as "zero findings".
+    #[must_use]
+    pub fn missing_categories(&self) -> Vec<DrcCategory> {
+        DrcCategory::ALL
+            .into_iter()
+            .filter(|c| self.category(*c).is_none())
+            .collect()
+    }
 }
 
 // ─── KiCAD CLI Runner ─────────────────────────────────────────────────────────
+
+/// What to say when `kicad-cli` fails.
+///
+/// Argument errors go to **stdout**, not stderr — `--layers F.Cu --layers B.Cu`
+/// prints "Duplicate argument --layers" there and leaves stderr empty
+/// (measured on 10.0.3). Reporting stderr alone therefore produced a failure
+/// with no message at all, which is the worst kind: the caller cannot tell a
+/// rejected argument from a crash. Stdout is trimmed to its first lines
+/// because kicad-cli follows the message with its whole usage screen.
+fn cli_failure_diagnostics(stdout: &[u8], stderr: &[u8]) -> String {
+    let stderr = String::from_utf8_lossy(stderr);
+    let stderr = stderr.trim();
+    if !stderr.is_empty() {
+        return stderr.to_string();
+    }
+    let stdout = String::from_utf8_lossy(stdout);
+    let message: Vec<&str> = stdout
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .take_while(|line| !line.starts_with("Usage:"))
+        .take(4)
+        .collect();
+    if message.is_empty() {
+        "no diagnostic on stdout or stderr".to_string()
+    } else {
+        message.join("; ")
+    }
+}
 
 /// Run a kicad-cli command with arguments and capture stdout.
 async fn run_cli(cli: &str, args: &[&str], timeout_dur: Duration) -> Result<String> {
@@ -82,11 +228,10 @@ async fn run_cli(cli: &str, args: &[&str], timeout_dur: Duration) -> Result<Stri
     }
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
             "kicad-cli exited with {}: {}",
             output.status.code().unwrap_or(-1),
-            stderr.trim()
+            cli_failure_diagnostics(&output.stdout, &output.stderr)
         );
     }
 
@@ -120,6 +265,31 @@ pub async fn run_erc(cli: &str, schematic: &Path) -> Result<Vec<ErcViolation>> {
     Ok(violations)
 }
 
+/// Decode a violation's `items` array (`[{ description, pos: { x, y }, uuid }]`),
+/// shared by the ERC and DRC parsers — the shape is identical in both
+/// reports, and duplicating this per-parser is how the second item was lost.
+fn parse_report_items(v: &serde_json::Value) -> Vec<ReportItem> {
+    let Some(items) = v.get("items").and_then(|i| i.as_array()) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .map(|item| ReportItem {
+            description: item
+                .get("description")
+                .and_then(|d| d.as_str())
+                .map(String::from),
+            pos: item.get("pos").and_then(|p| {
+                Some(ErcPos {
+                    x: p["x"].as_f64()?,
+                    y: p["y"].as_f64()?,
+                })
+            }),
+            uuid: item.get("uuid").and_then(|u| u.as_str()).map(String::from),
+        })
+        .collect()
+}
+
 fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
     // KiCAD's ERC report (https://schemas.kicad.org/erc.v1.json) nests
     // violations per sheet — { "sheets": [ { "path": …, "violations": […] } ] }
@@ -137,17 +307,12 @@ fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
             continue;
         };
         for v in violations {
-            let first_item = v
-                .get("items")
-                .and_then(|i| i.as_array())
-                .and_then(|i| i.first());
+            let items = parse_report_items(v);
+            let first_item = items.first();
             let mut description = v["description"].as_str().unwrap_or("").to_string();
             // The per-item description names the offender ("Symbol R1 Pin 1…")
             // — without it "Pin not connected" is unactionable.
-            if let Some(detail) = first_item
-                .and_then(|item| item.get("description"))
-                .and_then(|d| d.as_str())
-            {
+            if let Some(detail) = first_item.and_then(|item| item.description.as_deref()) {
                 if !detail.is_empty() {
                     description = format!("{}: {}", description, detail);
                 }
@@ -157,12 +322,8 @@ fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
                 rule: v["type"].as_str().map(str::to_string),
                 description,
                 sheet: sheet_path.clone(),
-                pos: first_item.and_then(|item| item.get("pos")).and_then(|p| {
-                    Some(ErcPos {
-                        x: p["x"].as_f64()?,
-                        y: p["y"].as_f64()?,
-                    })
-                }),
+                pos: first_item.and_then(|item| item.pos.clone()),
+                items,
             });
         }
     }
@@ -171,9 +332,9 @@ fn parse_erc_json(raw: &serde_json::Value) -> Vec<ErcViolation> {
 
 // ─── DRC ─────────────────────────────────────────────────────────────────────
 
-/// Run DRC on a PCB and return parsed violations.
+/// Run DRC on a PCB and return the parsed report.
 /// KiCAD 10: `pcb drc --output <path> --format json [--refill-zones] <input>`
-pub async fn run_drc(cli: &str, pcb: &Path, refill_zones: bool) -> Result<Vec<DrcViolation>> {
+pub async fn run_drc(cli: &str, pcb: &Path, refill_zones: bool) -> Result<DrcReport> {
     let out_path = pcb.with_extension("drc.json");
     let mut args = vec![
         "pcb",
@@ -195,23 +356,50 @@ pub async fn run_drc(cli: &str, pcb: &Path, refill_zones: bool) -> Result<Vec<Dr
     let raw: serde_json::Value = serde_json::from_str(&json_str)?;
     let _ = tokio::fs::remove_file(&out_path).await;
 
-    Ok(raw
-        .get("violations")
-        .and_then(|v| v.as_array())
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|v| DrcViolation {
-            severity: v["severity"].as_str().unwrap_or("error").to_string(),
-            rule: v["type"].as_str().map(str::to_string),
-            description: v["description"].as_str().unwrap_or("").to_string(),
-            pos: v.get("pos").and_then(|p| {
-                Some(ErcPos {
-                    x: p["x"].as_f64()?,
-                    y: p["y"].as_f64()?,
+    Ok(parse_drc_json(&raw))
+}
+
+/// Parse a `kicad-cli pcb drc --format json` report (schema
+/// https://schemas.kicad.org/drc.v1.json). `violations`, `unconnected_items`
+/// and `schematic_parity` are sibling top-level arrays — none nested under
+/// another — each holding entries shaped like `{ description, items: [{
+/// description, pos, uuid }], severity, type }`. Positions live on the item,
+/// never on the violation itself: KiCAD never writes a violation-level `pos`.
+fn parse_drc_json(raw: &serde_json::Value) -> DrcReport {
+    let category = |key: &str, category: DrcCategory| -> Option<Vec<DrcViolation>> {
+        let arr = raw.get(key)?.as_array()?;
+        Some(
+            arr.iter()
+                .map(|v| {
+                    let items = parse_report_items(v);
+                    let first_item = items.first();
+                    let mut description = v["description"].as_str().unwrap_or("").to_string();
+                    // The per-item description names the offender ("Pad 1
+                    // [VCC] on R1"); without it "Missing connection between
+                    // items" is unactionable.
+                    if let Some(detail) = first_item.and_then(|item| item.description.as_deref()) {
+                        if !detail.is_empty() {
+                            description = format!("{}: {}", description, detail);
+                        }
+                    }
+                    DrcViolation {
+                        severity: v["severity"].as_str().unwrap_or("error").to_string(),
+                        rule: v["type"].as_str().map(str::to_string),
+                        description,
+                        pos: first_item.and_then(|item| item.pos.clone()),
+                        category,
+                        items,
+                    }
                 })
-            }),
-        })
-        .collect())
+                .collect(),
+        )
+    };
+
+    DrcReport {
+        violations: category("violations", DrcCategory::Violations),
+        unconnected_items: category("unconnected_items", DrcCategory::UnconnectedItems),
+        schematic_parity: category("schematic_parity", DrcCategory::SchematicParity),
+    }
 }
 
 // ─── Annotation ───────────────────────────────────────────────────────────────
@@ -319,20 +507,253 @@ pub async fn export_schematic_pdf(cli: &str, schematic: &Path, output: &Path) ->
     Ok(())
 }
 
-/// KiCAD 10: `sch export bom --output <path> <input>`
-/// Note: v10 BOM does NOT use --format. It uses --fields, --labels, --field-delimiter.
-/// Default output is CSV-like with Reference,Value,Footprint,Qty,DNP fields.
-pub async fn export_bom(cli: &str, schematic: &Path, output: &Path, _format: &str) -> Result<()> {
-    let args = [
-        "sch",
-        "export",
-        "bom",
-        "--output",
-        output.to_str().unwrap(),
-        schematic.to_str().unwrap(),
-    ];
+/// Filtering options for `sch export bom`. `exclude_dnp: false` reproduces
+/// kicad-cli's own default (Do-Not-Populate symbols included). An empty
+/// `fields`/`labels`/`group_by` reproduces kicad-cli's own defaults too: the
+/// flag is simply omitted and kicad-cli applies
+/// `Reference,Value,Footprint,QUANTITY,DNP` / `Refs,Value,Footprint,Qty,DNP` /
+/// no grouping.
+#[derive(Debug, Default, Clone)]
+pub struct BomOptions {
+    /// Drop Do-Not-Populate symbols via `--exclude-dnp`.
+    pub exclude_dnp: bool,
+    /// `--fields`: ordered field list. Empty means "kicad-cli's default".
+    pub fields: Vec<String>,
+    /// `--labels`: ordered label list, applied to `fields` in order. Measured
+    /// (kicad-cli 10.0.3): a label list shorter than `fields` leaves the
+    /// remaining columns titled with the field name itself, not shifted or
+    /// blank; a longer one has its extra entries ignored. Neither is a trap,
+    /// so this is not guarded.
+    pub labels: Vec<String>,
+    /// `--group-by`: fields to group identical references by. Measured
+    /// (kicad-cli 10.0.3): naming a field absent from the effective `fields`
+    /// list is accepted and silently produces no grouping at all — that *is*
+    /// the trap, guarded by the caller before this is ever built.
+    pub group_by: Vec<String>,
+}
+
+/// Argument vector for the BOM export, factored out so `--exclude-dnp`,
+/// `--fields`, `--labels` and `--group-by` can be asserted without a
+/// kicad-cli on the machine. `fields`/`labels`/`group_by` are the
+/// comma-joined values (kicad-cli takes one value per flag, not a repeated
+/// option — the same shape `--layers` needed, see
+/// `single_file_pcb_export_args`); an empty string omits the flag.
+fn bom_args<'a>(
+    output: &'a str,
+    schematic: &'a str,
+    options: &BomOptions,
+    fields: &'a str,
+    labels: &'a str,
+    group_by: &'a str,
+) -> Vec<&'a str> {
+    let mut args = vec!["sch", "export", "bom", "--output", output];
+    if options.exclude_dnp {
+        args.push("--exclude-dnp");
+    }
+    if !fields.is_empty() {
+        args.push("--fields");
+        args.push(fields);
+    }
+    if !labels.is_empty() {
+        args.push("--labels");
+        args.push(labels);
+    }
+    if !group_by.is_empty() {
+        args.push("--group-by");
+        args.push(group_by);
+    }
+    args.push(schematic);
+    args
+}
+
+/// KiCAD 10: `sch export bom --output <path> [--exclude-dnp] [--fields F]
+/// [--labels L] [--group-by G] <input>`
+///
+/// Note: v10 BOM does NOT take `--format` — `kicad-cli sch export bom --help`
+/// has no such flag. Its default field set is
+/// `Reference,Value,Footprint,QUANTITY,DNP`, overridable with `--fields`.
+pub async fn export_bom(
+    cli: &str,
+    schematic: &Path,
+    output: &Path,
+    options: &BomOptions,
+) -> Result<()> {
+    let fields = options.fields.join(",");
+    let labels = options.labels.join(",");
+    let group_by = options.group_by.join(",");
+    let args = bom_args(
+        output.to_str().unwrap_or(""),
+        schematic.to_str().unwrap_or(""),
+        options,
+        &fields,
+        &labels,
+        &group_by,
+    );
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod pcb_plot_args_tests {
+    use super::*;
+
+    /// KiCad 10 takes one comma-separated `--layers`; repeating the option is
+    /// refused with "Duplicate argument --layers", so every layer-filtered
+    /// export failed.
+    #[test]
+    fn layers_are_one_comma_separated_value_not_a_repeated_option() {
+        let args = single_file_pcb_export_args("pdf", "/out/b.pdf", "F.Cu,B.Cu", "/b.kicad_pcb");
+        assert_eq!(args.iter().filter(|a| **a == "--layers").count(), 1);
+        assert!(args.contains(&"F.Cu,B.Cu"));
+    }
+
+    /// Without `--mode-single`, `--output` is read as a directory and KiCad
+    /// plots one file per layer instead of the file the caller named.
+    #[test]
+    fn a_single_file_plot_is_actually_requested() {
+        for subcommand in ["pdf", "svg"] {
+            let args =
+                single_file_pcb_export_args(subcommand, "/out/b.out", "F.Cu", "/b.kicad_pcb");
+            assert!(
+                args.contains(&"--mode-single"),
+                "{subcommand} did not ask for a single file: {args:?}"
+            );
+        }
+    }
+
+    /// No layers means "use the board's own plot settings"; `--layers ""`
+    /// would ask for nothing at all.
+    #[test]
+    fn an_empty_layer_list_passes_no_layers_option() {
+        let args = single_file_pcb_export_args("svg", "/out/b.svg", "", "/b.kicad_pcb");
+        assert!(!args.contains(&"--layers"), "{args:?}");
+        assert_eq!(args.last(), Some(&"/b.kicad_pcb"));
+    }
+
+    /// kicad-cli prints argument errors on stdout and leaves stderr empty, so
+    /// reporting stderr alone produced a failure with no message at all.
+    #[test]
+    fn an_argument_error_on_stdout_still_reaches_the_caller() {
+        let stdout = b"Duplicate argument --layers\nUsage: export pdf [--help] [--output OUTPUT_DIR]\n  -h, --help  Shows help\n";
+        let diagnostics = cli_failure_diagnostics(stdout, b"");
+        assert_eq!(diagnostics, "Duplicate argument --layers");
+    }
+
+    /// stderr still wins when KiCad does use it.
+    #[test]
+    fn stderr_is_preferred_when_kicad_writes_there() {
+        let diagnostics =
+            cli_failure_diagnostics(b"some progress chatter\n", b"Fatal: bad board\n");
+        assert_eq!(diagnostics, "Fatal: bad board");
+    }
+
+    /// Silence on both streams must not read as success-shaped emptiness.
+    #[test]
+    fn a_silent_failure_says_so_rather_than_returning_nothing() {
+        assert_eq!(
+            cli_failure_diagnostics(b"", b""),
+            "no diagnostic on stdout or stderr"
+        );
+    }
+}
+
+#[cfg(test)]
+mod bom_export_tests {
+    use super::*;
+
+    /// `exclude_dnp` has been in the `export_bom` schema (default `true`)
+    /// since the tool shipped, but the handler never read it and the flag
+    /// was never sent to `kicad-cli` — every BOM included DNP parts.
+    #[test]
+    fn exclude_dnp_is_passed_only_when_asked_for() {
+        let on = BomOptions {
+            exclude_dnp: true,
+            ..Default::default()
+        };
+        assert!(
+            bom_args("/out/bom.csv", "/s.kicad_sch", &on, "", "", "").contains(&"--exclude-dnp")
+        );
+
+        let off = BomOptions::default();
+        assert!(
+            !bom_args("/out/bom.csv", "/s.kicad_sch", &off, "", "", "").contains(&"--exclude-dnp")
+        );
+    }
+
+    /// Defaults must reproduce the previous argv exactly, so a caller that
+    /// wants KiCAD's own BOM keeps getting it.
+    #[test]
+    fn default_options_are_the_bare_kicad_cli_invocation() {
+        let args = bom_args(
+            "/out/bom.csv",
+            "/s.kicad_sch",
+            &BomOptions::default(),
+            "",
+            "",
+            "",
+        );
+        assert_eq!(
+            args,
+            [
+                "sch",
+                "export",
+                "bom",
+                "--output",
+                "/out/bom.csv",
+                "/s.kicad_sch"
+            ]
+        );
+    }
+
+    /// `--fields`, `--labels` and `--group-by` each take one comma-joined
+    /// value, the same shape `--layers` needed (kicad-cli refuses a repeated
+    /// option outright).
+    #[test]
+    fn fields_labels_and_group_by_are_passed_as_one_joined_value_each() {
+        let args = bom_args(
+            "/out/bom.csv",
+            "/s.kicad_sch",
+            &BomOptions::default(),
+            "Reference,Value,MPN",
+            "Refs,Value,MPN",
+            "Value",
+        );
+        assert_eq!(
+            args,
+            [
+                "sch",
+                "export",
+                "bom",
+                "--output",
+                "/out/bom.csv",
+                "--fields",
+                "Reference,Value,MPN",
+                "--labels",
+                "Refs,Value,MPN",
+                "--group-by",
+                "Value",
+                "/s.kicad_sch"
+            ]
+        );
+    }
+
+    /// An omitted field, label or group-by list must not pass `--fields ""`,
+    /// `--labels ""` or `--group-by ""` — that would ask kicad-cli for zero
+    /// columns / zero labels, not "use your own default".
+    #[test]
+    fn an_empty_fields_labels_or_group_by_passes_no_flag_at_all() {
+        let args = bom_args(
+            "/out/bom.csv",
+            "/s.kicad_sch",
+            &BomOptions::default(),
+            "",
+            "",
+            "",
+        );
+        assert!(!args.contains(&"--fields"), "{args:?}");
+        assert!(!args.contains(&"--labels"), "{args:?}");
+        assert!(!args.contains(&"--group-by"), "{args:?}");
+    }
 }
 
 /// KiCAD 10: `sch export netlist --output <path> --format <fmt> <input>`
@@ -400,6 +821,11 @@ pub struct DrillOptions<'a> {
     /// measured from.
     pub origin: &'a str,
     /// Write plated and non-plated holes to separate files.
+    ///
+    /// KiCAD's own default is `false`, and [`Default`] keeps it, because this
+    /// struct mirrors `kicad-cli`. What this server *hands a fabricator* is
+    /// [`fab_drill_options`] instead — see [`SEPARATE_PLATED_HOLES`] for the
+    /// measurement that decides it.
     pub separate_th: bool,
     /// Also write a drill map.
     pub generate_map: bool,
@@ -421,6 +847,36 @@ impl Default for DrillOptions<'_> {
     }
 }
 
+/// Whether a drill export destined for a fabricator separates plated from
+/// non-plated holes. It does, and the reason is what a single file leaves out.
+///
+/// Measured on 10.0.3, one board carrying a plated `thru_hole` pad and one
+/// `np_thru_hole` mounting hole. Exported together, the two holes are told
+/// apart **only** by a comment line above the tool definition —
+/// `; #@! TA.AperFunction,NonPlated,NPTH,ComponentDrill` — while the body of
+/// the file is plain Excellon: `T1`/`T2` and coordinates, carrying no plating
+/// information at all. A reader that drops comments, which is what a comment
+/// is for, plates every hole. With `--excellon-separate-th` the distinction
+/// moves into the file itself: `<board>-PTH.drl` and `<board>-NPTH.drl`, each
+/// holding only its own kind, with `TF.FileFunction` naming it.
+///
+/// So the failure mode of one file is silent and physical — a mounting hole
+/// comes back plated — and the failure mode of two is a fab that receives an
+/// extra file it already knows. Callers who want KiCAD's own default still
+/// have it: `separate_plated` is an explicit argument.
+pub const SEPARATE_PLATED_HOLES: bool = true;
+
+/// The drill options this server hands a fabricator: KiCAD's own defaults,
+/// except [`SEPARATE_PLATED_HOLES`]. One definition, so the fab package, the
+/// Gerber export's drill companion and the `export_drill` tool cannot drift
+/// apart on the question that costs a board.
+pub fn fab_drill_options<'a>() -> DrillOptions<'a> {
+    DrillOptions {
+        separate_th: SEPARATE_PLATED_HOLES,
+        ..DrillOptions::default()
+    }
+}
+
 /// KiCAD 10: `pcb export drill --output <dir> <input>`
 ///
 /// `--output` is a **directory**, not a file: KiCAD names the files after the
@@ -429,6 +885,15 @@ impl Default for DrillOptions<'_> {
 /// path makes KiCAD create a directory of that name and write the real file
 /// inside it — verified against KiCAD 10.0, and the reason this takes
 /// `output_dir`.
+///
+/// The path is passed exactly as given, with no trailing separator appended.
+/// Re-measured on 10.0.3 for all four cases — directory present or missing,
+/// with and without a trailing separator — and every one writes `<board>.drl`
+/// *inside* the named directory, creating it when absent. Upstream appends
+/// `MAIN_SEPARATOR` on the grounds that kicad-cli otherwise reads the last
+/// component as a file name; that is not what this version does, and
+/// `a_file_path_as_output_would_have_become_a_directory` is the standing
+/// proof.
 ///
 /// Every option is validated here rather than passed through, so a typo comes
 /// back naming the valid values instead of as `kicad-cli` exiting non-zero.
@@ -492,24 +957,52 @@ fn one_of<'a>(value: &str, valid: &[&'a str], what: &str) -> Result<&'a str> {
 
 /// KiCAD 10: `pcb export pdf --output <path> [--layers <layer>]... <input>`
 pub async fn export_pdf(cli: &str, pcb: &Path, output: &Path, layers: &[&str]) -> Result<()> {
-    let mut args = vec!["pcb", "export", "pdf", "--output", output.to_str().unwrap()];
-    for layer in layers {
-        args.push("--layers");
-        args.push(layer);
-    }
-    args.push(pcb.to_str().unwrap());
+    let joined = layers.join(",");
+    let args = single_file_pcb_export_args(
+        "pdf",
+        output.to_str().unwrap_or(""),
+        &joined,
+        pcb.to_str().unwrap_or(""),
+    );
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
 }
 
+/// Arguments for a `pcb export pdf|svg` that writes **one** file.
+///
+/// Two things were wrong. `--layers` was pushed once per layer, but KiCad 10
+/// takes a single comma-separated value and rejects the repeat outright
+/// ("Duplicate argument --layers"), so every layer-filtered PDF or SVG export
+/// failed. And `--mode-single` was never passed, so KiCad treated `--output`
+/// as a directory and plotted one file per layer instead of the single file
+/// the caller named.
+fn single_file_pcb_export_args<'a>(
+    subcommand: &'a str,
+    output: &'a str,
+    layers: &'a str,
+    pcb: &'a str,
+) -> Vec<&'a str> {
+    let mut args = vec!["pcb", "export", subcommand, "--output", output];
+    // An empty list means "whatever the board's plot settings say"; passing
+    // `--layers ""` would ask for nothing at all.
+    if !layers.is_empty() {
+        args.push("--layers");
+        args.push(layers);
+    }
+    args.push("--mode-single");
+    args.push(pcb);
+    args
+}
+
 /// KiCAD 10: `pcb export svg --output <path> [--layers <layer>]... <input>`
 pub async fn export_svg_pcb(cli: &str, pcb: &Path, output: &Path, layers: &[&str]) -> Result<()> {
-    let mut args = vec!["pcb", "export", "svg", "--output", output.to_str().unwrap()];
-    for layer in layers {
-        args.push("--layers");
-        args.push(layer);
-    }
-    args.push(pcb.to_str().unwrap());
+    let joined = layers.join(",");
+    let args = single_file_pcb_export_args(
+        "svg",
+        output.to_str().unwrap_or(""),
+        &joined,
+        pcb.to_str().unwrap_or(""),
+    );
     run_cli(cli, &args, LONG_TIMEOUT).await?;
     Ok(())
 }
@@ -780,6 +1273,220 @@ mod erc_parse_tests {
         assert!(
             parse_erc_json(&serde_json::json!({ "violations": [{ "severity": "error" }] }))
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_pin_to_pin_conflict_keeps_both_items() {
+        // A `pin_to_pin` conflict names two pins — the one driving and the
+        // one it conflicts with. Reading only items[0] loses the pin that
+        // explains the finding.
+        let report = serde_json::json!({
+            "sheets": [{
+                "path": "/",
+                "violations": [{
+                    "description": "Pin conflict",
+                    "items": [
+                        {
+                            "description": "Symbol U1 Pin 1 [Output]",
+                            "pos": { "x": 1.0, "y": 2.0 },
+                            "uuid": "p1"
+                        },
+                        {
+                            "description": "Symbol U2 Pin 3 [Output]",
+                            "pos": { "x": 3.0, "y": 4.0 },
+                            "uuid": "p2"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "pin_to_pin"
+                }]
+            }]
+        });
+        let violations = parse_erc_json(&report);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].items.len(),
+            2,
+            "must keep every item, not just items[0]"
+        );
+        assert_eq!(
+            violations[0].items[0].description.as_deref(),
+            Some("Symbol U1 Pin 1 [Output]")
+        );
+        assert_eq!(
+            violations[0].items[1].description.as_deref(),
+            Some("Symbol U2 Pin 3 [Output]")
+        );
+        let pos1 = violations[0].items[1]
+            .pos
+            .as_ref()
+            .expect("second item's own position");
+        assert!((pos1.x - 3.0).abs() < 1e-9);
+
+        // `pos` remains the first item's position, unchanged behavior.
+        let pos0 = violations[0]
+            .pos
+            .as_ref()
+            .expect("pos derived from items[0]");
+        assert!((pos0.x - 1.0).abs() < 1e-9);
+    }
+}
+
+#[cfg(test)]
+mod drc_parse_tests {
+    use super::*;
+
+    /// Shape produced by `kicad-cli pcb drc --format json` (KiCAD 10.0.3),
+    /// captured from a real run on a 2-net unrouted board — the
+    /// `unrouted.kicad_pcb` fixture, two SMD resistors on nets VCC/GND with
+    /// no traces. Keys, types, severities and coordinates are that run's;
+    /// only the prose is given in English, since KiCAD writes descriptions in
+    /// the locale it ran under. `violations`, `unconnected_items` and
+    /// `schematic_parity` are siblings, not nested under `violations`, and
+    /// `pos` lives only on each `items[]` entry — never on the violation
+    /// itself.
+    fn real_report() -> serde_json::Value {
+        serde_json::json!({
+            "$schema": "https://schemas.kicad.org/drc.v1.json",
+            "coordinate_units": "mm",
+            "kicad_version": "10.0.3",
+            "violations": [
+                {
+                    "description": "Footprint 'R_0402_1005Metric' does not match copy in library 'Resistor_SMD'",
+                    "items": [
+                        {
+                            "description": "Footprint R1",
+                            "pos": { "x": 100.0, "y": 50.0 },
+                            "uuid": "a1"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_footprint_mismatch"
+                },
+                {
+                    "description": "Footprint 'R_0402_1005Metric' does not match copy in library 'Resistor_SMD'",
+                    "items": [
+                        {
+                            "description": "Footprint R2",
+                            "pos": { "x": 110.0, "y": 50.0 },
+                            "uuid": "a2"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_footprint_mismatch"
+                }
+            ],
+            "unconnected_items": [
+                {
+                    "description": "Missing connection between items",
+                    "items": [
+                        {
+                            "description": "Pad 1 [VCC] of R1 on F.Cu",
+                            "pos": { "x": 99.5, "y": 50.0 },
+                            "uuid": "b1"
+                        },
+                        {
+                            "description": "Pad 2 [VCC] of R2 on F.Cu",
+                            "pos": { "x": 110.5, "y": 50.0 },
+                            "uuid": "b2"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "unconnected_items"
+                },
+                {
+                    "description": "Missing connection between items",
+                    "items": [
+                        {
+                            "description": "Pad 2 [GND] of R1 on F.Cu",
+                            "pos": { "x": 100.5, "y": 50.0 },
+                            "uuid": "c1"
+                        },
+                        {
+                            "description": "Pad 1 [GND] of R2 on F.Cu",
+                            "pos": { "x": 109.5, "y": 50.0 },
+                            "uuid": "c2"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "unconnected_items"
+                }
+            ],
+            "schematic_parity": []
+        })
+    }
+
+    #[test]
+    fn unconnected_items_are_errors_with_a_position() {
+        let report = parse_drc_json(&real_report());
+        let unconnected = report
+            .unconnected_items
+            .as_ref()
+            .expect("unconnected_items was present in the report");
+        assert_eq!(
+            unconnected.len(),
+            2,
+            "must read the top-level 'unconnected_items' array, not just 'violations'"
+        );
+        for v in unconnected {
+            assert_eq!(v.severity, "error");
+            assert_eq!(v.category, DrcCategory::UnconnectedItems);
+            let pos = v
+                .pos
+                .as_ref()
+                .expect("position must come from items[0].pos, not a violation-level 'pos' that KiCAD never writes");
+            assert!(pos.x > 0.0 || pos.y > 0.0);
+            assert!(
+                v.description.contains("Pad"),
+                "description should name the offending item"
+            );
+        }
+        assert_eq!(
+            report.error_count(),
+            2,
+            "the two unconnected nets are the only errors"
+        );
+        assert!(report.missing_categories().is_empty(), "all three categories were present in the report, even schematic_parity as an empty array");
+    }
+
+    #[test]
+    fn unconnected_items_are_distinguished_by_their_second_item() {
+        // Both `unconnected_items` entries in the fixture share rule
+        // (`unconnected_items`), top-level description ("Missing connection
+        // between items") and — for the purpose of this check — could in
+        // principle share a first position; only the second item names the
+        // other end of the missing connection, so it must survive.
+        let report = parse_drc_json(&real_report());
+        let unconnected = report.unconnected_items.as_ref().unwrap();
+        assert_eq!(unconnected[0].items.len(), 2);
+        assert_eq!(unconnected[1].items.len(), 2);
+        assert_ne!(
+            unconnected[0].items[1].description, unconnected[1].items[1].description,
+            "second items must distinguish the two unconnected-items violations"
+        );
+        let p0 = unconnected[0].items[1].pos.as_ref().unwrap();
+        let p1 = unconnected[1].items[1].pos.as_ref().unwrap();
+        assert!((p0.x - 110.5).abs() < 1e-9);
+        assert!((p1.x - 109.5).abs() < 1e-9);
+
+        // `pos` on the violation stays the first item's position.
+        assert_eq!(unconnected[0].pos, unconnected[0].items[0].pos);
+        assert_eq!(unconnected[1].pos, unconnected[1].items[0].pos);
+    }
+
+    #[test]
+    fn a_missing_key_is_not_the_same_as_an_empty_array() {
+        // schematic_parity present-but-empty means "measured, clean".
+        let report = parse_drc_json(&real_report());
+        assert_eq!(report.schematic_parity, Some(Vec::new()));
+
+        // A key genuinely absent from the JSON must be reported as missing,
+        // not silently treated as zero findings.
+        let partial = parse_drc_json(&serde_json::json!({ "violations": [] }));
+        assert_eq!(
+            partial.missing_categories(),
+            vec![DrcCategory::UnconnectedItems, DrcCategory::SchematicParity]
         );
     }
 }

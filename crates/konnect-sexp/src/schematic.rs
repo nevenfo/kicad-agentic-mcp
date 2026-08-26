@@ -232,6 +232,60 @@ pub fn extract_labels(tree: &SexpNode) -> Vec<Label> {
     labels
 }
 
+/// Power symbols (`power:GND`, `power:+3V3`, ...) name the net they touch
+/// exactly as a label does: KiCAD takes the name from the placed symbol's
+/// `Value` property. `extract_labels` never sees this — it only walks
+/// `label`/`global_label`/`hierarchical_label` nodes — so a net named solely
+/// by a power symbol came back unnamed and unconnected everywhere the net
+/// graph is built from labels alone (#262, 6d394a4).
+///
+/// Only `power_in` pins name a net. `PWR_FLAG` carries a `power_out` pin —
+/// it *claims* a source exists on the net for ERC's sake, it does not itself
+/// name the net — so treating every power-symbol pin as naming one would
+/// have `PWR_FLAG` renaming the rail it merely flags.
+pub fn extract_power_symbol_labels(tree: &SexpNode) -> Vec<Label> {
+    let instances = extract_symbol_instances(tree);
+    let lib_syms = tree
+        .find("lib_symbols")
+        .map(|n| n.find_all("symbol"))
+        .unwrap_or_default();
+
+    let mut labels = Vec::new();
+    for inst in &instances {
+        let Some(lib_sym) = find_lib_symbol(&lib_syms, inst) else {
+            continue;
+        };
+        for pin in extract_lib_pins_for_unit(lib_sym, inst.unit) {
+            if pin.electrical_type.as_deref() != Some("power_in") {
+                continue;
+            }
+            let (x, y) = pin_endpoint(&pin, inst.pin_transform());
+            labels.push(Label {
+                kind: LabelKind::PowerSymbol,
+                net: inst.value.clone(),
+                x,
+                y,
+                // A power symbol's name has no text orientation of its own —
+                // rotation only matters to callers that render a label.
+                rotation: 0.0,
+                uuid: inst.uuid.clone(),
+            });
+        }
+    }
+    labels
+}
+
+/// Every label that names a net: text labels plus power-symbol pins.
+/// The net-graph consumer to route through instead of `extract_labels` alone
+/// — except `find_orphan_items`, which stays on `extract_labels` deliberately
+/// (a power symbol's own pin is never "orphaned" the way a floating text
+/// label is; see #262).
+pub fn extract_all_net_labels(tree: &SexpNode) -> Vec<Label> {
+    let mut labels = extract_labels(tree);
+    labels.extend(extract_power_symbol_labels(tree));
+    labels
+}
+
 // ─── Symbol instance ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -239,6 +293,12 @@ pub struct SymbolInstance {
     pub reference: String,
     pub value: String,
     pub footprint: String,
+    /// Name of the `lib_symbols` entry this instance actually resolves through,
+    /// when KiCAD wrote a `(lib_name …)` because the sheet carries a locally
+    /// edited copy of the library symbol. Resolve with
+    /// [`SymbolInstance::lib_symbol_name`] or [`find_lib_symbol`] — matching on
+    /// `lib_id` alone picks the wrong definition, or none (#143).
+    pub lib_name: Option<String>,
     pub lib_id: String,
     pub x: f64,
     pub y: f64,
@@ -252,6 +312,13 @@ pub struct SymbolInstance {
 }
 
 impl SymbolInstance {
+    /// The `lib_symbols` entry name this instance resolves through: `lib_name`
+    /// when KiCAD wrote one, otherwise `lib_id`. Mirrors eeschema's
+    /// `SCH_SYMBOL::GetSchSymbolLibraryName()`.
+    pub fn lib_symbol_name(&self) -> &str {
+        self.lib_name.as_deref().unwrap_or(&self.lib_id)
+    }
+
     pub fn pin_transform(&self) -> PinTransform {
         PinTransform {
             comp_x: self.x,
@@ -269,6 +336,11 @@ pub fn extract_symbol_instances(tree: &SexpNode) -> Vec<SymbolInstance> {
         .filter_map(|node| {
             // Top-level symbols only have lib_id and at; filter out library definitions
             let lib_id = node.find("lib_id")?.get(1)?.as_str()?.to_string();
+            let lib_name = node
+                .find("lib_name")
+                .and_then(|n| n.get(1))
+                .and_then(|n| n.as_str())
+                .map(String::from);
             let (x, y, rotation) = parse_at(node)?;
 
             let mirror_node = node.find("mirror");
@@ -305,6 +377,7 @@ pub fn extract_symbol_instances(tree: &SexpNode) -> Vec<SymbolInstance> {
                 reference: prop("Reference"),
                 value: prop("Value"),
                 footprint: prop("Footprint"),
+                lib_name,
                 lib_id,
                 x,
                 y,
@@ -318,6 +391,24 @@ pub fn extract_symbol_instances(tree: &SexpNode) -> Vec<SymbolInstance> {
         .collect()
 }
 
+/// Resolve an instance's embedded `lib_symbols` definition the way KiCAD does:
+/// by `lib_name` when the instance carries one, otherwise by `lib_id`.
+///
+/// `lib_syms` is the `find_all("symbol")` list of the sheet's `lib_symbols`
+/// node. Matching on `lib_id` alone silently returns the *base* definition for
+/// a locally edited symbol — whose pins can sit at different coordinates — or
+/// nothing at all when the base was never embedded (#143).
+pub fn find_lib_symbol<'a>(
+    lib_syms: &[&'a SexpNode],
+    inst: &SymbolInstance,
+) -> Option<&'a SexpNode> {
+    let want = inst.lib_symbol_name();
+    lib_syms
+        .iter()
+        .copied()
+        .find(|n| n.get(1).and_then(|c| c.as_str()) == Some(want))
+}
+
 // ─── Pin in library symbol ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -329,6 +420,12 @@ pub struct LibPin {
     pub local_y: f64,
     pub rotation: f64,
     pub length: f64,
+    /// The electrical type token straight after `pin` in `(pin <type> <graphic> ...)`
+    /// — `power_in`, `passive`, `output`, etc. `None` when the pin node carries
+    /// no leading atom (malformed by hand-editing) or the atom isn't a string;
+    /// callers that key off a specific type (e.g. `power_in`, for #262) treat
+    /// `None` the same as "not that type" rather than failing the parse.
+    pub electrical_type: Option<String>,
 }
 
 /// Parse pins from a library symbol definition node.
@@ -402,6 +499,10 @@ fn parse_lib_pin(node: &SexpNode) -> Option<LibPin> {
         .find("length")
         .and_then(|l| l.get_f64(1))
         .unwrap_or(0.0);
+    // `(pin <electrical_type> <graphic_style> (at ...) ...)` — the type is the
+    // first child after the `pin` head. Missing or unrecognized doesn't fail
+    // parsing an otherwise-valid pin; it just can't be identified as power_in.
+    let electrical_type = node.get(1).and_then(|n| n.as_str()).map(String::from);
     let number = node
         .find("number")
         .and_then(|n| n.get(1))
@@ -421,6 +522,7 @@ fn parse_lib_pin(node: &SexpNode) -> Option<LibPin> {
         local_y: y,
         rotation,
         length,
+        electrical_type,
     })
 }
 
@@ -763,6 +865,7 @@ mod pin_endpoint_tests {
             local_y,
             rotation,
             length: 1.27,
+            electrical_type: Some("passive".to_string()),
         }
     }
 

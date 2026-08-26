@@ -148,6 +148,35 @@ async fn the_fabricator_options_reach_kicad() {
     );
 }
 
+/// What this server actually sends a fabricator, as opposed to what
+/// `DrillOptions::default()` mirrors: `fab_drill_options` separates plated
+/// from non-plated holes (P.6.8.6), so KiCAD names the files after the
+/// distinction instead of leaving it in a comment inside one file.
+///
+/// Measured, and not what was assumed: KiCAD writes **both** files even
+/// though this board has no non-plated hole at all — the `-NPTH` one simply
+/// holds no coordinates. That is the discriminating part, against the single
+/// `probe.drl` the unsplit export produces (`drill_export_fills_the_directory_it_is_given`).
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn the_fab_options_separate_plated_from_non_plated() {
+    let cli_path = kicad_cli();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let board = board_in(dir.path());
+    let out = dir.path().join("fab");
+    std::fs::create_dir_all(&out).expect("the output directory is creatable");
+
+    cli::export_drill(&cli_path, &board, &out, &cli::fab_drill_options())
+        .await
+        .expect("the fab drill export succeeds");
+
+    assert_eq!(
+        names_in(&out),
+        vec!["probe-NPTH.drl".to_string(), "probe-PTH.drl".to_string()],
+        "the fab export must name plating in the file, not in a comment"
+    );
+}
+
 /// IPC-D-356 comes out of its own verb. `sch export netlist --format ipc` is
 /// what the tool used to send, and KiCAD rejects it — asserted here so the
 /// routing in `handle_export_netlist` is justified by KiCAD's behaviour and

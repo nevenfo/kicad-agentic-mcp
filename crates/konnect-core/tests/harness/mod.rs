@@ -46,6 +46,22 @@ fn ensure_state_dir() {
     });
 }
 
+/// A JLCPCB database path that is guaranteed not to exist, under this test
+/// binary's own temp directory.
+///
+/// P.6.9.20: `jlcpcb_db_path: None` does not mean "no database". It means
+/// "fall back to the machine-wide default" — `resolve_db_path`
+/// (`tools/integration.rs:248`) then returns `default_jlcpcb_db_path()`,
+/// `%APPDATA%\konnect\jlcpcb.db` on Windows. So
+/// `the_jlcpcb_tools_say_the_database_is_missing_rather_than_finding_nothing`
+/// asserted a fact about the machine while its message claimed a fact about
+/// the harness, and started failing the day a real database was downloaded
+/// here. Naming a path that is never created makes absence a property of the
+/// fixture, the way `kicad_cli: ""` already makes "no kicad-cli" one.
+fn absent_jlcpcb_db() -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-such-jlcpcb.db")
+}
+
 /// The `ServerConfig` every `Harness` constructor shares, parameterised only
 /// by the one field a caller has ever needed to vary.
 fn config(kicad_cli: String) -> ServerConfig {
@@ -54,7 +70,7 @@ fn config(kicad_cli: String) -> ServerConfig {
         kicad_binary: String::new(),
         ipc_address: String::new(),
         project_dir: None,
-        jlcpcb_db_path: None,
+        jlcpcb_db_path: Some(absent_jlcpcb_db()),
         auto_load_toolsets: false,
         mode: kam_state::OperatingMode::Write,
     }
@@ -124,11 +140,24 @@ impl Harness {
 
     /// Call `tool` and read its JSON body. Panics if the tool errored — use
     /// [`call`](Self::call) when the error is the point.
+    ///
+    /// Both shapes of failure count. A handler that returns `Err` and one that
+    /// returns `CallToolResult { is_error: true }` are the same event to a
+    /// caller, and the second is the shape almost every handler here uses:
+    /// `require_str`, `get_path` and `lib_symbol_not_found_error` all build a
+    /// result rather than an error. Reading the body of one and asserting on
+    /// the file afterwards is how a test can assert a tool's effect while the
+    /// tool refused to act — P.7.1's defect exactly.
     pub async fn json(&self, tool: &str, args: Value) -> Value {
         let result = self
             .call(tool, args)
             .await
             .unwrap_or_else(|e| panic!("'{tool}' failed: {e}"));
+        assert!(
+            !result.is_error,
+            "'{tool}' refused: {}",
+            serde_json::to_string(&body(&result)).unwrap_or_default()
+        );
         body(&result)
     }
 
@@ -199,6 +228,29 @@ pub fn as_str(path: &Path) -> &str {
 /// R1 sits at (101.6, 50.8) and R2 at (114.3, 50.8); each pin 1 is 3.81 mm
 /// above its symbol and each pin 2 the same distance below.
 pub const TWO_RESISTORS: &str = "bus_two_resistors.kicad_sch";
+
+/// [`TWO_RESISTORS`] with R2 marked `(dnp yes)` — the only fixture that makes
+/// `export_bom`'s `exclude_dnp` observable: `kicad-cli` is the one doing the
+/// filtering, so the oracle is the CSV it writes, not our own JSON.
+pub const TWO_RESISTORS_ONE_DNP: &str = "bus_two_resistors_dnp.kicad_sch";
+
+/// A real `Amplifier_Operational:LM2904` (dual op-amp) placed as `U1`, unit 1
+/// at x = 100 and unit 2 at x = 160 — two top-level `(symbol …)` blocks
+/// sharing one designator, each with its own uuid and its own copy of every
+/// property (P.6.8.1). Loads clean in KiCad 10; edited only through copies.
+pub const MULTIUNIT_LM2904: &str = "multiunit_lm2904.kicad_sch";
+
+/// A real `Connector_Generic:Conn_02x05_Odd_Even` placed as `J1` at
+/// (101.6, 96.52) — a double-row connector whose two rows face opposite ways
+/// and share y coordinates, so a wire stub drawn the wrong way genuinely
+/// crosses another pin instead of only looking like it might (P.6.8.5).
+/// Pin positions as `kicad-cli sch erc` reports them: odd pins 1..9 on the
+/// left at x = 96.52, even pins 2..10 on the right at x = 109.22, both rows
+/// stepping 2.54 from y = 91.44 down to y = 101.6 — so pin 9 at
+/// `(96.52, 101.6)` sits directly across from pin 10 at `(109.22, 101.6)`.
+/// Loads clean in KiCad 10 (10 `pin_not_connected` errors and nothing else,
+/// as an unwired connector should); edited only through copies.
+pub const CONN_DOUBLE_ROW: &str = "conn_double_row.kicad_sch";
 
 /// A board with layers and nothing on them — the same skeleton
 /// `create_project` writes. Use it when the fixture's own `Edge.Cuts` outline
