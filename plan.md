@@ -5204,14 +5204,20 @@ R.1  install walk from the published release      (no dependency — runs first)
   ├── R.7  kicad-cli discovery                    (opened by R.1: blocks first use)
   ├── R.2  README / Quick Start                   (needs R.1's measured walk)
   ├── R.3  canonical demo                         (needs R.1 and R.7)
+  │     └── R.8  ipc_address discovery            (opened by R.3.1, user-approved)
   └── R.5  feedback loop                          (needs R.1's friction list)
         R.4  public launch kit                    (needs R.2 and R.3)
         R.6  decision gate                        (needs R.4 and R.5 + real feedback)
 ```
 
-R.7 did not exist when the phase opened. R.1 found it, classified it **product**,
-and it is the single item that satisfies this phase's exception for a defect
-blocking first use.
+R.7 and R.8 did not exist when the phase opened. R.1 found the first and
+classified it **product**; R.3.1 found the second while measuring the live PCB
+path, classified it **configuration**, and the user approved fixing it on
+2026-08-26. Both are the same defect shape — an external address the product
+requires and never derives — and neither adds a capability.
+
+The user also decided, the same day, that **no release happens until R closes**:
+R.7's and R.8's fixes ride one v1.1.1 at the end, not one release per finding.
 
 R.2, R.3 and R.5 are independent of each other and may run in any order once
 R.1 is closed. R.4 publishes nothing without the user's explicit go — it
@@ -5364,9 +5370,9 @@ documented — it is not inside the 40 s.
       criteria: visually unambiguous in KiCad's own canvas, under 40 s wall
       clock end to end, and impossible to mistake for something a text editor
       could have done. Rejected candidates are named with the reason
-- [ ] R.3.2 A **fixed starting project** is committed under `examples/` — small,
+- [x] R.3.2 A **fixed starting project** is committed under `examples/` — small,
       self-contained, with a stated pre-state — so two runs start identically
-- [ ] R.3.3 The exact prompt is committed with it. The demo is a prompt, not a
+- [x] R.3.3 The exact prompt is committed with it. The demo is a prompt, not a
       script: what is being demonstrated is a model doing the work
 - [ ] R.3.4 The demo is run end to end on the published install and **timed**.
       If it exceeds 40 s, the task is narrowed or replaced — the budget is not
@@ -5561,6 +5567,65 @@ On this machine, with no `kicad_cli` in any config and no `kicad-cli` on `PATH`,
 a `kicad_invoke` with `verify:"auto"` returns an ERC verdict from KiCad. The
 gate is green. Nothing else in the tool surface moved — `v1.1.0..HEAD` registers
 no new tool and no changed signature.
+
+## R.8 — The PCB half of the product configures itself — OPENED BY R.3.1
+
+### Objectif
+Same defect shape as R.7, on the other transport. Every PCB tool needs
+`ipc_address`, and nothing derives it: `default_ipc_address()`
+(`crates/konnect/src/config.rs`) reads `KICAD_API_SOCKET`, an environment
+variable that exists **only when KiCad launches the plugin itself**. A
+standalone MCP client — Claude Desktop, Claude Code, the configuration this
+project's own README documents — never has it, so every PCB tool fails until the
+user copies an `ipc://` path out of KiCad's preferences by hand.
+
+The path is deterministic: KiCad opens its socket under the system temp
+directory, `<temp>/kicad/api.sock`. On this machine, measured from KiCad's own
+preferences page: `ipc://C:\Users\FlowUP\AppData\Local\Temp\kicad\api.sock`.
+
+Decided by the user on 2026-08-26, alongside R.7's release question: derive it,
+same treatment as `kicad-cli`.
+
+### Dépendances
+R.3.1's measurement — with `ipc_address` set explicitly, the live IPC path works
+and answers in 176 ms. The transport is sound; only its address is missing.
+
+### Invariants
+- **Address resolution only.** No transport change, no new tool, no behaviour
+  change when `ipc_address` is already configured or `KICAD_API_SOCKET` is set.
+- **A wrong address still fails loudly**, with the remedy the current message
+  already gives. INV4: a caller must never believe a PCB write landed when no
+  KiCad was listening.
+- On Windows an `ipc://` address is an NNG **named pipe**, not a file: the
+  directory `%LOCALAPPDATA%\Temp\kicad\` is empty even while KiCad is listening.
+  Resolution therefore **constructs** the Windows path and must not gate it on a
+  filesystem existence check.
+
+### Tâches
+- [ ] R.8.1 A failing test first, on the observable: with `ipc_address` empty and
+      `KICAD_API_SOCKET` unset, resolution yields the platform's default socket
+      address instead of an empty string
+- [ ] R.8.2 The chain, first hit wins, logged once at startup like R.7's:
+      explicit `ipc_address` → `KICAD_API_SOCKET` → the platform default
+- [ ] R.8.3 The platform default is right on all three: Windows
+      `<std::env::temp_dir()>\kicad\api.sock`, constructed and not existence-
+      checked; macOS `/tmp/kicad/api.sock`, which is what `README.md` already
+      documents and is **not** what `temp_dir()` returns there; Linux
+      `/tmp/kicad/api.sock`
+- [ ] R.8.4 The `not_configured` error text stops linking
+      `github.com/mixelpixx/Konnect` and points at this repository's
+      `docs/TROUBLESHOOTING.md`. Its three-step remedy is good and is kept
+- [ ] R.8.5 The gate is green on the changed tree: `fmt`, `clippy -D warnings`,
+      the full suite
+- [ ] R.8.6 End to end on this machine, with `ipc_address` configured **nowhere**
+      and `KICAD_API_SOCKET` unset: a PCB tool reaches the running KiCad and
+      replies `"source": "ipc"`. And the negative case — KiCad not listening —
+      still fails with the actionable message
+
+### Validation
+A user who follows the README's Quick start, enables the KiCad API and opens a
+board can call a PCB tool without ever seeing an `ipc://` string. Nothing else
+in the tool surface moved.
 ## Critères de sortie de la phase R
 
 - [ ] A stranger's path from the release page to a KiCad-verified first task is
