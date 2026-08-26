@@ -4901,7 +4901,7 @@ changes.
 
 ---
 
-# Phase Q — Release v1.1.0 — IN PROGRESS
+# Phase Q — Release v1.1.0 — DONE
 
 Opened 2026-08-26 by explicit user request, immediately after Phase P merged.
 Scope is publication only: **no new capability, no Dependabot work, no symbol
@@ -5131,3 +5131,310 @@ first fix and reported the failure alone, which is itself the proof of Q.6.3.
 consecutive runs of the repaired test green. The oracle that matters is
 `Check & Test (ubuntu-latest)`, since it is the only machine where this has
 ever been red.
+
+# Phase R — Launch & adoption — IN PROGRESS
+
+Opened 2026-08-26 by explicit user request, immediately after Phase Q published
+v1.1.0. Scope is **adoption, not capability**: turn a published and technically
+validated release into a project a stranger can understand, install, try and
+judge without asking the maintainer anything.
+
+## Objectif
+
+A person who has never spoken to the maintainer reaches, unaided:
+
+1. an installed Konnect from the **published** v1.1.0 release,
+2. an MCP client that connects to it,
+3. a first task executed against a real KiCad project,
+4. a verdict from KiCad that the task landed,
+
+and the maintainer receives enough structured feedback from the first users to
+decide the next technical phase on evidence rather than on preference.
+
+## Ce que R n'est pas
+
+- **No new product capability.** A capability is added only if a defect directly
+  blocks installation, first use, or the public demo — and then it is the
+  minimum fix, triaged first (see the classification invariant below).
+- **No architectural refactor**, no opportunistic feature, no KiCad 11 work.
+- **No Dependabot sweep, no macOS signing, no official KiCad addon-repository
+  submission** unless one of them turns out to block R itself. All three stay in
+  `progress.md`'s recorded-but-untreated list, where Phase Q left them.
+- **No telemetry.** The feedback loop of R.5 is human-reported and opt-in by
+  construction; nothing is added to the binary that reports anything anywhere.
+
+## Dépendances
+
+- v1.1.0 is published: <https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.1.0>,
+  tag on `80da119`, 7 assets. Phase Q verified the Windows PCM package by
+  opening it.
+- KiCad **10.0.3** at `C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0\bin\`
+  — the install this phase tests against.
+- `C:\Users\FlowUP\Documents\KiCad\10.0\3rdparty\` is **empty**: no Konnect
+  plugin is installed on this machine. That is the initial condition R.1 needs
+  and it exists by accident; it is recorded here because it cannot be recreated
+  once R.1 has run.
+- The repository is public with **0 stars, 0 issues, no topics, no
+  description-linked homepage, Discussions disabled**. That is the adoption
+  baseline R.4 and R.5 move.
+
+## Invariants de la phase
+
+- **INV-R1 — the artefact under test is the published one.** Every step of R.1
+  and R.3 runs against a file downloaded from the GitHub release page. A local
+  `target/release/konnect.exe` is never substituted, not even to unblock a step.
+  Rationale: Q.5 proved the published artefact can differ from what the
+  repository asserts about it (D146).
+- **INV-R2 — one checkbox is one proof.** A step is checked when its evidence
+  exists — a command output, a file on disk, a screenshot, a KiCad verdict —
+  never because it plausibly worked.
+- **INV-R3 — every problem found is classified before it is fixed**, into
+  exactly one of: **UX**, **packaging**, **documentation**, **configuration**,
+  **product**. The class decides who fixes it and in which phase. A product
+  defect discovered here does not become a silent code change in a launch phase.
+- **INV-R4 — the walk is recorded as a stranger would experience it**, including
+  the wrong turns. A step that only worked because the maintainer knew something
+  is a documentation defect, and is logged as one.
+- Existing invariants INV1–INV9 hold unchanged.
+
+## Ordre d'exécution et dépendances internes
+
+```
+R.1  install walk from the published release      (no dependency — runs first)
+  ├── R.2  README / Quick Start                   (needs R.1's measured walk)
+  ├── R.3  canonical demo                         (needs R.1: a working install)
+  └── R.5  feedback loop                          (needs R.1's friction list)
+        R.4  public launch kit                    (needs R.2 and R.3)
+        R.6  decision gate                        (needs R.4 and R.5 + real feedback)
+```
+
+R.2, R.3 and R.5 are independent of each other and may run in any order once
+R.1 is closed. R.4 publishes nothing without the user's explicit go — it
+prepares. R.6 is a decision, not an implementation.
+
+## R.1 — The install path a stranger walks, from the published release
+
+### Objectif
+Walk **release page → install → MCP connection → real KiCad project → first
+task → KiCad's verdict** on this machine, from the published assets only, and
+produce a friction list where every entry carries its class (INV-R3).
+
+### Dépendances
+None. Runs first. Requires the empty-`3rdparty` initial condition recorded
+above, which is consumed by R.1.3.
+
+### Tâches
+- [ ] R.1.1 The initial condition is recorded before anything is installed:
+      `3rdparty/` contents, KiCad version from `kicad-cli version`, absence of a
+      `konnect` entry in every MCP client config on this machine
+- [ ] R.1.2 `konnect-pcm-v1.1.0-windows.zip` is downloaded **from the release
+      page** (`gh release download`, or the browser URL a user would click), and
+      its SHA-256 is recorded. No local build is used anywhere in R.1
+- [ ] R.1.3 The package is installed the documented way — KiCad 10 → Plugin and
+      Content Manager → *Install from File* → restart KiCad — and the
+      installed-plugin path is read **from disk**, not assumed from the README
+- [ ] R.1.4 KiCad shows the plugin where the README says it will: PCB Editor →
+      *Tools → External Plugins* → **Konnect**
+- [ ] R.1.5 An MCP client is pointed at the installed binary using only what the
+      README gives, and the connection is proved by a real handshake: the
+      starter kit lists, and the tool count matches what the README claims
+- [ ] R.1.6 A **real KiCad project** is opened — a copy of a KiCad-shipped demo
+      or a project created in KiCad, never a repository test fixture — and its
+      pre-state is recorded
+- [ ] R.1.7 One first task is executed through MCP against that project, chosen
+      as the thing a new user would try first, and the elapsed time from
+      *client connected* to *task returned* is measured
+- [ ] R.1.8 **KiCad delivers the verdict** (INV1): the project is re-opened or
+      run through `kicad-cli` and the change is confirmed to exist and to be
+      readable by KiCad's own tooling
+- [ ] R.1.9 The friction list is written, one line per problem, each classified
+      UX / packaging / documentation / configuration / product, each naming the
+      file or surface that must change and the R item that will change it
+- [ ] R.1.10 Anything classified **product** is triaged explicitly: does it block
+      installation, first use or the demo? If not, it is recorded and left
+      alone — R does not fix product defects it is not blocked by
+
+### Validation
+The walk is reproducible from the written record alone: a reader who has only
+the friction list and the recorded commands can repeat every step. The first
+task is confirmed by KiCad, not by the tool's own success message. Every
+friction entry has exactly one class.
+
+## R.2 — README and Quick Start, written for the reader who has not decided yet
+
+### Objectif
+The current README opens with architecture and rationale — it is written for
+someone already convinced. A stranger needs, above the fold: what this does,
+what it costs to try, and the shortest path to seeing it work.
+
+### Dépendances
+R.1 closed. Every command and path published here is one R.1 actually ran.
+
+### Tâches
+- [ ] R.2.1 A **Quick start** section sits above the essays: numbered steps from
+      the release download to a first verified task, each step a copy-pasteable
+      block, with the total time R.1 measured stated honestly
+- [ ] R.2.2 Requirements a reader must satisfy *before* step 1 — KiCad 10, a
+      running KiCad for PCB tools, an MCP client — are stated at the top, not
+      three screens down
+- [ ] R.2.3 Every documentation defect from R.1.9 is fixed at its source: the
+      README, `examples/*.json`, `docs/TROUBLESHOOTING.md`, or
+      `RELEASE_NOTES.md`. The fix names the observed failure, not a euphemism
+- [ ] R.2.4 The install path published in the README and both example configs is
+      the one read from disk in R.1.3, character for character
+- [ ] R.2.5 The macOS and Linux caveats stay where a reader meets them **before**
+      downloading, not after — unsigned binaries and un-QA'd Linux are cost
+      information, not fine print
+- [ ] R.2.6 A first-time reader's decision is answerable in the first screen:
+      what it is, what it needs, what it does not do yet
+
+### Validation
+A reader following only the Quick start, with no other file open, reaches the
+same verified end state R.1 reached. Checked by re-walking the Quick start
+against its own text — the drift between the two, if any, is the defect.
+
+## R.3 — The canonical demo: one task, under 40 seconds, visible in KiCad
+
+### Objectif
+One short, reproducible demonstration that shows the value of an agentic MCP
+over KiCad to someone who has not read a line of documentation. **The result
+appears in KiCad**, not in a terminal. A terminal may be on screen; it may not
+be the only thing on screen.
+
+### Dépendances
+R.1 closed — the demo runs on the installed, published binary (INV-R1).
+
+### Tâches
+- [ ] R.3.1 The task is **chosen and justified in writing** against three
+      criteria: visually unambiguous in KiCad's own canvas, under 40 s wall
+      clock end to end, and impossible to mistake for something a text editor
+      could have done. Rejected candidates are named with the reason
+- [ ] R.3.2 A **fixed starting project** is committed under `examples/` — small,
+      self-contained, with a stated pre-state — so two runs start identically
+- [ ] R.3.3 The exact prompt is committed with it. The demo is a prompt, not a
+      script: what is being demonstrated is a model doing the work
+- [ ] R.3.4 The demo is run end to end on the published install and **timed**.
+      If it exceeds 40 s, the task is narrowed or replaced — the budget is not
+      moved (INV6)
+- [ ] R.3.5 The end state is verified by KiCad (`kicad-cli` ERC/DRC or a reopen),
+      and the verification is part of the demo, not an afterthought
+- [ ] R.3.6 A capture exists — screen recording or a before/after pair — showing
+      the KiCad window changing, embedded in the README and usable in R.4
+- [ ] R.3.7 A second run from the committed starting state reproduces the same
+      end state, proving the demo is not a lucky take
+
+### Validation
+Two runs from the committed pre-state, both under 40 s, both ending in the same
+KiCad-verified state, with a capture that a stranger can watch and understand
+without narration.
+
+## R.4 — Public launch kit
+
+### Objectif
+Everything needed to announce the project, drafted and reviewed **in the
+repository**, so that publishing becomes a single decision rather than a writing
+session. Nothing here is posted without the user's explicit go.
+
+### Dépendances
+R.2 and R.3 closed — the kit quotes the Quick start and shows the demo.
+
+### Tâches
+- [ ] R.4.1 Repository metadata: description, topics, and a homepage pointing at
+      the release or the demo. Currently: no topics, no homepage
+- [ ] R.4.2 A one-paragraph pitch and a one-sentence pitch, both stating the
+      limitation set (Windows most-tested, macOS unsigned, PCB tools need KiCad
+      running) — a launch that hides the caveats buys a first wave of users who
+      leave angry
+- [ ] R.4.3 Long-form announcement drafts under `docs/launch/`, one per intended
+      venue, each adapted rather than pasted: the audience of a KiCad forum and
+      the audience of an MCP directory do not want the same first sentence
+- [ ] R.4.4 A candidate venue list with, for each, the submission requirement it
+      imposes (format, licence statement, screenshot, maintainer account)
+- [ ] R.4.5 The kit states explicitly what is **not** claimed: no success-rate
+      claim beyond what `docs/benchmark.md` measured, no platform claim beyond
+      Windows
+- [ ] R.4.6 Nothing is published. The phase produces drafts and a go/no-go list;
+      the posting decision, and the account that posts, are the user's
+
+### Validation
+The user can publish any item in the kit without editing it first. Every factual
+claim in every draft traces to `docs/benchmark.md`, `RELEASE_NOTES.md`, or a
+measurement made in R.1/R.3.
+
+## R.5 — First-user feedback loop
+
+### Objectif
+A stranger who hits a wall has somewhere obvious to say so, in a shape that
+answers the maintainer's questions rather than only theirs. And the maintainer
+can count.
+
+### Dépendances
+R.1 closed — the friction list says which questions actually matter.
+
+### Tâches
+- [ ] R.5.1 The five minimal metrics are defined in writing, each with its
+      collection method and its "unknown" value: **install succeeded**,
+      **time to first task**, **first blocker**, **task attempted**,
+      **success / failure**
+- [ ] R.5.2 GitHub issue templates exist and produce those five fields as
+      structured data: a *first-run report*, a *bug report*, and a *feature
+      request* that does not swallow the other two
+- [ ] R.5.3 The first-run report is **short enough to be filled in after a
+      failure** — a user who just gave up will not complete a 20-field form
+- [ ] R.5.4 The feedback route is discoverable from the place people fail: the
+      README Quick start, the troubleshooting doc, and the release page all
+      point at it
+- [ ] R.5.5 A tally lives in the repository (`docs/adoption.md`): one row per
+      report, the five metrics, and nothing that identifies a person beyond
+      their own public GitHub handle
+- [ ] R.5.6 Whether GitHub Discussions is enabled is decided explicitly — it is
+      currently off — and the choice is recorded with its reason
+- [ ] R.5.7 It is stated in the repository that no telemetry exists and none is
+      planned. A tool that edits a user's design files earns trust by not
+      phoning home
+
+### Validation
+A stranger can file a first-run report in under two minutes from the link the
+README gives, and the resulting issue contains all five metrics without a
+follow-up question from the maintainer.
+
+## R.6 — Decision gate for the next technical phase
+
+### Objectif
+End R with a **decision founded on real feedback**, not with a new technical
+phase started by momentum.
+
+### Dépendances
+R.4 and R.5 closed, and real feedback received — or an explicit finding that
+none arrived, which is itself evidence.
+
+### Tâches
+- [ ] R.6.1 The promotion criteria are written **before** the feedback is read:
+      what evidence would promote each named candidate — Dependabot hygiene,
+      macOS signing, the official PCM submission, symbol/footprint authoring,
+      KiCad 11 / plan item I.1, Linux QA. Criteria written after the data are
+      not criteria
+- [ ] R.6.2 The R.1 friction list, the R.3 demo result and the R.5 tally are
+      summarised into one page a decision can be made from
+- [ ] R.6.3 The gate is presented to the user with a recommendation and its
+      evidence. The user decides; R does not open the next phase
+- [ ] R.6.4 If no feedback arrived, the gate says so and the decision is made on
+      the R.1 friction list alone — an empty tally is a finding about reach, not
+      a reason to postpone the decision
+
+### Validation
+One page, one recommendation, every claim on it traceable to an R artefact. The
+next phase is opened by the user, in a separate decision, after R is closed.
+
+## Critères de sortie de la phase R
+
+- [ ] A stranger's path from the release page to a KiCad-verified first task is
+      walked, measured, and written down (R.1)
+- [ ] The README answers *what, what it costs, how to start* in its first screen
+      (R.2)
+- [ ] One demo, under 40 s, verified by KiCad, reproducible from a committed
+      starting state (R.3)
+- [ ] A launch kit the user can publish without rewriting (R.4)
+- [ ] A feedback route that yields the five metrics without a follow-up question
+      (R.5)
+- [ ] A written decision for the next phase, with its evidence (R.6)
