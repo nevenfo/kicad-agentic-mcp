@@ -10,67 +10,67 @@ d'addons officiel sauf blocage réel de R.
 
 Branche : `ai/R-launch-adoption`, ouverte sur `90d0928`.
 
-**R.1 est close** : release → installation → connexion MCP → projet KiCad réel →
-première tâche → verdict de KiCad, onze cases cochées sur preuve. Le compte
-rendu complet, avec la liste de frictions classée, est
-`docs/launch/first-run-walk.md`.
+**R.1 est close** (onze cases, onze preuves) et **R.7 est close à une case
+près** : le seul défaut produit bloquant est corrigé et prouvé. Reste R.7.7, qui
+n'est pas un travail mais une **décision utilisateur**.
 
 ## Tâche actuelle
 
-**R.7 — la découverte de `kicad-cli`**, seul défaut satisfaisant l'exception de
-la phase. Implémentation déléguée, validation finale au principal.
+**R.7.7 — la question de la release, posée et non tranchée.** La correction de
+la découverte de `kicad-cli` n'atteint un utilisateur que par un nouvel
+artefact. F-03 (`packaging/metadata.json` renvoyant vers le dépôt amont)
+voyagerait dans la même release. Décider une v1.1.1 à l'intérieur de R
+appartient à l'utilisateur ; en attendant, la correction vit sur la branche.
 
 ## Dernière tâche validée
 
-**R.1.1 à R.1.10 — le parcours d'un inconnu, mesuré.**
+**R.7.1 à R.7.6 et R.7.8 — le serveur trouve KiCad là où KiCad s'installe.**
 
-- État initial, non reproductible une fois l'installation faite : `3rdparty\`
-  **vide**, KiCad **10.0.3** installé **par utilisateur** dans
-  `%LOCALAPPDATA%\Programs\KiCad\10.0\`, aucun client MCP ne connaissant
-  `konnect`.
-- Artefact publié épinglé : `konnect-pcm-v1.1.0-windows.zip`, 12 258 180 octets,
-  SHA-256 `25fe29ca…67dd0`. Le `konnect.exe` **installé** est identique octet
-  pour octet à celui du zip publié (`57f272cb…1868c`) et répond `konnect 1.1.0`.
-- Chemin d'installation lu **sur le disque** :
-  `…\3rdparty\plugins\com_github_mixelpixx_konnect\bin\konnect.exe` — identique
-  caractère pour caractère à ce que publient le README et les deux fichiers
-  `examples/`.
-- Connexion MCP prouvée par un handshake réel : `protocolVersion 2025-06-18`,
-  `serverInfo konnect 1.1.0`, **21 outils** au démarrage — le chiffre annoncé.
-- Première tâche sur un vrai projet créé par KiCad : `apply_template ldo_3v3`
-  via la gateway, **108 ms**, 5 symboles placés, schéma de 230 → 2 576 octets.
-- Verdict de KiCad obtenu **à la main** : `kicad-cli sch erc` → *0 violation*,
-  exit 0. Le serveur, lui, n'a pas pu le produire (voir R.7).
+Chaîne de résolution partagée entre le serveur et `install::detect_kicad()`,
+dans `install::resolve_binary` : (1) valeur configurée explicite, utilisée telle
+quelle et **jamais** remplacée ; (2) nom nu par défaut trouvé sur `PATH` ;
+(3) préfixes d'installation connus, désormais y compris
+`%LOCALAPPDATA%\Programs\KiCad\<ver>\bin\` ; (4) registre, `HKLM\SOFTWARE\KiCad`
+puis la clé de désinstallation `HKCU`/`HKLM` → `InstallLocation`. Rien trouvé →
+valeur inchangée, l'échec de spawn reste bruyant.
 
-- Dans KiCad : **« Konnect » est bien présent** dans *Outils → Plugins
-  Externes*, et **avant** toute activation de l'API — c'est l'ancien Action
-  Plugin SWIG, encore chargé en KiCad 10 (suppression prévue pour KiCad 11).
-  L'étape de vérification du README fonctionne donc telle qu'elle est écrite.
-- Ce qui n'apparaît nulle part, en revanche, c'est le **bouton de barre
-  d'outils** que `plugin.json` déclare (`show-button: true`, scope `pcb`) : ni
-  API désactivée, ni activée, ni après redémarrage complet.
-- *Preferences → Plugins* en KiCad 10 est une simple page **API KiCad** sans
-  liste de plugins. Case « **Activer l'API KiCad** », **décochée** à la
-  livraison ; une fois cochée et KiCad redémarré, la page affiche
-  `Écoute à ipc://…\Temp\kicadpi.sock` — la socket dont dépend chaque outil
-  PCB.
+Validé par le principal, pas repris du worker :
+- gate sur l'arbre final — `fmt` propre, `clippy --workspace --locked
+  --all-targets -- -D warnings` silencieux, suite complète **0 échec dans
+  chacune de ses suites**
+- preuve de bout en bout, binaire release, aucun `kicad_cli` configuré :
+  `kicad_cli: found at standard install path -> …\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe`
+  au démarrage, puis `verify:"auto"` → `{"check":"erc","errors":0,"warnings":0}`
+- preuve négative, INV4 : un `kicad_cli` configuré à `konnect-no-such-kicad-cli`
+  est journalisé *using configured value as-is* et échoue toujours sur
+  `Failed to spawn kicad-cli` — aucune substitution silencieuse introduite
 
-Dix frictions consignées et classées (INV-R3) : F-01 produit, F-02 doc,
-F-03 UX, F-04 packaging, F-05 doc, F-06 doc, F-07 produit, F-08 UX, F-09 doc
-(l'API livrée désactivée n'est nommée que dans un bloc macOS), F-11 packaging
-(bouton déclaré, jamais rendu). F-10 est **résolue et n'est pas un défaut** :
-l'Action Plugin SWIG se charge bien.
+Deux défauts trouvés en relecture et corrigés dans le lot :
+- le worker avait d'abord fait retomber **toute** valeur non résolue vers le
+  registre, ce qui remplaçait un `kicad_cli` explicitement bidon par le vrai
+  binaire ; le test préexistant
+  `a_validator_that_could_not_run_is_an_error_not_a_pass` l'a attrapé
+- **R.7.8** : la liste de candidats était ordonnée préfixe d'abord, si bien
+  qu'un KiCad 9 installé pour tous l'emportait sur un KiCad 10 par utilisateur.
+  Réordonnée version d'abord, avec un test qui l'exige, et la même inversion
+  corrigée dans `plugin/settings_dialog.py` — sinon le dialogue du plugin et le
+  serveur auraient pu désigner deux KiCad différents
 
 ## Décisions actives
 
+- **D149** — la découverte d'un binaire externe est **une chaîne, pas un
+  défaut** : configuré → `PATH` → préfixes → registre, et l'échec final rend la
+  valeur inchangée pour que l'erreur du système survive. Corollaire tiré du
+  rouge de cette phase : une valeur configurée explicitement n'est **jamais**
+  remplacée, même invalide — sinon un appelant croit avoir testé ce qu'il a
+  nommé. Corollaire d'ordonnancement : les candidats se trient par version
+  décroissante avant de se trier par préfixe.
+
 - **D148** — R.1 a trouvé **un seul** défaut satisfaisant l'exception de la
-  phase : le serveur ne découvre pas `kicad-cli` sur une installation KiCad
-  Windows par défaut. `default_kicad_cli()` renvoie le nom nu `kicad-cli.exe`
-  résolu par `PATH`, et l'installateur KiCad ne met pas son `bin` sur `PATH` ;
-  `detect_kicad()` n'est jamais appelée par le serveur et rate de toute façon
-  `%LOCALAPPDATA%\Programs\KiCad` et la clé de registre par utilisateur.
-  Conséquence : ERC, DRC, tous les exports et `verify:"auto"` échouent à la
-  première utilisation. Classé **produit, bloquant** → lot **R.7**.
+  phase : le serveur ne découvrait pas `kicad-cli` sur une installation KiCad
+  Windows par défaut, ce qui faisait échouer ERC, DRC, tous les exports et
+  `verify:"auto"` à la première utilisation. Classé **produit, bloquant** →
+  lot **R.7**, corrigé.
 
 - **D147** — la release publie sept assets et **aucun fichier de sommes de
   contrôle** (F-04). Classé *packaging*.
@@ -103,24 +103,21 @@ Aucun.
 
 - `plan.md` § *Phase R* (l. 5135) — R.1 à R.6, plus **R.7** ouvert par R.1.
 - `docs/launch/first-run-walk.md` — le parcours, les preuves, les dix frictions.
-- `plugin/plugin.json` — déclare une action IPC API `show-button: true` que KiCad
-  10 ne rend jamais (F-11). Le seul chemin qui fonctionne est l'Action Plugin
-  SWIG d'`__init__.py`, déprécié et supprimé en KiCad 11.
-- `crates/konnect/src/config.rs:75` `default_kicad_cli()` — le nom nu résolu par
-  `PATH`. Cœur de R.7.
-- `crates/konnect/src/install.rs:402` `detect_kicad()` — liste Windows sans
-  `%LOCALAPPDATA%\Programs\KiCad`, sonde registre en `HKLM` seul ; appelée
-  seulement par `run_install` et `print_status`, jamais par le serveur.
-- `plugin/settings_dialog.py::detect_kicad_cli` — même angle mort registre.
+- `crates/konnect/src/install.rs` — `resolve_binary`, `kicad_standard_paths`,
+  `detect_kicad_from_registry`, `KicadCliSource`, et `mod resolve_binary_tests`.
+- `crates/konnect/src/main.rs::resolve_and_log` — la résolution au démarrage,
+  journalisée une fois par binaire.
+- `plugin/settings_dialog.py::detect_kicad_cli` — même ordre, mêmes emplacements.
 - `packaging/metadata.json` — auteur `mixelpixx`, homepage
   `github.com/mixelpixx/Konnect` : le Plugin Manager renvoie le premier
   utilisateur vers le dépôt **amont** (F-03).
-- Ancre de correction mesurée sur cette machine :
-  `HKCU\…\Uninstall\KiCad 10.0` → `InstallLocation` =
-  `C:\Users\FlowUP\AppData\Local\Programs\KiCad\10.0`.
-- Travail de R.1 :
+- `plugin/plugin.json` — déclare une action IPC API `show-button: true` que
+  KiCad 10 ne rend jamais (F-11) ; seul l'Action Plugin SWIG d'`__init__.py`
+  fonctionne, et il disparaît en KiCad 11.
+- Travail de R.1 et R.7 :
   `%LOCALAPPDATA%\Temp\claude\C--Users-FlowUP-kicad-agentic-mcp-konnect-agentic\ab608642-35fc-4d58-b755-c2e65a52c322\scratchpad\r1-walk\`
-  (`mcp.sh`, un client MCP minimal réutilisable).
+  (`mcp.sh` pointe le binaire **installé**, `mcp-new.sh` le binaire construit,
+  `mcp-bogus.sh` la preuve négative).
 - Projet de test réel : `C:\Users\FlowUP\Documents\r1-walk-test\`.
 
 ## Non-bloquants enregistrés, non traités
@@ -130,13 +127,15 @@ Aucun.
 - Dépôt public à **0 étoile, 0 issue, aucun topic, aucune homepage, Discussions
   désactivées** — ligne de base d'adoption que R.4 et R.5 déplacent.
 - F-07 : la description d'`apply_template` affirme câbler les composants ; elle
-  les place et rend la liste des connexions à faire. Classé **produit non
-  bloquant**, laissé tel quel par R.
+  les place et rend la liste des connexions à faire. **Produit non bloquant**,
+  laissé tel quel par R.
+- L'API KiCad est activée sur cette machine depuis R.1.11 (case *Activer l'API
+  KiCad*, socket `ipc://…\Temp\kicad\api.sock`). L'état initial ne l'avait pas.
 
 ## NEXT ACTION
 
-Valider **R.7** au principal : relire le diff de la chaîne de résolution de
-`kicad_cli`, relancer le gate (`fmt`, `clippy -D warnings`, la suite complète),
-et exiger la preuve de bout en bout — un `kicad_invoke` avec `verify:"auto"`
-qui rend un verdict ERC de KiCad, sans `kicad_cli` configuré nulle part. Ensuite
-seulement, R.2 réécrit le Quick Start à partir des dix frictions.
+Poser **R.7.7** à l'utilisateur — une v1.1.1 embarquant la correction de
+découverte et F-03, ou la branche qui attend — puis lancer **R.2** : réécrire le
+Quick Start du README à partir des dix frictions de R.1, à commencer par F-09
+(l'API KiCad livrée désactivée, nommée seulement dans un bloc macOS) et F-02
+(le README promet une auto-détection qui, jusqu'à R.7, n'existait pas).

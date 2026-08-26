@@ -5477,23 +5477,39 @@ README claim that auto-detection happens).
   failure mode INV4 exists to prevent.
 
 ### Tâches
-- [ ] R.7.1 A failing test first, on the observable: with `kicad_cli` unset and
+- [x] R.7.1 A failing test first, on the observable: with `kicad_cli` unset and
       nothing named `kicad-cli` on `PATH`, resolution finds a KiCad installed
       under a per-user prefix
-- [ ] R.7.2 The server resolves `kicad_cli` at startup instead of trusting a
+- [x] R.7.2 The server resolves `kicad_cli` at startup instead of trusting a
       bare name: explicit config → `PATH` → known install prefixes → registry.
       The first hit wins and is logged once, so a user can see which KiCad
       answered
-- [ ] R.7.3 The Windows prefix list gains `%LOCALAPPDATA%\Programs\KiCad\<ver>`,
+- [x] R.7.3 The Windows prefix list gains `%LOCALAPPDATA%\Programs\KiCad\<ver>`,
       and the registry probe reads the uninstall key that a per-user install
       actually writes — `HKCU\…\Uninstall\KiCad <ver>` → `InstallLocation` —
       in addition to `HKLM`
-- [ ] R.7.4 `plugin/settings_dialog.py::detect_kicad_cli` learns the same two
-      locations, so the PCM settings dialog and the server agree
-- [ ] R.7.5 The gate is green on the changed tree: `fmt`, `clippy -D warnings`,
-      the full suite. A launch phase does not ship a red gate
-- [ ] R.7.6 The walk of R.1 step 8 is repeated on the fixed binary and
-      `verify:"auto"` returns KiCad's ERC counts instead of an `io` error
+- [x] R.7.8 **Found in review of R.7.3, fixed there.** The candidate list was
+      ordered prefix-first — every 10.0 root, then every 9.0 root, then the
+      per-user prefix appended behind both — so a machine carrying a
+      system-wide KiCad 9 and a per-user KiCad 10 would have resolved to the
+      **9**. Reordered version-first, prefix-second, with a test that asserts
+      it: `every_candidate_of_a_newer_version_comes_before_any_older_one`
+- [x] R.7.4 `plugin/settings_dialog.py::detect_kicad_cli` learns the same two
+      locations, so the PCM settings dialog and the server agree — including
+      R.7.8's ordering, whose pre-existing root-first loop had the same
+      inversion and would have disagreed with the server it is meant to match
+- [x] R.7.5 The gate is green on the changed tree: `fmt` clean,
+      `clippy --workspace --locked --all-targets -- -D warnings` silent, and
+      the full suite reporting **0 failed in every one of its suites**
+- [x] R.7.6 The walk of R.1 step 8 is repeated on the fixed binary and
+      `verify:"auto"` returns KiCad's ERC counts instead of an `io` error.
+      Re-run by the principal, not taken from the worker's report: startup logs
+      `kicad_cli: found at standard install path -> …\AppData\Local\Programs\KiCad\10.0\bin\kicad-cli.exe`
+      and the validator answers `{"check":"erc","errors":0,"warnings":0}`.
+      The negative case is proved too — an explicitly configured
+      `konnect-no-such-kicad-cli` is logged as *using configured value as-is*
+      and still fails with `Failed to spawn kicad-cli`, so INV4 holds and no
+      silent substitution was introduced
 - [ ] R.7.7 The release question is **put to the user, not decided here**: this
       fix only reaches users through a new artefact, and F-03
       (`packaging/metadata.json` pointing at the upstream repository) would ride

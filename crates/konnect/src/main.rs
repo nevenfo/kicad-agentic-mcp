@@ -77,9 +77,33 @@ async fn main() -> Result<()> {
 
     info!("Konnect v{} starting", env!("CARGO_PKG_VERSION"));
 
+    // Resolve kicad_cli/kicad_binary against the machine when the config
+    // left them at a bare name (no explicit override). An explicit config
+    // value always wins and is passed through untouched; a bare name that
+    // fails to resolve anywhere is also passed through untouched, so the
+    // existing "Failed to spawn kicad-cli" error stays intact (INV4: no
+    // silent fallback without a validator).
+    let kicad_cli_default = if cfg!(target_os = "windows") {
+        "kicad-cli.exe"
+    } else {
+        "kicad-cli"
+    };
+    let kicad_binary_default = if cfg!(target_os = "windows") {
+        "kicad.exe"
+    } else {
+        "kicad"
+    };
+    let kicad_cli = resolve_and_log("kicad_cli", &config.kicad_cli, kicad_cli_default, true);
+    let kicad_binary = resolve_and_log(
+        "kicad_binary",
+        &config.kicad_binary,
+        kicad_binary_default,
+        false,
+    );
+
     let server_config = konnect_core::tools::ServerConfig {
-        kicad_cli: config.kicad_cli.clone(),
-        kicad_binary: config.kicad_binary.clone(),
+        kicad_cli,
+        kicad_binary,
         ipc_address: config.ipc_address.clone(),
         project_dir: config.project_dir.clone(),
         jlcpcb_db_path: config.jlcpcb_db_path.clone(),
@@ -117,6 +141,54 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Resolve one configured binary path (`kicad_cli` or `kicad_binary`)
+/// against the machine and log, once, which branch answered. Shares
+/// resolution with `install::detect_kicad()` via `install::resolve_binary`
+/// so the server and `konnect status`/`init` never disagree.
+fn resolve_and_log(
+    label: &str,
+    configured: &str,
+    default_name: &str,
+    try_registry: bool,
+) -> String {
+    let local_appdata = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
+    let standard_paths = install::kicad_standard_paths(default_name, local_appdata.as_deref());
+
+    #[cfg(target_os = "windows")]
+    let (path, source) = if try_registry {
+        install::resolve_binary(
+            configured,
+            default_name,
+            &standard_paths,
+            install::detect_kicad_from_registry,
+        )
+    } else {
+        install::resolve_binary(configured, default_name, &standard_paths, || None)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (path, source) = {
+        let _ = try_registry;
+        install::resolve_binary(configured, default_name, &standard_paths, || None)
+    };
+
+    let resolved = path.to_string_lossy().to_string();
+    match source {
+        install::KicadCliSource::Configured => {
+            info!("{label}: using configured value \"{configured}\" as-is");
+        }
+        install::KicadCliSource::Path => {
+            info!("{label}: resolved \"{configured}\" via PATH -> {resolved}");
+        }
+        install::KicadCliSource::StandardPath => {
+            info!("{label}: found at standard install path -> {resolved}");
+        }
+        install::KicadCliSource::Registry => {
+            info!("{label}: found via Windows registry -> {resolved}");
+        }
+    }
+    resolved
 }
 
 fn print_help() {
