@@ -5204,17 +5204,22 @@ R.1  install walk from the published release      (no dependency — runs first)
   ├── R.7  kicad-cli discovery                    (opened by R.1: blocks first use)
   ├── R.2  README / Quick Start                   (needs R.1's measured walk)
   ├── R.3  canonical demo                         (needs R.1 and R.7)
-  │     └── R.8  ipc_address discovery            (opened by R.3.1, user-approved)
+  │     ├── R.8  ipc_address discovery            (opened by R.3.1, user-approved)
+  │     └── R.9  triage of what run 1 found       (opened by R.3.4)
   └── R.5  feedback loop                          (needs R.1's friction list)
         R.4  public launch kit                    (needs R.2 and R.3)
         R.6  decision gate                        (needs R.4 and R.5 + real feedback)
 ```
 
-R.7 and R.8 did not exist when the phase opened. R.1 found the first and
+R.7, R.8 and R.9 did not exist when the phase opened. R.1 found the first and
 classified it **product**; R.3.1 found the second while measuring the live PCB
 path, classified it **configuration**, and the user approved fixing it on
 2026-08-26. Both are the same defect shape — an external address the product
-requires and never derives — and neither adds a capability.
+requires and never derives — and neither adds a capability. R.9 came later and
+is different in kind: R.3.4's first run found five **product** defects at once,
+including one — routing needs a net, and nothing creates one — that is a missing
+capability rather than a bug. R.9 triages them; the phase's exception, not
+momentum, decides which are fixed here.
 
 The user also decided, the same day, that **no release happens until R closes**:
 R.7's and R.8's fixes ride one v1.1.1 at the end, not one release per finding.
@@ -5383,6 +5388,41 @@ documented — it is not inside the 40 s.
       the KiCad window changing, embedded in the README and usable in R.4
 - [ ] R.3.7 A second run from the committed starting state reproduces the same
       end state, proving the demo is not a lucky take
+- [ ] R.3.8 **Opened by run 1.** The task is narrowed or replaced on the
+      evidence of `docs/launch/demo-run-1.md`, and R.3.1's justification is
+      amended rather than rewritten — the rejected candidates and the reason the
+      live PCB path was chosen still hold; what did not hold is the assumption
+      that a board with no netlist can be routed
+
+### Run 1 — 2026-08-26 — failed its own criterion, and found why
+
+Full evidence: `docs/launch/demo-run-1.md`. In short: **406 s** against a 40 s
+budget, 41 turns, stopped by `max_turns`; three footprints placed live in
+pcbnew and **zero** track segments; `kicad-cli` DRC 0 errors, 0 unconnected,
+5 warnings.
+
+The failure is not a slow path, it is a closed one. **Routing addresses nets,
+and nothing in the tool surface creates a net on a board that has no netlist**:
+`route_trace` and `route_pad_to_pad` are refused with `Net 'VIN' not found on
+board`, `add_net` targets a file format KiCad 10 no longer writes, no tool
+assigns a net to a pad, and no tool performs *Update PCB from Schematic*. A
+board has nets only if KiCad put them there from a schematic.
+
+R.3.1's measurement did not reach this: two `place_component` calls in 176 ms
+proved the **transport**, and the transport is sound. The capability behind it
+is not.
+
+Four further defects came out of the same run — F-13 to F-17, classified
+**product** in `docs/launch/demo-run-1.md` and carried by **R.9**.
+
+Two facts the run establishes for whoever narrows the task:
+
+- **10 s per turn**, measured. A 40 s budget is about **four turns**: discover,
+  load, one batched `kicad_invoke`, verify. A demo that needs a library search
+  or an error recovery is already over budget.
+- The published binary, configured by hand as documented, **is** reached by a
+  standalone MCP client and does write into a running KiCad. The Quick start's
+  step 5 claim, which R.2 left unproved, holds for placement.
 
 ### Validation
 Two runs from the committed pre-state, both under 40 s, both ending in the same
@@ -5641,6 +5681,50 @@ and answers in 176 ms. The transport is sound; only its address is missing.
 A user who follows the README's Quick start, enables the KiCad API and opens a
 board can call a PCB tool without ever seeing an `ipc://` string. Nothing else
 in the tool surface moved.
+## R.9 — What the demo run found, triaged — OPENED BY R.3.4
+
+### Objectif
+Run 1 of the demo returned five product defects (F-13…F-17,
+`docs/launch/demo-run-1.md`). This lot **classifies them and fixes only what the
+phase's narrow exception allows**. It is a triage lot, not a capability lot: R
+does not become a PCB development phase because a demo failed.
+
+### Dépendances
+R.3.4's run 1, and the evidence document it produced.
+
+### Invariants
+- The phase exception is unchanged: a capability is added **only** if the defect
+  directly blocks installation, first use, or the public demo, **and** the fix
+  is the minimum one. A defect that is merely embarrassing waits for R.6.
+- Nothing here is fixed before it is classified (INV-R3).
+
+### Tâches
+- [ ] R.9.1 **F-16 — `launch_kicad_ui` cannot find `kicad`.** Same defect shape
+      as R.7, same fix: D149's chain applied to the `kicad` executable.
+      Small, bounded, and it removes a dead end a model walked into
+- [ ] R.9.2 **F-14 — `get_layer_list` calls a valid board malformed.** A board
+      KiCad opens without complaint is reported `malformed_document: no (layers)
+      section`. Either the reader tolerates the absent section or the error says
+      what is actually wrong; a wrong diagnosis is worse than an error
+- [ ] R.9.3 **F-15 — reads and writes disagree about where the board is.** PCB
+      writes go to the running pcbnew over IPC; `get_component_pads` and
+      `get_pad_position` read the file on disk, so a footprint just placed is
+      invisible until something saves. Decide and record whether R fixes this or
+      documents it — the run lost several turns to it, and so will every user
+- [ ] R.9.4 **F-13 — routing is unreachable on a board without a netlist.** This
+      is a missing capability, not a bug: creating or assigning nets, or an
+      *Update PCB from Schematic* equivalent. It is **out of R's scope** by the
+      phase's own rule; it is recorded here and becomes a named candidate for
+      the R.6 gate, where evidence decides it
+- [ ] R.9.5 **F-17 — `lib_footprint_mismatch`.** Footprints placed over IPC do
+      not match the library copy they name. Classified and recorded; fixed only
+      if R.9.2's or R.9.3's work makes it trivial
+
+### Validation
+Every one of F-13…F-17 is either fixed with a test that would have caught it, or
+recorded with the reason it waits and the phase it waits for. No defect leaves R
+unclassified.
+
 ## Critères de sortie de la phase R
 
 - [ ] A stranger's path from the release page to a KiCad-verified first task is
