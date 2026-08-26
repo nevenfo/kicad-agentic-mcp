@@ -279,6 +279,64 @@ async fn a_layer_is_added_once_and_selecting_one_adds_nothing() {
     );
 }
 
+/// F-14: a board with no `(layers)` section is not malformed — KiCAD 10 opens
+/// one without complaint and applies its own default 2-layer stackup.
+/// `get_layer_list` used to diagnose this as `malformed_document`.
+const BOARD_WITHOUT_LAYERS: &str = "(kicad_pcb\n\t(version 20241229)\n\t(gr_line (start 0 0) (end 10 0) (layer \"Edge.Cuts\") (width 0.1))\n\t(gr_line (start 10 0) (end 10 10) (layer \"Edge.Cuts\") (width 0.1))\n\t(gr_line (start 10 10) (end 0 10) (layer \"Edge.Cuts\") (width 0.1))\n\t(gr_line (start 0 10) (end 0 0) (layer \"Edge.Cuts\") (width 0.1))\n)\n";
+
+#[tokio::test]
+async fn get_layer_list_reports_kicad_default_stackup_when_undeclared() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.write("board.kicad_pcb", BOARD_WITHOUT_LAYERS)).to_string();
+
+    let body = h.json("get_layer_list", json!({ "board": board })).await;
+    assert_eq!(body["declared"], false, "body: {body}");
+
+    // KiCAD's default is two copper layers *and* the technical ones — the
+    // board above already draws on `Edge.Cuts`, so an answer that named only
+    // F.Cu and B.Cu would deny the layer its own outline sits on.
+    let layers = body["layers"].as_array().unwrap();
+    let copper: Vec<&str> = layers
+        .iter()
+        .filter(|l| l["copper"] == true)
+        .map(|l| l["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(copper, vec!["F.Cu", "B.Cu"], "body: {body}");
+    assert!(
+        layers.iter().any(|l| l["name"] == "Edge.Cuts"),
+        "body: {body}"
+    );
+    assert_eq!(body["count"], layers.len(), "body: {body}");
+}
+
+#[tokio::test]
+async fn add_layer_on_a_board_without_layers_gives_an_actionable_error() {
+    let h = Harness::new();
+    let board = harness::as_str(&h.write("board.kicad_pcb", BOARD_WITHOUT_LAYERS)).to_string();
+
+    let result = h
+        .call(
+            "add_layer",
+            json!({ "board": board, "layer_name": "In1.Cu", "layer_type": "signal" }),
+        )
+        .await
+        .unwrap();
+    assert!(result.is_error, "expected add_layer to refuse: {result:?}");
+    let body = harness::body(&result);
+    // The human-facing message must not diagnose a valid board as broken —
+    // only `error.kind` stays `malformed_document` (D77: the structure does
+    // not support this write), a stable discriminant a human never reads.
+    let message = body["message"].as_str().unwrap();
+    assert!(
+        !message.to_lowercase().contains("malformed"),
+        "error message still calls a valid board malformed: {message}"
+    );
+    assert!(
+        message.contains("PCB editor") || message.contains("stackup"),
+        "error message is not actionable: {message}"
+    );
+}
+
 // ─── Zones ───────────────────────────────────────────────────────────────────
 
 /// A copper pour is a zone on a copper layer, tied to a net. All three facts

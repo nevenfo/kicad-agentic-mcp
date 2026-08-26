@@ -5757,13 +5757,35 @@ R.3.4's run 1, and the evidence document it produced.
 - Nothing here is fixed before it is classified (INV-R3).
 
 ### Tâches
-- [ ] R.9.1 **F-16 — `launch_kicad_ui` cannot find `kicad`.** Same defect shape
+- [x] R.9.1 **F-16 — `launch_kicad_ui` cannot find `kicad`.** Same defect shape
       as R.7, same fix: D149's chain applied to the `kicad` executable.
-      Small, bounded, and it removes a dead end a model walked into
-- [ ] R.9.2 **F-14 — `get_layer_list` calls a valid board malformed.** A board
+      Small, bounded, and it removes a dead end a model walked into.
+      The chain itself moved to `konnect_core::kicad_locate` — `konnect`
+      depends on `konnect-core`, so the resolver could not stay in the
+      installer and still be reachable from the tool that spawns the GUI.
+      `find_kicad_binary` (`tools/verification.rs`), which used to scan four
+      hardcoded `C:`/`D:` roots and miss the per-user prefix entirely, now
+      calls it; `main.rs` resolves `kicad_binary` at startup and logs it once,
+      like `kicad_cli`. Proved end to end on this machine by the principal,
+      through the freshly built binary with `kicad_binary` configured nowhere:
+      `kicad_binary: found at standard install path -> …\AppData\Local\Programs\KiCad\10.0\bin\kicad.exe`,
+      then `launch_kicad_ui` answering `{"launched":true}` with a `kicad`
+      process alive to show for it. INV4's negative case holds too — a
+      configured `konnect-no-such-kicad.exe` is logged *using configured value
+      as-is* and still fails `Failed to launch KiCAD (…): program not found`
+- [x] R.9.2 **F-14 — `get_layer_list` calls a valid board malformed.** A board
       KiCad opens without complaint is reported `malformed_document: no (layers)
       section`. Either the reader tolerates the absent section or the error says
-      what is actually wrong; a wrong diagnosis is worse than an error
+      what is actually wrong; a wrong diagnosis is worse than an error.
+      The reader tolerates it: `get_layer_list` answers with KiCAD's own
+      default stackup, flagged `"declared": false` and with a note saying the
+      table was not read from the file. `add_layer` still refuses — there is
+      no table to insert into — but its message now says how to get one
+      (`open it once in KiCAD's PCB editor and save`) instead of calling the
+      board malformed; only `error.kind`, the machine discriminant, stays
+      `malformed_document`. KiCad's own verdict backs both halves: the
+      four-`gr_line` board with no `(layers)` passes `kicad-cli pcb drc`
+      (0 violations, 0 unconnected)
 - [ ] R.9.3 **F-15 — reads and writes disagree about where the board is.** PCB
       writes go to the running pcbnew over IPC; `get_component_pads` and
       `get_pad_position` read the file on disk, so a footprint just placed is
@@ -5777,6 +5799,18 @@ R.3.4's run 1, and the evidence document it produced.
 - [ ] R.9.5 **F-17 — `lib_footprint_mismatch`.** Footprints placed over IPC do
       not match the library copy they name. Classified and recorded; fixed only
       if R.9.2's or R.9.3's work makes it trivial
+
+- [x] R.9.6 **Found in review of R.9.2, fixed there.** The first answer for an
+      undeclared stackup was *two* layers, F.Cu and B.Cu. That is what KiCAD's
+      copper default is, not what KiCAD's default *is*: handed the same board,
+      `kicad-cli pcb upgrade` writes back **24** layers — the two copper ones
+      and twenty-two technical ones, `Edge.Cuts` among them, which is the very
+      layer such a board is already drawing its outline on. A caller asking
+      whether `Edge.Cuts` exists would have been told no. The measured table
+      lives in `konnect_sexp::layers::default_stackup()`, and
+      `default_stackup_ids_are_the_canonical_ones` ties it to `canonical_id`
+      under `Numbering::Modern`, so two independent measurements of KiCAD's
+      scheme cannot drift apart
 
 ### Validation
 Every one of F-13…F-17 is either fixed with a test that would have caught it, or

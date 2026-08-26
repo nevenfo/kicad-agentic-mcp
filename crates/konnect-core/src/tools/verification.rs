@@ -405,44 +405,37 @@ fn is_kicad_running() -> bool {
     }
 }
 
-/// Resolve the KiCAD binary path from config or well-known locations.
+/// Resolve the KiCAD GUI binary path from config or well-known locations,
+/// via the shared `kicad_locate` resolver (D149): configured value (used
+/// verbatim, never replaced) -> bare name on `PATH` -> known install
+/// prefixes, including the per-user `%LOCALAPPDATA%\Programs\KiCad\<ver>\bin\`
+/// -> Windows registry. Falls back to the bare `kicad`/`kicad.exe` name
+/// (spawn then fails loudly) when nothing is found.
 fn find_kicad_binary(config_binary: &str) -> String {
-    if !config_binary.is_empty() && std::path::Path::new(config_binary).exists() {
-        return config_binary.to_string();
-    }
+    use crate::kicad_locate::{kicad_standard_paths, resolve_binary};
+
+    let default_name = if cfg!(target_os = "windows") {
+        "kicad.exe"
+    } else {
+        "kicad"
+    };
+    let configured = if config_binary.is_empty() {
+        default_name
+    } else {
+        config_binary
+    };
+
+    let local_appdata = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
+    let standard_paths = kicad_standard_paths(default_name, local_appdata.as_deref());
+
     #[cfg(target_os = "windows")]
-    {
-        // Scan common install roots and KiCAD version directories
-        let roots = [
-            r"C:\Program Files\KiCad",
-            r"C:\KiCad",
-            r"D:\KiCad",
-            r"D:\Program Files\KiCad",
-        ];
-        let versions = ["10.0", "9.0", "8.0"];
-        for root in &roots {
-            for ver in &versions {
-                let path = format!(r"{}\{}\bin\kicad.exe", root, ver);
-                if std::path::Path::new(&path).exists() {
-                    return path;
-                }
-            }
-            // Also check without version subdir
-            let path = format!(r"{}\bin\kicad.exe", root);
-            if std::path::Path::new(&path).exists() {
-                return path;
-            }
-        }
-        "kicad".to_string()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad".to_string()
-    }
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    {
-        "kicad".to_string()
-    }
+    let (path, _source) = resolve_binary(configured, default_name, &standard_paths, || {
+        crate::kicad_locate::detect_kicad_from_registry(default_name)
+    });
+    #[cfg(not(target_os = "windows"))]
+    let (path, _source) = resolve_binary(configured, default_name, &standard_paths, || None);
+
+    path.to_string_lossy().to_string()
 }
 
 async fn handle_check_kicad_ui(
@@ -959,5 +952,56 @@ mod routing_pattern_tests {
             BOARD.as_bytes(),
             "the board was rewritten by a call that was refused"
         );
+    }
+}
+
+#[cfg(test)]
+mod find_kicad_binary_tests {
+    use super::*;
+
+    /// F-16: an explicit configured value is used verbatim, never swapped —
+    /// even when it does not exist (the caller wants a loud spawn failure,
+    /// not a silent substitution).
+    #[test]
+    fn configured_value_is_never_replaced_even_when_bogus() {
+        let bogus = r"Z:\nowhere\kicad.exe";
+        assert_eq!(find_kicad_binary(bogus), bogus);
+    }
+
+    /// F-16: a per-user install under
+    /// `%LOCALAPPDATA%\Programs\KiCad\<ver>\bin\kicad.exe` must be found for
+    /// the GUI binary, and a newer version must win over an older one —
+    /// `find_kicad_binary` previously only scanned hardcoded
+    /// `C:\...\KiCad\<ver>\bin\` roots and missed the per-user prefix
+    /// entirely.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn per_user_install_prefix_is_a_candidate_newest_version_first() {
+        use crate::kicad_locate::kicad_standard_paths;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let default_name = "kicad.exe";
+        let paths = kicad_standard_paths(default_name, Some(tmp.path()));
+
+        let per_user_ten = tmp
+            .path()
+            .join("Programs")
+            .join("KiCad")
+            .join("10.0")
+            .join("bin")
+            .join(default_name);
+        let per_user_nine = tmp
+            .path()
+            .join("Programs")
+            .join("KiCad")
+            .join("9.0")
+            .join("bin")
+            .join(default_name);
+
+        let ten_index = paths.iter().position(|p| *p == per_user_ten);
+        let nine_index = paths.iter().position(|p| *p == per_user_nine);
+        assert!(ten_index.is_some(), "per-user 10.0 prefix is missing");
+        assert!(nine_index.is_some(), "per-user 9.0 prefix is missing");
+        assert!(ten_index.unwrap() < nine_index.unwrap());
     }
 }

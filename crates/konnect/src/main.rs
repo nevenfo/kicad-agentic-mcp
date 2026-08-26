@@ -174,38 +174,37 @@ fn resolve_and_log(
     default_name: &str,
     try_registry: bool,
 ) -> String {
+    use konnect_core::kicad_locate::{kicad_standard_paths, resolve_binary, KicadCliSource};
+
     let local_appdata = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
-    let standard_paths = install::kicad_standard_paths(default_name, local_appdata.as_deref());
+    let standard_paths = kicad_standard_paths(default_name, local_appdata.as_deref());
 
     #[cfg(target_os = "windows")]
     let (path, source) = if try_registry {
-        install::resolve_binary(
-            configured,
-            default_name,
-            &standard_paths,
-            install::detect_kicad_from_registry,
-        )
+        resolve_binary(configured, default_name, &standard_paths, || {
+            konnect_core::kicad_locate::detect_kicad_from_registry(default_name)
+        })
     } else {
-        install::resolve_binary(configured, default_name, &standard_paths, || None)
+        resolve_binary(configured, default_name, &standard_paths, || None)
     };
     #[cfg(not(target_os = "windows"))]
     let (path, source) = {
         let _ = try_registry;
-        install::resolve_binary(configured, default_name, &standard_paths, || None)
+        resolve_binary(configured, default_name, &standard_paths, || None)
     };
 
     let resolved = path.to_string_lossy().to_string();
     match source {
-        install::KicadCliSource::Configured => {
+        KicadCliSource::Configured => {
             info!("{label}: using configured value \"{configured}\" as-is");
         }
-        install::KicadCliSource::Path => {
+        KicadCliSource::Path => {
             info!("{label}: resolved \"{configured}\" via PATH -> {resolved}");
         }
-        install::KicadCliSource::StandardPath => {
+        KicadCliSource::StandardPath => {
             info!("{label}: found at standard install path -> {resolved}");
         }
-        install::KicadCliSource::Registry => {
+        KicadCliSource::Registry => {
             info!("{label}: found via Windows registry -> {resolved}");
         }
     }

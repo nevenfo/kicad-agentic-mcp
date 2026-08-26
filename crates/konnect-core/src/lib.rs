@@ -2,6 +2,7 @@ pub mod agent_loop;
 pub mod capability;
 pub mod evidence;
 pub mod graph;
+pub mod kicad_locate;
 pub mod mcp;
 pub mod mode_gate;
 pub mod observability;

@@ -203,7 +203,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "get_layer_list",
-            "Return all layers defined in the board with their names and types.",
+            "Return all layers defined in the board with their names and types. A board \n             that declares no (layers) section gets KiCAD's own default stackup instead, \n             flagged \"declared\": false.",
             json!({
                 "type": "object",
                 "properties": {
@@ -555,20 +555,22 @@ async fn handle_get_layer_list(
     let content = std::fs::read_to_string(&board_path)?;
     let tree = parse_sexp(&content)?;
 
-    if tree.find("layers").is_none() {
-        return Ok(CallToolResult::error_kind(
-            ToolErrorKind::MalformedDocument {
-                path: board_path.display().to_string(),
-                detail: "no (layers) section".to_string(),
-            },
-            "No (layers) section found in board file",
-        ));
-    }
+    let declared = tree.find("layers").is_some();
+
+    // F-14: no `(layers)` section is not malformed — KiCAD 10 opens such a
+    // board without complaint and applies its own default stackup, measured
+    // in `konnect_sexp::layers::default_stackup()`. Report that default,
+    // flagged as not declared, rather than diagnosing a valid board as broken.
+    let stack = if declared {
+        konnect_sexp::layers::layers(&tree)
+    } else {
+        konnect_sexp::layers::default_stackup()
+    };
 
     // Each child of layers looks like: (0 "F.Cu" signal). The ordinal is the
     // head of the list, so the fields sit one place earlier than the old
     // accessors assumed — and find_all("") never returned any of them anyway.
-    let layers: Vec<serde_json::Value> = konnect_sexp::layers::layers(&tree)
+    let layers: Vec<serde_json::Value> = stack
         .into_iter()
         .map(|l| {
             json!({
@@ -581,9 +583,14 @@ async fn handle_get_layer_list(
         })
         .collect();
 
-    Ok(CallToolResult::json(
-        &json!({ "count": layers.len(), "layers": layers }),
-    ))
+    let mut body = json!({ "count": layers.len(), "layers": layers });
+    if !declared {
+        body["declared"] = json!(false);
+        body["note"] = json!(
+            "No (layers) section in this board file; this is KiCAD's own default stackup,              which it applies when opening such a board. It was not read from the file."
+        );
+    }
+    Ok(CallToolResult::json(&body))
 }
 
 async fn handle_add_layer(
@@ -624,13 +631,19 @@ async fn handle_add_layer(
     let layers_pos = match content.find("(layers") {
         Some(p) => p,
         None => {
+            // F-14: this board is not malformed — KiCAD opens it and applies
+            // its own default stackup, it just never wrote a (layers) table
+            // to edit. add_layer inserts into that table, so it needs one
+            // to exist first.
             return Ok(CallToolResult::error_kind(
                 ToolErrorKind::MalformedDocument {
                     path: board_path.display().to_string(),
-                    detail: "no (layers) section".to_string(),
+                    detail: "no (layers) section to add a layer to".to_string(),
                 },
-                "No (layers) section found",
-            ))
+                "This board has no (layers) section yet, so there is nothing to add a layer \
+                 to. Open it once in KiCAD's PCB editor (it will apply its default stackup) \
+                 and save, or define a (layers) section explicitly, before calling add_layer.",
+            ));
         }
     };
 
