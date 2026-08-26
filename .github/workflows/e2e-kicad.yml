@@ -122,6 +122,13 @@ jobs:
       - name: "A symbol on a child sheet keeps the hierarchy loadable (e7b0c54)"
         run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable
 
+      # A no-connect marks a pin, and the grid snap used to move one aimed at
+      # an off-grid pin 0.33 mm away, where it marks nothing (P.6.8.9). KiCad
+      # is the only authority on the consequence: it stops reporting the pin
+      # when the marker lands, and emits no_connect_dangling when it does not.
+      - name: "A no-connect on an off-grid pin silences KiCad's own ERC (P.6.8.9)"
+        run: cargo test -p konnect-core --test cli_tools -- --ignored --nocapture a_no_connect_on_an_off_grid_pin_silences_kicads_own_erc
+
       # A placed symbol takes its Reference/Value from the library symbol's own
       # anchor, transformed by the placement (P.6.8.8). The unit tests prove
       # the arithmetic against stub libraries; only a real install has the

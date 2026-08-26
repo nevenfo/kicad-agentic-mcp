@@ -2840,7 +2840,7 @@ documents send a reader to another repository's releases.
 ### Validation
 There is no Phase P. Nothing in this phase added a capability.
 
-# Phase P — Schematic round-trip fidelity — P.1–P.5 DONE, P.6 open
+# Phase P — Schematic round-trip fidelity — DONE
 
 Opened 2026-08-24 by an explicit user request after V1 closure. Phase O said
 there is no Phase P; that statement described the V1 scope, and the user has
@@ -2966,7 +2966,7 @@ reading both files.
 Reading the workflow shows no path from a red mandatory E2E to a published
 release; the workflow files stay valid YAML and the local gate stays green.
 
-## P.6 — Deferred upstream correctness backlog — TODO
+## P.6 — Deferred upstream correctness backlog — DONE
 
 ### Objectif
 P.4 was scoped as a classification and produced one: 15 `BACKPORT NOW` items,
@@ -3393,14 +3393,14 @@ None. Each item below is independent of the others except where stated.
         `live-ipc` advisory. The other candidate homes do not fit: `live-ipc`
         is the IPC path and this is kicad-cli, and there is no non-gating CLI
         job to put it in.
-- [ ] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
+- [x] P.6.8 `LATER` items — #271, #179, #185, #148, #186, #138, #162 — each
       carries its precise next action in `docs/upstream-audit.md`; re-read it
       rather than re-deriving. #271 depends on P.6.3, which is closed, so
       nothing here is blocked any more. Split into one id per item, ordered by
       consequence and not by issue number, so a commit closes exactly one — the
-      shape P.6.7 and P.6.9 used. The eight items of the `LATER` list are all
-      closed; what keeps this box open is P.6.8.9, found while measuring
-      P.6.8.5 and belonging to no upstream issue.
+      shape P.6.7 and P.6.9 used. All eight `LATER` items are closed, and so is
+      P.6.8.9, which belongs to no upstream issue: it was found while measuring
+      P.6.8.5.
   - [x] P.6.8.1 #179 pin half — fifteen call sites still resolve pins with the
         unit-blind `extract_lib_pins`, and `sch_batch.rs:390-399` finds an
         instance by `reference` alone. Together they compute unit 2's pin
@@ -3694,22 +3694,46 @@ None. Each item below is independent of the others except where stated.
         used to write — placed at 0° and at 90° on a demo sub-sheet, and
         kicad-cli still loads the hierarchy. Gating step added to
         `e2e-kicad.yml`.
-  - [ ] P.6.8.9 — found while measuring P.6.8.5, and not part of it: when a
+  - [x] P.6.8.9 — found while measuring P.6.8.5, and not part of it: when a
         pin does not sit on the 1.27 grid, `connect_to_net` snaps the caller's
         `(pin_x, pin_y)` and then draws the stub from the **snapped** point, so
         the wire starts beside the pin instead of on it and the tool answers
         success for a connection the file does not carry. Measured on
         `multiunit_lm2904.kicad_sch`, whose `U1` is placed at x = 100: the pin
         `placed_pins` reports at x = 92.38 gets a wire starting at x = 92.71,
-        0.33 mm away. Not reachable through this server's own placement path,
-        which snaps (that is what `sch_wiring.rs`'s comment above
-        `snap_reporting` assumes), so it needs a sheet written elsewhere;
-        KiCad itself allows a finer placement grid. The shape of the fix is a
-        decision, not a port: either the snap yields to a pin actually found at
-        the requested point — the same lookup P.6.8.5 already performs there —
-        or the response says the wire did not start where the caller asked.
-        `add_wire` and the other endpoint-taking writers must be checked for
-        the same pattern before choosing.
+        0.33 mm away.
+        Done, and the first thing measured was how much it matters — the
+        premise that off-grid pins are exotic is **false**: across the KiCad 10
+        demo corpus, **3 670 of 48 068** placed pin endpoints do not sit on the
+        1.27 mm grid (7.6 %), from 127 off-grid placements out of 6 447 and
+        from pin lengths that are not grid multiples. The defect is ordinary,
+        not a corner case.
+        The rule chosen, of the two the entry offered: **the snap yields to a
+        pin actually found at the requested point**. The alternative — report
+        that the wire did not start where asked — is already half-present
+        (`snap_reporting` returns `requested`) and it does not help: the caller
+        asked for the right point, and being told the server moved it does not
+        put the wire on the pin.
+        One helper, `tools::snap_unless_pin`, taking the pin list the caller
+        already holds so nothing re-parses a sheet (D136). Six sites, all in
+        `sch_wiring.rs`, chosen because each writes something whose *meaning*
+        is the connection point: `add_wire` and `batch_add_wire` (both
+        endpoints), `connect_to_net`, `add_junction`, `batch_add_junction`,
+        `add_no_connect`. Deliberately not `add_power_symbol` or the component
+        placers: those position a *symbol*, whose own anchor KiCad wants on the
+        grid, and E6 put the snap there for a reason. `add_schematic_connection`
+        never snapped at all.
+        Red before, with the pin check disabled: the three off-grid tests fail
+        and the live probe fails on KiCad's own count.
+        Live, and this is the item's real proof: `kicad-cli sch erc` on the
+        fixture reports one fewer `pin_not_connected` after a no-connect is
+        placed on the off-grid pin — and with the snap restored it not only
+        keeps reporting that pin but adds `no_connect_dangling` at the snapped
+        point, KiCad's own name for a marker that marks nothing. Gating step
+        added to `e2e-kicad.yml`.
+        Measured and left alone: KiCad also warns `endpoint_off_grid` about
+        such a pin. That is the sheet author's choice; moving our marker
+        somewhere else was never a fix for it.
 - [x] P.6.9 The 16 direct-to-`main` upstream fixes of Appendix A are triaged,
       by P.4's method and against this fork's own code: **8 BACKPORT NOW, 4
       LATER, 4 NOT APPLICABLE**, each verdict carrying a `file:line` citation

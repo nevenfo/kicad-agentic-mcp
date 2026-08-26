@@ -12,7 +12,6 @@ use crate::tools::{
 use crate::try_arg;
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
-    geometry::snap_point,
     parser::parse_sexp,
     schematic::{
         extract_symbol_instances, extract_wires, find_lib_symbol, find_t_junctions,
@@ -548,8 +547,13 @@ async fn handle_add_wire(
         Err(e) => return Ok(e),
     };
 
-    let (x1, y1) = snap_point(x1, y1, 1.27);
-    let (x2, y2) = snap_point(x2, y2, 1.27);
+    // The pin list is needed below for the mid-segment junction pass; reading
+    // it first also lets an endpoint that is already a pin keep its exact
+    // coordinate instead of being snapped off it (P.6.8.9).
+    let (_, tree) = read_schematic(&sch_path)?;
+    let pins = crate::tools::all_pin_endpoints(&tree);
+    let ((x1, y1), _) = crate::tools::snap_unless_pin(&pins, x1, y1);
+    let ((x2, y2), _) = crate::tools::snap_unless_pin(&pins, x2, y2);
 
     let mut sch = cse::Schematic::load(&sch_path)?;
 
@@ -567,8 +571,6 @@ async fn handle_add_wire(
     sch.add_wire(x1, y1, x2, y2);
     add_missing_junctions(&mut sch, &junctions);
     // Pins the new wire passes over mid-segment also need junction dots.
-    let (_, tree) = read_schematic(&sch_path)?;
-    let pins = crate::tools::all_pin_endpoints(&tree);
     add_missing_junctions(&mut sch, &pins_mid_segment(&pins, x1, y1, x2, y2));
     sch.overwrite()?;
 
@@ -602,8 +604,11 @@ async fn handle_batch_add_wire(
         let y1 = w["y1"].as_f64().unwrap_or(0.0);
         let x2 = w["x2"].as_f64().unwrap_or(0.0);
         let y2 = w["y2"].as_f64().unwrap_or(0.0);
-        let (x1, y1) = snap_point(x1, y1, 1.27);
-        let (x2, y2) = snap_point(x2, y2, 1.27);
+        // Same rule as the single add: a pin's own coordinate is not snapped
+        // off the pin (P.6.8.9). `pins` is already in hand for the junction
+        // pass below.
+        let ((x1, y1), _) = crate::tools::snap_unless_pin(&pins, x1, y1);
+        let ((x2, y2), _) = crate::tools::snap_unless_pin(&pins, x2, y2);
 
         // T-junction detection for each wire added incrementally.
         let mut existing_wires = cse_wires_to_sexp(&sch);
@@ -1783,6 +1788,19 @@ async fn handle_add_power_symbol(
     Ok(CallToolResult::json(&result))
 }
 
+/// Every placed pin endpoint on the sheet, or an empty list when the sheet
+/// cannot be read.
+///
+/// The empty case degrades to plain [`crate::tools::snap_reporting`] rather
+/// than failing: these handlers load the file again immediately afterwards
+/// and report a real error from there, and a lookup that cannot answer must
+/// not be the thing that refuses the call.
+fn pin_endpoints_or_empty(path: &std::path::Path) -> Vec<(f64, f64)> {
+    read_schematic(path)
+        .map(|(_, tree)| crate::tools::all_pin_endpoints(&tree))
+        .unwrap_or_default()
+}
+
 async fn handle_add_no_connect(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -1797,7 +1815,11 @@ async fn handle_add_no_connect(
         Err(e) => return Ok(e),
     };
 
-    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
+    // The one that matters most: a no-connect marks a *pin*, and a marker
+    // snapped 0.635 mm off the pin it was meant for marks nothing at all,
+    // while ERC goes on reporting that pin (P.6.8.9).
+    let pins = pin_endpoints_or_empty(&sch_path);
+    let ((x, y), requested) = crate::tools::snap_unless_pin(&pins, x, y);
     let mut sch = cse::Schematic::load(&sch_path)?;
     // The uuid goes back to the caller because `delete_no_connect` now takes
     // one: an address this server accepts has to be an address it hands out,
@@ -2032,7 +2054,10 @@ async fn handle_add_junction(
         Err(e) => return Ok(e),
     };
 
-    let ((x, y), requested) = crate::tools::snap_reporting(x, y);
+    // A junction dot belongs on the connection point, so a point that already
+    // is one is written verbatim rather than snapped off it (P.6.8.9).
+    let pins = pin_endpoints_or_empty(&sch_path);
+    let ((x, y), requested) = crate::tools::snap_unless_pin(&pins, x, y);
     let mut sch = cse::Schematic::load(&sch_path)?;
     sch.add_junction(x, y);
     sch.overwrite()?;
@@ -2051,11 +2076,13 @@ async fn handle_batch_add_junction(
     let sch_path = get_path(args, "schematic")?;
     let positions = args["positions"].as_array().cloned().unwrap_or_default();
     let mut sch = cse::Schematic::load(&sch_path)?;
+    // One read for the whole batch; the positions are what changes.
+    let pins = pin_endpoints_or_empty(&sch_path);
     let mut snapped_any = false;
     for pos in &positions {
         let x = pos["x"].as_f64().unwrap_or(0.0);
         let y = pos["y"].as_f64().unwrap_or(0.0);
-        let ((sx, sy), requested) = crate::tools::snap_reporting(x, y);
+        let ((sx, sy), requested) = crate::tools::snap_unless_pin(&pins, x, y);
         snapped_any |= requested.is_some();
         sch.add_junction(sx, sy);
     }
@@ -2096,26 +2123,34 @@ async fn handle_connect_to_net(
     // avoids the crossing at its source; a coordinate with no placed pin
     // keeps the historical "right" default, unchanged.
     //
-    // Looked up against the caller's own (pin_x, pin_y), before snapping:
-    // real pin positions already sit on-grid, so this is what actually
-    // matches `placed_pins`. Looking it up after snapping moved a genuine
-    // pin coordinate off itself whenever the request wasn't already
-    // grid-exact, and the lookup missed every time.
+    // Looked up against the caller's own (pin_x, pin_y), before snapping —
+    // that is the coordinate `placed_pins` holds.
+    //
+    // One read answers both questions: which way the stub leaves, and whether
+    // a pin is there at all, which is also what decides the snap below.
+    let tree = read_schematic(&sch_path).ok().map(|(_, tree)| tree);
     let (direction, direction_source): (&str, &str) = match opt_str(args, "direction") {
         Some(d) => (d, "requested"),
-        None => match read_schematic(&sch_path)
-            .ok()
-            .and_then(|(_, tree)| crate::tools::pin_outward_at(&tree, pin_x, pin_y))
+        None => match tree
+            .as_ref()
+            .and_then(|tree| crate::tools::pin_outward_at(tree, pin_x, pin_y))
         {
             Some(d) => (d, "derived_from_pin"),
             None => ("right", "default_no_pin_here"),
         },
     };
 
-    // pin_x/pin_y should already be on-grid (real pin positions come from
-    // snapped component placements), but don't trust callers blindly — same
-    // defect class as E6 if a caller derives this coordinate itself.
-    let ((pin_x, pin_y), requested) = crate::tools::snap_reporting(pin_x, pin_y);
+    // A caller who derived this coordinate loosely still gets the grid snap
+    // (the E6 defect class), but a coordinate that *is* a pin is left exactly
+    // where it is: 7.6 % of the pins in the KiCad demo corpus do not sit on
+    // the 1.27 mm grid, and snapping one of those wrote a stub starting
+    // beside its pin instead of on it, for a call that answered success
+    // (P.6.8.9).
+    let pins = tree
+        .as_ref()
+        .map(crate::tools::all_pin_endpoints)
+        .unwrap_or_default();
+    let ((pin_x, pin_y), requested) = crate::tools::snap_unless_pin(&pins, pin_x, pin_y);
 
     // Compute label endpoint and label rotation based on direction.
     // Label rotation follows KiCAD convention: 0° = text reads left-to-right,

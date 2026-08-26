@@ -571,6 +571,40 @@ pub fn snap_reporting(x: f64, y: f64) -> ((f64, f64), Option<serde_json::Value>)
     }
 }
 
+/// [`snap_reporting`], except that a point already sitting on a placed pin is
+/// left exactly where it is (P.6.8.9).
+///
+/// The grid snap exists to rescue a caller who derived a coordinate loosely
+/// (E6). A pin's own position needs no rescuing, and 7.6 % of them cannot
+/// survive one: measured over the KiCad 10 demo corpus, **3 670 of 48 068**
+/// placed pin endpoints do not sit on the 1.27 mm grid — a symbol placed
+/// off-grid (127 of 6 447 placements) or a pin whose length is not a grid
+/// multiple puts them there. Snapping such a point moves it up to 0.635 mm
+/// off the pin, and what gets written is a wire beside the pin, a junction
+/// beside the pin, or a no-connect that marks nothing — each reported as a
+/// success.
+///
+/// `pins` is the caller's already-computed [`all_pin_endpoints`]: every site
+/// that uses this either had that list in hand already or needs it for its own
+/// junction pass, so nothing here re-parses a sheet.
+///
+/// Tolerance 0.01, the same one `add_pin_midwire_junctions` and
+/// [`pin_outward_at`] compare points with.
+pub(crate) fn snap_unless_pin(
+    pins: &[(f64, f64)],
+    x: f64,
+    y: f64,
+) -> ((f64, f64), Option<serde_json::Value>) {
+    use konnect_sexp::geometry::points_coincident;
+    if pins
+        .iter()
+        .any(|(px, py)| points_coincident(*px, *py, x, y, 0.01))
+    {
+        return ((x, y), None);
+    }
+    snap_reporting(x, y)
+}
+
 /// Where a sheet sits in its project, as the `(instances …)` block needs it.
 ///
 /// Both halves of that block belong to the **root** sheet, not to the file

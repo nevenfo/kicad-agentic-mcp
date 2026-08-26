@@ -201,13 +201,11 @@ async fn connect_to_net_defaults_a_left_edge_pin_to_a_leftward_stub() {
 
     assert_eq!(r["direction"], "left", "response: {r}");
     assert_eq!(r["direction_source"], "derived_from_pin", "response: {r}");
-    // Measured against the wire's own start, not against `left_pin`: this
-    // fixture places `U1` at x = 100, which is off the 1.27 grid, so the pin
-    // it carries is off-grid too and the tool snaps the requested point before
-    // drawing (92.38 → 92.71). The direction lookup happens before that snap —
-    // that is why it still finds the pin — but the stub is drawn from the
-    // snapped point, and the invariant that matters is the label sitting one
-    // stub length to the *left* of wherever the wire starts.
+    // Measured against the wire's own start: this fixture places `U1` at
+    // x = 100, off the 1.27 grid, so the pin it carries is off-grid too. The
+    // stub still starts exactly on it — P.6.8.9 stopped the snap from moving
+    // a coordinate that is already a pin — and the label sits one stub length
+    // to the *left* of that start.
     let stub_length = 2.54; // the tool's own default
     let (x1, y1) = (
         r["wire"]["x1"]
@@ -235,6 +233,113 @@ async fn connect_to_net_defaults_a_left_edge_pin_to_a_leftward_stub() {
     assert!(
         x1 < 100.0,
         "the pin is on the left edge of a symbol placed at x = 100: {r}"
+    );
+}
+
+/// P.6.8.9: the grid snap must not move a coordinate that already is a pin.
+/// `U1` sits at x = 100 on this fixture, so its pin-2 endpoint (92.38) is off
+/// the 1.27 grid — snapping it moved the stub 0.33 mm away from the pin it was
+/// asked to connect, and the call reported success anyway.
+#[tokio::test]
+async fn connect_to_net_starts_the_stub_on_an_off_grid_pin() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(MULTIUNIT_LM2904)).to_string();
+    let off_grid_pin = (92.38, 52.54);
+
+    let r = h
+        .json(
+            "connect_to_net",
+            json!({
+                "schematic": sch,
+                "pin_x": off_grid_pin.0, "pin_y": off_grid_pin.1,
+                "net": "SIG"
+            }),
+        )
+        .await;
+
+    assert_eq!(
+        r["wire"]["x1"].as_f64(),
+        Some(off_grid_pin.0),
+        "the stub must start on the pin, not on the nearest grid point: {r}"
+    );
+    assert_eq!(r["wire"]["y1"].as_f64(), Some(off_grid_pin.1), "{r}");
+    assert!(
+        r.get("snapped_to_grid").is_none(),
+        "nothing was snapped, so nothing should say it was: {r}"
+    );
+}
+
+/// The snap itself is untouched for a point that is *not* a pin: a caller who
+/// derives a coordinate loosely still gets it corrected, and still gets told
+/// (E6).
+#[tokio::test]
+async fn a_point_that_is_not_a_pin_is_still_snapped() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(MULTIUNIT_LM2904)).to_string();
+
+    let r = h
+        .json(
+            "add_junction",
+            json!({ "schematic": sch, "x": 120.1, "y": 60.2 }),
+        )
+        .await;
+
+    assert_eq!(r["snapped_to_grid"], json!(true), "{r}");
+    assert_eq!(r["requested"]["x"].as_f64(), Some(120.1), "{r}");
+    assert_ne!(r["added_junction"]["x"].as_f64(), Some(120.1), "{r}");
+}
+
+/// A no-connect is the case where the snap did the most damage: the marker
+/// exists to say "this pin is deliberately unconnected", and 0.33 mm away it
+/// marks nothing while ERC goes on reporting the pin.
+#[tokio::test]
+async fn a_no_connect_lands_on_an_off_grid_pin() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(MULTIUNIT_LM2904)).to_string();
+    let off_grid_pin = (92.38, 52.54);
+
+    let r = h
+        .json(
+            "add_no_connect",
+            json!({ "schematic": sch, "x": off_grid_pin.0, "y": off_grid_pin.1 }),
+        )
+        .await;
+
+    assert_eq!(
+        r["added_no_connect"]["x"].as_f64(),
+        Some(off_grid_pin.0),
+        "the marker must land on the pin it marks: {r}"
+    );
+    let text = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        text.contains("(at 92.38 52.54)"),
+        "the file must carry the no-connect on the pin:\n{text}"
+    );
+}
+
+/// `add_wire` takes two endpoints and both go through the same rule.
+#[tokio::test]
+async fn a_wire_drawn_to_an_off_grid_pin_touches_it() {
+    let h = Harness::new();
+    let sch = harness::as_str(&h.fixture(MULTIUNIT_LM2904)).to_string();
+    let off_grid_pin = (92.38, 52.54);
+
+    h.json(
+        "add_wire",
+        json!({
+            "schematic": sch,
+            "x1": off_grid_pin.0, "y1": off_grid_pin.1,
+            "x2": 80.0, "y2": 52.54
+        }),
+    )
+    .await;
+
+    let wires = h
+        .json("list_schematic_wires", json!({ "schematic": sch }))
+        .await;
+    assert!(
+        wires.to_string().contains("92.38"),
+        "one end of the wire must still be the pin: {wires}"
     );
 }
 

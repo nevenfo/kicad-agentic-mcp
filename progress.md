@@ -2,11 +2,11 @@
 
 ## Phase actuelle
 
-**P — Schematic round-trip fidelity.** P.6 : tout est clos sauf P.6.8, dont les
-**huit items de la liste `LATER` sont clos**. Ce qui reste sous P.6.8 est
-**P.6.8.9**, découverte de la mesure de P.6.8.5 et rattachée à aucune issue
-amont. P.6.7 est cochée : ses onze sous-items l'étaient déjà.
-Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`.
+**P — Schematic round-trip fidelity : DONE.** P.6 est close, ses onze lots et
+tous leurs sous-items compris, P.6.8.9 incluse — découverte pendant P.6.8.5 et
+rattachée à aucune issue amont. Aucune case ouverte ne reste dans la phase P.
+Branche de travail : `ai/P-schematic-fidelity`, PR #10 vers `agentic/main`,
+non fusionnée.
 
 ## Tâche actuelle
 
@@ -14,40 +14,52 @@ Aucune en cours.
 
 ## Dernière tâche validée
 
-**P.6.8.8 (#186)** — `Reference` et `Value` ne sont plus posées à ±3,81 mm
-codés en dur : `library::field_anchor` lit l'ancre du `lib_symbols` **embarqué**
-(la définition avec laquelle la feuille sera réellement dessinée) et
-`tools::push_placed_fields` la fait passer par `transform_pin`, exactement
-comme une pin — Y-up retourné, rotation et miroir du placement appliqués,
-translation, arrondi à six décimales (D125). Les quatre champs, aux deux sites
-qui posent un symbole (`add_schematic_component` et `add_power_symbol`), par un
-seul helper au lieu de deux copies des mêmes quatre lignes (D136) ; `mm` remonte
-dans `tools/mod.rs` pour la même raison. L'angle du texte est celui de la
-librairie, jamais celui du placement, et le `(effects …)` de la librairie est
-repris entier, justification comprise. Repli conservé et testé : une entrée de
-librairie sans le champ garde les anciens offsets.
+**P.6.8.9** — le snap de grille ne déplace plus un point qui **est** une pin.
+La prémisse qui rendait le défaut anodin est fausse, et c'est la première chose
+mesurée : **3 670 des 48 068** extrémités de pin du corpus de démos ne sont pas
+sur la grille 1,27 mm (7,6 %), venant de 127 placements hors grille sur 6 447 et
+de longueurs de pin non multiples du pas. Des deux formes que l'item proposait,
+la retenue est « le snap cède devant une pin trouvée au point demandé » :
+l'autre — signaler que le fil n'est pas parti d'où l'appelant demandait — est
+déjà à moitié là (`snap_reporting` rend `requested`) et ne met pas le fil sur
+la pin. Un helper unique, `tools::snap_unless_pin`, prenant la liste de pins que
+l'appelant détient déjà, donc sans reparse (D136). Six sites, tous dans
+`sch_wiring.rs`, choisis parce que ce qu'ils écrivent **est** un point de
+connexion : `add_wire` et `batch_add_wire` (les deux extrémités),
+`connect_to_net`, `add_junction`, `batch_add_junction`, `add_no_connect`. Pas
+`add_power_symbol` ni les poseurs de composants : ceux-là positionnent un
+symbole, dont l'ancre doit rester sur la grille (E6).
+
+Avant elle, **P.6.8.8 (#186)** : `Reference` et `Value` prennent l'ancre du
+symbole de librairie, transformée par le placement (`library::field_anchor` +
+`tools::push_placed_fields`), au lieu d'un ±3,81 mm codé en dur.
 
 Validation :
-- mesure qui décide la conception, sur 12 894 champs `Reference`/`Value` du
-  corpus de démos : ancien offset fixe 7,5 %, ancre transformée **41,4 %**,
-  ancre translatée sans rotation 24,2 %. Ce sont les buckets rotés qui
-  tranchent — l'ancienne règle n'est presque jamais juste à 90° (10 sur 2 440)
-  et tourner l'ancre bat ne pas la tourner de plus de dix contre un
-- angle du texte, mesuré sur les seuls champs que le corpus montre posés par
-  eeschema : lib 0° → 0° dans 4 906 cas sur 5 071, lib 90° → 90° dans les 261
-- rouge d'abord, lookup d'ancre neutralisé : les trois nouveaux tests de
-  placement et le test du symbole d'alimentation tombent ; le test de repli
-  reste vert, comme il doit
+- rouge d'abord, contrôle de pin désactivé : les trois tests hors grille
+  tombent, et la sonde live tombe sur le compte de KiCad lui-même
+- live, la vraie preuve de l'item : `kicad-cli sch erc` rapporte un
+  `pin_not_connected` de moins après un no-connect posé sur la pin hors
+  grille ; snap rétabli, il continue de rapporter cette pin **et** ajoute
+  `no_connect_dangling` au point snappé — le nom que KiCad donne à un
+  marqueur qui ne marque rien
 - `cargo test --workspace --locked --lib --tests --no-fail-fast` : PASS,
-  **57 suites, 1381 tests, 0 échec**
+  **57 suites, 1385 tests, 0 échec**
 - `cargo fmt --all -- --check` / `cargo clippy --workspace --locked
   --all-targets -- -D warnings` : PASS, 0
-- sondes live `cli_tools --ignored` : PASS, 15/15, dont la nouvelle
-  `a_rotated_symbol_with_library_placed_fields_still_loads` (`Device:R` posé à
-  0° et à 90°, hiérarchie toujours chargée par kicad-cli) ; step gatant ajouté
-  à `e2e-kicad.yml`
+- sondes live `cli_tools --ignored` : PASS, **17/17** ; deux steps gatants
+  ajoutés à `e2e-kicad.yml` (P.6.8.8 et P.6.8.9)
 
 ## Décisions actives
+
+- **D139** — le snap de grille est une correction pour un appelant approximatif,
+  pas une vérité sur le fichier : une pin réelle n'a pas besoin d'être corrigée,
+  et 7,6 % des pins du corpus (3 670 sur 48 068) ne survivent pas à la
+  correction. Règle : un outil qui écrit un **point de connexion** (fil,
+  jonction, no-connect, stub) laisse le point tel quel quand une pin placée s'y
+  trouve, et ne snappe que ce qui n'en est pas une ; un outil qui positionne un
+  **symbole** continue de snapper, son ancre devant rester sur la grille (E6).
+  Ce qui a tranché la forme : dire à l'appelant que le point a bougé ne met pas
+  le fil sur la pin.
 
 - **D138** — le corpus de démos n'est pas un oracle direct du placement d'un
   champ : sur une feuille finie, un champ a souvent été déplacé à la main, donc
@@ -317,9 +329,9 @@ Aucun.
   et `instance_targets` (P.6.9.3), `zone_net_ref` (P.6.9.2),
   `require_str`/`require_f64`/`get_path` (cibles de P.6.9.7) ;
   `first_missing_required`, qui n'applique **pas** `anyOf` (D134).
-- `crates/konnect-core/src/tools/sch_wiring.rs` — `handle_connect_to_net`, le
-  seul appelant de `pin_outward_at` ; `snap_reporting` juste après, cible de
-  P.6.8.9.
+- `crates/konnect-core/src/tools/sch_wiring.rs` — `handle_connect_to_net`, seul
+  appelant de `pin_outward_at` ; les six sites de `snap_unless_pin` et
+  `pin_endpoints_or_empty`, leur lecteur partagé (P.6.8.9).
 - `crates/konnect-schematic-editor/src/library.rs` — `field_anchor` /
   `FieldAnchor`, l'ancre lue dans le `lib_symbols` embarqué (P.6.8.8) ;
   `tools/mod.rs::push_placed_fields` est son unique appelant, partagé par les
@@ -350,13 +362,10 @@ Aucun.
 
 ## NEXT ACTION
 
-Décider la forme de P.6.8.9 puis l'implémenter — `connect_to_net` snappe le
-point demandé puis trace le stub depuis le point **snappé**, si bien qu'une pin
-hors grille 1,27 reçoit un fil qui commence à côté d'elle et non dessus, pour
-un appel qui répond succès (mesuré : `multiunit_lm2904.kicad_sch`, pin à
-x = 92,38, fil à x = 92,71). Relire la section (`rg -n "P.6.8.9" plan.md`) : le
-choix est entre « le snap cède quand une pin est trouvée au point demandé » —
-le lookup que P.6.8.5 fait déjà là — et « la réponse dit que le fil n'a pas
-commencé où l'appelant demandait ». Vérifier d'abord `add_wire` et les autres
-writers qui prennent des extrémités : s'ils partagent le motif, la correction
-est commune.
+Aucune tâche de plan ouverte : la phase P est terminée et toutes ses preuves
+sont vertes. La prochaine action demande une **décision de l'utilisateur** —
+fusionner la PR #10 (`ai/P-schematic-fidelity` → `agentic/main`, 58 commits
+d'avance, à jour et poussée) ou ouvrir une phase suivante. Rien ne doit être implémenté
+avant ce choix. Si la fusion est décidée : `gh -R nevenfo/kicad-agentic-mcp`
+(D114), et vérifier que le job E2E gatant a tourné, ses deux nouveaux steps
+compris.

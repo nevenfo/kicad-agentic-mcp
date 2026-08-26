@@ -853,6 +853,71 @@ async fn a_symbol_added_to_a_child_sheet_leaves_the_hierarchy_loadable() {
     );
 }
 
+/// The consequence of P.6.8.9, put to KiCad rather than argued: a no-connect
+/// marks a pin, and one snapped off the grid marks nothing.
+///
+/// `multiunit_lm2904.kicad_sch` places `U1` at x = 100, off the 1.27 mm grid,
+/// so its pin-2 endpoint at (92.38, 52.54) is off-grid too — the shape 7.6 %
+/// of the demo corpus's pins have. The old snap moved a marker aimed there to
+/// 92.71, where it marks nothing at all, and `kicad-cli sch erc` went on
+/// reporting the pin. The count is what decides it, and KiCad supplies it.
+///
+/// Measured while writing this: with the snap restored, KiCad adds a
+/// `no_connect_dangling` warning of its own at the snapped point. It is the
+/// same defect seen from the other side, and it is asserted below.
+///
+/// Not this probe's business, and deliberately not asserted: KiCad also warns
+/// `endpoint_off_grid` about the pin itself. An off-grid pin is the sheet
+/// author's choice; putting the marker somewhere else is not a fix for it.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn a_no_connect_on_an_off_grid_pin_silences_kicads_own_erc() {
+    let h = Harness::with_kicad_cli(kicad_cli());
+    let sch = h.fixture(harness::MULTIUNIT_LM2904);
+    let cli_path = kicad_cli();
+
+    let unconnected = |violations: &[ErcViolation]| {
+        violations
+            .iter()
+            .filter(|v| v.rule.as_deref() == Some("pin_not_connected"))
+            .count()
+    };
+
+    let before = cli::run_erc(&cli_path, &sch)
+        .await
+        .expect("kicad-cli runs ERC on the fixture");
+    let before_count = unconnected(&before);
+    assert!(
+        before_count > 0,
+        "the fixture is unwired, so KiCad should report unconnected pins: {before:?}"
+    );
+
+    h.json(
+        "add_no_connect",
+        json!({ "schematic": harness::as_str(&sch), "x": 92.38, "y": 52.54 }),
+    )
+    .await;
+
+    let after = cli::run_erc(&cli_path, &sch)
+        .await
+        .expect("kicad-cli runs ERC after the marker was added");
+    assert_eq!(
+        unconnected(&after),
+        before_count - 1,
+        "KiCad still reports the pin the no-connect was aimed at, so the marker did not \
+         land on it: {after:?}"
+    );
+    // KiCad's own name for a marker that marks nothing. With the snap in
+    // place this is exactly what it emitted, at the snapped point — the
+    // failure was not silent, it was simply never asked.
+    assert!(
+        !after
+            .iter()
+            .any(|v| v.rule.as_deref() == Some("no_connect_dangling")),
+        "a dangling no-connect means the marker landed beside its pin: {after:?}"
+    );
+}
+
 /// P.6.8.8 places `Reference`/`Value` at the anchor the **installed** library
 /// declares, carrying that library's own `(effects …)` and text angle through
 /// the placement. The stub libraries the unit tests use cannot prove KiCad
