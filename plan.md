@@ -5430,15 +5430,22 @@ decided by the user on 2026-08-26:
       decided is written where the demo is published, in the same words as the
       measurement — a budget that moves silently is worse than a budget that was
       wrong
-- [ ] R.3.9 **Opened by run 2.** There is no *route this net* tool: three nets
+- [x] R.3.9 **Opened by run 2.** There is no *route this net* tool: three nets
       cost eleven `route_trace` calls, one segment each. Recorded as a
       capability gap, classified with F-13 in R.9.4's family, and decided at R.6
-      — not fixed here
-- [ ] R.3.8 **Opened by run 1.** The task is narrowed or replaced on the
+      — not fixed here. Recorded in `docs/launch/demo-run-2.md` with the call
+      histogram that proves it, and carried into R.6.5's candidate list so the
+      gate cannot lose it
+- [x] R.3.8 **Opened by run 1.** The task is narrowed or replaced on the
       evidence of `docs/launch/demo-run-1.md`, and R.3.1's justification is
       amended rather than rewritten — the rejected candidates and the reason the
       live PCB path was chosen still hold; what did not hold is the assumption
-      that a board with no netlist can be routed
+      that a board with no netlist can be routed. Done and committed: the
+      pre-state under `examples/demo/` is a real project — schematic, ERC 0/0,
+      footprints assigned, three nets — pushed onto the board once through
+      KiCad's own *Update PCB from Schematic*; the narrowed prompt sits beside
+      it; and R.3.1's justification above is **amended**, not rewritten. Run 2
+      then proved the narrowed task passes
 
 ### Run 2 — 2026-08-26 — the task passed, the clock did not
 
@@ -5593,6 +5600,15 @@ none arrived, which is itself evidence.
 - [ ] R.6.4 If no feedback arrived, the gate says so and the decision is made on
       the R.1 friction list alone — an empty tally is a finding about reach, not
       a reason to postpone the decision
+- [ ] R.6.5 **Opened by R.3 and R.9.** The candidates the demo produced are
+      named alongside the ones R.6.1 already lists, each with the artefact that
+      found it: **nets on a board** (F-13, R.9.4 — no tool creates or assigns
+      one, and no *Update PCB from Schematic* equivalent exists), **a route
+      this net tool** (R.3.9 — three nets cost eleven `route_trace` calls),
+      **PCB reads over IPC** (F-15, R.9.3 — two reads still read the file while
+      every write goes to the running editor), and **IPC placement matching the
+      library** (F-17, R.9.5). None of them is promoted here; R.6.1's rule
+      holds — the criteria are written before the evidence is read
 
 ### Validation
 One page, one recommendation, every claim on it traceable to an R artefact. The
