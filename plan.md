@@ -5023,20 +5023,23 @@ rather than discovers.
 Three green runs named by id in `progress.md`, on the commit `git rev-list -n1`
 resolves the tag to.
 
-## Q.4 — Tag and publish
+## Q.4 — Tag and publish — DONE
 
 ### Objectif
 One tag, one release, no artefact invented by hand.
 
 ### Tâches
-- [ ] Q.4.1 Work lands on `agentic/main` through a PR from
+- [x] Q.4.1 Work lands on `agentic/main` through a PR from
       `ai/Q-release-1.1.0` — the default branch takes no direct push
-- [ ] Q.4.2 Annotated tag `v1.1.0` on the merge commit, verified with
+- [x] Q.4.2 Annotated tag `v1.1.0` on the merge commit, verified with
       `git rev-list -n1 v1.1.0` before and after the push. `v1.1.0` collides
       with nothing: this repository has published `v1.0.0` only
-- [ ] Q.4.3 The Release workflow goes green on all 8 jobs and uploads 7 assets:
-      four standalone binaries, three PCM packages
-- [ ] Q.4.4 The release body is `RELEASE_NOTES.md` (`gh release edit`), the
+- [x] Q.4.3 Release workflow run `32948098418`: **green**, 9 jobs of which one
+      is deliberately skipped — `Live IPC against a running pcbnew`, which the
+      gating mode drops. Four standalone binaries, three PCM packages, seven
+      assets. The merge commit's tree is byte-identical to `fb18d96`'s, the
+      tree every gate ran on
+- [x] Q.4.4 The release body is `RELEASE_NOTES.md` (`gh release edit`), the
       title *KiCad Agentic MCP v1.1.0*, and its relative links resolve against
       the tag
 
@@ -5044,19 +5047,29 @@ One tag, one release, no artefact invented by hand.
 `gh release view v1.1.0` lists seven assets and a body that is not the
 auto-generated commit list.
 
-## Q.5 — The published artefact is opened, not trusted
+## Q.5 — The published artefact is opened, not trusted — DONE
 
 ### Objectif
 O.9.3's standard: the zip a user downloads is inspected on this machine.
 
 ### Tâches
-- [ ] Q.5.1 `konnect-pcm-v1.1.0-windows.zip` downloaded from the release:
-      `metadata.json` carries one `versions[]` entry reading `1.1.0`, the
-      plugin manifest points at `bin/konnect.exe`, the viewer is bundled, and
-      the binary inside answers `konnect 1.1.0`
-- [ ] Q.5.2 `progress.md` states the closing state: released, gates named,
+- [x] Q.5.1 `konnect-pcm-v1.1.0-windows.zip` downloaded from the release and
+      opened: 8 entries, `metadata.json` carrying exactly one `versions[]`
+      entry — `1.1.0` / `stable` / `kicad_version 10.0` / `platforms
+      ["windows"]`, no `download_*` field invented — the plugin manifest at
+      `plugins/plugin.json`, `plugins/bin/schematic-viewer.exe` bundled, and
+      the extracted `plugins/bin/konnect.exe` answering **`konnect 1.1.0`**
+- [x] Q.5.4 Q.2.4 was answered by assumption and the artefact corrected it: the
+      published binary is **23.7 MiB**, not the 21.8 MB the notes claimed and
+      the 22 MB the README claimed. Measured against v1.0.0's own published
+      binary — 22 860 288 bytes then, 24 848 384 now, **+1.9 MiB** — which also
+      settles the unit: this repository's "MB" has always been MiB. Corrected
+      in `RELEASE_NOTES.md` and both README sites, and the release body
+      re-posted. The file inside the `v1.1.0` tag keeps the pre-correction
+      number; a tag is not moved to fix prose
+- [x] Q.5.2 `progress.md` states the closing state: released, gates named,
       nothing open
-- [ ] Q.5.3 The two known non-blockers are recorded rather than fixed:
+- [x] Q.5.3 The two known non-blockers are recorded rather than fixed:
       `packaging/metadata.json` still carries upstream's
       `com.github.mixelpixx.konnect` identifier and `mixelpixx` as author,
       which only matters at official PCM submission; and eight Dependabot PRs

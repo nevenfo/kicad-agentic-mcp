@@ -48,7 +48,7 @@ Konnect, a tool call is a function call. One process, one language, no plumbing.
 **The dependency surface was enormous.** Running the original means carrying Node.js
 and its npm tree, Python and its pip packages, wxPython, kicad-skip, and KiCAD's
 SWIG bindings — two package ecosystems plus a binding layer, every one of them a
-moving target that can break an install. Konnect is one binary — 22 MB on
+moving target that can break an install. Konnect is one binary — 24 MB on
 Windows, no interpreter, no package tree. There is nothing to install alongside
 it and nothing to version-match.
 
@@ -257,7 +257,7 @@ the architecture it proved, rebuilt for production:
 
 | | KiCAD-MCP-Server | Konnect |
 |---|---|---|
-| Runtime | Node.js + Python + SWIG bindings | One binary (22 MB), no runtime to install |
+| Runtime | Node.js + Python + SWIG bindings | One binary (24 MB), no runtime to install |
 | Tool call path | TS → subprocess → Python → SWIG C++ | Direct function call |
 | PCB backend | SWIG (deprecated by KiCAD) + experimental IPC | KiCAD 10 IPC API |
 | Schematic backend | kicad-skip + custom loaders | Native S-expression engine, atomic writes |

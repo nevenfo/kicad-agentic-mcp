@@ -118,7 +118,9 @@ Baseline (upstream v0.2.2 at `5cd6454`) and this fork ran back to back on
   `kicad_agent`. The plan is compiled, applied and verified server-side; the
   caller sees no intermediate round trip.
 - **Retrieval**: 62.0 % precision @8 with 100 % recall @8.
-- **Binary**: 21.8 MB on Windows, unstripped. There is no `[profile.release]`,
+- **Binary**: 23.7 MB on Windows, unstripped — measured on the binary this
+  release actually published, up 1.9 MB from v1.0.0's 21.8 MB. There is no
+  `[profile.release]`,
   deliberately — adding `strip`/`lto` would change the code generation under
   every artefact the gate and the benchmarks were measured on, to improve a
   number nothing is gated on.
