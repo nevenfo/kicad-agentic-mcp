@@ -1,9 +1,10 @@
 # The canonical demo
 
-One task, under 40 seconds, and the result appears **in KiCad's own canvas** —
-not in a terminal. The AI arranges a subcircuit on the open board and routes it;
-pcbnew redraws as it happens, and the changes land in KiCad's undo stack like any
-other edit.
+One task, and the result appears **in KiCad's own canvas** — not in a terminal.
+The AI arranges a subcircuit on the open board and routes it; pcbnew redraws as
+it happens, and the changes land in KiCad's undo stack like any manual edit.
+The board changes take under a second of Konnect time; the model conversation
+around them takes six to seven minutes.
 
 This is the demo the project's launch material shows. It is committed here so
 anyone can repeat it from the same starting point and get the same end state.
@@ -39,20 +40,12 @@ on the copy, so the committed pre-state stays the pre-state.
 3. Open your copy of `konnect-demo.kicad_pro` in KiCad and open its **PCB
    editor**. Leave it on screen — this is what the demo shows.
 
-The setup is not part of the 40 seconds. The demo is.
+The setup is outside the measured prompt time.
 
-**On v1.1.0, add two lines of configuration.** That release does not yet derive
-either address, so name them yourself in your config file — the paths KiCad's
-own preferences page shows:
-
-```json
-{
-  "kicad_cli": "C:\\Users\\<YOU>\\AppData\\Local\\Programs\\KiCad\\10.0\\bin\\kicad-cli.exe",
-  "ipc_address": "ipc://C:\\Users\\<YOU>\\AppData\\Local\\Temp\\kicad\\api.sock"
-}
-```
-
-Both become unnecessary in the next release, which finds them itself.
+**On v1.1.1, a standard KiCad 10 install needs no Konnect settings file.**
+Konnect discovers `kicad-cli`, the KiCad GUI binary and the IPC address. Use an
+explicit override only for an unusual or portable installation; see
+[Troubleshooting](../../docs/TROUBLESHOOTING.md).
 
 ## The prompt
 
