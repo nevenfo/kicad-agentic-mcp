@@ -3,34 +3,30 @@
 ## Phase actuelle
 
 **R — Launch & adoption : terminée.** R.1 à R.10.8 et tous les critères de
-sortie sont cochés. La release publique **v1.1.1** est validée et la PR #12
-porte la phase complète vers `agentic/main`.
+sortie sont cochés. La release publique **v1.1.1** est validée et la PR #12 est
+mergée dans `agentic/main`.
 
 ## Tâche actuelle
 
-Aucune.
+Aucune tâche technique. La préparation du lancement public est terminée ; les
+publications externes restent manuelles et sous le contrôle de l'utilisateur.
 
 ## Dernière tâche validée
 
-**R.10.8 — portabilité des tests de découverte Windows.** Les deux tests qui
-construisent `%LOCALAPPDATA%\Programs\KiCad` sont bornés à Windows.
+**Préparation manuelle du lancement — 2026-08-27.** Les métadonnées GitHub
+(description, homepage, 12 topics) sont appliquées. Les quatre brouillons sont
+alignés sur v1.1.1, `docs/launch/ready-to-post.md` contient les textes finaux et
+`docs/adoption.md` est prêt pour les premiers retours sans donnée fabriquée.
 
 Validation :
 
-- local : 8 tests `kicad_locate::resolve_binary_tests`, `fmt` et
-  `git diff --check` PASS ;
-- CI PR #12, run `33014965860` : sept checks PASS — format, clippy, packaging
-  PCM, viewer, tests et doctests Windows/macOS/Ubuntu.
-
-R.10.7 reste prouvée par le tag `v1.1.1` sur `7d565ce`, le workflow release
-`33012207008` PASS, sept assets publics, et le parcours du PCM Windows publié
-sans configuration : découverte IPC/CLI/GUI, 4 composants live et DRC
-`1 warning / 0 error`. La configuration utilisateur a été restaurée et les
-temporaires supprimés.
+- métadonnées relues par `gh repo view` ;
+- compteurs GitHub pré-annonce datés et sourcés ;
+- `git diff --check` PASS.
 
 ## Décisions actives
 
-- Périmètre release : R.7, R.8, R.9.1, R.9.2 et F-03 uniquement.
+- Aucun post, soumission Show HN ou entrée d'annuaire n'est publié par l'agent.
 - L'identifier PCM `com.github.mixelpixx.konnect` reste inchangé.
 - INV-R1 à INV-R4 restent les invariants des futures releases et mesures.
 
@@ -40,13 +36,13 @@ Aucun.
 
 ## Fichiers / zones utiles
 
-- Release : `RELEASE_NOTES.md`, `README.md`, `packaging/metadata.json`.
-- Lancement : `docs/launch/launch-kit.md`, `docs/launch/announce-*.md`,
-  `docs/launch/decision-gate.md`, `docs/adoption.md`.
-- PR : `https://github.com/nevenfo/kicad-agentic-mcp/pull/12`.
+- Copie prête : `docs/launch/ready-to-post.md`.
+- Brouillons sources : `docs/launch/announce-*.md`.
+- Suivi externe : `docs/adoption.md`.
+- Release : `https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.1.1`.
 
 ## NEXT ACTION
 
-Décider si les brouillons R.4 doivent maintenant être publiés sur les canaux
-externes nommés, puis rouvrir la porte R.6 lorsque `docs/adoption.md` contient
-des données extérieures.
+Après la publication manuelle par l'utilisateur, enregistrer le premier retour
+extérieur dans `docs/adoption.md`, puis rouvrir la porte R.6 lorsque le tally
+n'est plus nul.

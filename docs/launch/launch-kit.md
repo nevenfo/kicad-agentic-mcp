@@ -2,21 +2,21 @@
 
 Everything needed to announce this project, drafted here so that publishing is a
 single decision rather than a writing session. **Nothing in this kit has been
-posted, and nothing in it is applied to the repository.** The go/no-go list at
-the bottom is the whole of what remains, and each line of it is the user's call —
-including which account posts.
+posted.** The repository metadata was applied on 2026-08-27; every external
+post and submission remains the user's call, including which account posts.
 
 Every factual claim in every draft traces to `docs/benchmark.md`,
 `RELEASE_NOTES.md`, or a measurement made in R.1 (`first-run-walk.md`) or R.3
 (`demo-run-2.md`, `demo-run-3.md`). Where a number belongs to a version other
 than the current one, the draft says so.
 
-## R.4.1 — Repository metadata, proposed
+## R.4.1 — Repository metadata, applied
 
-Current state, read from GitHub on 2026-08-26: description present, **no
-topics**, **no homepage**, 0 stars, latest release `v1.1.0`.
+Applied and verified on GitHub on 2026-08-27: the description, homepage and 12
+topics below are public; the repository has 0 stars and 0 forks, and the latest
+release is `v1.1.1`.
 
-**Description** (350 char limit; this is 189):
+**Description** (350 char limit; this is 195):
 
 > AI-assisted PCB design for KiCad 10. A native KiCad plugin — one Rust binary —
 > that gives Claude and other MCP clients 202 tools for schematics, layout,
@@ -98,7 +98,7 @@ posting** — that is one line of the go/no-go list, not an optional courtesy.
 | **r/KiCad** | Reddit self-post, markdown | Reddit account, some subs require age/karma | in-post link to the licence | image or short clip is what carries the post | Self-promotion rules vary; a maintainer posting their own free tool is normally fine when it is disclosed |
 | **Hacker News** | `Show HN: …` title, plain text body, one URL | HN account | not required, but state it | HN renders no images; the README's image does the work after the click | Show HN asks for something people can try, and for the author to be present in the thread for the first hours |
 | **MCP directories** (`awesome-mcp-servers`-style lists, `mcp.so`, `glama.ai`, PulseMCP and similar) | usually a PR adding one line, or a web form | GitHub account for the PR ones | required by most: name the licence | logo/screenshot optional | Each list has its own ordering and category rules; the PR ones reject on format, not on merit |
-| **KiCad's official Plugin & Content Manager repository** | PCM metadata PR against KiCad's addon repository | GitHub account | AGPL-3.0 acceptable | icon required at the sizes PCM specifies | **Out of R's scope.** It is a named candidate for the R.6 gate, and `packaging/metadata.json` still points at the upstream repository (F-03) until R.7.7's v1.1.1 fixes it |
+| **KiCad's official Plugin & Content Manager repository** | PCM metadata PR against KiCad's addon repository | GitHub account | AGPL-3.0 acceptable | icon required at the sizes PCM specifies | **Out of R's scope.** It remains a named candidate for the R.6 gate. The `v1.1.1` package metadata names this fork's author and homepage while keeping the existing PCM identifier, but no submission to KiCad's addon repository has been made |
 
 ## R.4.5 — What is not claimed
 
@@ -110,7 +110,7 @@ The kit says these in the drafts themselves, not only here:
   parts, or your prompt.
 - **The token figures are v1.0.0's.** 12 373 → 1 995 external tokens per task
   (−83.9 %), MCP calls 11 → 4, measured on 2026-08-24 from artefacts committed
-  under `bench/results/`. v1.1.0 did not re-run the benchmark, and
+  under `bench/results/`. Neither v1.1.0 nor v1.1.1 re-ran the benchmark, and
   `RELEASE_NOTES.md` says so.
 - **No platform claim beyond Windows.** Windows 11 with KiCad 10 is where the
   first-run walk (R.1) and all three demo runs happened. macOS binaries are
@@ -127,16 +127,13 @@ The kit says these in the drafts themselves, not only here:
 
 ## R.4.6 — Go / no-go
 
-Nothing below has been done. Each line is the user's decision, and the account
-that posts is the user's.
+The release and repository metadata are complete. Every remaining external
+post or submission is the user's decision, and the account that posts is the
+user's.
 
-- [ ] **Apply the repository metadata** (R.4.1: description, homepage, topics).
-      One `gh repo edit` away, and the only item here that changes anything
-      public before a post is written
-- [ ] **Ship v1.1.1 first** (R.7.7). Every draft's Quick start assumes the two
-      manual configuration steps are gone. Announcing before the release means
-      either rewriting each draft or sending the first wave into the manual path
-      the README currently documents
+- [x] **Apply the repository metadata** (R.4.1: description, homepage, topics).
+      Applied and verified on 2026-08-27
+- [x] **Ship v1.1.1 first** (R.7.7). Published and validated on 2026-08-26
 - [ ] **Re-read each venue's current rules**, immediately before posting there
 - [ ] **Decide the order.** These drafts assume the KiCad forum and r/KiCad
       first, Show HN once at least one outside first-run report has arrived, and
