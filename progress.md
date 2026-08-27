@@ -2,33 +2,36 @@
 
 ## Phase actuelle
 
-**R — Launch & adoption : terminée.** R.1 à R.10.8 et tous les critères de
-sortie sont cochés. La release publique **v1.1.1** est validée et la PR #12 est
-mergée dans `agentic/main`.
+**R — Launch & adoption : terminée.** Aucune nouvelle phase technique n'est
+ouverte. La release publique **v1.1.1** est validée ; les PR #12 et #13 sont
+mergées dans `agentic/main`.
 
 ## Tâche actuelle
 
-Aucune tâche technique. La préparation du lancement public est terminée ; les
-publications externes restent manuelles et sous le contrôle de l'utilisateur.
+Aucune tâche technique. Le nettoyage final post-v1.1.1 est terminé.
 
 ## Dernière tâche validée
 
-**Préparation manuelle du lancement — 2026-08-27.** Les métadonnées GitHub
-(description, homepage, 12 topics) sont appliquées. Les quatre brouillons sont
-alignés sur v1.1.1, `docs/launch/ready-to-post.md` contient les textes finaux et
-`docs/adoption.md` est prêt pour les premiers retours sans donnée fabriquée.
+**Audit final du repository — 2026-08-27.** L'état GitHub réel, les workflows,
+tags, artefacts publiés, métadonnées, README, release notes, parcours
+d'installation et dette explicite du plan ont été contrôlés. Le corps de la
+release v1.1.1 est aligné sur `RELEASE_NOTES.md`, le guide du demo ne demande
+plus la configuration v1.1.0 et le registre d'adoption couvre tous les champs de
+suivi requis sans donnée fabriquée.
 
 Validation :
 
-- métadonnées relues par `gh repo view` ;
-- compteurs GitHub pré-annonce datés et sourcés ;
-- `git diff --check` PASS.
+- branche par défaut `agentic/main`, CI du HEAD et workflow Release v1.1.1 : PASS ;
+- archive PCM Windows publiée : SHA-256 GitHub concordant, structure et metadata v1.1.1 contrôlées ;
+- liens locaux du README : PASS ;
+- `git diff --check` : PASS.
 
 ## Décisions actives
 
 - Aucun post, soumission Show HN ou entrée d'annuaire n'est publié par l'agent.
 - L'identifier PCM `com.github.mixelpixx.konnect` reste inchangé.
-- INV-R1 à INV-R4 restent les invariants des futures releases et mesures.
+- INV6 et INV11 restent applicables : aucun critère manqué ou conditionnel ne
+  devient une tâche active sans mesure ou preuve nouvelle.
 
 ## Blocage actif
 
@@ -36,13 +39,12 @@ Aucun.
 
 ## Fichiers / zones utiles
 
-- Copie prête : `docs/launch/ready-to-post.md`.
-- Brouillons sources : `docs/launch/announce-*.md`.
-- Suivi externe : `docs/adoption.md`.
 - Release : `https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.1.1`.
+- Suivi externe : `docs/adoption.md`.
+- Copie prête : `docs/launch/ready-to-post.md`.
 
 ## NEXT ACTION
 
-Après la publication manuelle par l'utilisateur, enregistrer le premier retour
-extérieur dans `docs/adoption.md`, puis rouvrir la porte R.6 lorsque le tally
-n'est plus nul.
+À réception d'un premier retour extérieur réel, l'enregistrer dans
+`docs/adoption.md` (R.5), puis réappliquer la porte R.6 ; jusque-là, aucune
+action technique.

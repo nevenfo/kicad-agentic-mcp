@@ -19,45 +19,38 @@ Record `?` when an OS, KiCad version, MCP client or outcome is not supplied. Do
 not contact a reporter only to fill a tally cell. Identify people only by the
 public GitHub handle they filed under, and only when crediting them.
 
-## First-run reports
+## Feedback log
 
-The five decision metrics remain **install succeeded**, **time to first task**,
-**first blocker**, **task attempted** and **success / failure**. OS, KiCad
-version and MCP client provide the environment needed to interpret them.
+One row per external report, whether it is a first run, bug report or feature
+request. The five decision metrics remain **install outcome**, **time to first
+task**, **first blocker**, **task attempted** and **first-use outcome**. The
+remaining fields preserve the environment, the reported need and any follow-up
+without requiring a second ledger.
 
-| # | Date | Issue | OS | KiCad | MCP client | Install | Time to first task | First blocker | Task attempted | Result |
-|---|---|---|---|---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — | — | — | — | — |
+| # | Date | Source | Konnect | OS | KiCad | MCP client | Install | Time to first task | First blocker | Task attempted | First use | Bug | Feature requested | Known cause | Action |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 Use these values consistently:
 
 | Field | Values |
 |---|---|
-| Install | `yes`, `no`, or `?` |
+| Source | issue or public-feedback URL; venue plus date when no URL exists |
+| Konnect | reported version, or `?` |
+| OS / KiCad / MCP client | reported value, or `?` |
+| Install | `success`, `failure`, or `?` |
 | Time to first task | reported duration, `never`, or `?` |
 | First blocker | reporter's first blocker; blank only when none was reported |
-| Result | `success`, `partial`, `failure`, `not tried`, or `?` |
+| First use | `success`, `partial`, `failure`, `not tried`, or `?` |
+| Bug / Feature requested | short summary, `none` when explicitly absent, or `?` |
+| Known cause | established cause, `unknown`, or `n/a` when no failure exists |
+| Action | issue, commit or decision link; `none` when no action is taken |
 
 As of 2026-08-27, no external first-run report has been received. The empty
 table is evidence about reach, not product quality.
 
-## Bugs
-
-One row per external bug report. Link the issue instead of copying logs or
-personal information here.
-
-| # | Date | Issue | OS | KiCad | MCP client | Summary | Status |
-|---|---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — | — |
-
-## Feature requests
-
-One row per external request. Record the request before deciding whether it
-belongs on the technical roadmap.
-
-| # | Date | Issue | Request | Context / evidence | Status |
-|---|---|---|---|---|---|
-| — | — | — | — | — | — |
+Link the source instead of copying logs or personal information. Record a bug
+or feature request before deciding whether it belongs on the technical roadmap.
 
 ## Public metrics
 
