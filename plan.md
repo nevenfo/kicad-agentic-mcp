@@ -5132,7 +5132,7 @@ consecutive runs of the repaired test green. The oracle that matters is
 `Check & Test (ubuntu-latest)`, since it is the only machine where this has
 ever been red.
 
-# Phase R — Launch & adoption — IN PROGRESS
+# Phase R — Launch & adoption — COMPLETED
 
 Opened 2026-08-26 by explicit user request, immediately after Phase Q published
 v1.1.0. Scope is **adoption, not capability**: turn a published and technically
@@ -5541,14 +5541,13 @@ R.2 and R.3 closed — the kit quotes the Quick start and shows the demo.
 
 ### Tâches
 - [x] R.4.1 Repository metadata: description, topics, and a homepage pointing at
-      the release or the demo. Currently: no topics, no homepage. **Drafted, not
-      applied** (`docs/launch/launch-kit.md` § R.4.1): a description that leads
+      the release or the demo. **Applied and verified on 2026-08-27** from
+      `docs/launch/launch-kit.md` § R.4.1: a description that leads
       with what the thing is rather than with its architecture, the release page
       as homepage because the project has no site, and twelve topics — six for
       the KiCad audience, five for the MCP audience, one for the language.
-      Applying it is one `gh repo edit` and the first line of the go/no-go
-      list, because it is the only item that changes something public before a
-      word is posted
+      Applied with `gh repo edit`; the repository name, licence and PCM
+      identifier were not changed
 - [x] R.4.2 A one-paragraph pitch and a one-sentence pitch, both stating the
       limitation set (Windows most-tested, macOS unsigned, PCB tools need KiCad
       running) — a launch that hides the caveats buys a first wave of users who

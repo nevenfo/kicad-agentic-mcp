@@ -22,7 +22,7 @@ prompt and the setup steps are committed in the repository, so this is
 reproducible rather than illustrative — I ran it twice and got the same circuit
 with different coordinates, which is exactly what should happen.
 
-**What it is:** KiCad Agentic MCP, a native KiCad 10 plugin — one Rust binary —
+**What it is:** KiCad Agentic MCP v1.1.1, a native KiCad 10 plugin — one Rust binary —
 that gives Claude and other MCP clients 202 tools for schematic capture, layout,
 routing, ERC/DRC and manufacturing output. PCB edits go through KiCad's IPC API
 into the *running* editor, so you watch them happen and Ctrl+Z undoes them.

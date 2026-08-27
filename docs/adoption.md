@@ -1,70 +1,86 @@
 # Adoption
 
 What actually happens when someone who has never spoken to the maintainer tries
-to install and use Konnect. One row per first-run report. Kept because a launch
-that is not counted is a launch that cannot be judged.
+to install and use Konnect. This page records first runs, bugs, feature requests
+and public reach without turning missing answers into successes.
 
-**No telemetry exists and none is planned.** Every number on this page came from
-a person who chose to write it down. Konnect edits your design files; a tool that
-does that earns trust by not phoning home.
+**No telemetry exists and none is planned.** Every report below must come from
+a person who chose to submit it, and every repository metric must come from a
+dated GitHub snapshot. Never infer a user, an install or a successful run from a
+download count.
 
-## The five metrics
+## Intake
 
-These are the minimum needed to tell "nobody tried it" apart from "everybody
-tried it and hit the same wall". Each has an explicit *unknown*, because a
-missing answer is data and must not be silently read as a good one.
+- [First-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml)
+- [Bug report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=bug.yml)
+- [Feature request](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=feature.yml)
 
-| Metric | Where it comes from | Unknown is written as |
-|---|---|---|
-| **Install succeeded** | *Did the install finish?* | `?` — includes "I could not tell whether it worked", which is itself a finding about the verification step |
-| **Time to first task** | *How long from downloading to your first working task?* | `?` — "Not sure". `never` is a **value**, not an unknown |
-| **First blocker** | *What was the first thing that stopped you?* | blank — the reporter got through with nothing worth naming |
-| **Task attempted** | *What did you ask it to do?* | required; a report without it is incomplete |
-| **Success / failure** | *Did that task work?* | `?` — "I never got as far as trying" is recorded as `not tried`, not as a failure |
+Record `?` when an OS, KiCad version, MCP client or outcome is not supplied. Do
+not contact a reporter only to fill a tally cell. Identify people only by the
+public GitHub handle they filed under, and only when crediting them.
 
-Reports arrive through the [first-run report](https://github.com/nevenfo/kicad-agentic-mcp/issues/new?template=first-run.yml)
-form, which asks exactly these questions and little else — a person who has just
-given up will not fill in twenty fields.
+## First-run reports
 
-## Reports
+The five decision metrics remain **install succeeded**, **time to first task**,
+**first blocker**, **task attempted** and **success / failure**. OS, KiCad
+version and MCP client provide the environment needed to interpret them.
 
-Nothing here yet: the first-run form was published in Phase R and v1.1.0 has had
-no external installs. An empty table is a finding about **reach**, not about
-quality, and it is the finding the launch kit exists to change.
+| # | Date | Issue | OS | KiCad | MCP client | Install | Time to first task | First blocker | Task attempted | Result |
+|---|---|---|---|---|---|---|---|---|---|---|
+| — | — | — | — | — | — | — | — | — | — | — |
 
-| # | Date | Platform | Install | Time to first task | First blocker | Task attempted | Result |
+Use these values consistently:
+
+| Field | Values |
+|---|---|
+| Install | `yes`, `no`, or `?` |
+| Time to first task | reported duration, `never`, or `?` |
+| First blocker | reporter's first blocker; blank only when none was reported |
+| Result | `success`, `partial`, `failure`, `not tried`, or `?` |
+
+As of 2026-08-27, no external first-run report has been received. The empty
+table is evidence about reach, not product quality.
+
+## Bugs
+
+One row per external bug report. Link the issue instead of copying logs or
+personal information here.
+
+| # | Date | Issue | OS | KiCad | MCP client | Summary | Status |
 |---|---|---|---|---|---|---|---|
 | — | — | — | — | — | — | — | — |
 
-Identify people only by the public GitHub handle they filed under, and only when
-crediting them. Never copy anything else out of a report into this file.
+## Feature requests
 
-## Baseline at launch
+One row per external request. Record the request before deciding whether it
+belongs on the technical roadmap.
 
-Measured on 2026-08-26, so that later numbers have something to be compared
-against:
+| # | Date | Issue | Request | Context / evidence | Status |
+|---|---|---|---|---|---|
+| — | — | — | — | — | — |
 
-| | |
-|---|---|
-| Stars | 0 |
-| Issues, open or closed | 0 |
-| First-run reports | 0 |
-| Release downloads | 1 — the maintainer's own verification of the published package (Q.5) |
-| Discussions | disabled, deliberately — see below |
+## Public metrics
 
-**Why Discussions stays off.** A project with no issues does not need a second
-empty surface; splitting a handful of early reports across two places makes both
-look dead and makes the tally above harder to keep honest. Issues with templates
-carry the structure this page needs. Revisit when the volume of questions that
-are *not* bug reports makes a forum shape worth having.
+Add dated snapshots; never rewrite an older row. `Release downloads` is the sum
+of GitHub asset download counters across all releases, not a count of installs
+or people. `v1.1.1 downloads` is the sum for that release alone.
+
+| Date | Stars | Forks | Release downloads | v1.1.1 downloads | First-run reports | Bugs | Feature requests |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 2026-08-27, pre-announcement | 0 | 0 | 5 | 1 | 0 | 0 | 0 |
+
+Source for the pre-announcement row: GitHub repository, issue and release asset
+counters read on 2026-08-27. The five downloads were `v1.0.0: 2`, `v1.1.0: 2`
+and `v1.1.1: 1`; these counters do not distinguish maintainer verification from
+external downloads.
 
 ## How the maintainer reads this
 
-- **A blocker that appears twice is not anecdote.** It goes on the plan as a
-  defect with its class — UX, packaging, documentation, configuration, or
-  product — before anything is written to fix it.
-- **A report that stops at "install succeeded: no" is the most valuable kind.**
-  It means the walk in [launch/first-run-walk.md](launch/first-run-walk.md)
-  missed something a real machine has.
-- **`never` in *time to first task* outranks every success.** People who got
-  there are already past the part that decides adoption.
+- **A blocker that appears twice is not anecdote.** Classify it as UX,
+  packaging, documentation, configuration or product before planning a fix.
+- **An install failure is a useful report.** It shows the documented first-run
+  walk missed something on a real environment.
+- **`never` in time to first task outranks every success.** It identifies the
+  part of the path that decides adoption.
+- **Downloads are reach, not validation.** Only a report can establish whether
+  installation or a task succeeded.

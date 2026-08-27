@@ -50,7 +50,7 @@ is not.
 
 ## What it costs to install
 
-Download the `konnect-pcm-*` zip for your OS from the release page and install
+Download the `konnect-pcm-v1.1.1-*` zip for your OS from the release page and install
 it through KiCad's Plugin and Content Manager with *Install from File* — it is
 not in KiCad's official addon repository, so there is no repository URL to add.
 Then enable the KiCad API in *Preferences → Plugins*; it ships off, and every

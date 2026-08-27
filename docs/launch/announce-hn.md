@@ -31,8 +31,8 @@ Two measurements I would rather show than assert.
 obvious way to build this and it is expensive. Routing through two meta-tools
 took external tokens per task from 12 373 to 1 995 (-83.9 %) with the success
 rate unchanged at 18/18 and median MCP calls from 11 to 4. That was measured on
-v1.0.0, on one machine, from artefacts committed in the repository; v1.1.0 did
-not re-run it and the release notes say so.
+v1.0.0, on one machine, from artefacts committed in the repository; neither
+v1.1.0 nor v1.1.1 re-ran it, and the release notes say so.
 
 **A demo you can run.** The starting board, the prompt and the setup are
 committed. One prompt places two capacitors within 5 mm of a regulator and

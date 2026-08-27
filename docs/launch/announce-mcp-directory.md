@@ -63,9 +63,9 @@ Category, where the list has them: *Developer tools* or *Design / CAD*, not
 }
 ```
 
-Keep this snippet in step with the README's Quick start; if v1.1.1 ships before
-these entries are submitted, the two manual configuration keys the current
-release needs are gone and the snippet above is complete as it stands.
+This snippet matches the `v1.1.1` README Quick start. The two manual discovery
+configuration keys required before `v1.1.1` are no longer needed; the snippet
+above is complete as it stands.
 
 ## Metadata most forms ask for
 
