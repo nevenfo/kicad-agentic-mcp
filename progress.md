@@ -2,20 +2,20 @@
 
 ## Phase actuelle
 
-**U — Publication v1.1.2.**
+**T — Reprise du benchmark Hi-Fi.**
 
 ## Tâche actuelle
 
-**U.1.4 — Commit, push et CI du candidat.**
+**T.2.1 — Définition de la prochaine étape du benchmark.**
 
 ## Dernière tâche validée
 
-**U.1.3 — Gate local du candidat v1.1.2.**
+**U.1.6 — Publication v1.1.2 et retour au benchmark.**
 
-Validation : `gate.ps1` PASS ; check workspace `--locked` PASS ; régression
-`project_symbol_library_e2e` 1/1 ; viewer hors workspace 20/20 ; builds release
-serveur/viewer `--locked` PASS ; métadonnées et PCM Windows PASS ; binaire local
-`konnect 1.1.2`.
+Validation : candidat/tag `c7b66d8f511cfc4f7358dc279196800f88fc271d` ;
+CI `33148447984` PASS ; Release `v1.1.2` `33148755072` PASS ; sept artefacts ;
+PCM Windows publié validé avec serveur/viewer, métadonnées `1.1.2` et binaire
+embarqué `konnect 1.1.2`.
 
 ## Décisions actives
 
@@ -29,10 +29,14 @@ serveur/viewer `--locked` PASS ; métadonnées et PCM Windows PASS ; binaire loc
   exécutable reste disponible comme rollback `konnect.exe.pre-9bcd9fb.bak`.
 - La release reste strictement une patch `v1.1.2`; aucun développement Hi-Fi
   ni changement fonctionnel supplémentaire n'entre dans son périmètre.
+- `v1.1.2` est publiée ; le tag reste sur le commit candidat validé et la phase
+  T reprend sans modifier le projet Hi-Fi.
 
 ## Blocage actif
 
-Aucun.
+La suite du benchmark Hi-Fi après le placement U1 n'est décrite ni dans le
+dépôt ni dans la mémoire de projet ; une cible fonctionnelle est indispensable
+avant toute nouvelle modification du schéma.
 
 ## Fichiers / zones utiles
 
@@ -44,5 +48,5 @@ Aucun.
 
 ## NEXT ACTION
 
-U.1.4 — Examiner et indexer uniquement les fichiers de release, créer le commit
-candidat, pousser `agentic/main`, puis vérifier la CI de son SHA exact.
+T.2.1 — Obtenir le brief de la prochaine étape du benchmark Hi-Fi et fixer son
+critère de validation avant toute nouvelle écriture dans le projet KiCad.

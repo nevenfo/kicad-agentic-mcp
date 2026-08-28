@@ -6145,11 +6145,11 @@ exécutable de rollback préservé.
   nécessaires pour `1.1.2`, avec la limite IPC document-aware explicite.
 - [x] U.1.3 Exécuter le gate local de release, dont la régression bibliothèque
   symbole projet et les validations séparées du `schematic-viewer`.
-- [ ] U.1.4 Committer et pousser le candidat sur `agentic/main`, puis vérifier
+- [x] U.1.4 Committer et pousser le candidat sur `agentic/main`, puis vérifier
   la CI PASS pour exactement ce commit.
-- [ ] U.1.5 Créer et pousser le tag annoté `v1.1.2` sur le commit validé, puis
+- [x] U.1.5 Créer et pousser le tag annoté `v1.1.2` sur le commit validé, puis
   vérifier le workflow, la GitHub Release et au moins un artefact publié.
-- [ ] U.1.6 Confirmer la propreté finale et rétablir comme prochaine action la
+- [x] U.1.6 Confirmer la propreté finale et rétablir comme prochaine action la
   poursuite du benchmark Hi-Fi à T.2.1.
 
 ### Validation
