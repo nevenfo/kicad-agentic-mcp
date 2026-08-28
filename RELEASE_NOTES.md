@@ -1,9 +1,8 @@
-# KiCad Agentic MCP v1.1.1
+# KiCad Agentic MCP v1.1.2
 
-Discovery and packaging release. There is no new tool, changed tool signature
-or architecture change: the surface remains **202 tools across 22 toolsets**.
-The change is the first-run path — a standard KiCad 10 installation no longer
-needs a hand-written Konnect settings file.
+Correctness release for document-aware schematic project handling. There is no
+new tool, changed tool signature or architecture change: the surface remains
+**202 tools across 22 toolsets**.
 
 The benchmark and model-fit figures further down were taken on 2026-08-24 for
 v1.0.0, on the machine named at the top of
@@ -13,25 +12,28 @@ v1.0.0 and are reproduced unchanged. The separate Windows binary-size figure
 was measured on v1.1.0 and is labelled as such. Where a target was missed, it
 says so and the target is not moved.
 
-## What changed in v1.1.1
+## What changed in v1.1.2
 
-- **`kicad-cli` is discovered automatically.** Konnect now resolves an explicit
-  configured value first, then `PATH`, known KiCad install prefixes and the
-  Windows registry. Known prefixes are ordered by KiCad version before prefix.
-- **The KiCad GUI binary uses the same discovery chain.** Tools that need to
-  launch KiCad no longer assume the executable is already on `PATH`.
-- **The IPC address no longer needs to be copied by hand.** Konnect keeps an
-  explicit configured value, otherwise uses `KICAD_API_SOCKET`, then KiCad's
-  platform-default address.
-- **Boards without an explicit stackup are handled as such.** Inspection no
-  longer treats the absence of a declared stackup as a malformed board.
-- **PCM metadata points to this fork.** The author, contact and homepage now
-  lead to `nevenfo/kicad-agentic-mcp`. The existing PCM identifier is retained
-  because changing it would change the installation directory and break current
-  installs and documented client paths.
+- **Project symbol libraries now work during schematic placement.** Libraries
+  registered in the project's `sym-lib-table` are usable by
+  `add_schematic_component`; `${KIPRJMOD}` is resolved relative to the
+  schematic/project directory. Resolution order is project, global, then
+  installed KiCad libraries.
+- **Save and open-document handling is document-aware.** `save_project` and
+  `GetOpenDocuments` no longer systematically assume a PCB document.
+- **Transactional root discovery is more robust.** It now handles
+  `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and explicit `documents` targets.
+- **The project-local regression is covered end to end.**
+  `create/register project-local symbol library` →
+  `add_schematic_component` → readback → save/reopen → persistence.
+  The real Hi-Fi workload also passed:
+  `HifiAmp_TPA3255_Local:LM5010ASD` → `U1`, MCP save and readback.
+- **IPC document-aware remains PARTIAL.** Mocks and protobufs are validated;
+  the GUI IPC validation specific to this phase was not executed. This is not
+  reported as **PASS**.
 
-These fixes change discovery and first-run behaviour only. They add no tool and
-change no MCP parameter or response schema.
+These fixes change project/document fidelity only. They add no tool and change
+no MCP parameter or response schema.
 
 ## What this is
 
@@ -97,7 +99,7 @@ Baseline (upstream v0.2.2 at `5cd6454`) and this fork ran back to back on
   caller sees no intermediate round trip.
 - **Retrieval**: 62.0 % precision @8 with 100 % recall @8.
 - **Binary**: 23.7 MB on Windows, unstripped — measured on the v1.1.0 binary,
-  up 1.9 MB from v1.0.0's 21.8 MB. v1.1.1 did not re-measure it. There is no
+  up 1.9 MB from v1.0.0's 21.8 MB. v1.1.2 did not re-measure it. There is no
   `[profile.release]`,
   deliberately — adding `strip`/`lto` would change the code generation under
   every artefact the gate and the benchmarks were measured on, to improve a
@@ -176,7 +178,7 @@ and stays open until KiCad 11 can be measured here.
 ## Getting started
 
 - **Install**: KiCad 10 → Plugin and Content Manager → *Install from File* with
-  `konnect-pcm-v1.1.1-<platform>.zip` from this release, or use the standalone
+  `konnect-pcm-v1.1.2-<platform>.zip` from this release, or use the standalone
   server binary. Full steps, including the Claude Desktop and Claude Code
   configuration, are in [README.md](README.md).
 - **macOS: the binaries are not signed or notarised.** Gatekeeper will refuse

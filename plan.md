@@ -6122,3 +6122,38 @@ avec ce `lib_id`; les autres documents et éléments utilisateur sont préservé
 
 La prochaine modification du projet et son résultat attendu sont explicitement
 identifiés avant toute nouvelle écriture.
+
+# Phase U — Publication v1.1.2
+
+## U.1 — Patch release du correctif Phase S
+
+### Objectif
+
+Publier `v1.1.2` sans changement fonctionnel supplémentaire, puis reprendre la
+phase T à son état existant.
+
+### Dépendances
+
+Phase S et T.1.1 validées ; commit `9bcd9fb` inclus dans le candidat ; ancien
+exécutable de rollback préservé.
+
+### Tâches
+
+- [x] U.1.1 Vérifier branche, HEAD, worktree, dernier tag/release, stratégie de
+  version, notes, workflows et cohérence du `schematic-viewer` exclu.
+- [x] U.1.2 Mettre à jour strictement les versions, lockfiles et release notes
+  nécessaires pour `1.1.2`, avec la limite IPC document-aware explicite.
+- [x] U.1.3 Exécuter le gate local de release, dont la régression bibliothèque
+  symbole projet et les validations séparées du `schematic-viewer`.
+- [ ] U.1.4 Committer et pousser le candidat sur `agentic/main`, puis vérifier
+  la CI PASS pour exactement ce commit.
+- [ ] U.1.5 Créer et pousser le tag annoté `v1.1.2` sur le commit validé, puis
+  vérifier le workflow, la GitHub Release et au moins un artefact publié.
+- [ ] U.1.6 Confirmer la propreté finale et rétablir comme prochaine action la
+  poursuite du benchmark Hi-Fi à T.2.1.
+
+### Validation
+
+Version `1.1.2`, gate local et CI du commit tagué PASS, tag et Release GitHub
+présents, artefacts attendus publiés, un artefact inspecté avec version et
+package PCM cohérents, worktree propre et aucun changement fonctionnel ajouté.
