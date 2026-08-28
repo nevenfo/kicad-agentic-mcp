@@ -6088,5 +6088,37 @@ verts et aucun faux `no_project_path_found` ne touche le scénario S.1.
 
 ### Validation
 
-Les preuves permettent de reprendre B1.1 et aucun fichier Hi-Fi utilisateur
-n'a été modifié.
+Les preuves permettent de reprendre l'étape B1.1 du benchmark Hi-Fi, suivie
+ici sous T.1.1 pour éviter la collision avec la tâche historique B.1.1, et
+aucun fichier Hi-Fi utilisateur n'a été modifié.
+
+# Phase T — Reprise du benchmark Hi-Fi
+
+## T.1 — Placement depuis une bibliothèque projet
+
+### Dépendances
+
+Phase S validée ; projet Hi-Fi ouvert dans KiCad 10.0.3.
+
+### Tâches
+
+- [x] T.1.1 Exécuter l'étape B1.1 du benchmark Hi-Fi : placer via le MCP
+  `HifiAmp_TPA3255_Local:LM5010ASD` comme U1 sans modifier directement le
+  document KiCad ni dupliquer une instance existante.
+
+### Validation
+
+Après sauvegarde et relecture, le schéma contient exactement une instance U1
+avec ce `lib_id`; les autres documents et éléments utilisateur sont préservés.
+
+## T.2 — Suite du benchmark
+
+### Tâches
+
+- [ ] T.2.1 Définir la prochaine étape fonctionnelle et ses critères de
+  validation à partir du brief du benchmark Hi-Fi.
+
+### Validation
+
+La prochaine modification du projet et son résultat attendu sont explicitement
+identifiés avant toute nouvelle écriture.

@@ -2,23 +2,22 @@
 
 ## Phase actuelle
 
-**S — Terminée.**
+**T — Reprise du benchmark Hi-Fi.**
 
 ## Tâche actuelle
 
-**Aucune ; livraison validée.**
+**T.2.1 — Définition de la prochaine étape du benchmark.**
 
 ## Dernière tâche validée
 
-**S.3.3 — Validation globale, live et checkpoint Git.**
+**T.1.1 — Placement U1 depuis la bibliothèque projet.**
 
 Validation :
 
-- E2E `project_symbol_library_e2e` : PASS ;
-- workspace : 1420 tests passés, 41 ignorés, 70 suites ;
-- `cargo fmt --check`, Clippy `-D warnings`, build workspace : PASS ;
-- live KiCad CLI 10.0.3 : `TestLocal:TEST_IC` U1 et `Device:R` R1 persistants ;
-- IPC UI non lancé : comportement document-aware validé par mocks/protobufs.
+- alias projet `HifiAmp_TPA3255_Local` :
+  `${KIPRJMOD}/HifiAmp_TPA3255.kicad_sym` ;
+- U1 unique : `HifiAmp_TPA3255_Local:LM5010ASD` à `(100.33, 100.33)` ;
+- sauvegarde et relecture MCP : PASS.
 
 ## Décisions actives
 
@@ -28,19 +27,21 @@ Validation :
   persisté est un succès explicite, sans commande PCB.
 - Un appel IPC sans chemin reste conservateur et requiert `documents` explicites
   pour la protection transactionnelle.
+- Le serveur MCP installé correspond au build de HEAD `9bcd9fb` ; l'ancien
+  exécutable reste disponible comme rollback `konnect.exe.pre-9bcd9fb.bak`.
 
 ## Blocage actif
 
-Aucun.
+La suite du benchmark Hi-Fi après le placement U1 n'est décrite ni dans le
+dépôt ni dans la mémoire de projet ; une cible fonctionnelle est indispensable
+avant toute nouvelle modification du schéma.
 
 ## Fichiers / zones utiles
 
-- `crates/konnect-core/tests/project_symbol_library_e2e.rs`
-- `crates/konnect-schematic-editor/src/library.rs`
-- `crates/konnect-core/src/tools/project.rs`
-- `crates/konnect-ipc/src/client.rs`
+- `C:\Users\FlowUP\Documents\Etabli\Projets\Chaine Hifi\HifiAmp_TPA3255.kicad_pro`
+- `C:\Users\FlowUP\Documents\Etabli\Projets\Chaine Hifi\HifiAmp_TPA3255.kicad_sch`
 
 ## NEXT ACTION
 
-B1.1 — Reprendre le benchmark Hi-Fi et placer
-`HifiAmp_TPA3255_Local:LM5010ASD` comme U1 via le MCP mis à jour.
+T.2.1 — Obtenir le brief de la prochaine étape du benchmark Hi-Fi et fixer son
+critère de validation avant toute nouvelle écriture dans le projet KiCad.
