@@ -4,8 +4,8 @@
 //!
 //! KiCAD interface:
 //!   - create_project   → file system (template)
-//!   - open_project     → IPC ping (check if project is open)
-//!   - save_project     → IPC board.save()
+//!   - open_project     → IPC document discovery (PCB or schematic)
+//!   - save_project     → document-aware IPC save
 //!   - get_project_info → file system read
 //!   - snapshot_project → kicad-cli export PDF
 
@@ -57,7 +57,8 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "save_project",
-            "Save the currently open PCB board file via KiCAD IPC. \
+            "Save the currently open KiCAD document. PCB documents are saved via IPC; \
+             schematic file edits are already persisted and are reported as such. \
              Requires KiCAD to be running with IPC enabled.",
             json!({
                 "type": "object",
@@ -166,20 +167,47 @@ async fn handle_create_project(
 }
 
 async fn handle_open_project(
-    _args: &serde_json::Value,
+    args: &serde_json::Value,
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let ipc = konnect_ipc::KiCadIpcClient::new(&ctx.config.ipc_address);
-    let connected = ipc.ping().unwrap_or(false);
+    let documents = match ipc.get_open_documents_document_aware() {
+        Ok(documents) => documents,
+        Err(error) => {
+            return Ok(CallToolResult::json(&json!({
+                "kicad_ui_running": false,
+                "ipc_address": ctx.config.ipc_address,
+                "open_documents": [],
+                "message": format!("KiCAD IPC is not reachable: {error}")
+            })))
+        }
+    };
+    let requested = opt_str(args, "path").map(PathBuf::from);
+    let open_documents: Vec<_> = documents
+        .iter()
+        .map(|document| {
+            json!({
+                "type": if document.is_pcb() { "pcb" } else { "schematic" },
+                "path": document.path().map(|path| path.display().to_string())
+            })
+        })
+        .collect();
+    let requested_project_open = requested.as_deref().map(|project| {
+        let expected_dir = project.parent();
+        let expected_name = project.file_stem();
+        documents.iter().any(|document| {
+            document.path().is_some_and(|path| {
+                path.parent() == expected_dir && path.file_stem() == expected_name
+            })
+        })
+    });
 
     Ok(CallToolResult::json(&json!({
-        "kicad_ui_running": connected,
+        "kicad_ui_running": true,
         "ipc_address": ctx.config.ipc_address,
-        "message": if connected {
-            "KiCAD is running and IPC is available."
-        } else {
-            "KiCAD IPC is not reachable. Start KiCAD and enable the IPC API, or work in file-only mode."
-        }
+        "open_documents": open_documents,
+        "requested_project_open": requested_project_open,
+        "message": "KiCAD is running and IPC is available."
     })))
 }
 
@@ -188,8 +216,14 @@ async fn handle_save_project(
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let ipc = konnect_ipc::KiCadIpcClient::new(&ctx.config.ipc_address);
-    ipc.save_board()?;
-    Ok(CallToolResult::text("Board saved successfully."))
+    match ipc.save_open_document()? {
+        konnect_ipc::SaveDocumentOutcome::PcbSaved => {
+            Ok(CallToolResult::text("Board saved successfully."))
+        }
+        konnect_ipc::SaveDocumentOutcome::SchematicAlreadyPersisted => Ok(CallToolResult::text(
+            "Schematic changes are already persisted to disk.",
+        )),
+    }
 }
 
 async fn handle_get_project_info(

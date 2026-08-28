@@ -17,11 +17,31 @@ use std::path::PathBuf;
 /// The returned string is the raw content of the `(symbol "R" ...)` block,
 /// with the name prefixed as `"Device:R"`.
 pub fn resolve_lib_symbol(lib_id: &str) -> Option<String> {
+    resolve_lib_symbol_for_schematic(lib_id, None)
+}
+
+/// Resolve a library symbol in the context of a schematic file.
+///
+/// `${KIPRJMOD}` is resolved from the project table beside that schematic,
+/// never from the process CWD. Project registrations take precedence over
+/// global registrations, with installed libraries as the final fallback.
+fn resolve_lib_symbol_for_schematic(
+    lib_id: &str,
+    schematic: Option<&std::path::Path>,
+) -> Option<String> {
     let parts: Vec<&str> = lib_id.splitn(2, ':').collect();
     if parts.len() != 2 {
         return None;
     }
     let (library_name, symbol_name) = (parts[0], parts[1]);
+
+    for table in symbol_library_tables(schematic) {
+        if let Some(path) = symbol_library_path_from_table(&table, library_name) {
+            if let Some(symbol) = resolve_symbol_from_file(&path, library_name, symbol_name) {
+                return Some(symbol);
+            }
+        }
+    }
 
     for base_dir in find_symbol_dirs() {
         // KiCAD 10: Library.kicad_symdir/SymbolName.kicad_sym
@@ -29,66 +49,113 @@ pub fn resolve_lib_symbol(lib_id: &str) -> Option<String> {
         let sym_file = symdir.join(format!("{}.kicad_sym", symbol_name));
 
         if sym_file.exists() {
-            if let Ok(content) = std::fs::read_to_string(&sym_file) {
-                if let Some(block) = extract_symbol_block(&content, symbol_name) {
-                    // Rename symbol to include library prefix
-                    let mut renamed = block.replacen(
-                        &format!("(symbol \"{}\"", symbol_name),
-                        &format!("(symbol \"{}:{}\"", library_name, symbol_name),
-                        1,
-                    );
-                    // Also fix (extends "ParentName") to use prefixed name
-                    if let Some(ext_pos) = renamed.find("(extends \"") {
-                        let after = &renamed[ext_pos + 10..];
-                        if let Some(end) = after.find('"') {
-                            let parent = after[..end].to_string();
-                            renamed = renamed.replace(
-                                &format!("(extends \"{}\")", parent),
-                                &format!("(extends \"{}:{}\")", library_name, parent),
-                            );
-                        }
-                    }
-                    // Unit sub-symbols ("Name_0_1", "Name_1_1") must stay
-                    // UNPREFIXED: eeschema names only the outer symbol with
-                    // the library prefix and refuses to load a schematic
-                    // whose units carry it ("Failed to load schematic" —
-                    // verified against kicad-cli 10.0 and the KiCAD demo
-                    // corpus, which embeds units without the prefix).
-                    return Some(renamed);
-                }
+            if let Some(symbol) = resolve_symbol_from_file(&sym_file, library_name, symbol_name) {
+                return Some(symbol);
             }
         }
 
         // Fallback: KiCAD 8/9 format — single Library.kicad_sym file
         let legacy = base_dir.join(format!("{}.kicad_sym", library_name));
         if legacy.exists() {
-            if let Ok(content) = std::fs::read_to_string(&legacy) {
-                if let Some(block) = extract_symbol_block(&content, symbol_name) {
-                    let mut renamed = block.replacen(
-                        &format!("(symbol \"{}\"", symbol_name),
-                        &format!("(symbol \"{}:{}\"", library_name, symbol_name),
-                        1,
-                    );
-                    if let Some(ext_pos) = renamed.find("(extends \"") {
-                        let after = &renamed[ext_pos + 10..];
-                        if let Some(end) = after.find('"') {
-                            let parent = after[..end].to_string();
-                            renamed = renamed.replace(
-                                &format!("(extends \"{}\")", parent),
-                                &format!("(extends \"{}:{}\")", library_name, parent),
-                            );
-                        }
-                    }
-                    // Unit sub-symbols stay UNPREFIXED here too — same rule
-                    // as the symdir branch above (eeschema refuses prefixed
-                    // unit names; hit in CI where KiCAD ships single-file
-                    // libraries and this legacy branch handles the embed).
-                    return Some(renamed);
-                }
+            if let Some(symbol) = resolve_symbol_from_file(&legacy, library_name, symbol_name) {
+                return Some(symbol);
             }
         }
     }
     None
+}
+
+fn resolve_symbol_from_file(
+    path: &std::path::Path,
+    library_name: &str,
+    symbol_name: &str,
+) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let block = extract_symbol_block(&content, symbol_name)?;
+    let mut renamed = block.replacen(
+        &format!("(symbol \"{}\"", symbol_name),
+        &format!("(symbol \"{}:{}\"", library_name, symbol_name),
+        1,
+    );
+    if let Some(ext_pos) = renamed.find("(extends \"") {
+        let after = &renamed[ext_pos + 10..];
+        if let Some(end) = after.find('"') {
+            let parent = &after[..end];
+            renamed = renamed.replace(
+                &format!("(extends \"{}\")", parent),
+                &format!("(extends \"{}:{}\")", library_name, parent),
+            );
+        }
+    }
+    Some(renamed)
+}
+
+fn symbol_library_tables(schematic: Option<&std::path::Path>) -> Vec<PathBuf> {
+    let mut tables = Vec::with_capacity(2);
+    if let Some(project_dir) = schematic.and_then(std::path::Path::parent) {
+        tables.push(project_dir.join("sym-lib-table"));
+    }
+    tables.push(kicad_config_dir().join("sym-lib-table"));
+    tables
+}
+
+fn symbol_library_path_from_table(table: &std::path::Path, nickname: &str) -> Option<PathBuf> {
+    let content = std::fs::read_to_string(table).ok()?;
+    let root = parser::parse(&content).ok()?;
+    for lib in root.find_all("lib") {
+        if lib.find("name").and_then(|n| n.value()) != Some(nickname) {
+            continue;
+        }
+        let uri = lib.find("uri").and_then(|n| n.value())?;
+        let path = expand_symbol_library_uri(uri, table.parent()?)?;
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn expand_symbol_library_uri(uri: &str, table_dir: &std::path::Path) -> Option<PathBuf> {
+    if let Some(rest) = uri.strip_prefix("${") {
+        let close = rest.find('}')?;
+        let variable = &rest[..close];
+        let tail = rest[close + 1..].trim_start_matches(['/', '\\']);
+        let base = if variable == "KIPRJMOD" {
+            table_dir.to_path_buf()
+        } else {
+            PathBuf::from(std::env::var_os(variable)?)
+        };
+        return Some(base.join(tail));
+    }
+    let path = PathBuf::from(uri);
+    Some(if path.is_absolute() {
+        path
+    } else {
+        table_dir.join(path)
+    })
+}
+
+fn kicad_config_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    let base = PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default()).join("kicad");
+    #[cfg(target_os = "macos")]
+    let base = PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+        .join("Library")
+        .join("Preferences")
+        .join("kicad");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_default()
+        .join("kicad");
+    for version in ["10.0", "9.0", "8.0"] {
+        let dir = base.join(version);
+        if dir.is_dir() {
+            return dir;
+        }
+    }
+    base.join("10.0")
 }
 
 /// Resolve a lib_id to a parsed SexpNode tree.
@@ -111,7 +178,15 @@ pub fn resolve_lib_symbol_node(lib_id: &str) -> Option<SexpNode> {
 /// eeschema never writes. A missing/broken parent stops the walk gracefully,
 /// returning the partially flattened child.
 pub fn resolve_lib_symbol_flattened_node(lib_id: &str) -> Option<SexpNode> {
-    let mut node = resolve_lib_symbol_node(lib_id)?;
+    resolve_lib_symbol_flattened_node_for_schematic(lib_id, None)
+}
+
+fn resolve_lib_symbol_flattened_node_for_schematic(
+    lib_id: &str,
+    schematic: Option<&std::path::Path>,
+) -> Option<SexpNode> {
+    let raw = resolve_lib_symbol_for_schematic(lib_id, schematic)?;
+    let mut node = parser::parse(&raw).ok()?;
     let child_base = lib_id.split_once(':')?.1.to_string();
 
     let mut parent_id = node.get_value("extends").map(str::to_string);
@@ -128,8 +203,11 @@ pub fn resolve_lib_symbol_flattened_node(lib_id: &str) -> Option<SexpNode> {
         if !visited.insert(pid.clone()) {
             break; // cyclic extends: stop, keep what we have
         }
-        let Some(parent) = resolve_lib_symbol_node(&pid) else {
+        let Some(parent_raw) = resolve_lib_symbol_for_schematic(&pid, schematic) else {
             break; // broken library (dangling parent): keep what we have
+        };
+        let Ok(parent) = parser::parse(&parent_raw) else {
+            break;
         };
         let parent_base = pid
             .split_once(':')
@@ -261,10 +339,11 @@ pub fn ensure_lib_symbol(schematic: &mut Schematic, lib_id: &str) -> bool {
     }
 
     // Resolve and embed the symbol, flattening any extends chain.
-    let sym_node = match resolve_lib_symbol_flattened_node(lib_id) {
-        Some(n) => n,
-        None => return false,
-    };
+    let sym_node =
+        match resolve_lib_symbol_flattened_node_for_schematic(lib_id, Some(schematic.filepath())) {
+            Some(n) => n,
+            None => return false,
+        };
 
     // Find or create the lib_symbols node
     let lib_syms_idx = schematic
@@ -1444,6 +1523,42 @@ mod suggestion_tests {
             &mut sch,
             "Definitely_Not_A_Library_xyzzy:Nope"
         ));
+    }
+
+    #[test]
+    fn project_symbol_table_expands_kiprjmod_from_the_schematic_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let schematic = dir.path().join("project.kicad_sch");
+        std::fs::write(
+            dir.path().join("TestLocal.kicad_sym"),
+            "(kicad_symbol_lib (version 20241209) (generator \"test\") (symbol \"TEST_IC\" (property \"Reference\" \"U\" (at 0 0 0)) (symbol \"TEST_IC_1_1\" (pin input line (at 0 0 0) (length 2.54) (name \"IN\" (effects (font (size 1.27 1.27)))) (number \"1\" (effects (font (size 1.27 1.27))))))))",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("sym-lib-table"),
+            "(sym_lib_table (version 7) (lib (name \"TestLocal\") (type \"KiCad\") (uri \"${KIPRJMOD}/TestLocal.kicad_sym\") (options \"\") (descr \"\")))",
+        )
+        .unwrap();
+        std::fs::write(
+            &schematic,
+            "(kicad_sch (version 20250610) (generator \"test\") (lib_symbols))",
+        )
+        .unwrap();
+
+        let mut sch = Schematic::load(&schematic).unwrap();
+        assert!(ensure_lib_symbol(&mut sch, "TestLocal:TEST_IC"));
+        let out = sch.to_source();
+        assert!(out.contains("(symbol \"TestLocal:TEST_IC\""));
+        assert!(out.contains("(number \"1\""));
+    }
+
+    #[test]
+    fn project_symbol_table_precedes_the_global_table() {
+        let schematic = std::path::Path::new("C:/work/Test/Test.kicad_sch");
+        let tables = symbol_library_tables(Some(schematic));
+        assert_eq!(tables.len(), 2);
+        assert_eq!(tables[0], PathBuf::from("C:/work/Test/sym-lib-table"));
+        assert_eq!(tables[1], kicad_config_dir().join("sym-lib-table"));
     }
 
     /// Load a schematic from literal source in a tempdir. The `TempDir` is

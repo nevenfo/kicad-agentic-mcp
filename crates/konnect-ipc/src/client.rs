@@ -173,6 +173,62 @@ pub enum IpcFailure {
     Rejected(String),
 }
 
+/// KiCad accepted the connection but the editor does not implement the
+/// command for the requested document type (`AS_UNHANDLED`).
+#[derive(Debug)]
+pub struct CommandUnhandled {
+    command: String,
+}
+
+impl std::fmt::Display for CommandUnhandled {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "KiCad does not handle {} for this document type",
+            self.command
+        )
+    }
+}
+
+impl std::error::Error for CommandUnhandled {}
+
+fn is_command_unhandled(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.downcast_ref::<CommandUnhandled>().is_some())
+}
+
+/// A document KiCad reported through the documented PCB/schematic probes.
+#[derive(Debug, Clone)]
+pub enum OpenDocument {
+    Pcb(kiapi::common::types::DocumentSpecifier),
+    Schematic(kiapi::common::types::DocumentSpecifier),
+}
+
+impl OpenDocument {
+    pub fn path(&self) -> Option<PathBuf> {
+        match self {
+            Self::Pcb(document) => board_document_path(document),
+            Self::Schematic(document) => document.project.as_ref().and_then(|project| {
+                (!project.path.is_empty() && !project.name.is_empty()).then(|| {
+                    PathBuf::from(&project.path).join(format!("{}.kicad_sch", project.name))
+                })
+            }),
+        }
+    }
+
+    pub fn is_pcb(&self) -> bool {
+        matches!(self, Self::Pcb(_))
+    }
+}
+
+/// Result of saving the currently active KiCad document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveDocumentOutcome {
+    PcbSaved,
+    SchematicAlreadyPersisted,
+}
+
 impl IpcFailure {
     /// Classify an error from any [`KiCadIpcClient`] operation by walking its
     /// chain for the [`BoardNotOpen`] and [`TransportUnreachable`] markers —
@@ -362,6 +418,11 @@ impl KiCadIpcClient {
             .as_ref()
             .context("KiCad IPC response is missing its status")?;
         let code = status.status();
+        if code == kiapi::common::ApiStatusCode::AsUnhandled {
+            return Err(anyhow::Error::new(CommandUnhandled {
+                command: type_name.to_string(),
+            }));
+        }
         if code != kiapi::common::ApiStatusCode::AsOk {
             let msg = if status.error_message.is_empty() {
                 format!("{:?}", code)
@@ -390,10 +451,18 @@ impl KiCadIpcClient {
         }
     }
 
-    /// Get the list of open documents (boards).
+    /// Get the list of open PCB documents (legacy public API).
     pub fn get_open_documents(&self) -> Result<Vec<kiapi::common::types::DocumentSpecifier>> {
+        self.get_open_documents_of_type(kiapi::common::types::DocumentType::DoctypePcb)
+    }
+
+    /// Get open documents for one documented KiCad document type.
+    pub fn get_open_documents_of_type(
+        &self,
+        document_type: kiapi::common::types::DocumentType,
+    ) -> Result<Vec<kiapi::common::types::DocumentSpecifier>> {
         let cmd = kiapi::common::commands::GetOpenDocuments {
-            r#type: kiapi::common::types::DocumentType::DoctypePcb as i32,
+            r#type: document_type as i32,
         };
         let response_any = self.send_command(&cmd, "kiapi.common.commands.GetOpenDocuments")?;
         if let Some(any) = response_any {
@@ -402,6 +471,30 @@ impl KiCadIpcClient {
         } else {
             Ok(vec![])
         }
+    }
+
+    /// Probe KiCad 10's two supported editor handlers in the documented
+    /// order. A handler that replies `AS_UNHANDLED` merely declines the other
+    /// editor type; it is not a transport or command failure.
+    pub fn get_open_documents_document_aware(&self) -> Result<Vec<OpenDocument>> {
+        let mut documents = Vec::new();
+        for (document_type, wrap) in [
+            (
+                kiapi::common::types::DocumentType::DoctypePcb,
+                OpenDocument::Pcb as fn(kiapi::common::types::DocumentSpecifier) -> OpenDocument,
+            ),
+            (
+                kiapi::common::types::DocumentType::DoctypeSchematic,
+                OpenDocument::Schematic,
+            ),
+        ] {
+            match self.get_open_documents_of_type(document_type) {
+                Ok(found) => documents.extend(found.into_iter().map(wrap)),
+                Err(error) if is_command_unhandled(&error) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(documents)
     }
 
     /// Get the first open PCB's DocumentSpecifier (needed for most commands).
@@ -777,6 +870,26 @@ impl KiCadIpcClient {
         };
         self.send_command(&cmd, "kiapi.common.commands.SaveDocument")?;
         Ok(())
+    }
+
+    /// Save a PCB when one is active. KiCad 10 exposes no schematic
+    /// `SaveDocument`; schematic edits made through this server are already
+    /// persisted by the S-expression writer, so that case is an explicit
+    /// successful no-op.
+    pub fn save_open_document(&self) -> Result<SaveDocumentOutcome> {
+        let documents = self.get_open_documents_document_aware()?;
+        if documents.iter().any(OpenDocument::is_pcb) {
+            self.save_board()?;
+            return Ok(SaveDocumentOutcome::PcbSaved);
+        }
+        if documents
+            .iter()
+            .any(|document| matches!(document, OpenDocument::Schematic(_)))
+        {
+            return Ok(SaveDocumentOutcome::SchematicAlreadyPersisted);
+        }
+        self.save_board()?;
+        Ok(SaveDocumentOutcome::PcbSaved)
     }
 
     /// Begin a commit (undo group).

@@ -93,6 +93,34 @@ fn reply_with(inner: prost_types::Any) -> kiapi::common::ApiResponse {
     }
 }
 
+fn unhandled_response() -> kiapi::common::ApiResponse {
+    kiapi::common::ApiResponse {
+        status: Some(kiapi::common::ApiResponseStatus {
+            status: kiapi::common::ApiStatusCode::AsUnhandled as i32,
+            error_message: String::new(),
+        }),
+        header: None,
+        message: None,
+    }
+}
+
+fn open_schematic_response() -> kiapi::common::ApiResponse {
+    let response = kiapi::common::commands::GetOpenDocumentsResponse {
+        documents: vec![kiapi::common::types::DocumentSpecifier {
+            r#type: kiapi::common::types::DocumentType::DoctypeSchematic as i32,
+            project: Some(kiapi::common::types::ProjectSpecifier {
+                name: "Test".to_string(),
+                path: "C:/work/Test".to_string(),
+            }),
+            identifier: None,
+        }],
+    };
+    reply_with(builders::pack_any(
+        &response,
+        "kiapi.common.commands.GetOpenDocumentsResponse",
+    ))
+}
+
 fn open_board_response() -> kiapi::common::ApiResponse {
     let response = kiapi::common::commands::GetOpenDocumentsResponse {
         documents: vec![kiapi::common::types::DocumentSpecifier {
@@ -109,6 +137,59 @@ fn open_board_response() -> kiapi::common::ApiResponse {
         &response,
         "kiapi.common.commands.GetOpenDocumentsResponse",
     ))
+}
+
+#[test]
+fn document_aware_discovery_accepts_a_schematic_handler() {
+    let mock = spawn_mock(|request| {
+        let message = request.message.expect("request must pack a command");
+        assert!(message.type_url.ends_with("GetOpenDocuments"));
+        let request =
+            kiapi::common::commands::GetOpenDocuments::decode(message.value.as_slice()).unwrap();
+        match request.r#type() {
+            kiapi::common::types::DocumentType::DoctypePcb => Some(unhandled_response()),
+            kiapi::common::types::DocumentType::DoctypeSchematic => Some(open_schematic_response()),
+            other => panic!("unexpected document type: {other:?}"),
+        }
+    });
+
+    let client = KiCadIpcClient::new(&mock.url);
+    let documents = client.get_open_documents_document_aware().unwrap();
+    assert_eq!(documents.len(), 1);
+    assert_eq!(
+        documents[0].path().unwrap(),
+        std::path::PathBuf::from("C:/work/Test/Test.kicad_sch")
+    );
+    assert!(!documents[0].is_pcb());
+}
+
+#[test]
+fn saving_with_only_a_schematic_open_is_a_successful_noop() {
+    let command_count = Arc::new(Mutex::new(0usize));
+    let command_count_in_mock = Arc::clone(&command_count);
+    let mock = spawn_mock(move |request| {
+        *command_count_in_mock.lock().unwrap() += 1;
+        let message = request.message.expect("request must pack a command");
+        assert!(
+            message.type_url.ends_with("GetOpenDocuments"),
+            "schematic save must not send {}",
+            message.type_url
+        );
+        let request =
+            kiapi::common::commands::GetOpenDocuments::decode(message.value.as_slice()).unwrap();
+        match request.r#type() {
+            kiapi::common::types::DocumentType::DoctypePcb => Some(unhandled_response()),
+            kiapi::common::types::DocumentType::DoctypeSchematic => Some(open_schematic_response()),
+            other => panic!("unexpected document type: {other:?}"),
+        }
+    });
+
+    let client = KiCadIpcClient::new(&mock.url);
+    assert_eq!(
+        client.save_open_document().unwrap(),
+        konnect_ipc::SaveDocumentOutcome::SchematicAlreadyPersisted
+    );
+    assert_eq!(*command_count.lock().unwrap(), 2);
 }
 
 #[test]

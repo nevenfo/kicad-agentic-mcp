@@ -159,6 +159,30 @@ mod tests {
     }
 
     #[test]
+    fn an_absolute_board_argument_yields_its_project_directory() {
+        let calls = vec![json!({
+            "tool": "place_footprint",
+            "args": { "board": "C:/work/Test/Test.kicad_pcb" }
+        })];
+        assert_eq!(
+            discover_roots(&calls, None),
+            vec![PathBuf::from("C:/work/Test")]
+        );
+    }
+
+    #[test]
+    fn an_absolute_project_file_is_recognised_under_any_argument_name() {
+        let calls = vec![json!({
+            "tool": "get_project_info",
+            "args": { "source": "C:/work/Test/Test.kicad_pro" }
+        })];
+        assert_eq!(
+            discover_roots(&calls, None),
+            vec![PathBuf::from("C:/work/Test")]
+        );
+    }
+
+    #[test]
     fn a_board_and_a_schematic_in_one_batch_share_one_root() {
         let calls = vec![
             json!({"tool": "a", "args": {"schematic": "/p/x.kicad_sch"}}),
@@ -203,6 +227,18 @@ mod tests {
         assert_eq!(
             discover_roots(&calls, Some(&explicit)),
             vec![PathBuf::from("/elsewhere")]
+        );
+    }
+
+    #[test]
+    fn a_pathless_ipc_call_requires_explicit_documents_for_protection() {
+        let calls = vec![json!({"tool": "save_project", "args": {}})];
+        assert!(discover_roots(&calls, None).is_empty());
+
+        let explicit = json!(["C:/work/Test/Test.kicad_sch"]);
+        assert_eq!(
+            discover_roots(&calls, Some(&explicit)),
+            vec![PathBuf::from("C:/work/Test")]
         );
     }
 

@@ -6022,3 +6022,71 @@ Nothing outside the closed scope changed between v1.1.0 and the tag.
       against
 - [x] A written decision for the next phase, with its evidence (R.6) — written
       and put to the user; the phase it opens is the user's to open
+
+# Phase S — Correctif E2E bibliothèque projet et IPC document-aware
+
+## Objectif final
+
+Rendre compatibles `register_symbol_library(scope=project)` et
+`add_schematic_component`, puis supprimer les faux échecs IPC/path discovery
+révélés par le benchmark Hi-Fi, sans contournement par édition directe des
+documents KiCad ni régression PCB.
+
+## Invariants
+
+- Une bibliothèque projet est résolue depuis le projet/document concerné, jamais
+  depuis le CWD implicite ; `${KIPRJMOD}` est relatif au projet.
+- La logique existante est consolidée plutôt que dupliquée.
+- `kicad_invoke` conserve ses garanties transactionnelles et une découverte de
+  documents conservatrice.
+- Les commandes IPC envoyées correspondent au type réel du document/éditeur.
+- Aucun document du projet Hi-Fi utilisateur n'est utilisé pour développer le
+  correctif.
+
+## S.1 — Reproduction et résolution de bibliothèque projet
+
+### Tâches
+
+- [x] S.1.1 Inspecter architecture, tests, commits récents et tracer le chemin
+  `register_symbol_library` → `sym-lib-table` → `add_schematic_component`.
+- [x] S.1.2 Ajouter une régression E2E temporaire reproduisant
+  `TestLocal:TEST_IC`, puis corriger le resolver et ses erreurs structurées.
+- [x] S.1.3 Prouver bibliothèque projet, `${KIPRJMOD}`, persistance et
+  non-régression `Device:R` par tests automatiques.
+
+### Validation
+
+Le test échoue sur le comportement antérieur et passe après correctif ; le
+schéma relu contient instance, référence, `lib_id`, symbole embarqué et pins.
+
+## S.2 — IPC document-aware et découverte transactionnelle des chemins
+
+### Tâches
+
+- [x] S.2.1 Reproduire/auditer `open_project`, `save_project`,
+  `GetOpenDocuments`, `save_board` contre protobufs et handlers KiCad 10.
+- [x] S.2.2 Corriger le routage PCB/schematic et la classification
+  `AS_UNHANDLED` sans casser l'API publique.
+- [x] S.2.3 Durcir `no_project_path_found` pour `schematic`, `board`, `.kicad_pro`,
+  outils sans chemin et `documents` explicites, avec tests ciblés.
+
+### Validation
+
+Les tests document-aware et rollback passent, les usages PCB existants restent
+verts et aucun faux `no_project_path_found` ne touche le scénario S.1.
+
+## S.3 — Validation globale, live et livraison
+
+### Tâches
+
+- [x] S.3.1 Passer format, lint/typecheck/build et suites pertinentes.
+- [x] S.3.2 Sur projet temporaire et KiCad 10.0.3, valider création,
+  enregistrement, placement, lecture, sauvegarde/relecture pour symbole projet,
+  puis `Device:R`.
+- [x] S.3.3 Examiner le diff, préserver les changements utilisateur et créer un
+  checkpoint Git propre limité aux fichiers de la phase S.
+
+### Validation
+
+Les preuves permettent de reprendre B1.1 et aucun fichier Hi-Fi utilisateur
+n'a été modifié.

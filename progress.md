@@ -2,36 +2,32 @@
 
 ## Phase actuelle
 
-**R — Launch & adoption : terminée.** Aucune nouvelle phase technique n'est
-ouverte. La release publique **v1.1.1** est validée ; les PR #12 et #13 sont
-mergées dans `agentic/main`.
+**S — Terminée.**
 
 ## Tâche actuelle
 
-Aucune tâche technique. Le nettoyage final post-v1.1.1 est terminé.
+**Aucune ; livraison validée.**
 
 ## Dernière tâche validée
 
-**Audit final du repository — 2026-08-27.** L'état GitHub réel, les workflows,
-tags, artefacts publiés, métadonnées, README, release notes, parcours
-d'installation et dette explicite du plan ont été contrôlés. Le corps de la
-release v1.1.1 est aligné sur `RELEASE_NOTES.md`, le guide du demo ne demande
-plus la configuration v1.1.0 et le registre d'adoption couvre tous les champs de
-suivi requis sans donnée fabriquée.
+**S.3.3 — Validation globale, live et checkpoint Git.**
 
 Validation :
 
-- branche par défaut `agentic/main`, CI du HEAD et workflow Release v1.1.1 : PASS ;
-- archive PCM Windows publiée : SHA-256 GitHub concordant, structure et metadata v1.1.1 contrôlées ;
-- liens locaux du README : PASS ;
-- `git diff --check` : PASS.
+- E2E `project_symbol_library_e2e` : PASS ;
+- workspace : 1420 tests passés, 41 ignorés, 70 suites ;
+- `cargo fmt --check`, Clippy `-D warnings`, build workspace : PASS ;
+- live KiCad CLI 10.0.3 : `TestLocal:TEST_IC` U1 et `Device:R` R1 persistants ;
+- IPC UI non lancé : comportement document-aware validé par mocks/protobufs.
 
 ## Décisions actives
 
-- Aucun post, soumission Show HN ou entrée d'annuaire n'est publié par l'agent.
-- L'identifier PCM `com.github.mixelpixx.konnect` reste inchangé.
-- INV6 et INV11 restent applicables : aucun critère manqué ou conditionnel ne
-  devient une tâche active sans mesure ou preuve nouvelle.
+- Résolution : table projet, table globale, bibliothèques installées ;
+  `${KIPRJMOD}` est ancré au dossier du schéma.
+- `save_project` conserve son API et devient document-aware ; un schéma déjà
+  persisté est un succès explicite, sans commande PCB.
+- Un appel IPC sans chemin reste conservateur et requiert `documents` explicites
+  pour la protection transactionnelle.
 
 ## Blocage actif
 
@@ -39,12 +35,12 @@ Aucun.
 
 ## Fichiers / zones utiles
 
-- Release : `https://github.com/nevenfo/kicad-agentic-mcp/releases/tag/v1.1.1`.
-- Suivi externe : `docs/adoption.md`.
-- Copie prête : `docs/launch/ready-to-post.md`.
+- `crates/konnect-core/tests/project_symbol_library_e2e.rs`
+- `crates/konnect-schematic-editor/src/library.rs`
+- `crates/konnect-core/src/tools/project.rs`
+- `crates/konnect-ipc/src/client.rs`
 
 ## NEXT ACTION
 
-À réception d'un premier retour extérieur réel, l'enregistrer dans
-`docs/adoption.md` (R.5), puis réappliquer la porte R.6 ; jusque-là, aucune
-action technique.
+B1.1 — Reprendre le benchmark Hi-Fi et placer
+`HifiAmp_TPA3255_Local:LM5010ASD` comme U1 via le MCP mis à jour.

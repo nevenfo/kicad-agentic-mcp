@@ -2120,6 +2120,59 @@ pub(crate) mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn add_component_resolves_a_kiprjmod_project_symbol_library() {
+        // The library is deliberately only project-registered: changing CWD
+        // or relying on an installed KiCad library must not make this pass.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("project.kicad_sch");
+        std::fs::write(
+            dir.path().join("TestLocal.kicad_sym"),
+            "(kicad_symbol_lib\n\t(version 20241209)\n\t(generator \"test\")\n\t(symbol \"TEST_IC\"\n\t\t(property \"Reference\" \"U\" (at 0 0 0))\n\t\t(property \"Value\" \"TEST_IC\" (at 0 0 0))\n\t\t(symbol \"TEST_IC_1_1\"\n\t\t\t(pin input line (at -2.54 0 0) (length 2.54)\n\t\t\t\t(name \"IN\" (effects (font (size 1.27 1.27))))\n\t\t\t\t(number \"1\" (effects (font (size 1.27 1.27))))\n\t\t\t)\n\t\t\t(pin output line (at 2.54 0 180) (length 2.54)\n\t\t\t\t(name \"OUT\" (effects (font (size 1.27 1.27))))\n\t\t\t\t(number \"2\" (effects (font (size 1.27 1.27))))\n\t\t\t)\n\t\t)\n\t)\n)\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("sym-lib-table"),
+            "(sym_lib_table\n\t(version 7)\n\t(lib (name \"TestLocal\") (type \"KiCad\") (uri \"${KIPRJMOD}/TestLocal.kicad_sym\") (options \"\") (descr \"\"))\n)\n",
+        )
+        .unwrap();
+        let ctx = test_ctx();
+        handle_create_schematic(&json!({ "path": path.display().to_string() }), &ctx)
+            .await
+            .unwrap();
+
+        let result = handle_add_schematic_component(
+            &json!({
+                "schematic": path.display().to_string(),
+                "lib_id": "TestLocal:TEST_IC",
+                "x": 100.0, "y": 80.0,
+                "reference": "U1"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{}", content_text(&result));
+        let result: serde_json::Value = serde_json::from_str(&content_text(&result)).unwrap();
+        assert_eq!(result["added"], "TestLocal:TEST_IC");
+        assert_eq!(result["reference"], "U1");
+
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("(symbol \"TestLocal:TEST_IC\""));
+        assert!(saved.contains("(number \"1\"") && saved.contains("(number \"2\""));
+        let reopened = cse::Schematic::load(&path).unwrap();
+        let instance = reopened.symbols.by_reference("U1").unwrap();
+        assert_eq!(instance.lib_id, "TestLocal:TEST_IC");
+        assert_eq!(
+            reopened
+                .raw_other
+                .iter()
+                .filter(|n| n.tag() == Some("lib_symbols"))
+                .count(),
+            1
+        );
+    }
+
     /// H.6.1: an invented library around a real symbol name is a naming slip
     /// the installed libraries settle by themselves. 10 of the 16 apply
     /// failures in the E26 model-fit run were this shape; failing them back to

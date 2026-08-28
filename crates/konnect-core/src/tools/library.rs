@@ -2761,29 +2761,29 @@ fn top_level_symbol_names(content: &str) -> anyhow::Result<Vec<String>> {
 
 /// Resolve a symbol library nickname to an on-disk `.kicad_sym` path.
 ///
-/// Checks the **global** sym-lib-table first, then the **project** table at
-/// `project_dir/sym-lib-table` (if a project dir is supplied). Returns the first
+/// Checks the **project** table at `project_dir/sym-lib-table` first (when a
+/// project dir is supplied), then the **global** sym-lib-table. Returns the first
 /// entry whose nickname matches and whose URI resolved to a path at all. Both
 /// tables are read with `read_flat_lib_table`, so nested `(type "Table")`
 /// references are followed and `${KICAD*_DIR}` URIs are expanded.
 ///
 /// The returned path is *not* guaranteed to exist: `expand_lib_uri` checks
 /// existence only for `${KICAD*_DIR}` expansions, and takes a plain URI as
-/// written. A stale global entry therefore still shadows a working project one
-/// with the same nickname, and the caller's read is what discovers it.
+/// written. Project-first ordering matches KiCad's project override semantics.
 async fn resolve_symbol_lib_path(
     nick: &str,
     project_dir: Option<&Path>,
 ) -> Result<PathBuf, SymbolLibPathError> {
-    let mut tables = vec![global_sym_lib_table()];
+    let mut tables = Vec::with_capacity(2);
     if let Some(pd) = project_dir {
         tables.push(pd.join("sym-lib-table"));
     }
+    tables.push(global_sym_lib_table());
     // D.6.5: the nickname matching and the URI expanding are separate
-    // failures, and this used to return `None` for both. The search order is
-    // unchanged — a nickname whose URI does not expand is still passed over
-    // in favour of a later table that resolves — but if nothing resolves, the
-    // fact that the nickname *was* registered is now what gets reported.
+    // failures, and this used to return `None` for both. A nickname whose URI
+    // does not expand is passed over in favour of a later table that resolves;
+    // if nothing resolves, the fact that the nickname *was* registered is what
+    // gets reported.
     let mut nickname_seen = false;
     for table in tables {
         for lib in read_flat_lib_table(&table) {
