@@ -30,7 +30,12 @@ clippy strict PASS ; viewer check et 20 tests PASS ; format/diff PASS.
 
 ## Blocage actif
 
-Aucun.
+Le serveur privé `kicad-agentic-mcp` n'est pas rattaché à cette session : le
+contrôleur KiCad a inspecté 314 outils et n'a trouvé aucun outil KiCad,
+`kicad_describe` ou `kicad_invoke`. Aucun projet n'a été ouvert ni modifié. La
+build de développement a été retirée et l'installation active restaurée sur
+`v1.1.2`, SHA256
+`C898F96D63B69ED44BB73E44433EE66F002E01D87262388F6A945D07D30D3B7D`.
 
 ## Fichiers / zones utiles
 
@@ -39,9 +44,11 @@ Aucun.
 - `crates/konnect-ipc/src/{client,lib}.rs`, `crates/konnect-ipc/tests/`
 - `crates/konnect-core/src/{mcp/handler.rs,tools/{mod,project}.rs}`
 - `packaging/`
+- Installation : `C:\Users\FlowUP\Documents\KiCad\10.0\3rdparty\plugins\com_github_mixelpixx_konnect`
+- Rollback : même racine, suffixe `.backup-v1.1.2-pre-v3.1-20260829`
 
 ## NEXT ACTION
 
-V.3.1 — Construire puis installer une build de développement avec rollback
-identifié, et valider depuis Eeschema les pipes, lecture, `save_project`,
-réouverture et persistance sur un projet temporaire hors Hi-Fi.
+V.3.1 — Rattacher `kicad-agentic-mcp`, réinstaller la build de développement
+du commit `1bfd3ad`, puis valider depuis Eeschema les pipes, lecture,
+`save_project`, réouverture et persistance sur un projet temporaire hors Hi-Fi.
