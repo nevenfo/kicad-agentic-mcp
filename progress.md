@@ -26,19 +26,21 @@ clippy strict PASS ; viewer check et 20 tests PASS ; format/diff PASS.
 - Branche `ai/documenttype-routing-v1.1.3` depuis `9a051146`.
 - Le projet Hi-Fi reste intact jusqu'à V.3.2 ; aucune poursuite de B1.3.
 - Le contexte indéterminé échoue explicitement, jamais PCB.
+- L'API globale KiCad 10 est activée dans `kicad_common.json`; aucune fixture
+  n'est modifiée tant que le serveur IPC n'est pas réellement à l'écoute.
 - Anciennes versions et backups servent uniquement au rollback explicite.
 
 ## Blocage actif
 
-`kicad-agentic-mcp` est maintenant enregistré globalement et activé par
-`codex mcp list`, avec le build corrigé et `--document-type schematic`, mais
-la session courante ne recharge pas les MCP à chaud. Deux contrôleurs KiCad,
-dont un créé après l'enregistrement, voient zéro outil pertinent. La
-documentation OpenAI ne décrit l'initialisation MCP qu'au démarrage/reprise :
-une nouvelle session est la précondition manquante. Aucun KiCad ni projet n'a
-été ouvert. L'installation active et le rollback restent identiques à
-`v1.1.2`, SHA256
-`C898F96D63B69ED44BB73E44433EE66F002E01D87262388F6A945D07D30D3B7D`.
+La nouvelle session charge bien les outils MCP KiCad et la build corrigée est
+active. Eeschema a été lancé sur la fixture isolée, puis relancé après passage
+de `api.enable_server:false` à `true` dans
+`C:\Users\FlowUP\AppData\Roaming\kicad\10.0\kicad_common.json`. Malgré cela,
+`ipc_ready:false` persiste et la connexion à
+`ipc://C:\Users\FlowUP\AppData\Local\Temp\kicad\api.sock` est refusée. La
+fixture est intacte, le projet Hi-Fi n'a pas été ouvert et le rollback est
+préservé. V.3.1 ne peut pas être validée avant que le serveur IPC KiCad écoute
+réellement.
 
 ## Fichiers / zones utiles
 
@@ -51,11 +53,15 @@ une nouvelle session est la précondition manquante. Aucun KiCad ni projet n'a
 - Rollback : même racine, suffixe `.backup-v1.1.2-pre-v3.1-20260829`
 - Build prêt : `target/release/konnect.exe`, SHA256
   `8D84738B603755F7C3B728822778785A3BD22C7CF3CBFE3DCBA11210C796E434`
+- Fixture :
+  `C:\Users\FlowUP\Documents\KiCad\KonnectValidationV31\konnect_v31_eeschema_pipe_fixture.kicad_sch`
+- Configuration KiCad :
+  `C:\Users\FlowUP\AppData\Roaming\kicad\10.0\kicad_common.json`
 - Config MCP : `C:\Users\FlowUP\.codex\config.toml`; sauvegarde exacte suffixée
   `.backup-v3.1-mcp-20260829`
 
 ## NEXT ACTION
 
-V.3.1 — Reprendre dans une nouvelle session Codex afin de charger
-`kicad-agentic-mcp`, confirmer ses outils, puis installer temporairement la
-build prête et valider Eeschema/Pcbnew sur une fixture hors Hi-Fi avec rollback.
+V.3.1 — Rendre le serveur API IPC de KiCad 10 réellement à l'écoute sur
+`api.sock`, confirmer `ipc_ready:true`, puis reprendre sur la fixture isolée :
+lecture, `save_project`, fermeture/réouverture et persistance.
