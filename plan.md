@@ -6200,6 +6200,8 @@ Eeschema résout explicitement `DOCTYPE_SCHEMATIC`, Pcbnew conserve
 
 - [ ] V.3.1 Installer une build de développement avec rollback identifié, puis
   valider Eeschema : pipes, lecture, `save_project`, réouverture et persistance.
+  La session de validation doit avoir chargé `kicad-agentic-mcp` au démarrage
+  ou à la reprise : Codex ne garantit aucun rechargement MCP à chaud.
 - [ ] V.3.2 Effectuer le smoke-test Pcbnew et le smoke-test Hi-Fi non destructif,
   sans poursuivre B1.3 ni éditer directement les fichiers KiCad.
 - [ ] V.3.3 Consigner `MCP_BUG — incorrect DocumentType routing for Eeschema`

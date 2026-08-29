@@ -30,10 +30,13 @@ clippy strict PASS ; viewer check et 20 tests PASS ; format/diff PASS.
 
 ## Blocage actif
 
-Le serveur privé `kicad-agentic-mcp` n'est pas rattaché à cette session : le
-contrôleur KiCad a inspecté 314 outils et n'a trouvé aucun outil KiCad,
-`kicad_describe` ou `kicad_invoke`. Aucun projet n'a été ouvert ni modifié. La
-build de développement a été retirée et l'installation active restaurée sur
+`kicad-agentic-mcp` est maintenant enregistré globalement et activé par
+`codex mcp list`, avec le build corrigé et `--document-type schematic`, mais
+la session courante ne recharge pas les MCP à chaud. Deux contrôleurs KiCad,
+dont un créé après l'enregistrement, voient zéro outil pertinent. La
+documentation OpenAI ne décrit l'initialisation MCP qu'au démarrage/reprise :
+une nouvelle session est la précondition manquante. Aucun KiCad ni projet n'a
+été ouvert. L'installation active et le rollback restent identiques à
 `v1.1.2`, SHA256
 `C898F96D63B69ED44BB73E44433EE66F002E01D87262388F6A945D07D30D3B7D`.
 
@@ -46,9 +49,13 @@ build de développement a été retirée et l'installation active restaurée sur
 - `packaging/`
 - Installation : `C:\Users\FlowUP\Documents\KiCad\10.0\3rdparty\plugins\com_github_mixelpixx_konnect`
 - Rollback : même racine, suffixe `.backup-v1.1.2-pre-v3.1-20260829`
+- Build prêt : `target/release/konnect.exe`, SHA256
+  `8D84738B603755F7C3B728822778785A3BD22C7CF3CBFE3DCBA11210C796E434`
+- Config MCP : `C:\Users\FlowUP\.codex\config.toml`; sauvegarde exacte suffixée
+  `.backup-v3.1-mcp-20260829`
 
 ## NEXT ACTION
 
-V.3.1 — Rattacher `kicad-agentic-mcp`, réinstaller la build de développement
-du commit `1bfd3ad`, puis valider depuis Eeschema les pipes, lecture,
-`save_project`, réouverture et persistance sur un projet temporaire hors Hi-Fi.
+V.3.1 — Reprendre dans une nouvelle session Codex afin de charger
+`kicad-agentic-mcp`, confirmer ses outils, puis installer temporairement la
+build prête et valider Eeschema/Pcbnew sur une fixture hors Hi-Fi avec rollback.
