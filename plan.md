@@ -6157,3 +6157,70 @@ exécutable de rollback préservé.
 Version `1.1.2`, gate local et CI du commit tagué PASS, tag et Release GitHub
 présents, artefacts attendus publiés, un artefact inspecté avec version et
 package PCM cohérents, worktree propre et aucun changement fonctionnel ajouté.
+
+# Phase V — Routage DocumentType Eeschema
+
+## V.1 — Diagnostic et régression
+
+### Objectif
+
+Reproduire hors projet Hi-Fi pourquoi Konnect `v1.1.2`, lancé depuis Eeschema,
+émet `DOCTYPE_PCB`, puis verrouiller le contrat Eeschema/PCB/contexte inconnu.
+
+### Tâches
+
+- [x] V.1.1 Cartographier launcher, manifeste, contexte KiCad, transport IPC et
+  construction/transmission de `DocumentType` pour Eeschema et Pcbnew.
+- [x] V.1.2 Produire un cas minimal hors projet Hi-Fi qui échoue sur `v1.1.2`.
+- [x] V.1.3 Ajouter une régression rouge discriminant Eeschema → schematic,
+  Pcbnew → PCB et contexte indéterminé → erreur explicite.
+
+### Validation
+
+La cause exacte est prouvée par le code et un test échoue avant le correctif
+pour Eeschema sans dépendre du projet Hi-Fi.
+
+## V.2 — Correctif et validations locales
+
+### Tâches
+
+- [x] V.2.1 Appliquer le plus petit correctif à la source sans fallback PCB.
+- [x] V.2.2 Passer les tests ciblés, compatibilité IPC/plugin/pipes,
+  `open_documents`, `save_project` et protections document-aware.
+- [x] V.2.3 Passer le gate complet et les E2E/CI pertinents.
+
+### Validation
+
+Eeschema résout explicitement `DOCTYPE_SCHEMATIC`, Pcbnew conserve
+`DOCTYPE_PCB`, l'indéterminé refuse sans mutation et toutes les gates passent.
+
+## V.3 — Validation réelle et benchmark
+
+### Tâches
+
+- [ ] V.3.1 Installer une build de développement avec rollback identifié, puis
+  valider Eeschema : pipes, lecture, `save_project`, réouverture et persistance.
+- [ ] V.3.2 Effectuer le smoke-test Pcbnew et le smoke-test Hi-Fi non destructif,
+  sans poursuivre B1.3 ni éditer directement les fichiers KiCad.
+- [ ] V.3.3 Consigner `MCP_BUG — incorrect DocumentType routing for Eeschema`
+  avec cause, impact, reproduction, correctif, validations et état Hi-Fi.
+
+### Validation
+
+Les deux éditeurs et le projet Hi-Fi préservé confirment le correctif réel ;
+l'échec reste visible dans le benchmark.
+
+## V.4 — Patch release v1.1.3
+
+### Tâches
+
+- [ ] V.4.1 Préparer version, lockfiles et notes selon la politique existante.
+- [ ] V.4.2 Committer/pousser le candidat, obtenir la CI PASS sur ce commit.
+- [ ] V.4.3 Taguer `v1.1.3`, vérifier workflow, release et artefacts publiés.
+- [ ] V.4.4 Installer `v1.1.3` comme seule version en vigueur pour les clients,
+  vérifier le runtime actif et conserver uniquement le rollback explicite.
+
+### Validation
+
+Le tag pointe sur le commit réellement validé, les artefacts sont cohérents et
+`v1.1.3` est la version active sans fallback vers un ancien binaire.

@@ -171,7 +171,7 @@ async fn handle_open_project(
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let ipc = konnect_ipc::KiCadIpcClient::new(&ctx.config.ipc_address);
-    let documents = match ipc.get_open_documents_document_aware() {
+    let documents = match ipc.get_open_documents_for_context(ctx.document_context) {
         Ok(documents) => documents,
         Err(error) => {
             return Ok(CallToolResult::json(&json!({
@@ -216,7 +216,7 @@ async fn handle_save_project(
     ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let ipc = konnect_ipc::KiCadIpcClient::new(&ctx.config.ipc_address);
-    match ipc.save_open_document()? {
+    match ipc.save_open_document_for_context(ctx.document_context)? {
         konnect_ipc::SaveDocumentOutcome::PcbSaved => {
             Ok(CallToolResult::text("Board saved successfully."))
         }

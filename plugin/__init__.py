@@ -103,7 +103,9 @@ def _run_server():
     """
     global _server_process
     try:
-        args = [_stage(BINARY_PATH)]
+        # This SWIG launcher exists only inside pcbnew, so carry that context
+        # explicitly instead of making the server guess a document type.
+        args = [_stage(BINARY_PATH), "--document-type", "pcb"]
         if os.path.exists(SETTINGS_PATH):
             args += ["--config", _stage(SETTINGS_PATH)]
         # pcbnew has no valid stderr; inheriting gives konnect a broken

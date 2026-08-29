@@ -41,6 +41,19 @@ impl McpHandler {
         config: crate::tools::ServerConfig,
         provider: Option<Arc<dyn kam_llm::Provider>>,
     ) -> anyhow::Result<Self> {
+        Self::new_with_agent_provider_and_document_context(
+            config,
+            provider,
+            konnect_ipc::DocumentContext::Auto,
+        )
+        .await
+    }
+
+    pub async fn new_with_agent_provider_and_document_context(
+        config: crate::tools::ServerConfig,
+        provider: Option<Arc<dyn kam_llm::Provider>>,
+        document_context: konnect_ipc::DocumentContext,
+    ) -> anyhow::Result<Self> {
         let router = Arc::new(ToolRouter::new());
 
         // Load only the starter kit at startup so baseline `tools/list` stays small
@@ -48,12 +61,15 @@ impl McpHandler {
         router.load_starter_kit().await;
 
         let observer = CallObserver::new(Some(default_calls_log_path()));
-        let ctx = Arc::new(crate::tools::ToolContext::new_with_observer_and_provider(
-            config,
-            router,
-            observer.clone(),
-            provider,
-        ));
+        let ctx = Arc::new(
+            crate::tools::ToolContext::new_with_observer_provider_and_document_context(
+                config,
+                router,
+                observer.clone(),
+                provider,
+                document_context,
+            ),
+        );
 
         Ok(McpHandler {
             ctx,
