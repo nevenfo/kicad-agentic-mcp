@@ -1,7 +1,7 @@
-# KiCad Agentic MCP v1.1.2
+# KiCad Agentic MCP v1.1.3
 
-Correctness release for document-aware schematic project handling. There is no
-new tool, changed tool signature or architecture change: the surface remains
+Correctness release for the document context a session runs in. There is no new
+tool, changed tool signature or architecture change: the surface remains
 **202 tools across 22 toolsets**.
 
 The benchmark and model-fit figures further down were taken on 2026-08-24 for
@@ -12,28 +12,30 @@ v1.0.0 and are reproduced unchanged. The separate Windows binary-size figure
 was measured on v1.1.0 and is labelled as such. Where a target was missed, it
 says so and the target is not moved.
 
-## What changed in v1.1.2
+## What changed in v1.1.3
 
-- **Project symbol libraries now work during schematic placement.** Libraries
-  registered in the project's `sym-lib-table` are usable by
-  `add_schematic_component`; `${KIPRJMOD}` is resolved relative to the
-  schematic/project directory. Resolution order is project, global, then
-  installed KiCad libraries.
-- **Save and open-document handling is document-aware.** `save_project` and
-  `GetOpenDocuments` no longer systematically assume a PCB document.
-- **Transactional root discovery is more robust.** It now handles
-  `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and explicit `documents` targets.
-- **The project-local regression is covered end to end.**
-  `create/register project-local symbol library` →
-  `add_schematic_component` → readback → save/reopen → persistence.
-  The real Hi-Fi workload also passed:
-  `HifiAmp_TPA3255_Local:LM5010ASD` → `U1`, MCP save and readback.
-- **IPC document-aware remains PARTIAL.** Mocks and protobufs are validated;
-  the GUI IPC validation specific to this phase was not executed. This is not
-  reported as **PASS**.
+- **A session launched from Eeschema is a schematic session.** v1.1.2 sent
+  `DOCTYPE_PCB` first and fell back to it, so `save_project` invoked from the
+  Schematic Editor wrote the *board*. Plugin actions bound to an editor now
+  pass `--document-type pcb|schematic` explicitly. KiCad 10's plugin manifest
+  forwards `actions[].args` to `argv` even though the published JSON schema
+  omits the field, so the context is stated rather than guessed.
+- **An undetermined context refuses instead of defaulting to PCB.** With no
+  launcher hint, `Auto` probes both editors and accepts exactly one live
+  handler; zero or two is an explicit error. There is no PCB fallback left.
+- **The document-aware IPC path is now validated against real editors, not
+  mocks.** v1.1.2 reported this as PARTIAL; it is **PASS** here.
+  `scripts/live-schematic-e2e.ps1` is the new schematic counterpart of
+  `scripts/live-pcb-e2e.ps1`: it asserts that a schematic context saves no
+  board, that an explicit PCB context refuses with no board open, that `Auto`
+  resolves the single live handler, and that both files are byte-identical
+  after the editor stops. The PCB suite still passes unchanged.
+- **The live PCB runner upgrades its throwaway board.** A board checked in at
+  an older format makes pcbnew serve a modal `Information` dialog before its
+  API handler registers, which reads as a routing failure and is not one.
 
-These fixes change project/document fidelity only. They add no tool and change
-no MCP parameter or response schema.
+These fixes change document routing only. They add no tool and change no MCP
+parameter or response schema.
 
 ## What this is
 
@@ -155,8 +157,9 @@ match the result, and no win is netted off against them.
 
 ## KiCad 10 status
 
-KiCad 10.0.3 is the ground truth this release is built against, and the access
-strategy is fixed by what KiCad 10 actually offers, not by preference:
+KiCad 10.0.3 is the ground truth this release is built against; the live
+schematic and PCB suites in this release were run against 10.0.6 as well. The
+access strategy is fixed by what KiCad 10 actually offers, not by preference:
 
 - **PCB over IPC** (NNG + protobuf) — coverage is complete there.
 - **Schematic over the S-expression engine** — schematic IPC is empty on 10.0:

@@ -7,7 +7,7 @@
 
 use konnect_ipc::builders;
 use konnect_ipc::gen::kiapi;
-use konnect_ipc::KiCadIpcClient;
+use konnect_ipc::{DocumentContext, KiCadIpcClient};
 use nng::options::Options;
 use prost::Message;
 use std::sync::{Arc, Mutex};
@@ -164,6 +164,79 @@ fn document_aware_discovery_accepts_a_schematic_handler() {
 }
 
 #[test]
+fn explicit_eeschema_context_sends_only_schematic_document_type() {
+    let mock = spawn_mock(|request| {
+        let message = request.message.expect("request must pack a command");
+        let request =
+            kiapi::common::commands::GetOpenDocuments::decode(message.value.as_slice()).unwrap();
+        assert_eq!(
+            request.r#type(),
+            kiapi::common::types::DocumentType::DoctypeSchematic,
+            "Eeschema context must never be routed as PCB"
+        );
+        Some(open_schematic_response())
+    });
+
+    let documents = KiCadIpcClient::new(&mock.url)
+        .get_open_documents_for_context(DocumentContext::Schematic)
+        .unwrap();
+    assert_eq!(documents.len(), 1);
+    assert!(!documents[0].is_pcb());
+}
+
+#[test]
+fn explicit_pcbnew_context_sends_only_pcb_document_type() {
+    let mock = spawn_mock(|request| {
+        let message = request.message.expect("request must pack a command");
+        let request =
+            kiapi::common::commands::GetOpenDocuments::decode(message.value.as_slice()).unwrap();
+        assert_eq!(
+            request.r#type(),
+            kiapi::common::types::DocumentType::DoctypePcb,
+            "Pcbnew context must stay routed as PCB"
+        );
+        Some(open_board_response())
+    });
+
+    let documents = KiCadIpcClient::new(&mock.url)
+        .get_open_documents_for_context(DocumentContext::Pcb)
+        .unwrap();
+    assert_eq!(documents.len(), 1);
+    assert!(documents[0].is_pcb());
+}
+
+#[test]
+fn automatic_context_refuses_when_no_editor_handler_matches() {
+    let mock = spawn_mock(|_| Some(unhandled_response()));
+    let error = KiCadIpcClient::new(&mock.url)
+        .get_open_documents_for_context(DocumentContext::Auto)
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("document context"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn automatic_context_refuses_when_both_editor_handlers_match() {
+    let mock = spawn_mock(|request| {
+        let message = request.message.expect("request must pack a command");
+        let request =
+            kiapi::common::commands::GetOpenDocuments::decode(message.value.as_slice()).unwrap();
+        match request.r#type() {
+            kiapi::common::types::DocumentType::DoctypePcb => Some(open_board_response()),
+            kiapi::common::types::DocumentType::DoctypeSchematic => Some(open_schematic_response()),
+            other => panic!("unexpected document type: {other:?}"),
+        }
+    });
+
+    let error = KiCadIpcClient::new(&mock.url)
+        .get_open_documents_for_context(DocumentContext::Auto)
+        .unwrap_err();
+    assert!(error.to_string().contains("ambiguous"));
+}
+
+#[test]
 fn saving_with_only_a_schematic_open_is_a_successful_noop() {
     let command_count = Arc::new(Mutex::new(0usize));
     let command_count_in_mock = Arc::clone(&command_count);
@@ -190,6 +263,20 @@ fn saving_with_only_a_schematic_open_is_a_successful_noop() {
         konnect_ipc::SaveDocumentOutcome::SchematicAlreadyPersisted
     );
     assert_eq!(*command_count.lock().unwrap(), 2);
+}
+
+#[test]
+fn saving_with_an_empty_explicit_context_never_falls_back_to_pcb() {
+    let mock = spawn_mock(|request| {
+        let message = request.message.expect("request must pack a command");
+        assert!(message.type_url.ends_with("GetOpenDocuments"));
+        Some(ok_response())
+    });
+
+    let error = KiCadIpcClient::new(&mock.url)
+        .save_open_document_for_context(DocumentContext::Schematic)
+        .unwrap_err();
+    assert!(error.to_string().contains("no open document"));
 }
 
 #[test]

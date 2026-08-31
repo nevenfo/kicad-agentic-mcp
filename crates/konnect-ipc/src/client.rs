@@ -198,6 +198,16 @@ fn is_command_unhandled(error: &anyhow::Error) -> bool {
         .any(|cause| cause.downcast_ref::<CommandUnhandled>().is_some())
 }
 
+/// Document context supplied by the KiCad launcher, or discovered explicitly
+/// from the one live IPC handler when Konnect is started by an external MCP
+/// client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentContext {
+    Auto,
+    Pcb,
+    Schematic,
+}
+
 /// A document KiCad reported through the documented PCB/schematic probes.
 #[derive(Debug, Clone)]
 pub enum OpenDocument {
@@ -473,26 +483,59 @@ impl KiCadIpcClient {
         }
     }
 
-    /// Probe KiCad 10's two supported editor handlers in the documented
-    /// order. A handler that replies `AS_UNHANDLED` merely declines the other
-    /// editor type; it is not a transport or command failure.
+    /// Discover the one live editor handler explicitly. A handler that replies
+    /// `AS_UNHANDLED` merely declines the probed editor type; zero or two
+    /// accepting handlers are errors rather than a silent PCB default.
     pub fn get_open_documents_document_aware(&self) -> Result<Vec<OpenDocument>> {
-        let mut documents = Vec::new();
-        for (document_type, wrap) in [
-            (
-                kiapi::common::types::DocumentType::DoctypePcb,
-                OpenDocument::Pcb as fn(kiapi::common::types::DocumentSpecifier) -> OpenDocument,
-            ),
-            (
-                kiapi::common::types::DocumentType::DoctypeSchematic,
+        self.get_open_documents_for_context(DocumentContext::Auto)
+    }
+
+    /// Query open documents for an explicit launcher context, or discover the
+    /// one handler when an external MCP client has no launcher hint.
+    pub fn get_open_documents_for_context(
+        &self,
+        context: DocumentContext,
+    ) -> Result<Vec<OpenDocument>> {
+        type Wrapper = fn(kiapi::common::types::DocumentSpecifier) -> OpenDocument;
+        let candidates: &[(kiapi::common::types::DocumentType, Wrapper)] = match context {
+            DocumentContext::Pcb => &[(
+                (kiapi::common::types::DocumentType::DoctypePcb),
+                OpenDocument::Pcb,
+            )],
+            DocumentContext::Schematic => &[(
+                (kiapi::common::types::DocumentType::DoctypeSchematic),
                 OpenDocument::Schematic,
-            ),
-        ] {
+            )],
+            DocumentContext::Auto => &[
+                (
+                    kiapi::common::types::DocumentType::DoctypePcb,
+                    OpenDocument::Pcb,
+                ),
+                (
+                    kiapi::common::types::DocumentType::DoctypeSchematic,
+                    OpenDocument::Schematic,
+                ),
+            ],
+        };
+
+        let mut handled = 0usize;
+        let mut documents = Vec::new();
+        for &(document_type, wrap) in candidates {
             match self.get_open_documents_of_type(document_type) {
-                Ok(found) => documents.extend(found.into_iter().map(wrap)),
-                Err(error) if is_command_unhandled(&error) => {}
+                Ok(found) => {
+                    handled += 1;
+                    documents.extend(found.into_iter().map(wrap));
+                }
+                Err(error) if context == DocumentContext::Auto && is_command_unhandled(&error) => {}
                 Err(error) => return Err(error),
             }
+        }
+
+        if context == DocumentContext::Auto && handled != 1 {
+            anyhow::bail!(
+                "KiCad document context is {}: expected exactly one PCB or schematic handler, found {handled}",
+                if handled == 0 { "undetermined" } else { "ambiguous" }
+            );
         }
         Ok(documents)
     }
@@ -877,7 +920,14 @@ impl KiCadIpcClient {
     /// persisted by the S-expression writer, so that case is an explicit
     /// successful no-op.
     pub fn save_open_document(&self) -> Result<SaveDocumentOutcome> {
-        let documents = self.get_open_documents_document_aware()?;
+        self.save_open_document_for_context(DocumentContext::Auto)
+    }
+
+    pub fn save_open_document_for_context(
+        &self,
+        context: DocumentContext,
+    ) -> Result<SaveDocumentOutcome> {
+        let documents = self.get_open_documents_for_context(context)?;
         if documents.iter().any(OpenDocument::is_pcb) {
             self.save_board()?;
             return Ok(SaveDocumentOutcome::PcbSaved);
@@ -888,8 +938,7 @@ impl KiCadIpcClient {
         {
             return Ok(SaveDocumentOutcome::SchematicAlreadyPersisted);
         }
-        self.save_board()?;
-        Ok(SaveDocumentOutcome::PcbSaved)
+        anyhow::bail!("KiCad document context has no open document to save")
     }
 
     /// Begin a commit (undo group).

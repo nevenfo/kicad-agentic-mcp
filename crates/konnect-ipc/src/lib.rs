@@ -7,7 +7,7 @@ pub mod transform;
 pub mod types;
 
 pub use client::{
-    BoardNotOpen, IpcFailure, KiCadIpcClient, OpenDocument, SaveDocumentOutcome,
+    BoardNotOpen, DocumentContext, IpcFailure, KiCadIpcClient, OpenDocument, SaveDocumentOutcome,
     TransportUnreachable,
 };
 pub use types::*;

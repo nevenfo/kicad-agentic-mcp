@@ -7,12 +7,22 @@
   },
   "actions": [
     {
-      "identifier": "start-server",
+      "identifier": "start-server-pcb",
       "name": "Konnect",
-      "description": "Start the Konnect AI design server",
+      "description": "Start the Konnect AI design server for Pcbnew",
       "entrypoint": "bin/konnect.exe",
+      "args": ["--document-type", "pcb"],
       "show-button": true,
       "scopes": ["pcb"]
+    },
+    {
+      "identifier": "start-server-schematic",
+      "name": "Konnect",
+      "description": "Start the Konnect AI design server for Eeschema",
+      "entrypoint": "bin/konnect.exe",
+      "args": ["--document-type", "schematic"],
+      "show-button": true,
+      "scopes": ["schematic"]
     }
   ]
 }

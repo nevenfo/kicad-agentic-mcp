@@ -88,6 +88,10 @@ impl std::fmt::Debug for ToolDef {
 /// per-call observer (used by `get_recent_calls` / `server_stats` meta-tools).
 pub struct ToolContext {
     pub config: ServerConfig,
+    /// Editor context carried by the KiCad executable-plugin action. External
+    /// MCP launches use `Auto`, which probes both handlers and requires one
+    /// unambiguous `AS_OK` response.
+    pub document_context: konnect_ipc::DocumentContext,
     pub router: Arc<ToolRouter>,
     pub observer: crate::observability::CallObserver,
     /// In-memory TTL cache for repeated JLCPCB parts-database queries.
@@ -147,6 +151,7 @@ impl ToolContext {
         ));
         ToolContext {
             config,
+            document_context: konnect_ipc::DocumentContext::Auto,
             router,
             observer: crate::observability::CallObserver::new(None),
             jlcpcb_cache: QueryCache::default(),
@@ -180,6 +185,22 @@ impl ToolContext {
         observer: crate::observability::CallObserver,
         provider: Option<Arc<dyn kam_llm::Provider>>,
     ) -> Self {
+        Self::new_with_observer_provider_and_document_context(
+            config,
+            router,
+            observer,
+            provider,
+            konnect_ipc::DocumentContext::Auto,
+        )
+    }
+
+    pub fn new_with_observer_provider_and_document_context(
+        config: ServerConfig,
+        router: Arc<ToolRouter>,
+        observer: crate::observability::CallObserver,
+        provider: Option<Arc<dyn kam_llm::Provider>>,
+        document_context: konnect_ipc::DocumentContext,
+    ) -> Self {
         let mode = Arc::new(kam_state::ModeGuard::new(config.mode));
         let tasks = Arc::new(kam_state::TaskStore::default());
         let evidence = Arc::new(kam_evidence::EvidenceStore::default());
@@ -201,6 +222,7 @@ impl ToolContext {
         };
         ToolContext {
             config,
+            document_context,
             router,
             observer,
             jlcpcb_cache: QueryCache::default(),

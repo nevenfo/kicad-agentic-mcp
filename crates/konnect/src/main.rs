@@ -55,6 +55,7 @@ async fn main() -> Result<()> {
         .position(|a| a == "--config")
         .and_then(|pos| args.get(pos + 1))
         .map(std::path::PathBuf::from);
+    let document_context = parse_document_context(&args)?;
 
     let (config, ipc_address_source) = if let Some(ref path) = config_path {
         // KiCAD launches the server this way (with KICAD_API_SOCKET set), so
@@ -131,8 +132,12 @@ async fn main() -> Result<()> {
         auto_load_toolsets: config.auto_load_toolsets,
         mode: config.mode,
     };
-    let handler =
-        McpHandler::new_with_agent_provider(server_config, config.local_provider()?).await?;
+    let handler = McpHandler::new_with_agent_provider_and_document_context(
+        server_config,
+        config.local_provider()?,
+        document_context,
+    )
+    .await?;
 
     match config.transport {
         TransportMode::Stdio => {
@@ -162,6 +167,28 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn parse_document_context(args: &[String]) -> Result<konnect_ipc::DocumentContext> {
+    let mut indexes = args
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| (argument == "--document-type").then_some(index));
+    let Some(index) = indexes.next() else {
+        return Ok(konnect_ipc::DocumentContext::Auto);
+    };
+    if indexes.next().is_some() {
+        anyhow::bail!("--document-type may be supplied only once");
+    }
+
+    match args.get(index + 1).map(String::as_str) {
+        Some("pcb") => Ok(konnect_ipc::DocumentContext::Pcb),
+        Some("schematic") => Ok(konnect_ipc::DocumentContext::Schematic),
+        Some(value) => {
+            anyhow::bail!("invalid --document-type '{value}': expected 'pcb' or 'schematic'")
+        }
+        None => anyhow::bail!("--document-type requires 'pcb' or 'schematic'"),
+    }
 }
 
 /// Resolve one configured binary path (`kicad_cli` or `kicad_binary`)
@@ -224,6 +251,60 @@ fn print_help() {
     println!("  konnect transaction recover <project-dir>");
     println!("  konnect transaction abandon <project-dir> <id> --force");
     println!("  konnect --config <path>  Start server with config file");
+    println!("  konnect --document-type <pcb|schematic>  Bind KiCad plugin context");
     println!("  konnect --version        Print version");
     println!("  konnect --help           This message");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_document_context;
+    use konnect_ipc::DocumentContext;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn document_context_requires_a_valid_single_value() {
+        assert_eq!(
+            parse_document_context(&args(&["konnect"])).unwrap(),
+            DocumentContext::Auto
+        );
+        assert_eq!(
+            parse_document_context(&args(&["konnect", "--document-type", "pcb"])).unwrap(),
+            DocumentContext::Pcb
+        );
+        assert_eq!(
+            parse_document_context(&args(&["konnect", "--document-type", "schematic"])).unwrap(),
+            DocumentContext::Schematic
+        );
+        assert!(parse_document_context(&args(&["konnect", "--document-type"])).is_err());
+        assert!(parse_document_context(&args(&[
+            "konnect",
+            "--document-type",
+            "pcb",
+            "--document-type"
+        ]))
+        .is_err());
+        assert!(parse_document_context(&args(&["konnect", "--document-type", "unknown"])).is_err());
+    }
+
+    #[test]
+    fn plugin_actions_pass_their_scoped_document_context() {
+        let manifest: serde_json::Value =
+            serde_json::from_str(include_str!("../../../plugin/plugin.json")).unwrap();
+        let actions = manifest["actions"].as_array().unwrap();
+
+        for (scope, document_type) in [("pcb", "pcb"), ("schematic", "schematic")] {
+            let action = actions
+                .iter()
+                .find(|action| action["scopes"] == serde_json::json!([scope]))
+                .unwrap_or_else(|| panic!("missing plugin action for {scope}"));
+            assert_eq!(
+                action["args"],
+                serde_json::json!(["--document-type", document_type])
+            );
+        }
+    }
 }

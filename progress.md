@@ -2,51 +2,80 @@
 
 ## Phase actuelle
 
-**T — Reprise du benchmark Hi-Fi.**
+**V — Routage DocumentType Eeschema.** V.3 terminée.
 
 ## Tâche actuelle
 
-**T.2.1 — Définition de la prochaine étape du benchmark.**
+**V.4.2 — Pousser le candidat et obtenir la CI PASS sur ce commit.**
 
 ## Dernière tâche validée
 
-**U.1.6 — Publication v1.1.2 et retour au benchmark.**
+**V.4.1 — Préparation de `v1.1.3`.**
 
-Validation : candidat/tag `c7b66d8f511cfc4f7358dc279196800f88fc271d` ;
-CI `33148447984` PASS ; Release `v1.1.2` `33148755072` PASS ; sept artefacts ;
-PCM Windows publié validé avec serveur/viewer, métadonnées `1.1.2` et binaire
-embarqué `konnect 1.1.2`.
+Validation : version portée à `1.1.3` dans `Cargo.toml`,
+`crates/schematic-viewer/{Cargo.toml,tauri.conf.json}` et le statut du
+`README.md` ; les deux lockfiles régénérés ; `RELEASE_NOTES.md` réécrit pour
+cette correction, dont le passage de l'IPC document-aware de PARTIAL à PASS.
+Gate local : fmt, clippy strict, tests, doctests et build release — GATE PASSED,
+sortie 0.
+
+Avant : **V.3.2 et V.3.3 — Smoke-tests réels et consignation du défaut.**
+
+Validation : `scripts/live-pcb-e2e.ps1` sort 0, 3 tests live PASS — la voie PCB
+n'a pas régressé. Smoke-test Hi-Fi en lecture seule : Eeschema ouvre
+`HifiAmp_TPA3255.kicad_sch`, le contexte est résolu `schematic`, et
+`.kicad_sch`, `.kicad_pcb`, `.kicad_pro`, `.kicad_sym` sont bit-identiques avant
+et après ; B1.3 non reprise, aucun fichier KiCad édité. Défaut consigné dans
+`…\Chaine Hifi\reports\MCP_BUG-documenttype-routing-eeschema.md`.
+
+Avant : **V.3.1** validée par `scripts/live-schematic-e2e.ps1`, 7 contrôles PASS
+sur KiCad `10.0.6` réel avec `konnect.exe` SHA256 `8D847386…C796E434`.
 
 ## Décisions actives
 
-- Résolution : table projet, table globale, bibliothèques installées ;
-  `${KIPRJMOD}` est ancré au dossier du schéma.
-- `save_project` conserve son API et devient document-aware ; un schéma déjà
-  persisté est un succès explicite, sans commande PCB.
-- Un appel IPC sans chemin reste conservateur et requiert `documents` explicites
-  pour la protection transactionnelle.
-- Le serveur MCP installé correspond au build de HEAD `9bcd9fb` ; l'ancien
-  exécutable reste disponible comme rollback `konnect.exe.pre-9bcd9fb.bak`.
-- La release reste strictement une patch `v1.1.2`; aucun développement Hi-Fi
-  ni changement fonctionnel supplémentaire n'entre dans son périmètre.
-- `v1.1.2` est publiée ; le tag reste sur le commit candidat validé et la phase
-  T reprend sans modifier le projet Hi-Fi.
+- Branche `ai/documenttype-routing-v1.1.3` depuis `9a051146`.
+- Le contexte indéterminé échoue explicitement, jamais PCB.
+- `api.enable_server` est à `true` dans le profil réel ; sauvegarde
+  `kicad_common.json.backup-v3.1-crash-20260831`.
+- Les copies de rollback du plugin vivent hors de `3rdparty`, dans
+  `C:\Users\FlowUP\Documents\KiCad\10.0\konnect-plugin-backups`.
+- `10.0.6` reste la seule version KiCad installée ; aucune installation n'a été
+  modifiée. Une extraction `10.0.3` a servi de témoin jetable et n'est plus
+  nécessaire.
+- Les tests live tournent sur un `KICAD_CONFIG_HOME` dédié, jamais sur le profil
+  réel de l'utilisateur.
 
 ## Blocage actif
 
-La suite du benchmark Hi-Fi après le placement U1 n'est décrite ni dans le
-dépôt ni dans la mémoire de projet ; une cible fonctionnelle est indispensable
-avant toute nouvelle modification du schéma.
+Aucun.
 
 ## Fichiers / zones utiles
 
-- `C:\Users\FlowUP\Documents\Etabli\Projets\Chaine Hifi\HifiAmp_TPA3255.kicad_pro`
-- `C:\Users\FlowUP\Documents\Etabli\Projets\Chaine Hifi\HifiAmp_TPA3255.kicad_sch`
-- `Cargo.toml`, `Cargo.lock`, `crates/schematic-viewer/Cargo.toml`
-- `crates/schematic-viewer/Cargo.lock`, `RELEASE_NOTES.md`
-- `.github/workflows/{ci,e2e-kicad,release}.yml`
+- `scripts/live-schematic-e2e.ps1`, `scripts/live-pcb-e2e.ps1`
+- `crates/konnect/src/main.rs` (`--document-type`), `crates/konnect-ipc/src/client.rs`
+- `crates/konnect-core/src/tools/project.rs` (`open_project`, `save_project`)
+- `plugin/{plugin.json,__init__.py}`, `packaging/`
+- Installation plugin :
+  `C:\Users\FlowUP\Documents\KiCad\10.0\3rdparty\plugins\com_github_mixelpixx_konnect`
+- Build validé : `target/release/konnect.exe`, SHA256
+  `8D84738B603755F7C3B728822778785A3BD22C7CF3CBFE3DCBA11210C796E434`
+- Fixture : `C:\Users\FlowUP\Documents\KiCad\KonnectValidationV31`
+- Projet Hi-Fi : `C:\Users\FlowUP\Documents\Etabli\Projets\Chaine Hifi`
+
+## Préconditions de tout test live
+
+1. Un seul répertoire sous `3rdparty` par identifiant de plugin. Trois copies de
+   `com_github_mixelpixx_konnect` tuent l'éditeur 3 s après démarrage
+   (`0xC0000005`, `wxbase332u_vc_x64_custom.dll`), pipe publié puis perdu.
+   Identique en `10.0.3` et `10.0.6` : ce n'est pas une régression de version.
+2. Aucune autre instance KiCad ne détient le socket d'API — sinon les requêtes
+   partent au mauvais éditeur et reviennent en « does not handle … for this
+   document type ». `live-schematic-e2e.ps1` refuse de démarrer dans ce cas.
+3. Aucun dialogue modal : l'assistant `Configuration de KiCad` et l'avis de
+   format de fichier ancien font répondre `AS_NOT_READY` sur un pipe présent.
+   Les scripts répondent aux invites et mettent la carte jetable à niveau.
 
 ## NEXT ACTION
 
-T.2.1 — Obtenir le brief de la prochaine étape du benchmark Hi-Fi et fixer son
-critère de validation avant toute nouvelle écriture dans le projet KiCad.
+V.4.2 — Pousser `ai/documenttype-routing-v1.1.3` et obtenir la CI PASS sur le
+commit candidat, avant tout tag.
