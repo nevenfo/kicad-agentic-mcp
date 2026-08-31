@@ -2,48 +2,39 @@
 
 ## Phase actuelle
 
-**V — Routage DocumentType Eeschema.** V.3 terminée.
+**V — Routage DocumentType Eeschema.** Phase terminée, `v1.1.3` publiée et
+installée.
 
 ## Tâche actuelle
 
-**V.4.2 — Pousser le candidat et obtenir la CI PASS sur ce commit.**
+Aucune. Prochaine phase à décider : `T.2.1`, définir l'étape suivante du
+benchmark Hi-Fi et ses critères de validation à partir du brief.
 
 ## Dernière tâche validée
 
-**V.4.1 — Préparation de `v1.1.3`.**
+**V.4.2 à V.4.4 — Publication et mise en service de `v1.1.3`.**
 
-Validation : version portée à `1.1.3` dans `Cargo.toml`,
-`crates/schematic-viewer/{Cargo.toml,tauri.conf.json}` et le statut du
-`README.md` ; les deux lockfiles régénérés ; `RELEASE_NOTES.md` réécrit pour
-cette correction, dont le passage de l'IPC document-aware de PARTIAL à PASS.
-Gate local : fmt, clippy strict, tests, doctests et build release — GATE PASSED,
-sortie 0.
-
-Avant : **V.3.2 et V.3.3 — Smoke-tests réels et consignation du défaut.**
-
-Validation : `scripts/live-pcb-e2e.ps1` sort 0, 3 tests live PASS — la voie PCB
-n'a pas régressé. Smoke-test Hi-Fi en lecture seule : Eeschema ouvre
-`HifiAmp_TPA3255.kicad_sch`, le contexte est résolu `schematic`, et
-`.kicad_sch`, `.kicad_pcb`, `.kicad_pro`, `.kicad_sym` sont bit-identiques avant
-et après ; B1.3 non reprise, aucun fichier KiCad édité. Défaut consigné dans
-`…\Chaine Hifi\reports\MCP_BUG-documenttype-routing-eeschema.md`.
-
-Avant : **V.3.1** validée par `scripts/live-schematic-e2e.ps1`, 7 contrôles PASS
-sur KiCad `10.0.6` réel avec `konnect.exe` SHA256 `8D847386…C796E434`.
+Validation : PR #15 sur `agentic/main`, 7 checks CI PASS ; merge `7c89182`, CI
+PASS à nouveau sur ce commit ; tag annoté `v1.1.3` posé dessus ; workflow
+Release `success` et 7 artefacts publiés (3 paquets PCM, 4 binaires). Paquet PCM
+Windows inspecté : `metadata.json` en `1.1.3`, binaire `konnect 1.1.3`, et
+`plugin.json` porte bien les deux actions scopées avec
+`--document-type pcb|schematic`. Installé comme seule version en vigueur, SHA256
+`C4696CE6…00B8B0C0` identique à l'artefact ; le runtime installé repasse les
+7 contrôles de `scripts/live-schematic-e2e.ps1`.
 
 ## Décisions actives
 
-- Branche `ai/documenttype-routing-v1.1.3` depuis `9a051146`.
-- Le contexte indéterminé échoue explicitement, jamais PCB.
+- `v1.1.3` est la version en vigueur. Rollback unique et explicite :
+  `C:\Users\FlowUP\Documents\KiCad\10.0\konnect-plugin-backups\com_github_mixelpixx_konnect.rollback-v1.1.2-20260831`,
+  hors de `3rdparty`. Les deux sauvegardes antérieures ont été supprimées ;
+  elles restent reconstructibles depuis les releases GitHub.
+- Le contexte de document indéterminé échoue explicitement, jamais PCB.
 - `api.enable_server` est à `true` dans le profil réel ; sauvegarde
   `kicad_common.json.backup-v3.1-crash-20260831`.
-- Les copies de rollback du plugin vivent hors de `3rdparty`, dans
-  `C:\Users\FlowUP\Documents\KiCad\10.0\konnect-plugin-backups`.
-- `10.0.6` reste la seule version KiCad installée ; aucune installation n'a été
-  modifiée. Une extraction `10.0.3` a servi de témoin jetable et n'est plus
-  nécessaire.
 - Les tests live tournent sur un `KICAD_CONFIG_HOME` dédié, jamais sur le profil
   réel de l'utilisateur.
+- Le projet Hi-Fi est intact ; B1.3 n'a pas été reprise.
 
 ## Blocage actif
 
@@ -55,12 +46,11 @@ Aucun.
 - `crates/konnect/src/main.rs` (`--document-type`), `crates/konnect-ipc/src/client.rs`
 - `crates/konnect-core/src/tools/project.rs` (`open_project`, `save_project`)
 - `plugin/{plugin.json,__init__.py}`, `packaging/`
-- Installation plugin :
+- Installation active :
   `C:\Users\FlowUP\Documents\KiCad\10.0\3rdparty\plugins\com_github_mixelpixx_konnect`
-- Build validé : `target/release/konnect.exe`, SHA256
-  `8D84738B603755F7C3B728822778785A3BD22C7CF3CBFE3DCBA11210C796E434`
 - Fixture : `C:\Users\FlowUP\Documents\KiCad\KonnectValidationV31`
-- Projet Hi-Fi : `C:\Users\FlowUP\Documents\Etabli\Projets\Chaine Hifi`
+- Projet Hi-Fi : `C:\Users\FlowUP\Documents\Etabli\Projets\Chaine Hifi`,
+  défaut consigné dans `reports\MCP_BUG-documenttype-routing-eeschema.md`
 
 ## Préconditions de tout test live
 
@@ -77,5 +67,5 @@ Aucun.
 
 ## NEXT ACTION
 
-V.4.2 — Pousser `ai/documenttype-routing-v1.1.3` et obtenir la CI PASS sur le
-commit candidat, avant tout tag.
+T.2.1 — Définir la prochaine étape fonctionnelle du benchmark Hi-Fi et ses
+critères de validation à partir du brief, avant toute modification du projet.

@@ -6229,9 +6229,9 @@ l'échec reste visible dans le benchmark.
 ### Tâches
 
 - [x] V.4.1 Préparer version, lockfiles et notes selon la politique existante.
-- [ ] V.4.2 Committer/pousser le candidat, obtenir la CI PASS sur ce commit.
-- [ ] V.4.3 Taguer `v1.1.3`, vérifier workflow, release et artefacts publiés.
-- [ ] V.4.4 Installer `v1.1.3` comme seule version en vigueur pour les clients,
+- [x] V.4.2 Committer/pousser le candidat, obtenir la CI PASS sur ce commit.
+- [x] V.4.3 Taguer `v1.1.3`, vérifier workflow, release et artefacts publiés.
+- [x] V.4.4 Installer `v1.1.3` comme seule version en vigueur pour les clients,
   vérifier le runtime actif et conserver uniquement le rollback explicite.
 
 ### Validation
