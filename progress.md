@@ -6,11 +6,20 @@
 
 ## Tâche actuelle
 
-**V.4.1 — Préparer version, lockfiles et notes de `v1.1.3`.**
+**V.4.2 — Pousser le candidat et obtenir la CI PASS sur ce commit.**
 
 ## Dernière tâche validée
 
-**V.3.2 et V.3.3 — Smoke-tests réels et consignation du défaut.**
+**V.4.1 — Préparation de `v1.1.3`.**
+
+Validation : version portée à `1.1.3` dans `Cargo.toml`,
+`crates/schematic-viewer/{Cargo.toml,tauri.conf.json}` et le statut du
+`README.md` ; les deux lockfiles régénérés ; `RELEASE_NOTES.md` réécrit pour
+cette correction, dont le passage de l'IPC document-aware de PARTIAL à PASS.
+Gate local : fmt, clippy strict, tests, doctests et build release — GATE PASSED,
+sortie 0.
+
+Avant : **V.3.2 et V.3.3 — Smoke-tests réels et consignation du défaut.**
 
 Validation : `scripts/live-pcb-e2e.ps1` sort 0, 3 tests live PASS — la voie PCB
 n'a pas régressé. Smoke-test Hi-Fi en lecture seule : Eeschema ouvre
@@ -68,5 +77,5 @@ Aucun.
 
 ## NEXT ACTION
 
-V.4.1 — Préparer la release `v1.1.3` selon la politique existante : version,
-lockfiles et notes, sans committer le tag ni publier.
+V.4.2 — Pousser `ai/documenttype-routing-v1.1.3` et obtenir la CI PASS sur le
+commit candidat, avant tout tag.
