@@ -6198,6 +6198,14 @@ Eeschema résout explicitement `DOCTYPE_SCHEMATIC`, Pcbnew conserve
 
 ### Tâches
 
+- [ ] V.3.4 Préalable à V.3.1 : rétablir sur le poste un runtime KiCad 10 dont
+  le serveur API IPC fonctionne. KiCad `10.0.6` publie le pipe API sur aucun
+  binaire : avec `api.enable_server: true`, `eeschema.exe` et `pcbnew.exe`
+  autonomes plantent au démarrage (`0xC0000005` dans
+  `wxbase332u_vc_x64_custom.dll`) et `kicad.exe` démarre sans jamais exposer
+  `\\.\pipe\*\kicad\api.sock`. Reproduit avec un profil ne contenant que ce
+  drapeau ; aucun contournement par configuration, chemin temporaire ou
+  `KICAD_API_SOCKET`. Aucun ticket amont connu.
 - [ ] V.3.1 Installer une build de développement avec rollback identifié, puis
   valider Eeschema : pipes, lecture, `save_project`, réouverture et persistance.
   La session de validation doit avoir chargé `kicad-agentic-mcp` au démarrage
