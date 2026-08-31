@@ -6198,15 +6198,19 @@ Eeschema résout explicitement `DOCTYPE_SCHEMATIC`, Pcbnew conserve
 
 ### Tâches
 
-- [ ] V.3.4 Préalable à V.3.1 : rétablir sur le poste un runtime KiCad 10 dont
-  le serveur API IPC fonctionne. KiCad `10.0.6` publie le pipe API sur aucun
-  binaire : avec `api.enable_server: true`, `eeschema.exe` et `pcbnew.exe`
-  autonomes plantent au démarrage (`0xC0000005` dans
-  `wxbase332u_vc_x64_custom.dll`) et `kicad.exe` démarre sans jamais exposer
-  `\\.\pipe\*\kicad\api.sock`. Reproduit avec un profil ne contenant que ce
-  drapeau ; aucun contournement par configuration, chemin temporaire ou
-  `KICAD_API_SOCKET`. Aucun ticket amont connu.
-- [ ] V.3.1 Installer une build de développement avec rollback identifié, puis
+- [x] V.3.4 Préalable à V.3.1 : rétablir un serveur API IPC KiCad fonctionnel.
+  Deux préconditions, indépendantes de la version de KiCad — `10.0.3` et
+  `10.0.6` se comportent à l'identique.
+  1. Aucun doublon d'identifiant de plugin sous `3rdparty`. Trois répertoires
+     déclarant `com_github_mixelpixx_konnect` (le plugin vif plus deux copies
+     de rollback) tuent l'éditeur 3 s après le démarrage, `0xC0000005` dans
+     `wxbase332u_vc_x64_custom.dll`, le pipe étant publié puis perdu. Un seul
+     ou deux répertoires ne reproduisent pas. Les copies de rollback vivent
+     désormais hors de `3rdparty`.
+  2. Aucun dialogue modal au démarrage. L'assistant `Configuration de KiCad`
+     fait répondre `AS_NOT_READY` sur un pipe pourtant présent ; la validation
+     utilise un `KICAD_CONFIG_HOME` dédié où `do_not_show_again` est répondu.
+- [x] V.3.1 Installer une build de développement avec rollback identifié, puis
   valider Eeschema : pipes, lecture, `save_project`, réouverture et persistance.
   La session de validation doit avoir chargé `kicad-agentic-mcp` au démarrage
   ou à la reprise : Codex ne garantit aucun rechargement MCP à chaud.
