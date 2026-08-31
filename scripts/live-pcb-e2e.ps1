@@ -173,6 +173,19 @@ if (-not $Board) {
     if (-not (Test-Path $fixture)) { throw "board fixture missing: $fixture" }
     $Board = Join-Path $work 'live_pcb_e2e.kicad_pcb'
     Copy-Item $fixture $Board -Force
+
+    # The fixture is checked in at the format it was written in, and pcbnew
+    # greets an older format with a modal `Information` dialog — "this file was
+    # created by an older version of KiCad" — served *before* the board frame
+    # registers its API handler. The pipe is then up and answering
+    # `GetOpenDocuments` with "KiCad does not handle ... for this document
+    # type", which reads as a routing bug and is not one. Upgrading the
+    # throwaway copy removes the dialog; the checked-in fixture is left alone.
+    $cli = Join-Path (Split-Path $pcbnewPath) 'kicad-cli.exe'
+    if (Test-Path $cli) {
+        & $cli pcb upgrade $Board 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) { Write-Host "kicad-cli pcb upgrade returned $LASTEXITCODE; continuing." }
+    }
 }
 
 # `Test-Path` reports False for a live named pipe whose name embeds a drive

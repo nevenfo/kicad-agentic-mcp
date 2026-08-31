@@ -98,6 +98,19 @@ if (Test-Path $thirdParty) {
     }
 }
 
+# One API socket exists per machine and the first editor to start owns it. A
+# leftover eeschema — or a kicad.exe sitting on a modal wizard — therefore
+# answers every request meant for the editor this script launches, and declines
+# the wrong document type with "KiCad does not handle ... for this document
+# type", which reads as a routing bug. Refuse to guess.
+$stale = Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessName -in @('kicad', 'eeschema', 'pcbnew') }
+if ($stale) {
+    throw ('another KiCad process already owns the API socket: ' +
+           (($stale | ForEach-Object { "$($_.ProcessName)($($_.Id))" }) -join ', ') +
+           ' — close it before running this script')
+}
+
 $socket = 'ipc://' + (Join-Path $env:LOCALAPPDATA 'Temp\kicad\api.sock')
 
 # ── MCP over stdio ───────────────────────────────────────────────────────────
