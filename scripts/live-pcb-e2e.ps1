@@ -65,55 +65,63 @@ function Resolve-Pcbnew {
     throw 'pcbnew.exe not found. Pass -Pcbnew or set KICAD_CLI.'
 }
 
-# The API server is off by default in a fresh profile, and a client cannot turn
-# it on over IPC — there is no server to ask. Enable it in the config KiCad
-# reads at startup, before starting KiCad. Idempotent: an already-enabled
-# profile is left untouched.
-function Enable-ApiServer {
-    $config = Join-Path $env:APPDATA 'kicad\10.0\kicad_common.json'
-    if (-not (Test-Path $config)) {
-        # A profile KiCad has never written — a fresh CI runner. Writing the keys
-        # we need is enough: KiCad fills the rest from its defaults on load.
-        #
-        # `canvas_type` 2 is Cairo, i.e. software rendering. It is set only here,
-        # in the profile this script creates, because a machine with no profile
-        # is a machine we know nothing about — and a `windows-latest` runner has
-        # no OpenGL 2.1. pcbnew's response to that is a modal `Information`
-        # dialog ("Could not use OpenGL, falling back to software rendering")
-        # which it serves *before* the API, so the pipe comes up, the PCB Editor
-        # window stays hidden behind the dialog, and every request is answered
-        # `AS_NOT_READY` until something clicks OK. Choosing software rendering
-        # up front means there is nothing to report. No live test reads a
-        # rendered canvas, so nothing is given up. An existing profile is left
-        # alone: that is a real user's rendering preference.
-        # `do_not_show_again` answers the first-run wizard's Updates & Privacy
-        # page before it is asked. The wizard is modal, so an unanswered page is
-        # indistinguishable from a hung KiCad; and answering it here is the
-        # conservative answer either way, since it declines outbound update
-        # checks and anonymous data collection on a machine that is not a user's.
-        New-Item -ItemType Directory -Force (Split-Path $config) | Out-Null
+# A profile of this script's own, so a live run never edits the user's KiCad
+# settings and never depends on what they happen to be.
+#
+# It is a copy of the real profile with three things settled:
+#
+#  - `api.enable_server`, which is off in a fresh profile and cannot be turned
+#    on over IPC: there is no server to ask.
+#  - every `do_not_show_again` prompt. KiCad 10's first-run `KiCad Setup`
+#    wizard is modal and is served *before* the API, so an unanswered Updates &
+#    Privacy page leaves the pipe up, the editor hidden behind the dialog, and
+#    every request answered `AS_NOT_READY` — indistinguishable from a hung
+#    KiCad. This is the failure the schematic half of the suite already avoids
+#    this way; the PCB half used to edit the real profile instead, and stalled
+#    on exactly that wizard whenever the user had not dismissed it.
+#  - nothing else: the copy keeps the user's rendering preference and library
+#    tables, so the run is close to what they actually use.
+#
+# A machine with no profile at all gets the minimum KiCad fills the rest of its
+# defaults around, plus software rendering — a runner with no OpenGL 2.1 answers
+# a failed canvas with another modal dialog.
+function New-DedicatedProfile {
+    param([string]$Work)
+
+    $profileHome = Join-Path $Work 'config'
+    $dir = Join-Path $profileHome '10.0'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+
+    $real = Join-Path $env:APPDATA 'kicad\10.0'
+    $common = Join-Path $dir 'kicad_common.json'
+    if (Test-Path $real) {
+        Copy-Item (Join-Path $real '*') $dir -Recurse -Force
+    }
+    if (-not (Test-Path $common)) {
         @'
 {
   "api": { "enable_server": true },
   "graphics": { "canvas_type": 2 },
   "do_not_show_again": { "data_collection_prompt": true, "update_check_prompt": true }
 }
-'@ | Set-Content $config -Encoding utf8
-        Write-Host "Created ${config}: API server on, software rendering, first-run prompts answered."
-        return $true
+'@ | Set-Content $common -Encoding utf8
+        Write-Host "No user profile to copy: wrote a minimal one in $dir."
+        return $profileHome
     }
-    $json = Get-Content $config -Raw | ConvertFrom-Json
-    if ($json.api -and $json.api.enable_server) {
-        Write-Host 'API server already enabled in kicad_common.json.'
-        return $true
+
+    $json = Get-Content $common -Raw | ConvertFrom-Json
+    if (-not $json.api) { $json | Add-Member api ([pscustomobject]@{}) -Force }
+    $json.api | Add-Member enable_server $true -Force
+    if (-not $json.do_not_show_again) {
+        $json | Add-Member do_not_show_again ([pscustomobject]@{}) -Force
     }
-    if (-not $json.api) {
-        $json | Add-Member -NotePropertyName api -NotePropertyValue ([pscustomobject]@{}) -Force
+    foreach ($prompt in @('data_collection_prompt', 'update_check_prompt', 'env_var_overwrite_warning',
+                          'migrate_wrl_prompt', 'scaled_3d_models_warning', 'zone_fill_warning')) {
+        $json.do_not_show_again | Add-Member $prompt $true -Force
     }
-    $json.api | Add-Member -NotePropertyName enable_server -NotePropertyValue $true -Force
-    $json | ConvertTo-Json -Depth 32 | Set-Content $config -Encoding utf8
-    Write-Host "Enabled api.enable_server in $config."
-    return $true
+    $json | ConvertTo-Json -Depth 32 | Set-Content $common -Encoding utf8
+    Write-Host "Profile for this run: $profileHome (the user's own is untouched)."
+    return $profileHome
 }
 
 # A profile with no library tables is a profile KiCad stops to talk about: it
@@ -122,12 +130,12 @@ function Enable-ApiServer {
 # otherwise up. Writing the tables first is the same content KiCad would have
 # written, minus the dialog. Idempotent: existing tables are left untouched.
 function Initialize-LibraryTables {
-    param([string]$PcbnewPath)
+    param([string]$PcbnewPath, [string]$ProfileHome)
 
     # ...\bin\pcbnew.exe → the installation root that holds share\kicad\template.
     $install = Split-Path (Split-Path $PcbnewPath)
     $template = Join-Path $install 'share\kicad\template'
-    $profile = Join-Path $env:APPDATA 'kicad\10.0'
+    $profile = Join-Path $ProfileHome '10.0'
     New-Item -ItemType Directory -Force $profile | Out-Null
 
     # All three of them: KiCad 10 runs its `KiCad Setup` first-run wizard when any
@@ -162,11 +170,12 @@ function Initialize-LibraryTables {
 }
 
 $pcbnewPath = Resolve-Pcbnew -Explicit $Pcbnew
-Enable-ApiServer | Out-Null
-Initialize-LibraryTables -PcbnewPath $pcbnewPath
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "konnect-live-pcb-$PID"
 New-Item -ItemType Directory -Force $work | Out-Null
+
+$profileHome = New-DedicatedProfile -Work $work
+Initialize-LibraryTables -PcbnewPath $pcbnewPath -ProfileHome $profileHome
 
 if (-not $Board) {
     $fixture = Join-Path $repo 'crates\konnect-ipc\tests\fixtures\live_ipc.kicad_pcb'
@@ -300,7 +309,12 @@ function Write-PipeDiagnostics {
     Write-Host "-----------------------------------------------"
 }
 
+# Only the editor reads the profile, and only at startup: the variable is set
+# for the launch and removed straight after, so nothing else in this session —
+# the cargo suites included — inherits it.
+$env:KICAD_CONFIG_HOME = $profileHome
 $proc = Start-Process -FilePath $pcbnewPath -ArgumentList $Board -PassThru
+Remove-Item Env:\KICAD_CONFIG_HOME
 $exit = 0
 try {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)

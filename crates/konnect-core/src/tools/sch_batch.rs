@@ -166,15 +166,16 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "batch_edit_schematic_components",
-            "Apply field updates (Value, Footprint, custom properties) to multiple components \
-             in a single atomic file write.",
+            "Apply field updates (Value, Footprint, custom properties) and native attribute \
+             updates (in_bom, on_board, dnp) to multiple components in a single atomic file \
+             write.",
             json!({
                 "type": "object",
                 "properties": {
                     "schematic": { "type": "string", "description": "Path to .kicad_sch file" },
                     "edits": {
                         "type": "array",
-                        "description": "List of {reference|uuid, value?, footprint?, fields?} edit objects",
+                        "description": "List of {reference|uuid, value?, footprint?, fields?, in_bom?, on_board?, dnp?} edit objects",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -184,8 +185,11 @@ pub fn tools() -> Vec<ToolDef> {
                                 "footprint": { "type": "string" },
                                 "fields": {
                                     "type": "object",
-                                    "description": "Additional property fields as key:value pairs"
-                                }
+                                    "description": "Additional property fields as key:value pairs. A null value removes the property."
+                                },
+                                "in_bom": { "type": "boolean", "description": "Native attribute: include this symbol in the BOM" },
+                                "on_board": { "type": "boolean", "description": "Native attribute: transfer this symbol to the PCB" },
+                                "dnp": { "type": "boolean", "description": "Native attribute: Do Not Populate" }
                             }
                         }
                     }
@@ -920,6 +924,14 @@ struct PendingProperties {
     /// `fields` entry win, matching `edit_schematic_component`'s order of
     /// named argument then `fields` map (P.6.9.18).
     updates: Vec<(String, String)>,
+    /// Property keys this spec asked to remove, `fields: {"key": null}`
+    /// (W.3.5). Applied after the writes, so a spec that sets and removes the
+    /// same key ends with it gone.
+    removals: Vec<String>,
+    /// `(attribute, value)` pairs for the three native symbol attributes
+    /// (W.3.2). Kept apart from `updates` because they are tags of the symbol
+    /// block, not properties, and take their own writer.
+    attributes: Vec<(String, bool)>,
     /// What this component changed, filled in as `updates` is applied. Every
     /// field write lands here now, standard fields included (P.6.9.18).
     changes: Vec<String>,
@@ -994,6 +1006,7 @@ async fn handle_batch_edit(
         // (named argument, then the `fields` map, last write wins — see
         // l.757-765 of sch_components.rs).
         let mut updates: Vec<(String, String)> = Vec::new();
+        let mut removals: Vec<String> = Vec::new();
         for (field, key) in &[("Value", "value"), ("Footprint", "footprint")] {
             if let Some(new_val) = edit_spec[key].as_str() {
                 updates.push((field.to_string(), new_val.to_string()));
@@ -1012,10 +1025,14 @@ async fn handle_batch_edit(
             None | Some(serde_json::Value::Null) => {}
             Some(serde_json::Value::Object(map)) => {
                 for (key, raw) in map {
+                    if raw.is_null() {
+                        removals.push(key.clone());
+                        continue;
+                    }
                     match crate::tools::sch_components::property_text(raw) {
                         Some(text) => updates.push((key.clone(), text)),
                         None => errors.push(format!(
-                            "'{}' on '{}': value must be a string, number or boolean",
+                            "'{}' on '{}': value must be a string, number, boolean, or null to remove it",
                             key, reference
                         )),
                     }
@@ -1027,9 +1044,28 @@ async fn handle_batch_edit(
             )),
         }
 
+        // The three native attributes, same contract as
+        // `edit_schematic_component`: a boolean or nothing. A string "yes"
+        // would be accepted by the `fields` map above and written as a custom
+        // property, which is exactly the degradation W.3.2 exists to prevent,
+        // so it is refused here out loud.
+        let mut attributes: Vec<(String, bool)> = Vec::new();
+        for name in crate::tools::SYMBOL_ATTRIBUTES {
+            match edit_spec.get(*name) {
+                None | Some(serde_json::Value::Null) => {}
+                Some(serde_json::Value::Bool(value)) => attributes.push((name.to_string(), *value)),
+                Some(_) => errors.push(format!(
+                    "'{}' on '{}': value must be true or false",
+                    name, reference
+                )),
+            }
+        }
+
         pending_properties.push(PendingProperties {
             reference: reference.to_string(),
             updates,
+            removals,
+            attributes,
             changes: Vec::new(),
         });
     }
@@ -1070,6 +1106,47 @@ async fn handle_batch_edit(
                         SetPropertyOutcome::Updated => format!("{} → {}", field, value),
                         SetPropertyOutcome::Inserted => format!("{} → {} (added)", field, value),
                     });
+                }
+                Err(why) => errors.push(format!("'{}' on '{}': {why}", field, pending.reference)),
+            }
+        }
+        // Attributes after the properties, over the same growing document and
+        // on every unit of the designator, for the same reasons.
+        for (name, value) in &pending.attributes {
+            if find_all_symbol_instance_blocks(&new_content, &pending.reference).is_empty() {
+                errors.push(format!("Component '{}' not found", pending.reference));
+                continue;
+            }
+            match crate::tools::set_symbol_attribute_on_all_units(
+                &new_content,
+                &pending.reference,
+                name,
+                *value,
+            ) {
+                Ok((updated, outcome)) => {
+                    new_content = updated;
+                    let word = if *value { "yes" } else { "no" };
+                    pending.changes.push(match outcome {
+                        SetPropertyOutcome::Updated => format!("{name} → {word}"),
+                        SetPropertyOutcome::Inserted => format!("{name} → {word} (added)"),
+                    });
+                }
+                Err(why) => errors.push(format!("'{}' on '{}': {why}", name, pending.reference)),
+            }
+        }
+        for field in &pending.removals {
+            if find_all_symbol_instance_blocks(&new_content, &pending.reference).is_empty() {
+                errors.push(format!("Component '{}' not found", pending.reference));
+                continue;
+            }
+            match crate::tools::remove_symbol_property_on_all_units(
+                &new_content,
+                &pending.reference,
+                field,
+            ) {
+                Ok(updated) => {
+                    new_content = updated;
+                    pending.changes.push(format!("{field} removed"));
                 }
                 Err(why) => errors.push(format!("'{}' on '{}': {why}", field, pending.reference)),
             }

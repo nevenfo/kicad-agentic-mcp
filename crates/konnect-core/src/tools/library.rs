@@ -57,6 +57,7 @@ fn pin_item_schema(require_xy: bool) -> serde_json::Value {
 
 pub fn tools() -> Vec<ToolDef> {
     vec![
+        super::footprint_graphics::tool(),
         tool!(
             "create_footprint",
             "Create a new footprint (.kicad_mod) file from a pad layout description.",
@@ -84,8 +85,9 @@ pub fn tools() -> Vec<ToolDef> {
                             "required": ["number", "type", "shape", "x", "y", "width", "height"]
                         }
                     },
-                    "body_width": { "type": "number", "description": "Component body width in mm, for the silk/fab outlines. Defaults to the pad envelope." },
+                    "body_width": { "type": "number", "description": "Component body width in mm. The courtyard, silkscreen and fab outlines are all derived from the body and pad envelopes together. Defaults to the pad envelope." },
                     "body_height": { "type": "number", "description": "Component body height in mm." },
+                    "pin1_marker": { "type": "boolean", "default": true, "description": "Draw the pin-1 marker (silk dot + fab chamfer). Set false for a non-polarised part such as a fuse or a film capacitor, which has no pin 1 to point at." },
                     "package_type": {
                         "type": "string",
                         "enum": ["smd", "through_hole", "small", "bga"],
@@ -318,11 +320,12 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "get_footprint_info",
-            "Return detailed information about a footprint: pad layout, courtyard, description.",
+            "Return detailed information about a footprint: pad layout, courtyard, description,              and its line/arc/rect/circle/poly graphics in the exact shape `set_footprint_graphics`              takes back.",
             json!({
                 "type": "object",
                 "properties": {
-                    "footprint_path": { "type": "string", "description": "Path to .kicad_mod file, OR 'Library:Footprint' identifier" }
+                    "footprint_path": { "type": "string", "description": "Path to .kicad_mod file, OR 'Library:Footprint' identifier" },
+                    "graphics_layer": { "type": "string", "description": "Report only graphics on this canonical layer, such as F.CrtYd. Omit for all layers." }
                 },
                 "required": ["footprint_path"]
             }),
@@ -387,6 +390,89 @@ fn pads_bbox(pads: &[PadGeom]) -> (f64, f64, f64, f64) {
     (min_x, min_y, max_x, max_y)
 }
 
+/// The body's own axis-aligned box, centred on the pad envelope — `None` when
+/// the caller did not describe a body.
+///
+/// Centring on the pads rather than on the origin is what the fab outline
+/// already did; keeping one definition means the courtyard and the fab outline
+/// can never disagree about where the body is.
+fn body_bbox(pads: &[PadGeom], body: Option<(f64, f64)>) -> Option<(f64, f64, f64, f64)> {
+    let (bw, bh) = body?;
+    let (pmin_x, pmin_y, pmax_x, pmax_y) = pads_bbox(pads);
+    let cx = (pmin_x + pmax_x) / 2.0;
+    let cy = (pmin_y + pmax_y) / 2.0;
+    Some((cx - bw / 2.0, cy - bh / 2.0, cx + bw / 2.0, cy + bh / 2.0))
+}
+
+/// The union of two boxes.
+fn union_bbox(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
+    (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))
+}
+
+/// KLC's courtyard grid, as steps per millimetre: `KLC_CRTYD_GRID = 0.01` mm,
+/// from `pcb/rules/klc_constants.py` in KiCad's own `kicad-library-utils`.
+///
+/// Held as the reciprocal because that is what makes the arithmetic exact.
+/// `(-3.8 / 0.01).floor() * 0.01` is -3.8000000000000003 — one ULP out, and a
+/// value that was already on the grid comes back off it. `-380.0 / 100.0` is
+/// -3.8 exactly.
+const COURTYARD_GRID_STEPS_PER_MM: f64 = 100.0;
+
+/// Snap a courtyard box to the KLC grid, always **outward**.
+///
+/// KiCad's own checker snaps to nearest (`mapToGrid` in `pcb/rules/F5_3.py`).
+/// Rounding outward instead is the one deliberate difference: rounding a bound
+/// inward would take back up to half a grid step of the clearance that was just
+/// added, and a courtyard 5 µm too small is the failure this whole change exists
+/// to stop. Growing by at most 5 µm costs nothing.
+fn snap_courtyard_outward(bbox: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
+    // The epsilon absorbs binary-float noise, so a bound that is already on the
+    // grid is not pushed a whole step out by a representation error.
+    let epsilon = 1e-9;
+    let down =
+        |v: f64| (v * COURTYARD_GRID_STEPS_PER_MM + epsilon).floor() / COURTYARD_GRID_STEPS_PER_MM;
+    let up =
+        |v: f64| (v * COURTYARD_GRID_STEPS_PER_MM - epsilon).ceil() / COURTYARD_GRID_STEPS_PER_MM;
+    (down(bbox.0), down(bbox.1), up(bbox.2), up(bbox.3))
+}
+
+/// The courtyard box: the combined pad and body envelope, grown by `clearance`
+/// and snapped outward to the KLC grid.
+///
+/// # The defect this replaces
+///
+/// The courtyard used to be the *pad* envelope plus clearance, with the body
+/// used only for the fab outline. Every part whose body overruns its land
+/// pattern therefore got a courtyard smaller than the part — and a courtyard
+/// smaller than the part is worse than none, because DRC then reports clearance
+/// as satisfied while the physical bodies collide. Found on a real board: a
+/// 5 mm-pitch film capacitor, body 3.5 mm deep, pads 1.6 mm, courtyard 2.6 mm.
+///
+/// # The rule
+///
+/// KLC F5.3 defines the courtyard as the smallest rectangle giving the required
+/// clearance around the **combined component body and land pattern**. KiCad's
+/// own conformance checker implements exactly that: `getFootprintBounds()` in
+/// `pcb/rules/F5_3.py` adds the pad bounds to the geometric bounds of F.Fab
+/// (falling back to B.Fab, then the silkscreen), then `defaultCourtyard()`
+/// expands by the offset and snaps to `KLC_CRTYD_GRID`.
+fn courtyard_bbox(
+    pads: &[PadGeom],
+    body: Option<(f64, f64)>,
+    clearance: f64,
+) -> (f64, f64, f64, f64) {
+    let envelope = match body_bbox(pads, body) {
+        Some(body) => union_bbox(pads_bbox(pads), body),
+        None => pads_bbox(pads),
+    };
+    snap_courtyard_outward((
+        envelope.0 - clearance,
+        envelope.1 - clearance,
+        envelope.2 + clearance,
+        envelope.3 + clearance,
+    ))
+}
+
 /// Courtyard clearance per the contributor's rule: an explicit value wins, else
 /// `package_type`, else auto-detect (through-hole 0.5 mm, sub-0603 body 0.15 mm,
 /// otherwise SMT 0.25 mm). BGA (1.0 mm) is opt-in via `package_type` because an
@@ -440,6 +526,30 @@ fn nearest_corner(min_x: f64, min_y: f64, max_x: f64, max_y: f64, px: f64, py: f
         max_y
     };
     (cx, cy)
+}
+
+/// Radius of the pin-1 silk dot, in mm.
+const PIN1_DOT_RADIUS_MM: f64 = 0.15;
+
+/// Where the pin-1 dot's centre goes along one axis: just outside the silk
+/// outline, but never so far that any part of the dot leaves the courtyard.
+///
+/// `sign` is the outward direction, -1 for a min edge and +1 for a max edge.
+///
+/// The unclamped version put a dot at x = -9.3 on a footprint whose courtyard
+/// stopped at -9.0. Drawing a footprint's own marker outside its own courtyard
+/// is a contradiction: the courtyard is the claim about how much room the part
+/// needs, and a mark beyond it says the claim is short. Clamping to
+/// `courtyard_edge - sign * radius` puts the dot flush against the inside of
+/// the courtyard in the worst case, which is still unmistakably beside pin 1.
+fn pin1_dot_center(silk_edge: f64, courtyard_edge: f64, sign: f64) -> f64 {
+    let desired = silk_edge + sign * 0.4;
+    let limit = courtyard_edge - sign * PIN1_DOT_RADIUS_MM;
+    if sign < 0.0 {
+        desired.max(limit)
+    } else {
+        desired.min(limit)
+    }
 }
 
 fn point_toward(from: (f64, f64), toward: (f64, f64), d: f64) -> (f64, f64) {
@@ -532,34 +642,31 @@ fn build_footprint_graphics(args: &serde_json::Value, name: &str, pads: &[PadGeo
         body,
     );
 
-    // Courtyard: pad envelope + clearance.
-    let (cmin_x, cmin_y, cmax_x, cmax_y) = (
-        pmin_x - clearance,
-        pmin_y - clearance,
-        pmax_x + clearance,
-        pmax_y + clearance,
-    );
-
-    // Silk: just outside the pad envelope so it clears pads (avoids the
-    // silk-over-pad DRC violation) regardless of the body outline.
-    let silk_margin = 0.15;
-    let (smin_x, smin_y, smax_x, smax_y) = (
-        pmin_x - silk_margin,
-        pmin_y - silk_margin,
-        pmax_x + silk_margin,
-        pmax_y + silk_margin,
-    );
+    // Courtyard: the *combined* pad and body envelope plus clearance, per KLC
+    // F5.3 — see `courtyard_bbox` for why the pad envelope alone was wrong.
+    let (cmin_x, cmin_y, cmax_x, cmax_y) = courtyard_bbox(pads, body, clearance);
 
     // Fab: the component body when given, else the pad envelope. May overlap
     // pads — fab is a documentation layer, not subject to silk-over-pad rules.
-    let (fmin_x, fmin_y, fmax_x, fmax_y) = match body {
-        Some((bw, bh)) => {
-            let cx = (pmin_x + pmax_x) / 2.0;
-            let cy = (pmin_y + pmax_y) / 2.0;
-            (cx - bw / 2.0, cy - bh / 2.0, cx + bw / 2.0, cy + bh / 2.0)
-        }
+    let (fmin_x, fmin_y, fmax_x, fmax_y) =
+        body_bbox(pads, body).unwrap_or((pmin_x, pmin_y, pmax_x, pmax_y));
+
+    // Silk: outside the same combined envelope, so it clears the pads (no
+    // silk-over-pad violation) *and* actually outlines the part. Deriving it
+    // from the pad envelope alone drew a 1.9 mm box around a 3.5 mm body on the
+    // footprint that exposed the courtyard defect — three layers each claiming
+    // a different body size.
+    let silk_margin = 0.15;
+    let (emin_x, emin_y, emax_x, emax_y) = match body_bbox(pads, body) {
+        Some(body) => union_bbox((pmin_x, pmin_y, pmax_x, pmax_y), body),
         None => (pmin_x, pmin_y, pmax_x, pmax_y),
     };
+    let (smin_x, smin_y, smax_x, smax_y) = (
+        emin_x - silk_margin,
+        emin_y - silk_margin,
+        emax_x + silk_margin,
+        emax_y + silk_margin,
+    );
 
     let mut s = String::new();
 
@@ -574,7 +681,15 @@ fn build_footprint_graphics(args: &serde_json::Value, name: &str, pads: &[PadGeo
         smin_x, smin_y, smax_x, smax_y
     ));
 
-    if let Some(i1) = pin1_index(pads) {
+    // A pin-1 mark is right for a polarised part and wrong for one that has no
+    // pin 1 to find: a fuse, a resistor, a non-polarised capacitor. Nothing in
+    // a pad list distinguishes the two — a fuse's pads are numbered "1" and "2"
+    // exactly like a diode's — so this is a caller's statement, not a guess.
+    // Default true, because the parts that need the mark are the ones where
+    // omitting it is a build error.
+    let want_pin1 = args["pin1_marker"].as_bool().unwrap_or(true);
+
+    if let Some(i1) = pin1_index(pads).filter(|_| want_pin1) {
         let p1 = &pads[i1];
 
         // Fab outline with the pin-1 corner chamfered.
@@ -598,17 +713,19 @@ fn build_footprint_graphics(args: &serde_json::Value, name: &str, pads: &[PadGeo
         let (dx, dy) = if (p1.x - bcx).abs() >= (p1.y - bcy).abs() {
             // Pin 1 is on a left/right edge: dot outside that edge, at pin 1's y.
             let sign = if p1.x < bcx { -1.0 } else { 1.0 };
-            let edge = if sign < 0.0 { smin_x } else { smax_x };
-            (edge + sign * 0.4, p1.y)
+            let silk_edge = if sign < 0.0 { smin_x } else { smax_x };
+            let courtyard_edge = if sign < 0.0 { cmin_x } else { cmax_x };
+            (pin1_dot_center(silk_edge, courtyard_edge, sign), p1.y)
         } else {
             // Pin 1 is on a top/bottom edge: dot outside that edge, at pin 1's x.
             let sign = if p1.y < bcy { -1.0 } else { 1.0 };
-            let edge = if sign < 0.0 { smin_y } else { smax_y };
-            (p1.x, edge + sign * 0.4)
+            let silk_edge = if sign < 0.0 { smin_y } else { smax_y };
+            let courtyard_edge = if sign < 0.0 { cmin_y } else { cmax_y };
+            (p1.x, pin1_dot_center(silk_edge, courtyard_edge, sign))
         };
         s.push_str(&format!(
             "\n  (fp_circle (center {:.4} {:.4}) (end {:.4} {:.4}) (stroke (width 0.1) (type solid)) (fill solid) (layer \"F.SilkS\"))",
-            dx, dy, dx + 0.15, dy
+            dx, dy, dx + PIN1_DOT_RADIUS_MM, dy
         ));
     } else {
         // No pads to mark pin 1 against — plain fab rectangle.
@@ -713,7 +830,7 @@ async fn handle_create_footprint(
             "output": output.to_str().unwrap_or(""),
             "pad_count": pad_geoms.len(),
             "courtyard": !pad_geoms.is_empty(),
-            "pin1_marked": !pad_geoms.is_empty(),
+            "pin1_marked": !pad_geoms.is_empty() && args["pin1_marker"].as_bool().unwrap_or(true),
             "model": args.get("model").and_then(|m| m["path"].as_str()).unwrap_or("")
         }))
         .unwrap(),
@@ -3099,6 +3216,18 @@ async fn handle_get_footprint_info(
         .any(|node| matches!(node.find_str("layer"), Some("B.CrtYd" | "F.CrtYd")));
     let has_3d = !footprint.find_all("model").is_empty();
 
+    // The read half of the read/modify/write loop `set_footprint_graphics`
+    // closes: every primitive comes back in exactly the shape that tool takes,
+    // so correcting a footprint never needs the file opened by hand. A
+    // graphic this reader cannot make sense of is an error rather than a
+    // silent omission — a caller about to *replace* a layer must not be told
+    // it holds fewer primitives than it does.
+    let graphics_layer = args["graphics_layer"].as_str();
+    let graphics = match super::footprint_graphics::inspect_graphics(&content, graphics_layer) {
+        Ok(graphics) => graphics,
+        Err(error) => return Ok(super::footprint_graphics::error_result(&path, error)),
+    };
+
     Ok(CallToolResult::text(
         serde_json::to_string(&json!({
             "name": fp_name,
@@ -3106,6 +3235,7 @@ async fn handle_get_footprint_info(
             "pad_count": pad_count,
             "has_courtyard": has_courtyard,
             "has_3d_model": has_3d,
+            "graphics": graphics,
             "path": path.to_str().unwrap_or("")
         }))
         .unwrap(),
@@ -3874,6 +4004,238 @@ mod tests {
             0.25
         );
         assert_eq!(courtyard_clearance(None, None, &smd, None), 0.25);
+    }
+
+    /// The defect this whole change exists for, in the smallest form that
+    /// still shows it: a part whose body overruns its land pattern.
+    ///
+    /// Reduced from the real case — a 5 mm-pitch film capacitor, pads 1.6 mm
+    /// square on a 5 mm pitch, body 7.2 x 3.5 mm — where the pad envelope was
+    /// 1.6 mm deep and the courtyard came out 2.6 mm deep for a 3.5 mm part.
+    #[test]
+    fn the_courtyard_covers_a_body_that_overruns_the_pads() {
+        let pads = vec![
+            pad("1", "thru_hole", -2.5, 0.0, 1.6, 1.6),
+            pad("2", "thru_hole", 2.5, 0.0, 1.6, 1.6),
+        ];
+        let clearance = 0.5;
+        let (min_x, min_y, max_x, max_y) = courtyard_bbox(&pads, Some((7.2, 3.5)), clearance);
+
+        // Deep enough for the body, not merely for the pads.
+        assert!(
+            (max_y - min_y) >= 3.5 + 2.0 * clearance - 1e-9,
+            "courtyard is {:.4} mm deep for a 3.5 mm body with {clearance} mm clearance",
+            max_y - min_y
+        );
+        // And still wide enough for the pads, which reach further than the body
+        // does in x: 2.5 + 0.8 = 3.3, against the body's 3.6.
+        assert!((max_x - min_x) >= 7.2 + 2.0 * clearance - 1e-9);
+        assert!((min_x - -4.1).abs() < 1e-9, "min_x = {min_x}");
+        assert!((max_y - 2.25).abs() < 1e-9, "max_y = {max_y}");
+    }
+
+    /// The other direction: pads reaching past the body must not be clipped
+    /// either. A land pattern with a fillet allowance routinely does this.
+    #[test]
+    fn the_courtyard_covers_pads_that_overrun_the_body() {
+        let pads = vec![
+            pad("1", "smd", -6.875, 0.0, 3.75, 5.6),
+            pad("2", "smd", 6.875, 0.0, 3.75, 5.6),
+        ];
+        let (min_x, min_y, max_x, max_y) = courtyard_bbox(&pads, Some((15.4, 5.35)), 0.25);
+        // Pads reach 8.75 in x, the body only 7.7.
+        assert!((min_x - -9.0).abs() < 1e-9, "min_x = {min_x}");
+        assert!((max_x - 9.0).abs() < 1e-9, "max_x = {max_x}");
+        // Pads are 5.6 deep, the body 5.35.
+        assert!((min_y - -3.05).abs() < 1e-9, "min_y = {min_y}");
+        assert!((max_y - 3.05).abs() < 1e-9, "max_y = {max_y}");
+    }
+
+    /// With no body given there is nothing to union, and the answer is what it
+    /// always was — so every footprint created without body dimensions keeps
+    /// exactly the courtyard it had.
+    #[test]
+    fn without_a_body_the_courtyard_is_the_pad_envelope_as_before() {
+        let pads = vec![
+            pad("1", "smd", -1.0, 0.0, 0.4, 0.6),
+            pad("2", "smd", 1.0, 0.0, 0.4, 0.6),
+        ];
+        let (min_x, min_y, max_x, max_y) = courtyard_bbox(&pads, None, 0.25);
+        assert!((min_x - -1.45).abs() < 1e-9);
+        assert!((max_x - 1.45).abs() < 1e-9);
+        assert!((min_y - -0.55).abs() < 1e-9);
+        assert!((max_y - 0.55).abs() < 1e-9);
+    }
+
+    /// KLC's `KLC_CRTYD_GRID` is 0.01 mm. Snapping goes outward, never inward:
+    /// rounding a bound in would take back part of the clearance that was just
+    /// added, which is the failure mode this change is about.
+    #[test]
+    fn the_courtyard_snaps_outward_to_the_klc_grid() {
+        let (min_x, min_y, max_x, max_y) = snap_courtyard_outward((-1.234, -0.001, 1.234, 0.001));
+        assert!((min_x - -1.24).abs() < 1e-9, "min_x = {min_x}");
+        assert!((max_x - 1.24).abs() < 1e-9, "max_x = {max_x}");
+        assert!((min_y - -0.01).abs() < 1e-9, "min_y = {min_y}");
+        assert!((max_y - 0.01).abs() < 1e-9, "max_y = {max_y}");
+
+        // A value already on the grid stays put: float noise must not push a
+        // clean 3.8 out to 3.81 and drift every courtyard a step wider.
+        let on_grid = snap_courtyard_outward((-3.8, -1.3, 3.8, 1.3));
+        assert_eq!(on_grid, (-3.8, -1.3, 3.8, 1.3));
+    }
+
+    /// The pin-1 dot sits outside the silk outline when the courtyard leaves
+    /// room, and inside the courtyard when it does not.
+    #[test]
+    fn the_pin1_dot_never_leaves_the_courtyard() {
+        // Roomy: 0.4 mm outside the silk edge, well inside the courtyard.
+        assert!((pin1_dot_center(-3.45, -5.0, -1.0) - -3.85).abs() < 1e-9);
+        assert!((pin1_dot_center(3.45, 5.0, 1.0) - 3.85).abs() < 1e-9);
+
+        // Tight: the real case. Silk at -8.9, courtyard at -9.0. Unclamped this
+        // put the dot's centre at -9.3, its far edge at -9.45, both outside the
+        // courtyard. Clamped, the dot's far edge lands exactly on -9.0.
+        let center = pin1_dot_center(-8.9, -9.0, -1.0);
+        assert!((center - -8.85).abs() < 1e-9, "center = {center}");
+        assert!(center - PIN1_DOT_RADIUS_MM >= -9.0 - 1e-9);
+    }
+
+    /// `pin1_marker: false` removes both halves of the mark — the silk dot and
+    /// the fab chamfer — and leaves a plain rectangular fab outline. A fuse has
+    /// pads numbered "1" and "2" exactly as a diode does, so nothing but the
+    /// caller can tell the two apart.
+    #[test]
+    fn a_non_polarised_part_can_be_created_without_a_pin1_mark() {
+        let pads = vec![
+            pad("1", "smd", -6.875, 0.0, 3.75, 5.6),
+            pad("2", "smd", 6.875, 0.0, 3.75, 5.6),
+        ];
+        let args = json!({"body_width": 15.4, "body_height": 5.35, "pin1_marker": false});
+        let graphics = build_footprint_graphics(&args, "Fuse", &pads);
+
+        assert!(
+            !graphics.contains("fill solid"),
+            "the silk pin-1 dot is the only filled graphic emitted: {graphics}"
+        );
+        assert!(
+            !graphics.contains("fp_poly"),
+            "the chamfered fab outline is a polygon; without a pin 1 it is a rect: {graphics}"
+        );
+        assert!(
+            graphics.contains(r#"(layer "F.Fab")"#),
+            "a fab outline is still drawn: {graphics}"
+        );
+
+        // The default is still to mark it, for the parts where leaving the mark
+        // off is the build error.
+        let marked = build_footprint_graphics(
+            &json!({"body_width": 15.4, "body_height": 5.35}),
+            "Diode",
+            &pads,
+        );
+        assert!(marked.contains("fill solid"), "{marked}");
+        assert!(marked.contains("fp_poly"), "{marked}");
+    }
+
+    /// Every graphic `build_footprint_graphics` draws stays inside the
+    /// courtyard it draws. A footprint whose own marks escape its own courtyard
+    /// is telling KiCad two different things about how much room the part
+    /// needs.
+    #[test]
+    fn nothing_a_generated_footprint_draws_escapes_its_courtyard() {
+        let cases: Vec<(&str, Vec<PadGeom>, serde_json::Value)> = vec![
+            (
+                "body deeper than the pads",
+                vec![
+                    pad("1", "thru_hole", -2.5, 0.0, 1.6, 1.6),
+                    pad("2", "thru_hole", 2.5, 0.0, 1.6, 1.6),
+                ],
+                json!({"body_width": 7.2, "body_height": 3.5}),
+            ),
+            (
+                "pads wider than the body",
+                vec![
+                    pad("1", "smd", -6.875, 0.0, 3.75, 5.6),
+                    pad("2", "smd", 6.875, 0.0, 3.75, 5.6),
+                ],
+                json!({"body_width": 15.4, "body_height": 5.35}),
+            ),
+            (
+                "no body at all",
+                vec![
+                    pad("1", "smd", -1.0, 0.0, 0.4, 0.6),
+                    pad("2", "smd", 1.0, 0.0, 0.4, 0.6),
+                ],
+                json!({}),
+            ),
+            (
+                "pin 1 on a top edge",
+                vec![
+                    pad("1", "smd", 0.0, -2.0, 1.0, 1.0),
+                    pad("2", "smd", 0.0, 2.0, 1.0, 1.0),
+                ],
+                json!({"body_width": 3.0, "body_height": 6.0}),
+            ),
+        ];
+
+        for (name, pads, args) in cases {
+            let graphics = build_footprint_graphics(&args, "Probe", &pads);
+            let courtyard = courtyard_bbox(
+                &pads,
+                match (args["body_width"].as_f64(), args["body_height"].as_f64()) {
+                    (Some(w), Some(h)) => Some((w, h)),
+                    _ => None,
+                },
+                courtyard_clearance(
+                    args["courtyard_clearance"].as_f64(),
+                    args["package_type"].as_str(),
+                    &pads,
+                    match (args["body_width"].as_f64(), args["body_height"].as_f64()) {
+                        (Some(w), Some(h)) => Some((w, h)),
+                        _ => None,
+                    },
+                ),
+            );
+
+            for (x, y) in drawn_points(&graphics) {
+                assert!(
+                    x >= courtyard.0 - 1e-9
+                        && x <= courtyard.2 + 1e-9
+                        && y >= courtyard.1 - 1e-9
+                        && y <= courtyard.3 + 1e-9,
+                    "{name}: ({x}, {y}) is outside courtyard {courtyard:?}\n{graphics}"
+                );
+            }
+        }
+    }
+
+    /// Every coordinate pair a generated graphics block draws, excluding the
+    /// reference and value texts — those sit outside the courtyard by design,
+    /// as they do in KiCad's own libraries, and are not part of the part.
+    fn drawn_points(graphics: &str) -> Vec<(f64, f64)> {
+        let mut points = Vec::new();
+        for line in graphics.lines() {
+            let line = line.trim();
+            if line.starts_with("(fp_text") {
+                continue;
+            }
+            for tag in ["(start ", "(end ", "(center ", "(xy "] {
+                let mut rest = line;
+                while let Some(index) = rest.find(tag) {
+                    let tail = &rest[index + tag.len()..];
+                    let mut numbers = tail.split_whitespace();
+                    if let (Some(x), Some(y)) = (numbers.next(), numbers.next()) {
+                        let y = y.trim_end_matches(')');
+                        if let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) {
+                            points.push((x, y));
+                        }
+                    }
+                    rest = &rest[index + tag.len()..];
+                }
+            }
+        }
+        assert!(!points.is_empty(), "no drawn points found in:\n{graphics}");
+        points
     }
 
     #[test]

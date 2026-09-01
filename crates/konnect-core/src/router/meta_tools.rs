@@ -62,7 +62,7 @@ pub fn meta_tool_descriptions() -> Vec<McpToolDescription> {
     let mut tools = vec![
         McpToolDescription {
             name: "find_capabilities".to_string(),
-            description: "Search all 202 KiCAD tools by intent and return the best matches as \
+            description: "Search all 203 KiCAD tools by intent and return the best matches as \
                  name + toolset + one-line summary. This is the cheap way to build a \
                  toolbelt: describe the task in plain words ('connect two pins', \
                  'export gerbers', 'run ERC'), then pass the names you want to \

@@ -48,7 +48,7 @@ does not exercise, break the name.
 
 | | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|
-| KiCAD domains | 169 | 122 | 19 | 21 | 2 | 5 | 74.4 % |
+| KiCAD domains | 170 | 123 | 19 | 21 | 2 | 5 | 74.5 % |
 | server's own | 40 | 27 | 10 | 3 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -77,7 +77,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`buses`](#buses) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`hierarchy`](#hierarchy) | 12 | 12 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`libraries`](#libraries) | 9 | 9 | 0 | 0 | 0 | 0 | 100.0 % |
-| [`footprints`](#footprints) | 7 | 7 | 0 | 0 | 0 | 0 | 100.0 % |
+| [`footprints`](#footprints) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`pcb`](#pcb) | 8 | 8 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`placement`](#placement) | 11 | 2 | 0 | 8 | 1 | 0 | 18.2 % |
 | [`routing`](#routing) | 10 | 3 | 0 | 5 | 0 | 2 | 37.5 % |
@@ -111,7 +111,7 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 
 | adapter | tools | needs a running KiCAD |
 |---|---|---|
-| `sexpr` | 124 | no |
+| `sexpr` | 125 | no |
 | `cli` | 22 | no |
 | `ipc` | 21 | yes |
 | `ipc→sexpr` | 5 | no |
@@ -195,7 +195,7 @@ Not covered by any tool:
 | `add_power_symbol` | `sch_wiring` | `sexpr` | `write` | design_document | PARTIAL | bench | `bench/probes/divider.yaml` | does not snap to the 1.27 mm grid (E6): a power symbol placed at a component's nominal coordinate lands 0.33 mm off the pin and ERC reports it unconnected. A plan's `power` operation snaps before calling it; the direct path does not |
 | `batch_place_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
 | `bulk_move_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbol_attributes.rs` |  |
 | `batch_delete_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 
 ### wires
@@ -301,6 +301,7 @@ Not covered by any tool:
 | `get_pad_position` | `pcb_components` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
 | `create_footprint` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 | `edit_footprint_pad` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
+| `set_footprint_graphics` | `library` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/footprint_graphics.rs` |  |
 | `list_library_footprints` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/tests/libraries_and_footprints.rs` |  |
 | `get_footprint_info` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
 | `search_footprints` | `library` | `sexpr` | `read` | — | SUPPORTED | test | `crates/konnect-core/src/tools/library.rs` |  |
@@ -568,7 +569,7 @@ Not covered by any tool:
 
 ## Not tested
 
-24 of 202 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+24 of 203 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|

@@ -57,6 +57,23 @@ Common install paths are auto-detected (including the Windows registry). If
 your install is somewhere unusual, set the path in the plugin settings dialog
 or in `konnect-settings.json` (`kicad_cli`).
 
+## A schematic write is refused while KiCad has the file open
+
+Konnect refuses to change a `.kicad_sch` while KiCad's sibling
+`~<name>.kicad_sch.lck` exists, and answers with the `conflict` error kind
+naming both the schematic and the lock. Close the schematic editor normally and
+retry the identical call. Read-only schematic tools keep working throughout.
+
+Why it is not smarter than that: KiCad's lock stores a username and a hostname
+and nothing else — no process id, no start time, no document token. There is no
+way to tell a live editor from one a crash left behind, and guessing wrong
+costs whatever is unsaved in that editor. So Konnect treats valid,
+foreign-host, empty, and malformed locks alike, and never removes one for you.
+
+If KiCad crashed, the clean fix is to reopen the project and close it normally,
+which makes KiCad release its own lock. Deleting `~<name>.kicad_sch.lck` by hand
+is a last resort, and only after confirming no editor still owns the file.
+
 ## Transaction recovery is blocked by divergent content
 
 Multi-file schematic changes persist a `.konnect-transaction-<id>.json`

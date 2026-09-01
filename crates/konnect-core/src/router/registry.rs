@@ -102,7 +102,7 @@ pub static ALL_TOOLSETS: &[ToolsetMeta] = &[
         name: "library",
         description: "Symbol libraries, footprint libraries, search and registration",
         category: "library",
-        tool_count: 14,
+        tool_count: 15,
     },
     ToolsetMeta {
         name: "integration",

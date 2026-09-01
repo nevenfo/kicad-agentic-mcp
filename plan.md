@@ -6238,3 +6238,140 @@ l'échec reste visible dans le benchmark.
 
 Le tag pointe sur le commit réellement validé, les artefacts sont cohérents et
 `v1.1.3` est la version active sans fallback vers un ancien binaire.
+
+# Phase W — v1.1.4, les trois limitations Pareto
+
+## Objectif
+
+Trois limitations démontrées par le benchmark Hi-Fi bloquent des workflows
+réels. Elles sont corrigées ensemble, séquentiellement, chacune vérifiée avant
+la suivante :
+
+1. un `.kicad_sch` possédé par Eeschema peut être muté sous lui, et la
+   sauvegarde de l'éditeur écrase silencieusement la mutation ;
+2. `create_footprint` dérive le courtyard de la seule enveloppe des pastilles,
+   et aucun outil n'édite ensuite les graphiques d'une empreinte ;
+3. `on_board`, `in_bom` et `dnp` ne sont ni lisibles ni écrivables.
+
+## Invariants de la phase
+
+- L'architecture ne bouge pas : PCB par IPC, schématique par S-expression
+  contrôlée, ERC/DRC/exports par `kicad-cli`. Le routage `DocumentType` de
+  `v1.1.3` n'est pas touché.
+- Un lock KiCad n'est jamais supprimé, jamais déplacé, jamais réputé périmé.
+  Le fichier de lock ne porte que `hostname` et `username` : la fraîcheur n'y
+  est pas décidable, donc elle n'est pas décidée.
+- Ambigu vaut refus. Une mutation refusée ne laisse ni octet modifié, ni
+  scratch, ni journal.
+- Aucun test n'est supprimé ni affaibli pour obtenir du vert.
+
+## Ancrages vérifiés sur cette machine, pas décrits
+
+Sonde `scratchpad/probe-lock.ps1`, KiCad 10.0 réel, fixture
+`KonnectValidationV31`, profil `KICAD_CONFIG_HOME` dédié :
+
+- ouvrir `X.kicad_sch` dans `eeschema.exe` crée **deux** fichiers frères,
+  `~X.kicad_sch.lck` et `~X.kicad_pro.lck`, dans le répertoire du document ;
+- leur contenu est exactement `{"hostname":"…","username":"…"}`, 50 octets,
+  **sans PID ni horodatage** ;
+- une fermeture propre (`WM_CLOSE`) retire les deux.
+
+Frontière commune d'écriture, relevée dans le code et non supposée : tout
+chemin de mutation schématique passe par `crates/konnect-sexp/src/writer.rs`
+(`write_atomic`, `write_atomic_if_unchanged`, `transact_atomic`,
+`write_new_atomic`) ou par `crates/konnect-sexp/src/transaction.rs`
+(`commit_file_transaction`). `commit_command` de `command.rs` délègue à
+`transact_atomic`.
+
+## W.1 — Garde de possession Eeschema
+
+### Objectif
+
+Aucune mutation d'un `.kicad_sch` dont le lock frère natif existe.
+
+### Tâches
+
+- [x] W.1.1 Écrire les régressions rouges d'abord : lock présent → refus
+  typé, fichier bit-identique, aucun scratch, aucun journal, lock intact ;
+  lock absent → la même mutation passe.
+- [x] W.1.2 Implémenter le garde dans `konnect-sexp::writer`, au niveau
+  partagé, avec un nouveau `SexpError` distinct de `Conflict`.
+- [x] W.1.3 Recontrôler au plus près de la frontière de commit, juste avant
+  le `rename`, et prouver par un test de course que le garde n'est pas
+  seulement en entrée d'opération.
+- [x] W.1.4 Étendre `commit_file_transaction` : refus avant toute écriture de
+  journal.
+- [x] W.1.5 Classer l'erreur dans la taxonomie MCP et la rendre lisible par
+  un client (`error_kind`, `transient`).
+- [x] W.1.6 Valider contre un Eeschema réel : mutation refusée éditeur
+  ouvert, acceptée après fermeture, relecture indépendante.
+
+### Validation
+
+Sur fixture ouverte dans Eeschema : refus typé, SHA-256 du `.kicad_sch`
+inchangé, répertoire du projet sans fichier nouveau autre que ceux de KiCad,
+lock intact. Après fermeture : même appel PASS et modification relue.
+
+## W.2 — Graphiques d'empreinte et courtyard
+
+### Objectif
+
+Créer une empreinte correcte, puis la corriger sans quitter le MCP.
+
+### Tâches
+
+- [x] W.2.1 Chemin vertical minimal : lire les graphiques d'un `.kicad_mod`,
+  modifier une primitive, écrire, relire, vérifier.
+- [x] W.2.2 Étendre aux primitives réelles : `fp_line`, `fp_arc`, `fp_rect`,
+  `fp_circle`, `fp_poly`.
+- [x] W.2.3 Corriger le courtyard de `create_footprint` : enveloppe du corps
+  **et** des pastilles, plus la garde selon les conventions vérifiées.
+- [x] W.2.4 Corriger le repère de broche 1 : plus de repère imposé sur un
+  composant non polarisé, et un repère qui reste dans le courtyard.
+- [x] W.2.5 Rejouer les deux empreintes Hi-Fi défectueuses, sans édition
+  externe.
+
+### Validation
+
+`CF_Film_Box_P5.00mm_7.2x3.5mm` : courtyard au moins aussi grand que le corps.
+`Fuse_Schurter_UMT-H_5.3x16mm` : plus de faux repère de broche 1 hors
+courtyard. Les fixtures existantes passent, ou leur changement est justifié.
+
+## W.3 — Attributs natifs `on_board`, `in_bom`, `dnp`
+
+### Tâches
+
+- [x] W.3.1 Lecture : exposer les trois attributs dans les réponses des
+  outils de lecture de symboles.
+- [x] W.3.2 Écriture : les accepter dans `edit_schematic_component` et son
+  chemin batch, sans les dégrader en propriétés personnalisées.
+- [x] W.3.3 Tester activation, désactivation, combinaison des trois, et
+  conservation des autres propriétés du symbole.
+- [x] W.3.4 Lever B2.8 du benchmark Hi-Fi par le MCP seul.
+- [x] W.3.5 Supprimer une propriété personnalisée : `fields: {"clé": null}`
+  retire la propriété au lieu d'être refusé. Découvert en préparant W.3.4 :
+  B2.8 exige aussi le retrait de la propriété parasite `exclude_from_board`
+  laissée sur `RV1`, et aucun outil n'expose la suppression d'une propriété —
+  seulement l'ajout et la mise à jour.
+
+### Validation
+
+Pour chacun des trois : état initial → mutation MCP → relecture indépendante →
+valeur attendue, plus une validation KiCad pertinente.
+
+## W.4 — Régression globale et reprise du benchmark
+
+### Tâches
+
+- [x] W.4.1 `gate.ps1` complet vert.
+- [x] W.4.2 Tests live Eeschema et Pcbnew verts, routage `DocumentType`
+  toujours vert.
+- [x] W.4.3 ERC Hi-Fi sans régression par rapport à Gate C2. *(0 erreur, 15 avertissements, mesuré avant et après la mutation B2.8 par kicad-cli.)*
+
+## W.5 — Patch release v1.1.4
+
+- [ ] W.5.1 Version, lockfiles, notes.
+- [ ] W.5.2 CI PASS sur le commit candidat, tag, release, artefacts.
+- [ ] W.5.3 Installer `v1.1.4` comme seule version en vigueur pour les clients,
+  vérifier le runtime actif et conserver uniquement le rollback explicite vers
+  `v1.1.3`.

@@ -11,6 +11,7 @@ use crate::tools::{
     find_all_symbol_instance_blocks, find_symbol_instance_block, get_path, opt_f64, opt_str,
     require_f64, require_str, set_symbol_property, set_symbol_property_on_all_units,
     SetPropertyError, SetPropertyOutcome, ToolContext, ToolDef, RESERVED_PROPERTY_KEYS,
+    SYMBOL_ATTRIBUTES,
 };
 use konnect_schematic_editor as cse;
 use konnect_sexp::{
@@ -79,7 +80,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "edit_schematic_component",
-            "Update fields (Reference, Value, Footprint, custom properties) of a symbol instance.",
+            "Update fields (Reference, Value, Footprint, custom properties) and the native              attributes (in_bom, on_board, dnp) of a symbol instance.",
             json!({
                 "type": "object",
                 "properties": {
@@ -92,8 +93,11 @@ pub fn tools() -> Vec<ToolDef> {
                     "datasheet": { "type": "string", "description": "New datasheet URL (optional)" },
                     "fields": {
                         "type": "object",
-                        "description": "Additional property fields to set as key:value pairs"
-                    }
+                        "description": "Additional property fields to set as key:value pairs. A null value removes the property."
+                    },
+                    "in_bom": { "type": "boolean", "description": "Native attribute: include this symbol in the BOM (optional)" },
+                    "on_board": { "type": "boolean", "description": "Native attribute: transfer this symbol to the PCB (optional)" },
+                    "dnp": { "type": "boolean", "description": "Native attribute: Do Not Populate (optional)" }
                 },
                 "required": ["schematic"]
             }),
@@ -758,18 +762,27 @@ async fn handle_edit_schematic_component(
     // key both belong in the same list, and doing the conversion first is what
     // keeps one mutable borrow of `errors` live at a time.
     let mut field_updates: Vec<(&str, String)> = Vec::new();
+    // A `null` value removes the property rather than being refused (W.3.5):
+    // a property added by mistake was otherwise permanent — settable to the
+    // empty string, never removable, and an empty property is not the same
+    // thing to KiCAD's field list or a BOM export as no property at all.
+    let mut field_removals: Vec<&str> = Vec::new();
     match args.get("fields") {
         None | Some(serde_json::Value::Null) => {}
         Some(serde_json::Value::Object(map)) => {
             for (key, raw) in map {
+                if raw.is_null() {
+                    field_removals.push(key.as_str());
+                    continue;
+                }
                 // KiCAD stores every property as text, so a JSON number or
                 // boolean is written as its text form; anything with no text
                 // form is refused rather than stringified into nonsense.
                 match property_text(raw) {
                     Some(text) => field_updates.push((key.as_str(), text)),
-                    None => {
-                        errors.push(format!("{key}: value must be a string, number or boolean"))
-                    }
+                    None => errors.push(format!(
+                        "{key}: value must be a string, number, boolean, or null to remove it"
+                    )),
                 }
             }
         }
@@ -829,6 +842,46 @@ async fn handle_edit_schematic_component(
     for (key, value) in &field_updates {
         apply(&mut content, key, value, RESERVED_PROPERTY_KEYS);
     }
+    // The three native attributes (W.3.2). They are tags of the symbol block,
+    // not properties, so they take their own writer: a `dnp` routed through
+    // the property path would land as `(property "dnp" "yes")`, which KiCAD
+    // shows in the field list and ignores in the netlist, the BOM and the
+    // board update — a change that looks applied and does nothing.
+    //
+    // `changed` and `errors` are still borrowed by `apply` here — the rename
+    // below is its last use — so this pass keeps its own two lists and merges
+    // them in once that borrow ends.
+    let mut attr_changed: Vec<String> = Vec::new();
+    let mut attr_errors: Vec<String> = Vec::new();
+    for key in &field_removals {
+        match remove_field(&content, &target, key) {
+            Ok(updated) => {
+                content = updated;
+                attr_changed.push(format!("{key} removed"));
+            }
+            Err(why) => attr_errors.push(format!("{key}: {why}")),
+        }
+    }
+    for name in SYMBOL_ATTRIBUTES {
+        match args.get(*name) {
+            None | Some(serde_json::Value::Null) => {}
+            Some(serde_json::Value::Bool(value)) => {
+                match set_attribute(&content, &target, name, *value) {
+                    Ok((updated, outcome)) => {
+                        content = updated;
+                        let word = if *value { "yes" } else { "no" };
+                        attr_changed.push(match outcome {
+                            SetPropertyOutcome::Updated => format!("{name} → {word}"),
+                            SetPropertyOutcome::Inserted => format!("{name} → {word} (added)"),
+                        });
+                    }
+                    Err(why) => attr_errors.push(format!("{name}: {why}")),
+                }
+            }
+            Some(_) => attr_errors.push(format!("{name}: value must be true or false")),
+        }
+    }
+
     if let Some(new_ref) = opt_str(args, "new_reference") {
         apply(&mut content, "Reference", new_ref, &[]);
         // KiCAD resolves a symbol's designator from its `instances` block, not
@@ -840,6 +893,9 @@ async fn handle_edit_schematic_component(
             Err(why) => errors.push(format!("instances: {why}")),
         }
     }
+
+    changed.extend(attr_changed);
+    errors.extend(attr_errors);
 
     // A request that changed nothing is a failure, not a success — silently
     // reporting `"changes": []` is what let the tab-indentation bug hide, and
@@ -916,6 +972,7 @@ pub(crate) fn property_text(value: &serde_json::Value) -> Option<String> {
 enum FieldError {
     SymbolNotFound(String),
     Set(SetPropertyError),
+    Remove(crate::tools::RemovePropertyError),
 }
 
 impl std::fmt::Display for FieldError {
@@ -925,6 +982,7 @@ impl std::fmt::Display for FieldError {
                 write!(f, "symbol '{reference}' not found in this schematic")
             }
             FieldError::Set(e) => write!(f, "{e}"),
+            FieldError::Remove(e) => write!(f, "{e}"),
         }
     }
 }
@@ -966,6 +1024,58 @@ fn set_field(
         .block_in(content)
         .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
     set_symbol_property(content, sym_start, sym_end, field, value, reject).map_err(FieldError::Set)
+}
+
+/// [`set_field`] for a native attribute: the whole designator's units when the
+/// target is a reference, the one addressed block when it is a uuid.
+fn set_attribute(
+    content: &str,
+    target: &ComponentTarget,
+    name: &str,
+    value: bool,
+) -> Result<(String, SetPropertyOutcome), FieldError> {
+    if target.uuid.is_none() {
+        if find_all_symbol_instance_blocks(content, &target.reference).is_empty() {
+            return Err(FieldError::SymbolNotFound(target.reference.clone()));
+        }
+        return crate::tools::set_symbol_attribute_on_all_units(
+            content,
+            &target.reference,
+            name,
+            value,
+        )
+        .map_err(FieldError::Set);
+    }
+    let (sym_start, sym_end) = target
+        .block_in(content)
+        .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
+    crate::tools::set_symbol_attribute(content, sym_start, sym_end, name, value)
+        .map_err(FieldError::Set)
+}
+
+/// [`set_field`] for a removal: every unit of the designator, or the one
+/// addressed block when the target is a uuid.
+fn remove_field(
+    content: &str,
+    target: &ComponentTarget,
+    field: &str,
+) -> Result<String, FieldError> {
+    if target.uuid.is_none() {
+        if find_all_symbol_instance_blocks(content, &target.reference).is_empty() {
+            return Err(FieldError::SymbolNotFound(target.reference.clone()));
+        }
+        return crate::tools::remove_symbol_property_on_all_units(
+            content,
+            &target.reference,
+            field,
+        )
+        .map_err(FieldError::Remove);
+    }
+    let (sym_start, sym_end) = target
+        .block_in(content)
+        .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
+    crate::tools::remove_symbol_property(content, sym_start, sym_end, field)
+        .map_err(FieldError::Remove)
 }
 
 /// Point a renamed symbol's `instances` entries at its new designator.
@@ -1068,6 +1178,13 @@ async fn handle_get_schematic_component(
                 "mirror_y": mirror.contains('y'),
                 "uuid": sym.uuid,
                 "unit": sym.unit,
+                // The three native attributes, always present rather than
+                // present-when-written: KiCAD's own defaults are `in_bom` and
+                // `on_board` yes, `dnp` no, so a symbol that omits a tag is
+                // not undecided about it (W.3.1).
+                "in_bom": sym.in_bom,
+                "on_board": sym.on_board,
+                "dnp": sym.dnp,
                 "sibling_unit_uuids": sibling_units
                     .into_iter()
                     .filter(|u| u != &sym.uuid)
@@ -1108,7 +1225,13 @@ async fn handle_list_schematic_components(
                 "y": y,
                 "rotation": rotation,
                 "mirror_x": mirror.contains('x'),
-                "mirror_y": mirror.contains('y')
+                "mirror_y": mirror.contains('y'),
+                // Same three attributes as `get_schematic_component` (W.3.1):
+                // a caller looking for what a BOM will contain, or for every
+                // part marked DNP, should not need one call per symbol.
+                "in_bom": sym.in_bom,
+                "on_board": sym.on_board,
+                "dnp": sym.dnp
             })
         })
         .collect();
@@ -3102,6 +3225,10 @@ pub(crate) mod tests {
 
     /// KiCAD stores every property as text, so a JSON number or boolean is
     /// written as its text form; a value with no text form is reported.
+    ///
+    /// `null` used to be the unrepresentable value this test named. It is a
+    /// removal now (W.3.5), so the unrepresentable one here is an object —
+    /// there is no text form of `{"nested": 1}` that would not be nonsense.
     #[tokio::test]
     async fn numeric_and_boolean_field_values_are_stored_as_text() {
         let (_symdir, _env) = stub_symbol_dir().await;
@@ -3112,7 +3239,7 @@ pub(crate) mod tests {
             &json!({
                 "schematic": path.display().to_string(),
                 "reference": "R1",
-                "fields": { "Tolerance": 1, "DNP": true, "Bad": null }
+                "fields": { "Tolerance": 1, "DNP": true, "Bad": { "nested": 1 } }
             }),
             &ctx,
         )
@@ -3122,7 +3249,7 @@ pub(crate) mod tests {
         let body = ok_body(&edited);
         assert_eq!(
             body["errors"],
-            json!(["Bad: value must be a string, number or boolean"]),
+            json!(["Bad: value must be a string, number, boolean, or null to remove it"]),
             "an unrepresentable value must be reported: {body}"
         );
         let text = std::fs::read_to_string(&path).unwrap();

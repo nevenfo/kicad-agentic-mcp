@@ -221,6 +221,14 @@ and stops pcbnew, exiting non-zero if either fails.
 - Cooperative lock files live under `KONNECT_STATE_DIR/locks` when that
   absolute override is set, otherwise under the platform local-data directory
   (`konnect/locks`). Reads never create files in the KiCad project.
+- Schematic writes also refuse while KiCad's own sibling `~<name>.kicad_sch.lck`
+  exists. That lock records only a username and a hostname — no pid, no start
+  time, no document token — so a live lock and one a crash left behind are
+  indistinguishable, and valid, foreign-host, empty, and malformed locks all
+  fail closed. Konnect never removes one. The check runs before a transaction
+  journal is created and again immediately before the target is replaced, so a
+  refusal leaves no scratch file and no journal. Reads and `.kicad_pcb` writes
+  are unaffected.
 - Multi-file schematic changes use project-local
   `.konnect-transaction-*.json` write-ahead journals. These journals contain
   complete before/after images and must be treated as sensitive project data.
@@ -351,7 +359,7 @@ if !path.exists() {
 
 Adding a new kind: edit `mcp/error.rs`, add the variant, add the match arm in `short_code()`, use it from the handler. The `short_code_matches_serialized_kind_field` test will fail loudly if they drift.
 
-The dispatch-level errors (not-loaded/unknown/handler-panic) are fully structured. So are **all missing-argument errors** across all 202 tools — `tools/mod.rs::require_str` / `require_f64` emit `ToolErrorKind::InvalidArgument { field, reason }` automatically. Most in-handler errors still use `CallToolResult::error("free text")` or bubble `anyhow::Error`; migrating them is incremental. `project.rs::handle_get_project_info` demonstrates the structured `FileNotFound` pattern.
+The dispatch-level errors (not-loaded/unknown/handler-panic) are fully structured. So are **all missing-argument errors** across all 203 tools — `tools/mod.rs::require_str` / `require_f64` emit `ToolErrorKind::InvalidArgument { field, reason }` automatically. Most in-handler errors still use `CallToolResult::error("free text")` or bubble `anyhow::Error`; migrating them is incremental. `project.rs::handle_get_project_info` demonstrates the structured `FileNotFound` pattern.
 
 ## Observability
 
@@ -372,7 +380,7 @@ Source: [`crates/konnect-core/src/observability.rs`](crates/konnect-core/src/obs
 
 ## Tool Routing (Starter Kit + On-Demand Loading)
 
-The server does NOT expose all 202 tools (215 total with the 13 meta-tools) in `tools/list` by default — that would cost ~33K tokens of context on every listing. Instead:
+The server does NOT expose all 203 tools (216 total with the 13 meta-tools) in `tools/list` by default — that would cost ~33K tokens of context on every listing. Instead:
 
 - **Startup**: only `STARTER_KIT` toolsets are pre-loaded (see `router/registry.rs::STARTER_KIT`). Currently: `project` alone, plus the two `config` read tools admitted individually through `STARTER_TOOLS` (`load_user_config`, `get_effective_config`) — the five `config` write tools cost 507 tokens per refresh and the golden suite calls none of them. Combined with the 13 meta-tools, baseline `tools/list` is 21 tools / 2 831 tokens (measured, `bench/results/m1-surface.json`).
 - **On demand**: the LLM reads `list_toolboxes` → calls `load_toolset(name)` to expose a toolset's tools in subsequent `tools/list` responses. `unload_toolset(name)` prunes them when the task shifts.
@@ -535,9 +543,9 @@ convention for other `kicad-cli`-calling code.
 
 ## Current Stats
 
-- **22 toolsets, 202 tools** + 13 meta-tools (2 gateway + 2 agent + 6 routing/discovery + 3 observability/state — see `tool-directory.md`)
+- **22 toolsets, 203 tools** + 13 meta-tools (2 gateway + 2 agent + 6 routing/discovery + 3 observability/state — see `tool-directory.md`)
 - Baseline `tools/list`: 21 tools / 2 831 tokens (starter kit + meta-tools)
-- Full-catalog `tools/list` (all loaded): 215 tools (202 registered + 13 meta) / 33 183 tokens
+- Full-catalog `tools/list` (all loaded): 216 tools (203 registered + 13 meta) / 33 183 tokens
 
   Both surface figures are measured by `bench/surface.py` (tiktoken `o200k_base`) and
   committed as `bench/results/m1-surface.json`; `docs/benchmark.md` records what moved

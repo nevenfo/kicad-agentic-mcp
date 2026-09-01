@@ -1024,6 +1024,7 @@ pub static MANIFEST: &[Capability] = &[
     // ── library ─────────────────────────────────────────────────────────────
     cap("create_footprint", Domain::Footprints, Adapter::Sexpr),
     cap("edit_footprint_pad", Domain::Footprints, Adapter::Sexpr),
+    cap("set_footprint_graphics", Domain::Footprints, Adapter::Sexpr),
     cap("register_footprint_library", Domain::Libraries, Adapter::Sexpr),
     cap("list_footprint_libraries", Domain::Libraries, Adapter::Sexpr),
     cap("create_symbol", Domain::Libraries, Adapter::Sexpr),

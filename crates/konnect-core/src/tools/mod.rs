@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod design_review;
 pub(crate) mod drc_gate;
+pub mod footprint_graphics;
 pub mod graph;
 pub mod integration;
 mod ipc_boundary;
@@ -1583,6 +1584,250 @@ pub(crate) fn set_symbol_property_on_all_units(
     for (start, end) in blocks {
         let (updated, outcome) =
             set_symbol_property(&new_content, start, end, field, value, reject)?;
+        new_content = updated;
+        outcomes.push((start, outcome));
+    }
+    outcomes.sort_by_key(|(start, _)| *start);
+    let outcome = outcomes
+        .into_iter()
+        .next()
+        .map(|(_, o)| o)
+        .unwrap_or(SetPropertyOutcome::Updated);
+    Ok((new_content, outcome))
+}
+
+/// Properties a symbol cannot be stripped of. `Reference` and `Value` are
+/// what eeschema requires of every symbol; removing either leaves a file
+/// KiCAD reads as a symbol with no designator or no value at all.
+pub(crate) const UNDELETABLE_PROPERTY_KEYS: &[&str] = &["Reference", "Value"];
+
+/// Why [`remove_symbol_property`] could not remove a property.
+#[derive(Debug)]
+pub(crate) enum RemovePropertyError {
+    /// `field` is one of [`UNDELETABLE_PROPERTY_KEYS`].
+    Undeletable(String),
+    /// The symbol carries no property by that name. Removing what is not
+    /// there is reported rather than passed off as a change: a caller that
+    /// misspelled the key would otherwise be told its cleanup succeeded.
+    Absent(String),
+}
+
+impl std::fmt::Display for RemovePropertyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RemovePropertyError::Undeletable(field) => {
+                write!(f, "'{field}' is required by KiCAD and cannot be removed")
+            }
+            RemovePropertyError::Absent(field) => {
+                write!(f, "the symbol carries no '{field}' property")
+            }
+        }
+    }
+}
+
+/// Remove the property `field` from the symbol at
+/// `content[sym_start..sym_end]`, block and trailing whitespace, so the
+/// document keeps the line structure eeschema wrote.
+///
+/// The counterpart of [`set_symbol_property`]'s insert-when-missing half
+/// (W.3.5): a property this crate — or a client — added by mistake was
+/// otherwise permanent, editable to the empty string and never removable,
+/// which is not the same thing to KiCAD's field list, its BOM export or a
+/// reader of the file.
+pub(crate) fn remove_symbol_property(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+    field: &str,
+) -> Result<String, RemovePropertyError> {
+    if UNDELETABLE_PROPERTY_KEYS.contains(&field) {
+        return Err(RemovePropertyError::Undeletable(field.to_string()));
+    }
+    let sym_block = &content[sym_start..sym_end];
+    let (p_start, p_end) = symbol_property_blocks(sym_block)
+        .into_iter()
+        .find(|&(p_start, p_end)| {
+            let block = &sym_block[p_start..p_end];
+            quoted_string_after(block, 0).is_some_and(|(s, e)| &block[s..e] == field)
+        })
+        .ok_or_else(|| RemovePropertyError::Absent(field.to_string()))?;
+
+    // The block plus what surrounds it on its own line: the indentation before
+    // it and the newline after, so removing the last property of a symbol does
+    // not leave a blank indented line behind.
+    let mut start = sym_start + p_start;
+    let mut end = sym_start + p_end;
+    let line_start = content[..start].rfind('\n').map(|p| p + 1).unwrap_or(0);
+    if content[line_start..start]
+        .chars()
+        .all(|c| c == ' ' || c == '\t')
+    {
+        start = line_start;
+        if let Some(rel) = content[end..].find('\n') {
+            end += rel + 1;
+        }
+    }
+    Ok(format!("{}{}", &content[..start], &content[end..]))
+}
+
+/// [`remove_symbol_property`], applied to every unit of `reference`.
+///
+/// A property is the component's, not one unit's — the same reasoning as
+/// [`set_symbol_property_on_all_units`], and the same descending-order walk.
+/// A unit that does not carry the property is not an error here: what the
+/// caller asked for is that no unit carries it afterwards. Absence on *every*
+/// unit still is one.
+pub(crate) fn remove_symbol_property_on_all_units(
+    content: &str,
+    reference: &str,
+    field: &str,
+) -> Result<String, RemovePropertyError> {
+    let mut blocks = find_all_symbol_instance_blocks(content, reference);
+    blocks.sort_by_key(|b| std::cmp::Reverse(b.0));
+
+    let mut new_content = content.to_string();
+    let mut removed = 0usize;
+    for (start, end) in blocks {
+        match remove_symbol_property(&new_content, start, end, field) {
+            Ok(updated) => {
+                new_content = updated;
+                removed += 1;
+            }
+            Err(RemovePropertyError::Absent(_)) => continue,
+            Err(other) => return Err(other),
+        }
+    }
+    if removed == 0 {
+        return Err(RemovePropertyError::Absent(field.to_string()));
+    }
+    Ok(new_content)
+}
+
+/// The three native symbol attributes KiCAD stores as tags of the symbol
+/// block itself — not as properties (W.3.1).
+///
+/// `in_bom` and `on_board` default to yes and `dnp` to no, which is why a
+/// symbol that carries none of the three is still fully determined.
+pub(crate) const SYMBOL_ATTRIBUTES: &[&str] = &["in_bom", "on_board", "dnp"];
+
+/// The order eeschema writes a symbol block's direct children in. Used only
+/// to place a newly inserted attribute where KiCAD would have written it, so
+/// a file this tool touches keeps looking like one KiCAD wrote. A child not
+/// listed here sorts last, which puts an inserted attribute before it.
+const SYMBOL_CHILD_ORDER: &[&str] = &[
+    "lib_id",
+    "at",
+    "unit",
+    "exclude_from_sim",
+    "in_bom",
+    "on_board",
+    "dnp",
+    "fields_autoplaced",
+    "uuid",
+    "property",
+    "pin",
+    "instances",
+];
+
+/// The head word of an S-expression block, e.g. `"property"` for
+/// `(property "Value" …)`.
+fn block_head(block: &str) -> &str {
+    block
+        .strip_prefix('(')
+        .unwrap_or(block)
+        .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+        .next()
+        .unwrap_or("")
+}
+
+/// Set the native attribute `name` (one of [`SYMBOL_ATTRIBUTES`]) on the
+/// symbol at `content[sym_start..sym_end]`.
+///
+/// These are tags of the symbol block, not properties: writing `dnp` through
+/// [`set_symbol_property`] would produce `(property "dnp" "yes")`, a custom
+/// field KiCAD shows in the symbol's field list and ignores everywhere it
+/// matters — the netlist, the BOM, the board update. Hence a separate path
+/// (W.3.2).
+///
+/// A symbol that does not carry the tag yet has one inserted where eeschema
+/// would have written it ([`SYMBOL_CHILD_ORDER`]), because omitting the tag
+/// is how KiCAD spells the default and an explicit non-default has to be
+/// written to exist at all.
+pub(crate) fn set_symbol_attribute(
+    content: &str,
+    sym_start: usize,
+    sym_end: usize,
+    name: &str,
+    value: bool,
+) -> Result<(String, SetPropertyOutcome), SetPropertyError> {
+    if !SYMBOL_ATTRIBUTES.contains(&name) {
+        return Err(SetPropertyError::Reserved(name.to_string()));
+    }
+    let sym_block = &content[sym_start..sym_end];
+    let children = konnect_sexp::writer::find_direct_child_blocks(sym_block, "symbol");
+    let tag = format!("({name} {})", if value { "yes" } else { "no" });
+
+    if let Some(&(s, e)) = children
+        .iter()
+        .find(|&&(s, e)| block_head(&sym_block[s..e]) == name)
+    {
+        let updated = format!(
+            "{}{}{}",
+            &content[..sym_start + s],
+            tag,
+            &content[sym_start + e..]
+        );
+        return Ok((updated, SetPropertyOutcome::Updated));
+    }
+
+    let rank = |head: &str| {
+        SYMBOL_CHILD_ORDER
+            .iter()
+            .position(|k| *k == head)
+            .unwrap_or(SYMBOL_CHILD_ORDER.len())
+    };
+    let own_rank = rank(name);
+    // The first child that belongs after this attribute; the tag is inserted
+    // on its own line just before it.
+    let (before_s, _) = children
+        .iter()
+        .find(|&&(s, e)| rank(block_head(&sym_block[s..e])) > own_rank)
+        .copied()
+        .ok_or(SetPropertyError::Malformed)?;
+    let insert_at = sym_start + before_s;
+    let line_start = content[..insert_at].rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let indent: String = content[line_start..insert_at]
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
+    let updated = format!(
+        "{}{tag}\n{indent}{}",
+        &content[..insert_at],
+        &content[insert_at..]
+    );
+    Ok((updated, SetPropertyOutcome::Inserted))
+}
+
+/// [`set_symbol_attribute`], applied to every unit of `reference`.
+///
+/// The three attributes belong to the component, not to one unit's placement:
+/// KiCAD's own editor sets them on every unit at once, and a file where unit
+/// A is `dnp yes` and unit B is not is the same self-contradiction
+/// [`set_symbol_property_on_all_units`] exists to avoid. Blocks are rewritten
+/// in descending start order for the same reason.
+pub(crate) fn set_symbol_attribute_on_all_units(
+    content: &str,
+    reference: &str,
+    name: &str,
+    value: bool,
+) -> Result<(String, SetPropertyOutcome), SetPropertyError> {
+    let mut blocks = find_all_symbol_instance_blocks(content, reference);
+    blocks.sort_by_key(|b| std::cmp::Reverse(b.0));
+
+    let mut new_content = content.to_string();
+    let mut outcomes: Vec<(usize, SetPropertyOutcome)> = Vec::new();
+    for (start, end) in blocks {
+        let (updated, outcome) = set_symbol_attribute(&new_content, start, end, name, value)?;
         new_content = updated;
         outcomes.push((start, outcome));
     }
