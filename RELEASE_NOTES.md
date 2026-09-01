@@ -1,8 +1,13 @@
-# KiCad Agentic MCP v1.1.3
+# KiCad Agentic MCP v1.1.4
 
-Correctness release for the document context a session runs in. There is no new
-tool, changed tool signature or architecture change: the surface remains
-**202 tools across 22 toolsets**.
+Capability release for three limitations the Hi-Fi benchmark demonstrated on
+real work: a schematic KiCad had open could be written under it, a generated
+courtyard could be smaller than the part it enclosed with no way to fix it from
+the MCP, and `on_board` / `in_bom` / `dnp` were neither readable nor writable.
+The architecture does not move — PCB over IPC, schematic over the controlled
+S-expression engine, ERC/DRC and exports over `kicad-cli` — and the
+`DocumentType` routing v1.1.3 fixed is untouched. One tool is added, so the
+surface is now **203 tools across 22 toolsets**.
 
 The benchmark and model-fit figures further down were taken on 2026-08-24 for
 v1.0.0, on the machine named at the top of
@@ -12,30 +17,71 @@ v1.0.0 and are reproduced unchanged. The separate Windows binary-size figure
 was measured on v1.1.0 and is labelled as such. Where a target was missed, it
 says so and the target is not moved.
 
-## What changed in v1.1.3
+## What changed in v1.1.4
 
-- **A session launched from Eeschema is a schematic session.** v1.1.2 sent
-  `DOCTYPE_PCB` first and fell back to it, so `save_project` invoked from the
-  Schematic Editor wrote the *board*. Plugin actions bound to an editor now
-  pass `--document-type pcb|schematic` explicitly. KiCad 10's plugin manifest
-  forwards `actions[].args` to `argv` even though the published JSON schema
-  omits the field, so the context is stated rather than guessed.
-- **An undetermined context refuses instead of defaulting to PCB.** With no
-  launcher hint, `Auto` probes both editors and accepts exactly one live
-  handler; zero or two is an explicit error. There is no PCB fallback left.
-- **The document-aware IPC path is now validated against real editors, not
-  mocks.** v1.1.2 reported this as PARTIAL; it is **PASS** here.
-  `scripts/live-schematic-e2e.ps1` is the new schematic counterpart of
-  `scripts/live-pcb-e2e.ps1`: it asserts that a schematic context saves no
-  board, that an explicit PCB context refuses with no board open, that `Auto`
-  resolves the single live handler, and that both files are byte-identical
-  after the editor stops. The PCB suite still passes unchanged.
-- **The live PCB runner upgrades its throwaway board.** A board checked in at
-  an older format makes pcbnew serve a modal `Information` dialog before its
-  API handler registers, which reads as a routing failure and is not one.
+- **A schematic KiCad owns is no longer written under it.** Opening
+  `X.kicad_sch` in Eeschema creates a sibling `~X.kicad_sch.lck`; until v1.1.3
+  a mutation went through anyway, and the editor's next save silently discarded
+  it. Every schematic write path funnels through `konnect-sexp`'s writer or
+  `commit_file_transaction`, so the guard sits there once, and is re-checked
+  immediately before the `rename` that commits — an editor opened *during* the
+  operation is refused too, not only one open when it started. A refusal leaves
+  the file byte-identical, with no scratch file and no journal entry. It reaches
+  the client as `error_kind: conflict`, naming the lock file so a human knows
+  which editor to close.
+- **The lock is never removed, moved, or judged stale.** KiCad's lock file
+  holds exactly `{"hostname":…,"username":…}` — 50 bytes, no PID, no timestamp.
+  Freshness is not decidable from it, so it is not decided: presence is refusal.
+  The guard covers `.kicad_sch` only; the board goes through IPC into the
+  running editor, where KiCad itself arbitrates.
+- **Footprint graphics are editable.** The new `set_footprint_graphics` appends,
+  replaces or deletes `fp_line`, `fp_arc`, `fp_rect`, `fp_circle` and `fp_poly`
+  on one layer of a `.kicad_mod`, as a single revision-checked atomic
+  replacement. It is an API typed by primitive, not a text editor: one layer per
+  call, everything else carried through as it was. A primitive that a
+  `(group …)` references is refused for replace and delete rather than silently
+  dropped, which would leave KiCad a dangling reference. `get_footprint_info`
+  now returns graphics in the shape `set_footprint_graphics` takes back.
+- **A generated courtyard encloses the body, not just the pads.**
+  `create_footprint` derived it from the pad envelope alone, so a part whose
+  body overhangs its pads — `CF_Film_Box_P5.00mm_7.2x3.5mm` — got a courtyard
+  smaller than itself. It is now the envelope of body **and** pads plus the
+  clearance, aligned outward onto the KLC grid.
+- **The pin-1 marker is declared, not guessed.** It is a client input, `true` by
+  default, because the expensive mistake is a polarised part shipped without
+  one. A non-polarised part is no longer given a marker it should not have, and
+  the marker stays inside the courtyard —
+  `Fuse_Schurter_UMT-H_5.3x16mm` had one outside it.
+- **`on_board`, `in_bom` and `dnp` are read and written as the tags they are.**
+  `get_schematic_component` and `list_schematic_components` always return the
+  three: an absent tag is KiCad's default, not an undetermined field.
+  `edit_schematic_component` and `batch_edit_schematic_components` take them as
+  booleans and write them as symbol tags, never as custom properties — a
+  `(property "dnp" "yes")` merely shows up in the field list and changes neither
+  the netlist, nor the BOM, nor *Update PCB from schematic*. A missing tag is
+  inserted where eeschema writes it, after `on_board` and before `uuid`, at the
+  file's own indentation; a call addressed by reference reaches every unit of a
+  multi-unit symbol; a non-boolean value is refused.
+- **A field set to `null` removes the property.** There was no way to delete
+  one, only to add or update. `fields: {"key": null}` now removes the whole
+  `(property …)` block and its own lines with it — eight, for a property
+  eeschema wrote — so the document reads as it did before the property existed.
+  `Reference` and `Value` are refused, KiCad requires them, and deleting an
+  absent property is reported rather than dressed up as a change.
 
-These fixes change document routing only. They add no tool and change no MCP
-parameter or response schema.
+Verified against real KiCad 10, not mocks. `gate.ps1` is green end to end (fmt,
+`clippy -D warnings`, workspace tests, doctests, release build) over 1 318 new
+lines of integration tests in `kicad_editor_lock.rs`, `footprint_graphics.rs`
+and `symbol_attributes.rs`. Three live suites pass on a dedicated
+`KICAD_CONFIG_HOME` — schematic `DocumentType` routing, PCB over IPC, and the
+new lock refusal — and each Pareto fix was replayed on the Hi-Fi benchmark
+through the MCP alone: both defective footprints repaired, and B2.8 lifted in a
+single call. Hi-Fi ERC is unchanged either side of that edit, 0 errors and 15
+warnings, the same as at gate C2.
+
+This release adds one tool and removes no parameter. Existing calls keep their
+meaning, with one deliberate exception: a `null` field value used to mean "a
+value with no textual form" and now means deletion.
 
 ## What this is
 
@@ -78,8 +124,8 @@ second way in, and the machinery behind it:
 - **Tool annotations and capability metadata** — every tool declares its
   read/write character, and advisory analysis says so where a model reads it.
 
-The tool surface itself grew to **202 tools across 22 toolsets** plus 13
-meta-tools — 215 served by the catalogue.
+The tool surface itself grew to **203 tools across 22 toolsets** plus 13
+meta-tools — 216 served by the catalogue.
 
 ## Measured results
 
@@ -95,7 +141,8 @@ Baseline (upstream v0.2.2 at `5cd6454`) and this fork ran back to back on
 | capability coverage (frozen 186-tool denominator) | 22.6 % | **72.6 %** |
 
 - **Startup surface**: 21 tools / 2 831 tokens, against a full catalogue of 215
-  tools / 33 183 tokens. Through the gateway, `tools/list` never changes at all.
+  tools / 33 183 tokens — the surface as it stood on the measurement date, one
+  tool short of today's. Through the gateway, `tools/list` never changes at all.
 - **Agent mode**: 2 MCP round trips per attempt — `start_task` and
   `kicad_agent`. The plan is compiled, applied and verified server-side; the
   caller sees no intermediate round trip.
@@ -181,7 +228,7 @@ and stays open until KiCad 11 can be measured here.
 ## Getting started
 
 - **Install**: KiCad 10 → Plugin and Content Manager → *Install from File* with
-  `konnect-pcm-v1.1.2-<platform>.zip` from this release, or use the standalone
+  `konnect-pcm-v1.1.4-<platform>.zip` from this release, or use the standalone
   server binary. Full steps, including the Claude Desktop and Claude Code
   configuration, are in [README.md](README.md).
 - **macOS: the binaries are not signed or notarised.** Gatekeeper will refuse

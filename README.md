@@ -24,7 +24,7 @@ that teach Claude KiCAD conventions out of the box.
 > IR with a deterministic executor, evidence handles, task state and a local-model
 > runtime. The server binary is still called `konnect`.
 >
-> **Status: v1.1.3.** What it measures, what it misses and what it does not cover
+> **Status: v1.1.4.** What it measures, what it misses and what it does not cover
 > are in [RELEASE_NOTES.md](RELEASE_NOTES.md); every figure quoted below traces to
 > [docs/benchmark.md](docs/benchmark.md). Issues and PRs are welcome — see
 > [CONTRIBUTING.md](CONTRIBUTING.md) and the
