@@ -129,8 +129,15 @@ async fn setting_an_attribute_the_symbol_does_not_carry_inserts_the_tag() {
     // In the place eeschema writes it — after `on_board`, before `uuid` — and
     // at the indentation the file already uses, so the diff of a one-attribute
     // edit is one line and the file still reads like a KiCAD file.
+    //
+    // Line endings are normalized first because they are not what this asserts.
+    // `.gitattributes` says `text=auto`, so the fixture file arrives in CRLF on
+    // a fresh Windows checkout and in LF here, and the engine writes back
+    // whichever it was given — as it should. That preservation has its own
+    // test, `a_crlf_sheet_is_written_back_as_crlf`.
+    let normalized = content.replace("\r\n", "\n");
     assert!(
-        content.contains("    (on_board yes)\n    (dnp yes)\n    (uuid \"f0000000-0000-4000-8000-000000000111\")"),
+        normalized.contains("    (on_board yes)\n    (dnp yes)\n    (uuid \"f0000000-0000-4000-8000-000000000111\")"),
         "the tag is not where KiCAD would have written it: {content}"
     );
     // And the symbol still is what it was otherwise.
