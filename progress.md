@@ -2,14 +2,24 @@
 
 ## Phase actuelle
 
-**W — v1.1.4, les trois limitations Pareto.** W.1 et W.2 terminées et validées
-en réel. W.3 terminée : les cinq tâches, dont W.3.5 découverte en route.
+**W — v1.1.4, les trois limitations Pareto.** W.1 à W.4 terminées et validées
+en réel. Reste W.5, la publication.
 
 ## Tâche actuelle
 
-W.4.1 — `gate.ps1` complet vert.
+W.5.1 — Version, lockfiles, notes de version. **Le périmètre et le numéro
+attendent l'utilisateur avant toute modification.**
 
 ## Dernière tâche validée
+
+**W.4 — Régression globale.** `gate.ps1` complet vert (fmt, clippy, tests,
+doctests, build release). Les trois suites live vertes : routage
+`DocumentType` au schématique, IPC PCB, refus du verrou éditeur de W.1. ERC
+Hi-Fi inchangé, 0 erreur et 15 avertissements, mesuré de part et d'autre de
+l'édition B2.8. `live-pcb-e2e.ps1` a cessé d'écrire dans le profil KiCad de
+l'utilisateur : il en copie un pour lui-même sous son répertoire de travail,
+comme son jumeau schématique — c'est ce qui a levé le `AS_NOT_READY` causé par
+l'assistant de premier démarrage resté sans réponse.
 
 **W.3 — Attributs natifs `on_board`, `in_bom`, `dnp`, et suppression d'une
 propriété.**
@@ -120,6 +130,6 @@ préexistant, orthogonal à W.1, laissé tel quel volontairement.
 
 ## NEXT ACTION
 
-W.4.1 — Lancer `gate.ps1` complet et le rendre vert, puis W.4.2 (tests live
-Eeschema et Pcbnew, routage `DocumentType`) et W.4.3 (ERC Hi-Fi sans
-régression : 0 erreur, 15 avertissements, déjà mesuré au commit `a55870a`).
+W.5.1 — Faire valider par l'utilisateur le périmètre de la publication et le
+numéro `v1.1.4`, puis seulement ensuite : versions des manifestes et lockfiles,
+`RELEASE_NOTES.md`, CI verte sur le commit candidat, tag et artefacts (W.5.2).
