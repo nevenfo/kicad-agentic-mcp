@@ -6363,10 +6363,10 @@ valeur attendue, plus une validation KiCad pertinente.
 
 ### Tâches
 
-- [ ] W.4.1 `gate.ps1` complet vert.
-- [ ] W.4.2 Tests live Eeschema et Pcbnew verts, routage `DocumentType`
+- [x] W.4.1 `gate.ps1` complet vert.
+- [x] W.4.2 Tests live Eeschema et Pcbnew verts, routage `DocumentType`
   toujours vert.
-- [ ] W.4.3 ERC Hi-Fi sans régression par rapport à Gate C2.
+- [x] W.4.3 ERC Hi-Fi sans régression par rapport à Gate C2. *(0 erreur, 15 avertissements, mesuré avant et après la mutation B2.8 par kicad-cli.)*
 
 ## W.5 — Patch release v1.1.4
 
