@@ -545,7 +545,7 @@ convention for other `kicad-cli`-calling code.
 
 - **22 toolsets, 203 tools** + 13 meta-tools (2 gateway + 2 agent + 6 routing/discovery + 3 observability/state — see `tool-directory.md`)
 - Baseline `tools/list`: 21 tools / 2 831 tokens (starter kit + meta-tools)
-- Full-catalog `tools/list` (all loaded): 216 tools (203 registered + 13 meta) / 33 183 tokens
+- Full-catalog `tools/list` (all loaded): 216 tools (203 registered + 13 meta); 33 183 tokens, measured 2026-08-24 at the then-215-tool catalogue and not re-measured since
 
   Both surface figures are measured by `bench/surface.py` (tiktoken `o200k_base`) and
   committed as `bench/results/m1-surface.json`; `docs/benchmark.md` records what moved
