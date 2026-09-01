@@ -6370,8 +6370,8 @@ valeur attendue, plus une validation KiCad pertinente.
 
 ## W.5 — Patch release v1.1.4
 
-- [ ] W.5.1 Version, lockfiles, notes.
-- [ ] W.5.2 CI PASS sur le commit candidat, tag, release, artefacts.
-- [ ] W.5.3 Installer `v1.1.4` comme seule version en vigueur pour les clients,
+- [x] W.5.1 Version, lockfiles, notes.
+- [x] W.5.2 CI PASS sur le commit candidat, tag, release, artefacts.
+- [x] W.5.3 Installer `v1.1.4` comme seule version en vigueur pour les clients,
   vérifier le runtime actif et conserver uniquement le rollback explicite vers
   `v1.1.3`.
