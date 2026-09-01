@@ -195,7 +195,7 @@ Not covered by any tool:
 | `add_power_symbol` | `sch_wiring` | `sexpr` | `write` | design_document | PARTIAL | bench | `bench/probes/divider.yaml` | does not snap to the 1.27 mm grid (E6): a power symbol placed at a component's nominal coordinate lands 0.33 mm off the pin and ERC reports it unconnected. A plan's `power` operation snaps before calling it; the direct path does not |
 | `batch_place_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | bench | `bench/probes/divider.yaml` |  |
 | `bulk_move_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
-| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
+| `batch_edit_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbol_attributes.rs` |  |
 | `batch_delete_schematic_components` | `sch_batch` | `sexpr` | `write` | design_document | SUPPORTED | test | `crates/konnect-core/tests/symbols_and_schematic.rs` |  |
 
 ### wires

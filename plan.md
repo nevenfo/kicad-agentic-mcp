@@ -6341,11 +6341,11 @@ courtyard. Les fixtures existantes passent, ou leur changement est justifié.
 
 ### Tâches
 
-- [ ] W.3.1 Lecture : exposer les trois attributs dans les réponses des
+- [x] W.3.1 Lecture : exposer les trois attributs dans les réponses des
   outils de lecture de symboles.
-- [ ] W.3.2 Écriture : les accepter dans `edit_schematic_component` et son
+- [x] W.3.2 Écriture : les accepter dans `edit_schematic_component` et son
   chemin batch, sans les dégrader en propriétés personnalisées.
-- [ ] W.3.3 Tester activation, désactivation, combinaison des trois, et
+- [x] W.3.3 Tester activation, désactivation, combinaison des trois, et
   conservation des autres propriétés du symbole.
 - [ ] W.3.4 Lever B2.8 du benchmark Hi-Fi par le MCP seul.
 
