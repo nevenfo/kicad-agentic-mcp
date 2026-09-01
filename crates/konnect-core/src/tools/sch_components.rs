@@ -93,7 +93,7 @@ pub fn tools() -> Vec<ToolDef> {
                     "datasheet": { "type": "string", "description": "New datasheet URL (optional)" },
                     "fields": {
                         "type": "object",
-                        "description": "Additional property fields to set as key:value pairs"
+                        "description": "Additional property fields to set as key:value pairs. A null value removes the property."
                     },
                     "in_bom": { "type": "boolean", "description": "Native attribute: include this symbol in the BOM (optional)" },
                     "on_board": { "type": "boolean", "description": "Native attribute: transfer this symbol to the PCB (optional)" },
@@ -762,18 +762,27 @@ async fn handle_edit_schematic_component(
     // key both belong in the same list, and doing the conversion first is what
     // keeps one mutable borrow of `errors` live at a time.
     let mut field_updates: Vec<(&str, String)> = Vec::new();
+    // A `null` value removes the property rather than being refused (W.3.5):
+    // a property added by mistake was otherwise permanent — settable to the
+    // empty string, never removable, and an empty property is not the same
+    // thing to KiCAD's field list or a BOM export as no property at all.
+    let mut field_removals: Vec<&str> = Vec::new();
     match args.get("fields") {
         None | Some(serde_json::Value::Null) => {}
         Some(serde_json::Value::Object(map)) => {
             for (key, raw) in map {
+                if raw.is_null() {
+                    field_removals.push(key.as_str());
+                    continue;
+                }
                 // KiCAD stores every property as text, so a JSON number or
                 // boolean is written as its text form; anything with no text
                 // form is refused rather than stringified into nonsense.
                 match property_text(raw) {
                     Some(text) => field_updates.push((key.as_str(), text)),
-                    None => {
-                        errors.push(format!("{key}: value must be a string, number or boolean"))
-                    }
+                    None => errors.push(format!(
+                        "{key}: value must be a string, number, boolean, or null to remove it"
+                    )),
                 }
             }
         }
@@ -844,6 +853,15 @@ async fn handle_edit_schematic_component(
     // them in once that borrow ends.
     let mut attr_changed: Vec<String> = Vec::new();
     let mut attr_errors: Vec<String> = Vec::new();
+    for key in &field_removals {
+        match remove_field(&content, &target, key) {
+            Ok(updated) => {
+                content = updated;
+                attr_changed.push(format!("{key} removed"));
+            }
+            Err(why) => attr_errors.push(format!("{key}: {why}")),
+        }
+    }
     for name in SYMBOL_ATTRIBUTES {
         match args.get(*name) {
             None | Some(serde_json::Value::Null) => {}
@@ -954,6 +972,7 @@ pub(crate) fn property_text(value: &serde_json::Value) -> Option<String> {
 enum FieldError {
     SymbolNotFound(String),
     Set(SetPropertyError),
+    Remove(crate::tools::RemovePropertyError),
 }
 
 impl std::fmt::Display for FieldError {
@@ -963,6 +982,7 @@ impl std::fmt::Display for FieldError {
                 write!(f, "symbol '{reference}' not found in this schematic")
             }
             FieldError::Set(e) => write!(f, "{e}"),
+            FieldError::Remove(e) => write!(f, "{e}"),
         }
     }
 }
@@ -1031,6 +1051,31 @@ fn set_attribute(
         .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
     crate::tools::set_symbol_attribute(content, sym_start, sym_end, name, value)
         .map_err(FieldError::Set)
+}
+
+/// [`set_field`] for a removal: every unit of the designator, or the one
+/// addressed block when the target is a uuid.
+fn remove_field(
+    content: &str,
+    target: &ComponentTarget,
+    field: &str,
+) -> Result<String, FieldError> {
+    if target.uuid.is_none() {
+        if find_all_symbol_instance_blocks(content, &target.reference).is_empty() {
+            return Err(FieldError::SymbolNotFound(target.reference.clone()));
+        }
+        return crate::tools::remove_symbol_property_on_all_units(
+            content,
+            &target.reference,
+            field,
+        )
+        .map_err(FieldError::Remove);
+    }
+    let (sym_start, sym_end) = target
+        .block_in(content)
+        .ok_or_else(|| FieldError::SymbolNotFound(target.reference.clone()))?;
+    crate::tools::remove_symbol_property(content, sym_start, sym_end, field)
+        .map_err(FieldError::Remove)
 }
 
 /// Point a renamed symbol's `instances` entries at its new designator.
@@ -3180,6 +3225,10 @@ pub(crate) mod tests {
 
     /// KiCAD stores every property as text, so a JSON number or boolean is
     /// written as its text form; a value with no text form is reported.
+    ///
+    /// `null` used to be the unrepresentable value this test named. It is a
+    /// removal now (W.3.5), so the unrepresentable one here is an object —
+    /// there is no text form of `{"nested": 1}` that would not be nonsense.
     #[tokio::test]
     async fn numeric_and_boolean_field_values_are_stored_as_text() {
         let (_symdir, _env) = stub_symbol_dir().await;
@@ -3190,7 +3239,7 @@ pub(crate) mod tests {
             &json!({
                 "schematic": path.display().to_string(),
                 "reference": "R1",
-                "fields": { "Tolerance": 1, "DNP": true, "Bad": null }
+                "fields": { "Tolerance": 1, "DNP": true, "Bad": { "nested": 1 } }
             }),
             &ctx,
         )
@@ -3200,7 +3249,7 @@ pub(crate) mod tests {
         let body = ok_body(&edited);
         assert_eq!(
             body["errors"],
-            json!(["Bad: value must be a string, number or boolean"]),
+            json!(["Bad: value must be a string, number, boolean, or null to remove it"]),
             "an unrepresentable value must be reported: {body}"
         );
         let text = std::fs::read_to_string(&path).unwrap();

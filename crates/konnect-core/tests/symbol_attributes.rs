@@ -291,3 +291,171 @@ async fn the_batch_path_sets_attributes_on_several_components() {
         "an attribute was degraded into a custom property"
     );
 }
+
+// ── Removing a property (W.3.5) ─────────────────────────────────────────────
+//
+// The counterpart of `set_symbol_property`'s insert-when-missing half. A
+// property a client added by mistake — `exclude_from_board` on the Hi-Fi
+// bench's `RV1` is the real one — was settable to the empty string and never
+// removable, and an empty property is not no property: KiCAD still lists it in
+// the symbol's fields and a BOM export still carries the column.
+
+/// Give R1 a property no symbol should end up with, the way the tool that
+/// created the real one did, and return the document as it was before —
+/// which is what a removal has to restore, byte for byte.
+async fn with_stray_property(h: &Harness, sch: &std::path::Path) -> String {
+    let pristine = std::fs::read_to_string(sch).expect("the schematic is readable");
+    h.json(
+        "add_component_annotation",
+        json!({
+            "schematic": sch.to_str().unwrap(),
+            "reference": "R1",
+            "key": "exclude_from_board",
+            "value": ""
+        }),
+    )
+    .await;
+    let content = std::fs::read_to_string(sch).expect("the schematic is readable");
+    assert!(content.contains("(property \"exclude_from_board\""));
+    pristine
+}
+
+#[tokio::test]
+async fn a_null_field_removes_the_property() {
+    let h = Harness::new();
+    let sch = h.fixture(TWO_RESISTORS);
+    let pristine = with_stray_property(&h, &sch).await;
+    let result = h
+        .json(
+            "edit_schematic_component",
+            json!({
+                "schematic": sch.to_str().unwrap(),
+                "reference": "R1",
+                "fields": { "exclude_from_board": null }
+            }),
+        )
+        .await;
+    assert!(
+        result["changes"]
+            .as_array()
+            .expect("changes is an array")
+            .iter()
+            .any(|c| c.as_str() == Some("exclude_from_board removed")),
+        "the removal is reported as one: {result}"
+    );
+
+    let after = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(
+        !after.contains("exclude_from_board"),
+        "the property is gone, not emptied: {after}"
+    );
+    // The whole `(property …)` block goes, its own lines with it — a property
+    // eeschema wrote spans four lines, not one — and nothing else moves: the
+    // document is byte for byte the one that existed before the property did.
+    assert_eq!(after, pristine, "the removal was not a clean undo");
+}
+
+#[tokio::test]
+async fn removing_a_property_the_symbol_never_had_is_refused() {
+    let h = Harness::new();
+    let sch = h.fixture(TWO_RESISTORS);
+    let before = std::fs::read_to_string(&sch).expect("the schematic is readable");
+
+    // Reported, not passed off as a change: a caller that misspelled the key
+    // would otherwise be told its cleanup succeeded.
+    let result = h
+        .call(
+            "edit_schematic_component",
+            json!({
+                "schematic": sch.to_str().unwrap(),
+                "reference": "R1",
+                "fields": { "Nonexistent_xyzzy": null }
+            }),
+        )
+        .await
+        .expect("the handler answers");
+    assert!(result.is_error, "removing what is absent is refused");
+
+    let after = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert_eq!(before, after, "the refused call wrote nothing");
+}
+
+#[tokio::test]
+async fn a_property_kicad_requires_cannot_be_removed() {
+    let h = Harness::new();
+    let sch = h.fixture(TWO_RESISTORS);
+    let before = std::fs::read_to_string(&sch).expect("the schematic is readable");
+
+    for field in ["Reference", "Value"] {
+        let result = h
+            .call(
+                "edit_schematic_component",
+                json!({
+                    "schematic": sch.to_str().unwrap(),
+                    "reference": "R1",
+                    "fields": { field: null }
+                }),
+            )
+            .await
+            .expect("the handler answers");
+        assert!(result.is_error, "'{field}' cannot be removed");
+    }
+
+    let after = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert_eq!(before, after, "the refused calls wrote nothing");
+}
+
+#[tokio::test]
+async fn a_removal_reaches_every_unit_of_a_multiunit_symbol() {
+    let h = Harness::new();
+    let sch = h.fixture(MULTIUNIT_LM2904);
+    h.json(
+        "add_component_annotation",
+        json!({
+            "schematic": sch.to_str().unwrap(),
+            "reference": "U1",
+            "key": "Stray",
+            "value": "x"
+        }),
+    )
+    .await;
+    let seeded = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert_eq!(seeded.matches("(property \"Stray\"").count(), 2);
+
+    h.json(
+        "edit_schematic_component",
+        json!({
+            "schematic": sch.to_str().unwrap(),
+            "reference": "U1",
+            "fields": { "Stray": null }
+        }),
+    )
+    .await;
+
+    let after = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(!after.contains("Stray"), "both units lost the property");
+}
+
+#[tokio::test]
+async fn the_batch_path_removes_a_property_too() {
+    let h = Harness::new();
+    let sch = h.fixture(TWO_RESISTORS);
+    let _ = with_stray_property(&h, &sch).await;
+
+    let result = h
+        .json(
+            "batch_edit_schematic_components",
+            json!({
+                "schematic": sch.to_str().unwrap(),
+                "edits": [
+                    { "reference": "R1", "fields": { "exclude_from_board": null }, "on_board": false }
+                ]
+            }),
+        )
+        .await;
+    assert_eq!(result["errors"], json!([]));
+
+    let after = std::fs::read_to_string(&sch).expect("the schematic is readable");
+    assert!(!after.contains("exclude_from_board"));
+    assert_eq!(tag_of(&after, R1, "on_board"), Some(false));
+}

@@ -6348,6 +6348,11 @@ courtyard. Les fixtures existantes passent, ou leur changement est justifié.
 - [x] W.3.3 Tester activation, désactivation, combinaison des trois, et
   conservation des autres propriétés du symbole.
 - [ ] W.3.4 Lever B2.8 du benchmark Hi-Fi par le MCP seul.
+- [x] W.3.5 Supprimer une propriété personnalisée : `fields: {"clé": null}`
+  retire la propriété au lieu d'être refusé. Découvert en préparant W.3.4 :
+  B2.8 exige aussi le retrait de la propriété parasite `exclude_from_board`
+  laissée sur `RV1`, et aucun outil n'expose la suppression d'une propriété —
+  seulement l'ajout et la mise à jour.
 
 ### Validation
 
