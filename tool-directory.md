@@ -10,7 +10,7 @@ Canonical reference for every MCP tool exposed by Konnect. Generated from the Ru
 ## Overview
 
 - **22 toolsets** organized into 13 categories
-- **202 registered tools** + **13 always-visible meta-tools** = **215 total**
+- **203 registered tools** + **13 always-visible meta-tools** = **216 total**
 - **Four ways to reach a tool**, cheapest last:
   1. **Toolset loading** — `list_toolboxes` → `load_toolset(name)` exposes a whole domain in `tools/list`; `unload_toolset(name)` prunes it. Coarse, and every load makes the client re-fetch the entire catalogue.
   2. **Tool loading** — `find_capabilities(intent)` → `load_tools([names])` exposes exactly the tools named. Same refresh, far less of it.
@@ -36,7 +36,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 
 | Tool | Purpose |
 |------|---------|
-| `find_capabilities` | Search all 202 tools by plain-language intent; returns name + toolset + one-line summary. |
+| `find_capabilities` | Search all 203 tools by plain-language intent; returns name + toolset + one-line summary. |
 | `load_tools` | Expose specific tools by name without loading their toolset. |
 | `list_toolboxes` | List all 22 toolsets with category, tool count, and whether each is currently loaded. |
 | `load_toolset` | Load a toolset by name to expose its tools in `tools/list`. Returns the list of tools added. |
@@ -293,7 +293,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 
 ## Library
 
-### `library` · 14 tools
+### `library` · 15 tools
 **Purpose:** Symbol libraries, footprint libraries, search and registration.
 **Source:** [`crates/konnect-core/src/tools/library.rs`](crates/konnect-core/src/tools/library.rs)
 
@@ -310,7 +310,8 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `list_symbol_libraries` | List all registered symbol libraries (global and/or project). |
 | `search_symbols` | Search for symbols across all registered libraries by name or keyword. |
 | `list_library_footprints` | List all footprints in a specific registered library (`.pretty` directory). |
-| `get_footprint_info` | Return detailed information about a footprint: pad layout, courtyard, description. |
+| `get_footprint_info` | Return detailed information about a footprint: pad layout, courtyard, description, and its graphics in the shape `set_footprint_graphics` takes back. |
+| `set_footprint_graphics` | Atomically append, replace, or delete line/arc/rect/circle/poly primitives on one layer of a `.kicad_mod`. |
 | `search_footprints` | Search for footprints across all registered libraries by name or keyword. |
 | `get_symbol_info` | Return detailed information about a schematic symbol: pins, properties, description. |
 

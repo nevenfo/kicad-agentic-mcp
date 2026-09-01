@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod design_review;
 pub(crate) mod drc_gate;
+pub mod footprint_graphics;
 pub mod graph;
 pub mod integration;
 mod ipc_boundary;

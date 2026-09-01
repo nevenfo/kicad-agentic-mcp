@@ -6320,13 +6320,13 @@ Créer une empreinte correcte, puis la corriger sans quitter le MCP.
 
 ### Tâches
 
-- [ ] W.2.1 Chemin vertical minimal : lire les graphiques d'un `.kicad_mod`,
+- [x] W.2.1 Chemin vertical minimal : lire les graphiques d'un `.kicad_mod`,
   modifier une primitive, écrire, relire, vérifier.
-- [ ] W.2.2 Étendre aux primitives réelles : `fp_line`, `fp_arc`, `fp_rect`,
+- [x] W.2.2 Étendre aux primitives réelles : `fp_line`, `fp_arc`, `fp_rect`,
   `fp_circle`, `fp_poly`.
-- [ ] W.2.3 Corriger le courtyard de `create_footprint` : enveloppe du corps
+- [x] W.2.3 Corriger le courtyard de `create_footprint` : enveloppe du corps
   **et** des pastilles, plus la garde selon les conventions vérifiées.
-- [ ] W.2.4 Corriger le repère de broche 1 : plus de repère imposé sur un
+- [x] W.2.4 Corriger le repère de broche 1 : plus de repère imposé sur un
   composant non polarisé, et un repère qui reste dans le courtyard.
 - [ ] W.2.5 Rejouer les deux empreintes Hi-Fi défectueuses, sans édition
   externe.

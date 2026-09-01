@@ -3,30 +3,39 @@
 ## Phase actuelle
 
 **W — v1.1.4, les trois limitations Pareto.** W.1 terminée et validée en réel.
+W.2.1 à W.2.4 terminées et vertes au gate.
 
 ## Tâche actuelle
 
-W.2 — Graphiques d'empreinte et courtyard.
+W.2.5 — Rejouer les deux empreintes Hi-Fi défectueuses, sans édition externe.
 
 ## Dernière tâche validée
 
-**W.1 — Garde de possession Eeschema.**
+**W.2.1 à W.2.4 — Graphiques d'empreinte, courtyard et repère de broche 1.**
 
-Toute mutation d'un `.kicad_sch` est refusée tant que le lock frère natif de
-KiCad existe. Le garde vit dans le writer partagé
-(`konnect-sexp::writer::ensure_kicad_schematic_is_closed`), donc tous les
-chemins d'écriture schématique en bénéficient sans duplication : il est appelé
-avant la création du scratch, à nouveau juste avant le `rename` final, dans
-`write_new_atomic_unlocked`, et dans `commit_file_transaction` avant toute
-écriture de journal ainsi que dans la récupération de journal.
+Nouvel outil `set_footprint_graphics` (`crates/konnect-core/src/tools/
+footprint_graphics.rs`, toolset `library`) : édition structurée, atomique et
+bornée à une couche des primitives `fp_line`, `fp_arc`, `fp_rect`, `fp_circle`
+et `fp_poly` d'un `.kicad_mod`, en modes `append`, `replace` et `delete`. Tout
+le reste du fichier — pastilles, modèle, propriétés, graphiques des autres
+couches — est reporté octet pour octet, et le résultat est reparsé avant
+écriture. `get_footprint_info` en est la moitié lecture : il rend désormais les
+graphiques dans la forme exacte que `set_footprint_graphics` reprend, filtrable
+par `graphics_layer`. Un graphique que le lecteur ne sait pas interpréter est
+une erreur, jamais une omission silencieuse.
 
-Validation : 15 tests neufs (9 unitaires writer, 2 transaction, 4 intégration
-MCP), suite complète `1437 passed / 0 failed`, doctests, `clippy` et `fmt`
-verts. `scripts/live-editor-lock.ps1` passe ses 11 contrôles contre un
-`eeschema.exe` 10.0 réel : refus `conflict`, SHA-256 du schéma identique,
-lock intact, aucun scratch ni journal créé, lectures toujours disponibles,
-puis après fermeture propre le même appel réussit et une relecture
-indépendante voit la modification.
+`create_footprint` corrigé sur deux défauts : le courtyard est maintenant
+l'enveloppe **combinée** du corps et des pastilles, élargie de la garde puis
+alignée vers l'extérieur sur la grille KLC de 0,01 mm (KLC F5.3, comme
+`getFootprintBounds()` de `kicad-library-utils`) — la silkscreen suit la même
+enveloppe ; et le repère de broche 1 devient un choix du client
+(`pin1_marker`, défaut `true`), son point de silk étant borné pour ne jamais
+sortir du courtyard.
+
+Validation : 8 tests d'intégration neufs (`crates/konnect-core/tests/
+footprint_graphics.rs`) dont les deux cas Hi-Fi réduits, plus 6 tests unitaires
+dans `library.rs`. `fmt`, `clippy -D warnings`, suite complète workspace et
+doctests verts ; `docs/capability-matrix.md` régénéré (203 outils).
 
 ## Décisions actives
 
@@ -47,6 +56,17 @@ indépendante voit la modification.
 - Les tests live tournent sur un `KICAD_CONFIG_HOME` dédié, jamais sur le
   profil réel de l'utilisateur.
 - Le projet Hi-Fi est intact ; B1.3 n'a pas été reprise.
+- `set_footprint_graphics` est une API typée par primitive, pas un éditeur de
+  texte `.kicad_mod` : une couche par appel, tout le reste reporté tel quel.
+  Un éditeur générique aurait un rayon de dégât illimité et ne dirait rien de
+  son intention.
+- Le repère de broche 1 ne se devine pas : les pastilles d'un fusible sont
+  numérotées « 1 » et « 2 » comme celles d'une diode. C'est une déclaration du
+  client, avec `true` par défaut, parce que l'oubli du repère sur une pièce
+  polarisée est l'erreur coûteuse.
+- L'alignement du courtyard sur la grille KLC se fait vers l'extérieur, alors
+  que le vérificateur de KiCad aligne au plus proche : rendre jusqu'à un demi
+  pas de la garde qu'on vient d'ajouter serait exactement le défaut corrigé.
 
 ## Blocage actif
 
@@ -66,8 +86,11 @@ laissé tel quel volontairement.
   `crates/konnect-sexp/src/transaction.rs`, `crates/konnect-sexp/src/error.rs`
 - `crates/konnect-core/src/mcp/error.rs` (`from_anyhow`),
   `crates/konnect-core/tests/kicad_editor_lock.rs`
-- `crates/konnect-core/src/tools/library.rs` (`build_footprint_graphics`,
-  `courtyard_clearance`, `handle_create_footprint`) — cible de W.2
+- `crates/konnect-core/src/tools/footprint_graphics.rs`,
+  `crates/konnect-core/tests/footprint_graphics.rs`
+- `crates/konnect-core/src/tools/library.rs` (`courtyard_bbox`, `body_bbox`,
+  `snap_courtyard_outward`, `pin1_dot_center`, `build_footprint_graphics`,
+  `handle_get_footprint_info`)
 - `crates/konnect-core/src/tools/sch_components.rs`
   (`handle_edit_schematic_component`) — cible de W.3
 - `scripts/live-editor-lock.ps1`, `scripts/live-schematic-e2e.ps1`,
@@ -96,6 +119,7 @@ laissé tel quel volontairement.
 
 ## NEXT ACTION
 
-W.2.1 — Chemin vertical minimal d'édition des graphiques d'empreinte : relire
-les graphiques d'un `.kicad_mod`, modifier une primitive, écrire, relire,
-vérifier.
+W.2.5 — Rejouer les deux empreintes Hi-Fi défectueuses (`CF_Film_Box_P5.00mm_
+7.2x3.5mm` et `Fuse_Schurter_UMT-H_5.3x16mm` dans `HifiAmp_TPA3255_Local.
+pretty\`) par le MCP seul : recréation avec le courtyard et le repère corrigés,
+ou correction en place par `set_footprint_graphics`, sans édition externe.
