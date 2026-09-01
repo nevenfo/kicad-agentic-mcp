@@ -6328,7 +6328,7 @@ Créer une empreinte correcte, puis la corriger sans quitter le MCP.
   **et** des pastilles, plus la garde selon les conventions vérifiées.
 - [x] W.2.4 Corriger le repère de broche 1 : plus de repère imposé sur un
   composant non polarisé, et un repère qui reste dans le courtyard.
-- [ ] W.2.5 Rejouer les deux empreintes Hi-Fi défectueuses, sans édition
+- [x] W.2.5 Rejouer les deux empreintes Hi-Fi défectueuses, sans édition
   externe.
 
 ### Validation
