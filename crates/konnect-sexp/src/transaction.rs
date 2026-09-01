@@ -7,8 +7,8 @@
 //! explicit resolution.
 
 use crate::writer::{
-    open_document_lock, read_string_unlocked, sync_parent_directory, write_atomic_unlocked,
-    write_new_atomic_unlocked,
+    ensure_kicad_schematic_is_closed, open_document_lock, read_string_unlocked,
+    sync_parent_directory, write_atomic_unlocked, write_new_atomic_unlocked,
 };
 use crate::SexpError;
 use fs4::FileExt;
@@ -289,6 +289,11 @@ pub fn commit_file_transaction(
     };
     let journal_path = journal_path(&root, &id);
     let _locks = lock_entries(&root, &journal.entries)?;
+    // Before `persist_journal`, so a refused transaction leaves no
+    // `.konnect-transaction-*.json` beside the user's project either. The
+    // per-target recheck inside `write_atomic_unlocked` still stands; this one
+    // is what keeps the refusal free of side effects.
+    ensure_entries_are_closed(&root, &journal.entries)?;
     verify_before_images(&root, &journal_path, &journal.entries)?;
     persist_journal(&journal_path, &journal)?;
 
@@ -439,6 +444,10 @@ pub fn abandon_file_transaction(
 fn recover_journal(root: &Path, journal_path: &Path) -> Result<RecoveryOutcome, SexpError> {
     let journal = read_validated_journal(root, journal_path)?;
     let _locks = lock_entries(root, &journal.entries)?;
+    // Recovery is a write like any other. A journal left by a crash must wait
+    // for the editor exactly as a fresh commit does, and stay on disk
+    // untouched until it can be rolled forward safely.
+    ensure_entries_are_closed(root, &journal.entries)?;
     let mut pending = Vec::new();
     for entry in &journal.entries {
         let path = root.join(&entry.path);
@@ -646,6 +655,18 @@ fn lock_entries(root: &Path, entries: &[JournalEntry]) -> Result<Vec<std::fs::Fi
         locks.push(lock);
     }
     Ok(locks)
+}
+
+/// Refuse the whole transaction if any target is a schematic KiCad owns.
+///
+/// All-or-nothing on purpose: a transaction's targets are one unit of work, so
+/// applying the unlocked half and stopping at the locked one would leave the
+/// project in a state no caller asked for.
+fn ensure_entries_are_closed(root: &Path, entries: &[JournalEntry]) -> Result<(), SexpError> {
+    for entry in entries {
+        ensure_kicad_schematic_is_closed(&root.join(&entry.path))?;
+    }
+    Ok(())
 }
 
 fn verify_before_images(
@@ -869,6 +890,79 @@ mod tests {
         assert!(recover_file_transactions(directory.path())
             .unwrap()
             .is_empty());
+    }
+
+    /// A locked target refuses the whole transaction before the journal
+    /// exists. The journal carries complete before/after images of the user's
+    /// schematics, so writing one for a transaction that can never run would
+    /// leave sensitive project data beside a document nothing was allowed to
+    /// touch.
+    #[test]
+    fn an_editor_lock_refuses_a_transaction_and_writes_no_journal() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let parent = directory.path().join("root.kicad_sch");
+        let child = directory.path().join("child.kicad_sch");
+        let lock = directory.path().join("~root.kicad_sch.lck");
+        std::fs::write(&parent, "parent before").expect("write parent");
+        std::fs::write(&lock, r#"{"hostname":"h","username":"u"}"#).expect("write editor lock");
+
+        let error = commit_file_transaction(
+            directory.path(),
+            vec![
+                FileTransition::replace(&parent, "parent before", "parent after"),
+                FileTransition::create(&child, "child after"),
+            ],
+        )
+        .expect_err("an editor lock refuses the transaction");
+
+        assert!(matches!(error, SexpError::KiCadEditorLocked { .. }));
+        assert_eq!(std::fs::read_to_string(&parent).unwrap(), "parent before");
+        assert!(
+            !child.exists(),
+            "the unlocked half of a refused transaction must not be applied either"
+        );
+        assert!(active_journal_paths(directory.path()).unwrap().is_empty());
+        assert!(lock.exists(), "Konnect never removes a KiCad lock");
+    }
+
+    /// Recovery is a write like any other. A journal a crash left behind waits
+    /// for the editor instead of rolling forward under it, and stays on disk
+    /// byte-for-byte so it can still be recovered once the editor closes.
+    #[test]
+    fn recovery_defers_to_an_editor_lock_and_leaves_the_journal_intact() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path().canonicalize().unwrap();
+        let parent = root.join("root.kicad_sch");
+        let lock = root.join("~root.kicad_sch.lck");
+        std::fs::write(&parent, "parent before").expect("write parent");
+        std::fs::write(&lock, "stale-looking lock").expect("write editor lock");
+        let journal = Journal {
+            version: JOURNAL_VERSION,
+            id: "locked-recovery".to_owned(),
+            entries: vec![JournalEntry {
+                path: PathBuf::from("root.kicad_sch"),
+                expected: Some("parent before".to_owned()),
+                replacement: "parent after".to_owned(),
+            }],
+        };
+        let journal_path = journal_path(&root, &journal.id);
+        persist_journal(&journal_path, &journal).expect("persist a crash journal");
+        let journal_before = std::fs::read(&journal_path).expect("read journal");
+
+        let error = recover_file_transactions(&root).expect_err("an editor lock defers recovery");
+
+        assert!(matches!(error, SexpError::KiCadEditorLocked { .. }));
+        assert_eq!(std::fs::read_to_string(&parent).unwrap(), "parent before");
+        assert_eq!(std::fs::read(&journal_path).unwrap(), journal_before);
+        assert!(lock.exists());
+
+        // And once the editor closes, the same recovery completes: deferring
+        // is a wait, not a loss.
+        std::fs::remove_file(&lock).unwrap();
+        let outcomes = recover_file_transactions(&root).expect("recovery completes");
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(std::fs::read_to_string(&parent).unwrap(), "parent after");
+        assert!(!journal_path.exists());
     }
 
     #[test]

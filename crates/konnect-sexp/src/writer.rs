@@ -22,7 +22,7 @@
 use crate::SexpError;
 use fs4::FileExt;
 use sha2::{Digest, Sha256};
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -110,6 +110,12 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), SexpError> {
 }
 
 pub(crate) fn write_atomic_unlocked(path: &Path, content: &str) -> Result<(), SexpError> {
+    // Before the scratch file, not after: a refused write must leave the
+    // project directory byte-for-byte as it found it, and a `.kicad_tmp`
+    // sibling appearing next to a schematic someone has open in Eeschema is
+    // exactly the kind of debris this refusal exists to avoid.
+    ensure_kicad_schematic_is_closed(path)?;
+
     let (tmp_path, mut file) = create_scratch_file(path)?;
 
     // Remove the scratch file unless the rename below succeeds.
@@ -127,6 +133,12 @@ pub(crate) fn write_atomic_unlocked(path: &Path, content: &str) -> Result<(), Se
     file.sync_all() // fsync — mandatory
         .map_err(|error| io_context(error, "fsyncing", &tmp_path))?;
     drop(file);
+
+    // Eeschema can have opened the document while the scratch file was being
+    // written and fsynced — a window measured in milliseconds, but a real one.
+    // This is the last point at which a refusal still costs nothing: the
+    // scratch file has not replaced anything yet, and `cleanup` removes it.
+    ensure_kicad_schematic_is_closed(path)?;
 
     if let Err(error) = std::fs::rename(&tmp_path, path) {
         let error = io_context(error, "renaming", &tmp_path);
@@ -280,6 +292,72 @@ pub(crate) fn open_document_lock(path: &Path) -> Result<std::fs::File, SexpError
     open_lock_file(&lock_path)
 }
 
+/// Refuse a `.kicad_sch` mutation while KiCad's own sibling lock is present.
+///
+/// # Why this is not the same thing as the cooperative lock above
+///
+/// [`open_document_lock`] serializes *Konnect's own* writers, and
+/// `write_atomic_if_unchanged`'s content comparison catches a foreign writer
+/// that already saved. Neither sees the case that actually loses work: KiCad
+/// holds the newer document **in memory**, nothing has changed on disk yet, so
+/// the compare-and-swap passes, Konnect writes, and the editor's next save
+/// silently overwrites it. The only evidence available before that happens is
+/// the lock KiCad drops beside the document when it opens it.
+///
+/// # Why the contents are never read
+///
+/// Probed against a real KiCad 10 session rather than taken from a
+/// description: opening `X.kicad_sch` in `eeschema.exe` creates
+/// `~X.kicad_sch.lck` in the document's own directory (alongside
+/// `~X.kicad_pro.lck`), 50 bytes, holding exactly
+/// `{"hostname":"…","username":"…"}`; a clean close removes both. There is no
+/// pid, no process start time, no document token — nothing that could tell a
+/// live lock from one a crash left behind, and less still for a lock written
+/// by another host over a network share. So the file is never parsed and never
+/// trusted: *any* filesystem entry at the lock path blocks the write, whether
+/// it is well-formed, foreign, empty, or garbage, and a `symlink_metadata`
+/// that fails for any reason other than "not there" blocks it too. Konnect
+/// never removes one.
+///
+/// Reads are untouched, and so is every non-schematic write: the `.kicad_pcb`
+/// half of the product goes through KiCad's IPC, where the editor arbitrates
+/// its own document, and giving this shared writer an opinion about board
+/// files would refuse writes nothing is actually racing.
+pub(crate) fn ensure_kicad_schematic_is_closed(path: &Path) -> Result<(), SexpError> {
+    let Some(lock_path) = kicad_schematic_lock_path(path) else {
+        return Ok(());
+    };
+
+    match std::fs::symlink_metadata(&lock_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) | Err(_) => Err(SexpError::KiCadEditorLocked {
+            path: path.to_path_buf(),
+            lock_path,
+        }),
+    }
+}
+
+/// KiCad's lock path for a schematic: `~<full file name>.lck`, beside it.
+///
+/// The prefix goes on the *whole* file name, not the stem — `~design.lck`
+/// would collide across `design.kicad_sch`, `design.kicad_pcb` and
+/// `design.kicad_pro`, and KiCad does not do that. `None` for anything that is
+/// not a schematic, which is what keeps every caller of this shared writer
+/// unaffected without each of them having to ask.
+fn kicad_schematic_lock_path(path: &Path) -> Option<PathBuf> {
+    let is_schematic = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("kicad_sch"));
+    if !is_schematic {
+        return None;
+    }
+    let mut name = OsString::from("~");
+    name.push(path.file_name()?);
+    name.push(".lck");
+    Some(path.with_file_name(name))
+}
+
 fn open_lock_file(lock_path: &Path) -> Result<std::fs::File, SexpError> {
     reject_non_file_lock_path(lock_path)?;
     let lock = OpenOptions::new()
@@ -424,6 +502,7 @@ pub fn write_new_atomic(path: &Path, content: &str) -> Result<(), SexpError> {
 }
 
 pub(crate) fn write_new_atomic_unlocked(path: &Path, content: &str) -> Result<(), SexpError> {
+    ensure_kicad_schematic_is_closed(path)?;
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temporary = tempfile::Builder::new()
         .prefix(".konnect-")
@@ -431,6 +510,7 @@ pub(crate) fn write_new_atomic_unlocked(path: &Path, content: &str) -> Result<()
     temporary.write_all(content.as_bytes())?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
+    ensure_kicad_schematic_is_closed(path)?;
     temporary
         .persist_noclobber(path)
         .map_err(|error| SexpError::Io(error.error))?;
@@ -1480,6 +1560,227 @@ mod atomic_write_tests {
 
         assert!(matches!(error, SexpError::Io(_)));
         assert_eq!(std::fs::read_to_string(path).unwrap(), "user project");
+    }
+
+    // ─── KiCad editor lock (W.1) ─────────────────────────────────────────
+    //
+    // The lock name and contents these tests use are not invented: a real
+    // KiCad 10 `eeschema.exe` opening a `.kicad_sch` was observed to create
+    // `~<name>.kicad_sch.lck` beside it holding exactly
+    // `{"hostname":"…","username":"…"}`, and to remove it on a clean close.
+
+    /// Every schematic write refuses, and leaves nothing at all behind: not a
+    /// changed byte, not a scratch sibling, not the lock touched.
+    #[test]
+    fn a_kicad_editor_lock_refuses_a_schematic_write_without_side_effects() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        let lock = directory.path().join("~design.kicad_sch.lck");
+        std::fs::write(&path, "expected").unwrap();
+        std::fs::write(
+            &lock,
+            r#"{"hostname":"DESKTOP-0JR01AG","username":"FlowUP"}"#,
+        )
+        .unwrap();
+        let lock_before = std::fs::read(&lock).unwrap();
+
+        // Reading stays available: a locked document is still inspectable,
+        // which is what lets a caller understand why it was refused.
+        assert_eq!(read_consistent(&path).unwrap(), "expected");
+
+        let error = write_atomic_if_unchanged(&path, "expected", "edited").unwrap_err();
+        assert!(matches!(
+            &error,
+            SexpError::KiCadEditorLocked { path: blocked, lock_path }
+                if blocked.ends_with("design.kicad_sch") && lock_path == &lock
+        ));
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "expected");
+        assert_eq!(std::fs::read(&lock).unwrap(), lock_before);
+        assert_eq!(
+            project_entries(directory.path()),
+            vec![
+                "design.kicad_sch".to_owned(),
+                "~design.kicad_sch.lck".to_owned()
+            ],
+            "a refused write must not leave a scratch or journal sibling"
+        );
+    }
+
+    /// `write_atomic` and `transact_atomic` refuse on the same terms — the
+    /// guard is in the shared writer, not bolted onto one entry point.
+    #[test]
+    fn every_shared_write_entry_point_refuses_a_locked_schematic() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        std::fs::write(&path, "expected").unwrap();
+        std::fs::write(directory.path().join("~design.kicad_sch.lck"), "").unwrap();
+
+        assert!(matches!(
+            write_atomic(&path, "edited").unwrap_err(),
+            SexpError::KiCadEditorLocked { .. }
+        ));
+        assert!(matches!(
+            transact_atomic(&path, |current| Ok((format!("{current} more"), ()))).unwrap_err(),
+            SexpError::KiCadEditorLocked { .. }
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "expected");
+    }
+
+    /// A lock nobody can prove is live still blocks. KiCad records only a
+    /// username and a hostname — no pid, no start time — so "this looks
+    /// stale" is a guess, and guessing here costs an editor's unsaved work.
+    #[test]
+    fn a_lock_that_cannot_be_proven_live_still_blocks() {
+        for contents in [
+            // Another machine entirely: nothing local can be checked at all.
+            r#"{"hostname":"retired-host","username":"former-user"}"#,
+            // Not JSON. Never parsed, so never a reason to allow the write.
+            "not JSON",
+            // Empty, as a half-written or truncated lock would be.
+            "",
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("design.kicad_sch");
+            std::fs::write(&path, "expected").unwrap();
+            std::fs::write(directory.path().join("~design.kicad_sch.lck"), contents).unwrap();
+
+            let error = write_atomic_if_unchanged(&path, "expected", "edited").unwrap_err();
+            assert!(
+                matches!(error, SexpError::KiCadEditorLocked { .. }),
+                "lock contents {contents:?} must block the write"
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "expected");
+        }
+    }
+
+    /// A directory at the lock path is not a KiCad lock, and is not something
+    /// to reason about either. Fail closed.
+    #[test]
+    fn a_lock_path_that_is_not_a_regular_file_still_blocks() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        std::fs::write(&path, "expected").unwrap();
+        std::fs::create_dir(directory.path().join("~design.kicad_sch.lck")).unwrap();
+
+        assert!(matches!(
+            write_atomic_if_unchanged(&path, "expected", "edited").unwrap_err(),
+            SexpError::KiCadEditorLocked { .. }
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "expected");
+    }
+
+    /// Creating a schematic where KiCad already holds one is refused too, and
+    /// creates nothing.
+    #[test]
+    fn creating_a_locked_schematic_is_refused_and_creates_nothing() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("new.kicad_sch");
+        std::fs::write(directory.path().join("~new.kicad_sch.lck"), "").unwrap();
+
+        assert!(matches!(
+            write_new_atomic(&path, "new schematic").unwrap_err(),
+            SexpError::KiCadEditorLocked { .. }
+        ));
+        assert!(!path.exists());
+        assert_eq!(
+            project_entries(directory.path()),
+            vec!["~new.kicad_sch.lck".to_owned()]
+        );
+    }
+
+    /// The guard is about schematics and nothing else. Board files go through
+    /// KiCad's IPC, where the editor arbitrates its own document, and a
+    /// `.kicad_pcb` lock left beside one must not refuse writes here.
+    #[test]
+    fn a_board_lock_does_not_block_a_board_write() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_pcb");
+        std::fs::write(&path, "expected").unwrap();
+        std::fs::write(directory.path().join("~design.kicad_pcb.lck"), "").unwrap();
+
+        write_atomic_if_unchanged(&path, "expected", "edited").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "edited");
+    }
+
+    /// The prefix goes on the whole file name. `~design.lck` is not KiCad's
+    /// name for anything, and a project's `.kicad_pro` lock — which Eeschema
+    /// also creates — is not this document's lock either.
+    #[test]
+    fn only_this_schematics_own_lock_name_blocks_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        std::fs::write(&path, "expected").unwrap();
+        for decoy in [
+            "~design.lck",
+            "~design.kicad_pro.lck",
+            "design.kicad_sch.lck",
+        ] {
+            std::fs::write(directory.path().join(decoy), "").unwrap();
+        }
+
+        write_atomic_if_unchanged(&path, "expected", "edited").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "edited");
+    }
+
+    /// The guard is not only at the start of the operation. A lock appearing
+    /// after the caller's own precondition check — the window an editor opened
+    /// mid-write actually occupies — is still caught, and still leaves no
+    /// scratch behind.
+    ///
+    /// The race is made deterministic without touching production code: the
+    /// caller does exactly what every schematic tool does, `read_consistent`
+    /// then `write_atomic_if_unchanged`, and the lock is planted between those
+    /// two steps. That is the same instant a real `eeschema.exe` launch would
+    /// occupy, minus the timing luck.
+    #[test]
+    fn a_lock_appearing_after_the_precondition_check_still_blocks_the_commit() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        std::fs::write(&path, "expected").unwrap();
+
+        let expected = read_consistent(&path).unwrap();
+        std::fs::write(directory.path().join("~design.kicad_sch.lck"), "").unwrap();
+
+        let error = write_atomic_if_unchanged(&path, &expected, "edited").unwrap_err();
+        assert!(matches!(error, SexpError::KiCadEditorLocked { .. }));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "expected");
+        assert_eq!(
+            project_entries(directory.path()),
+            vec![
+                "design.kicad_sch".to_owned(),
+                "~design.kicad_sch.lck".to_owned()
+            ]
+        );
+    }
+
+    /// Removing the lock — as a clean editor close does — makes the identical
+    /// write succeed. Without this, "refuses everything" would pass every
+    /// assertion above.
+    #[test]
+    fn the_identical_write_succeeds_once_the_lock_is_gone() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.kicad_sch");
+        let lock = directory.path().join("~design.kicad_sch.lck");
+        std::fs::write(&path, "expected").unwrap();
+        std::fs::write(&lock, r#"{"hostname":"h","username":"u"}"#).unwrap();
+
+        assert!(write_atomic_if_unchanged(&path, "expected", "edited").is_err());
+        std::fs::remove_file(&lock).unwrap();
+        write_atomic_if_unchanged(&path, "expected", "edited").unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "edited");
+    }
+
+    /// Sorted file names directly inside `directory`, so a test can assert on
+    /// what a refused write did *not* leave behind.
+    fn project_entries(directory: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
     }
 
     #[test]

@@ -443,8 +443,32 @@ impl ToolErrorKind {
             // returns it as soon as the re-read content differs, not as an
             // OS failure — so preserving the type here is the only way to
             // classify it as `state` rather than losing it to `HandlerError`.
-            if let Some(konnect_schematic_editor::error::Error::Conflict(path)) =
-                cause.downcast_ref::<konnect_schematic_editor::error::Error>()
+            match cause.downcast_ref::<konnect_schematic_editor::error::Error>() {
+                Some(konnect_schematic_editor::error::Error::Conflict(path)) => {
+                    return Self::Conflict {
+                        path: path.display().to_string(),
+                    }
+                }
+                Some(konnect_schematic_editor::error::Error::KiCadEditorLocked {
+                    path, ..
+                }) => {
+                    return Self::Conflict {
+                        path: path.display().to_string(),
+                    }
+                }
+                _ => {}
+            }
+            // The same refusal reaching a handler straight from the shared
+            // writer, without passing through konnect-schematic-editor's own
+            // error type — which is the usual route, since most schematic
+            // tools call `konnect_sexp::writer` directly. It answers as
+            // `conflict` rather than as a kind of its own: a caller that
+            // already knows to stop, re-read and retry does exactly the right
+            // thing here too, and the message names the lock file so a human
+            // learns which editor to close. The lock is never removed for
+            // them, and nothing about that decision belongs to a retry loop.
+            if let Some(konnect_sexp::SexpError::KiCadEditorLocked { path, .. }) =
+                cause.downcast_ref::<konnect_sexp::SexpError>()
             {
                 return Self::Conflict {
                     path: path.display().to_string(),

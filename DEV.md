@@ -221,6 +221,14 @@ and stops pcbnew, exiting non-zero if either fails.
 - Cooperative lock files live under `KONNECT_STATE_DIR/locks` when that
   absolute override is set, otherwise under the platform local-data directory
   (`konnect/locks`). Reads never create files in the KiCad project.
+- Schematic writes also refuse while KiCad's own sibling `~<name>.kicad_sch.lck`
+  exists. That lock records only a username and a hostname — no pid, no start
+  time, no document token — so a live lock and one a crash left behind are
+  indistinguishable, and valid, foreign-host, empty, and malformed locks all
+  fail closed. Konnect never removes one. The check runs before a transaction
+  journal is created and again immediately before the target is replaced, so a
+  refusal leaves no scratch file and no journal. Reads and `.kicad_pcb` writes
+  are unaffected.
 - Multi-file schematic changes use project-local
   `.konnect-transaction-*.json` write-ahead journals. These journals contain
   complete before/after images and must be treated as sensitive project data.
