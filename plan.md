@@ -6485,15 +6485,15 @@ X1.
 
 ### Tâches
 
-- [ ] X2.1 Ajouter à `Capability` le niveau de preuve exigé, dérivé du couple
+- [x] X2.1 Ajouter à `Capability` le niveau de preuve exigé, dérivé du couple
   (effet, adaptateur) plutôt que déclaré à la main, et le rendre visible dans
   la matrice.
-- [ ] X2.2 `Capability::status` rétrograde toute capacité dont la preuve
+- [x] X2.2 `Capability::status` rétrograde toute capacité dont la preuve
   trouvée est plus faible que la preuve exigée, avec un statut qui nomme la
   cause.
-- [ ] X2.3 Distinguer dans `coverage::Proof` une preuve arbitrée par KiCad
+- [x] X2.3 Distinguer dans `coverage::Proof` une preuve arbitrée par KiCad
   d'une preuve interne, et une preuve live d'une preuve fichier.
-- [ ] X2.4 Régénérer `docs/capability-matrix.md` et absorber la baisse de
+- [x] X2.4 Régénérer `docs/capability-matrix.md` et absorber la baisse de
   couverture sans toucher aux critères.
 
 ### Validation
@@ -6515,14 +6515,14 @@ X1, X2.
 
 ### Tâches
 
-- [ ] X3.1 Retirer `set_constraint` du chemin de mutation et corriger le
+- [x] X3.1 Retirer `set_constraint` du chemin de mutation et corriger le
   vocabulaire d'arguments (`min_via_size` et `min_via_drill` ne nomment aucune
   clé KiCad).
-- [ ] X3.2 Écrire dans le `.kicad_pro` en préservant toutes les propriétés non
+- [x] X3.2 Écrire dans le `.kicad_pro` en préservant toutes les propriétés non
   demandées, de façon atomique, avec le comportement défini quand le fichier
   est absent.
-- [ ] X3.3 `get_design_rules` lit la même source que celle où KiCad lit.
-- [ ] X3.4 Aucun succès retourné si le read-back ne confirme pas les valeurs.
+- [x] X3.3 `get_design_rules` lit la même source que celle où KiCad lit.
+- [x] X3.4 Aucun succès retourné si le read-back ne confirme pas les valeurs.
 
 ### Validation
 

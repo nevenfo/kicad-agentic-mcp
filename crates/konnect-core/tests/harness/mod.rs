@@ -11,6 +11,7 @@
 
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -263,4 +264,94 @@ pub mod pins {
     pub const R1_PIN2: (f64, f64) = (101.6, 54.61);
     pub const R2_PIN1: (f64, f64) = (114.3, 46.99);
     pub const R2_PIN2: (f64, f64) = (114.3, 54.61);
+}
+
+// ─── KiCAD as the judge ──────────────────────────────────────────────────────
+
+/// Two tracks on `F.Cu`, on different nets, 1 mm apart centre to centre and
+/// 0.25 mm wide — so 0.75 mm of copper-to-copper gap, inside a closed
+/// `Edge.Cuts` rectangle.
+///
+/// The gap is the whole point: a `min_clearance` below it produces no
+/// `clearance` violation and one above it produces exactly one, which makes
+/// "did KiCAD actually apply the rule we wrote?" a question with a countable
+/// answer. Measured, not assumed — 0.2 mm gives `{track_dangling: 2}` and
+/// 1.5 mm gives `{clearance: 1, track_dangling: 2}` under kicad-cli 10.0.6.
+pub const CLEARANCE_BOARD: &str = include_str!("../fixtures/clearance_pair.kicad_pcb");
+
+/// The smallest project file KiCAD accepts beside a board, with no rules of
+/// its own — the state a board has before anything sets a constraint.
+pub const BLANK_PROJECT: &str =
+    "{\n  \"board\": {\n    \"design_settings\": {}\n  },\n  \"meta\": {\n    \"version\": 3\n  }\n}\n";
+
+/// Where `kicad-cli` is, for the suites that need a real one.
+///
+/// `KONNECT_KICAD_CLI` wins so a machine with several KiCADs can say which.
+pub fn kicad_cli_path() -> PathBuf {
+    if let Ok(configured) = std::env::var("KONNECT_KICAD_CLI") {
+        if !configured.trim().is_empty() {
+            return PathBuf::from(configured);
+        }
+    }
+    let name = if cfg!(windows) {
+        "kicad-cli.exe"
+    } else {
+        "kicad-cli"
+    };
+    let local_appdata = std::env::var("LOCALAPPDATA").ok().map(PathBuf::from);
+    konnect_core::kicad_locate::kicad_standard_paths(name, local_appdata.as_deref())
+        .into_iter()
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| PathBuf::from(name))
+}
+
+/// What KiCAD found in a board, per violation type.
+pub type DrcCounts = BTreeMap<String, usize>;
+
+/// Hand `board` to KiCAD and return what it says about it — the helper that
+/// makes a claim about a mutation something other than our own opinion.
+///
+/// **Calling this is what earns a tool `Proof::Arbitrated`**
+/// (`capability::coverage::ARBITER` names this function). The scan credits
+/// every tool a calling test mentions, so call it in the test that performed
+/// the mutation, not in a separate one.
+///
+/// It panics rather than returning an error on a board KiCAD will not load:
+/// that is the failure the whole contract exists to catch, and a test that
+/// could accidentally ignore it would be worse than no test. Note what it
+/// does *not* prove: `kicad-cli pcb drc` reads the project file for its
+/// constraints but does not validate it — a `.kicad_pro` full of nonsense
+/// gives a clean exit and KiCAD's built-in defaults. Proving a *rule* landed
+/// therefore means watching the violation counts move, not watching this
+/// return.
+pub fn kicad_reloads(board: &Path) -> DrcCounts {
+    let report = board.with_extension("drc.json");
+    let output = std::process::Command::new(kicad_cli_path())
+        .args(["pcb", "drc", "--format", "json", "-o"])
+        .arg(&report)
+        .arg(board)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("kicad-cli is required by this suite (set KONNECT_KICAD_CLI): {e}")
+        });
+    assert!(
+        output.status.success(),
+        "KiCAD refused to load {}: exit {:?}\n{}{}",
+        board.display(),
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let text = std::fs::read_to_string(&report).expect("kicad-cli wrote its report");
+    let parsed: Value = serde_json::from_str(&text).expect("the DRC report is JSON");
+    let mut counts = DrcCounts::new();
+    for violation in parsed["violations"].as_array().into_iter().flatten() {
+        // The `type` field is a stable identifier; the `description` beside it
+        // is translated into the user's language, so nothing here reads it.
+        if let Some(kind) = violation["type"].as_str() {
+            *counts.entry(kind.to_string()).or_default() += 1;
+        }
+    }
+    counts
 }

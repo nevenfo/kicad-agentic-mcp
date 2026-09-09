@@ -193,8 +193,11 @@ pub static ALL_DOMAINS: &[Domain] = &[
 /// running with the board loaded" when the socket is silent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Adapter {
-    /// The S-expression document engine (`konnect-sexp`,
-    /// `konnect-schematic-editor`): reads and writes project files directly.
+    /// The document engine (`konnect-sexp`, `konnect-schematic-editor`):
+    /// reads and writes the project's own files directly, with no KiCAD in the
+    /// loop. Mostly S-expressions, which is what it is named for, but the
+    /// project file is JSON and belongs here too — `set_design_rules` writes
+    /// `.kicad_pro`, because that is where KiCAD keeps board constraints.
     Sexpr,
     /// KiCAD's IPC API over NNG. Requires a running KiCAD with the API
     /// enabled; there is no file fallback.
@@ -645,6 +648,13 @@ pub enum Status {
     RequiresCustomKiCad,
     ExternalTool,
     NotTested,
+    /// Exercised, and never by KiCAD. The code runs and our own tests agree
+    /// with it, but the proof its [`Bar`] requires — KiCAD reloading the
+    /// document, or a live session reading the result back — has never been
+    /// obtained. Distinct from `NOT_TESTED`, which means nobody ran it at all,
+    /// and it is deliberately not covered: this is the status that stops a
+    /// mutation from being published as working because we said so.
+    Unproven,
 }
 
 impl Status {
@@ -657,6 +667,7 @@ impl Status {
             Status::RequiresCustomKiCad => "REQUIRES_CUSTOM_KICAD",
             Status::ExternalTool => "EXTERNAL_TOOL",
             Status::NotTested => "NOT_TESTED",
+            Status::Unproven => "UNPROVEN",
         }
     }
 
@@ -689,11 +700,40 @@ pub struct Capability {
 }
 
 impl Capability {
+    /// How much proof this capability needs before it may be published as
+    /// working. Derived from what the call can damage, never declared, so a
+    /// tool cannot be exempted by whoever adds it.
+    ///
+    /// Reading is held to our own tests: a read that is wrong returns a wrong
+    /// answer, and the next call is free to disagree. Writing is not, and the
+    /// bar then follows the transport, because that is what decides who can
+    /// even see the result:
+    ///
+    /// * a document written as S-expressions or handed to `kicad-cli` is only
+    ///   as good as KiCAD's willingness to load it back — and re-reading our
+    ///   own bytes proves nothing, which is exactly how `set_design_rules`
+    ///   came to report success on a board KiCAD refuses (X1);
+    /// * an operation whose whole effect is on the running editor leaves no
+    ///   file to parse, so only the live session can confirm it;
+    /// * writes that never touch a KiCAD document — a report, the server's own
+    ///   state, a third-party call — have no KiCAD verdict to seek.
+    pub fn required_proof(&self) -> Bar {
+        if tool_effect(self.tool) == Effect::Read || !self.domain.is_kicad_domain() {
+            return Bar::Internal;
+        }
+        match self.adapter {
+            Adapter::Ipc | Adapter::Process => Bar::LiveReadback,
+            Adapter::Sexpr | Adapter::IpcOrSexpr | Adapter::Cli => Bar::KicadArbitrated,
+            Adapter::Internal | Adapter::External => Bar::Internal,
+        }
+    }
+
     /// Combine the declared limitation with the discovered proof.
     ///
     /// A limitation that is a fact about KiCAD wins outright — an untested
     /// GUI-only capability is still GUI-only. Otherwise no proof means
-    /// `NOT_TESTED`, whatever the code does.
+    /// `NOT_TESTED`, whatever the code does, and a proof weaker than
+    /// [`Capability::required_proof`] means `UNPROVEN`, whatever our tests say.
     pub fn status(&self, proof: coverage::Proof) -> Status {
         match self.limitation {
             Limitation::GuiOnlyNoApi(_) => return Status::GuiOnlyNoApi,
@@ -704,10 +744,55 @@ impl Capability {
         if !proof.is_evidence() {
             return Status::NotTested;
         }
+        // An external tool answers to its own vendor, not to KiCAD.
+        if self.adapter == Adapter::External {
+            return Status::ExternalTool;
+        }
+        if proof < self.required_proof().needs() {
+            return Status::Unproven;
+        }
         match self.limitation {
             Limitation::Partial(_) => Status::Partial,
-            _ if self.adapter == Adapter::External => Status::ExternalTool,
             _ => Status::Supported,
+        }
+    }
+}
+
+// ─── Required proof ──────────────────────────────────────────────────────────
+
+/// The weakest proof that may publish a capability as `SUPPORTED`.
+///
+/// This is the half of the matrix that was missing. [`coverage::Proof`] has
+/// always said how strongly a tool is exercised; nothing said how strongly it
+/// *had* to be, so a unit test — our code agreeing with our code — was enough
+/// for any claim. Two names for the same idea are kept apart on purpose: the
+/// bar belongs to the capability and is derived from its transport, the proof
+/// belongs to the repository and is discovered by scanning it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Bar {
+    /// Our own tests settle it.
+    Internal,
+    /// KiCAD must load the resulting document back.
+    KicadArbitrated,
+    /// A live KiCAD must perform it and be asked what it now holds.
+    LiveReadback,
+}
+
+impl Bar {
+    /// The weakest [`coverage::Proof`] that clears this bar.
+    pub fn needs(self) -> coverage::Proof {
+        match self {
+            Bar::Internal => coverage::Proof::Test,
+            Bar::KicadArbitrated => coverage::Proof::Arbitrated,
+            Bar::LiveReadback => coverage::Proof::Live,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Bar::Internal => "unit",
+            Bar::KicadArbitrated => "kicad-parsed",
+            Bar::LiveReadback => "live",
         }
     }
 }

@@ -35,6 +35,7 @@ struct Counts {
     external: usize,
     partial: usize,
     not_tested: usize,
+    unproven: usize,
     gap: usize,
     out_of_scope: usize,
 }
@@ -47,6 +48,7 @@ impl Counts {
             Status::ExternalTool => self.external += 1,
             Status::Partial => self.partial += 1,
             Status::NotTested => self.not_tested += 1,
+            Status::Unproven => self.unproven += 1,
             Status::Gap => self.gap += 1,
             Status::GuiOnlyNoApi | Status::RequiresCustomKiCad => self.out_of_scope += 1,
         }
@@ -105,6 +107,7 @@ pub fn render(coverage: &Coverage) -> String {
         target.external += counts.external;
         target.partial += counts.partial;
         target.not_tested += counts.not_tested;
+        target.unproven += counts.unproven;
         target.gap += counts.gap;
         target.out_of_scope += counts.out_of_scope;
     }
@@ -112,9 +115,9 @@ pub fn render(coverage: &Coverage) -> String {
     let _ = writeln!(out, "## Headline\n");
     let _ = writeln!(
         out,
-        "| | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |"
+        "| | entries | supported | partial | unproven | not tested | gap | KiCAD has no API | coverage |"
     );
-    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|");
     row(&mut out, "KiCAD domains", &kicad);
     row(&mut out, "server's own", &server);
     let _ = writeln!(out);
@@ -298,9 +301,9 @@ pub fn render(coverage: &Coverage) -> String {
         if !tools.is_empty() {
             let _ = writeln!(
                 out,
-                "| tool | toolset | adapter | effect | write target | status | proof | evidence | note |"
+                "| tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |"
             );
-            let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|");
+            let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|");
             for capability in tools {
                 let evidence = coverage.get(capability.tool);
                 let status = capability.status(evidence.proof);
@@ -315,13 +318,14 @@ pub fn render(coverage: &Coverage) -> String {
                 };
                 let _ = writeln!(
                     out,
-                    "| `{}` | `{}` | `{}` | `{}` | {} | {} | {} | {} | {} |",
+                    "| `{}` | `{}` | `{}` | `{}` | {} | {} | {} | {} | {} | {} |",
                     capability.tool,
                     toolsets.get(capability.tool).copied().unwrap_or("—"),
                     capability.adapter.label(),
                     effect.label(),
                     write_target,
                     status.label(),
+                    capability.required_proof().label(),
                     evidence.proof.label(),
                     evidence
                         .source
@@ -398,11 +402,12 @@ pub fn render(coverage: &Coverage) -> String {
 fn row(out: &mut String, label: &str, counts: &Counts) {
     let _ = writeln!(
         out,
-        "| {} | {} | {} | {} | {} | {} | {} | {} |",
+        "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
         label,
         counts.total,
         counts.supported + counts.external,
         counts.partial,
+        counts.unproven,
         counts.not_tested,
         counts.gap,
         counts.out_of_scope,

@@ -24,6 +24,13 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 /// How strongly a tool is exercised by this repository.
+///
+/// The order is the strength order, and it is the point: `record` keeps the
+/// strongest proof found, and [`super::Capability::status`] compares what was
+/// found against what the capability *requires* ([`super::Bar`]). The split
+/// that matters is between the proofs our own code can produce alone
+/// ([`Proof::Test`], [`Proof::Bench`]) and the ones where KiCAD is the judge
+/// ([`Proof::Arbitrated`], [`Proof::Live`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Proof {
     /// Nothing found.
@@ -31,11 +38,22 @@ pub enum Proof {
     /// Only by a test that is `#[ignore]`d — it needs a live KiCAD, a GUI
     /// session, or the installed symbol libraries.
     Gated,
-    /// An automated test that runs in the default gate.
+    /// An automated test that runs in the default gate. It proves our code
+    /// does what our code claims, and nothing about what KiCAD accepts.
     Test,
-    /// A golden benchmark task or probe: run end to end against a real
-    /// `kicad-cli`, with committed results.
+    /// A golden benchmark task or probe, with committed results. Stronger
+    /// than a unit test because it runs the tool end to end, but it still does
+    /// not, on its own, put the resulting document in front of KiCAD.
     Bench,
+    /// KiCAD read the result back and accepted it: a test that submits the
+    /// mutated document to `kicad-cli` through [`ARBITER`] and fails when
+    /// KiCAD refuses it. This is the weakest proof that can back a claim about
+    /// a file KiCAD has to load.
+    Arbitrated,
+    /// A live KiCAD session performed the operation and the result was read
+    /// back from it — the only proof available for a tool that has no file to
+    /// parse, because its whole effect is on the running editor.
+    Live,
 }
 
 impl Proof {
@@ -45,14 +63,32 @@ impl Proof {
             Proof::Gated => "gated",
             Proof::Test => "test",
             Proof::Bench => "bench",
+            Proof::Arbitrated => "kicad-parsed",
+            Proof::Live => "live",
         }
     }
 
-    /// Whether this proof may support a claim of coverage.
+    /// Whether this proof may support a claim of coverage *at all*. Clearing
+    /// this bar is necessary and no longer sufficient: the capability's own
+    /// [`super::Bar`] decides how much more it takes.
     pub fn is_evidence(self) -> bool {
-        matches!(self, Proof::Test | Proof::Bench)
+        self >= Proof::Test
     }
 }
+
+/// The test helper that makes KiCAD the judge, and the marker the scan looks
+/// for. A test function that calls it has handed its result to `kicad-cli`;
+/// the tools that same function names are credited [`Proof::Arbitrated`].
+///
+/// Naming it here, rather than matching a pattern, keeps the credit narrow: a
+/// helper renamed without updating this constant silently *loses* proofs,
+/// which fails safe.
+pub const ARBITER: &str = "kicad_reloads";
+
+/// The same idea for the operations no file can settle: a helper that asks the
+/// running KiCAD what it now holds, so the assertion is made against the
+/// editor's own answer rather than against the request we sent it.
+pub const LIVE_ARBITER: &str = "kicad_reads_back";
 
 /// The strongest proof found for a tool, and where it was found.
 #[derive(Debug, Clone)]
@@ -156,7 +192,8 @@ pub fn scan(root: &Path, tools: &[&str]) -> Coverage {
 /// only ever pointed at test code.
 fn collect(coverage: &mut Coverage, tools: &[&str], text: &str, source: &str) {
     let mut pending_ignore = false;
-    let mut in_ignored_fn = false;
+    let mut ignored = false;
+    let mut block = String::new();
 
     for line in text.lines() {
         let trimmed = line.trim_start();
@@ -168,18 +205,47 @@ fn collect(coverage: &mut Coverage, tools: &[&str], text: &str, source: &str) {
             continue;
         }
         if is_fn_declaration(trimmed) {
-            in_ignored_fn = pending_ignore;
+            credit(coverage, tools, &block, ignored, source);
+            block.clear();
+            ignored = pending_ignore;
             pending_ignore = false;
         }
-        let proof = if in_ignored_fn {
-            Proof::Gated
-        } else {
-            Proof::Test
-        };
-        for tool in tools {
-            if mentions(line, tool) {
-                coverage.record(tool, proof, source);
-            }
+        block.push_str(line);
+        block.push('\n');
+    }
+    credit(coverage, tools, &block, ignored, source);
+}
+
+/// Score one function body and credit every tool it names.
+///
+/// The whole body is scored at once, not line by line, because the fact that
+/// decides the strength — did this test hand its result to KiCAD? — is a
+/// property of the function, not of the line that happens to name the tool.
+///
+/// Calling the arbiter outranks `#[ignore]` rather than being cancelled by it.
+/// A test that submits a document to `kicad-cli` *has* to be opt-in, because
+/// CI has no KiCAD to run it against (`.github/workflows/ci.yml` installs
+/// none); treating it as no evidence would make the strongest proof in the
+/// repository unreachable and leave the weakest — our own code agreeing with
+/// itself — as the ceiling. What it costs is stated where it is published:
+/// these proofs come from suites `gate.ps1` runs on a machine with KiCAD, not
+/// from CI.
+fn credit(coverage: &mut Coverage, tools: &[&str], block: &str, ignored: bool, source: &str) {
+    if block.is_empty() {
+        return;
+    }
+    let proof = if contains(block, LIVE_ARBITER) {
+        Proof::Live
+    } else if contains(block, ARBITER) {
+        Proof::Arbitrated
+    } else if ignored {
+        Proof::Gated
+    } else {
+        Proof::Test
+    };
+    for tool in tools {
+        if block.lines().any(|line| mentions(line, tool)) {
+            coverage.record(tool, proof, source);
         }
     }
 }

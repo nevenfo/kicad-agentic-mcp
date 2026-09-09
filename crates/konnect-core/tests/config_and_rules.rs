@@ -16,7 +16,7 @@
 mod harness;
 
 use harness::Harness;
-use serde_json::json;
+use serde_json::{json, Value};
 
 /// The environment is process-wide, so anything that redirects it takes this
 /// first. A `tokio` mutex rather than `std`'s (E10): every holder below keeps
@@ -202,33 +202,215 @@ async fn design_rules_are_scoped_and_listed_together() {
 
 // ─── Board design rules ──────────────────────────────────────────────────────
 
-/// Constraints written to the board come back from the reader. The pair has to
-/// agree: a writer whose values the reader cannot see is worse than neither.
+/// Set four distinct constraints, read four distinct constraints, and leave
+/// the board file alone.
+///
+/// The values are deliberately far apart. The implementation this replaced
+/// would have passed a test using one value four times while writing a single
+/// key, and the four numbers here cannot all be right by accident.
+///
+/// What this test cannot show is whether KiCAD agrees, because it only asks
+/// our own reader — which is exactly how the previous implementation was
+/// green while `kicad-cli` refused the board it produced (X1). That question
+/// belongs to `kicad_applies_the_constraints_it_was_given`, below.
 #[tokio::test]
-async fn board_design_rules_round_trip_through_the_file() {
+async fn design_rules_round_trip_through_the_project_file() {
     let h = Harness::new();
-    let board = harness::as_str(&h.fixture("test.kicad_pcb")).to_string();
+    let board = h.write("rules.kicad_pcb", harness::CLEARANCE_BOARD);
+    h.write("rules.kicad_pro", harness::BLANK_PROJECT);
+    let board = harness::as_str(&board).to_string();
+    let before = std::fs::read_to_string(&board).expect("the board is readable");
 
     h.json(
         "set_design_rules",
         json!({
             "board": board,
             "min_clearance": 0.15,
-            "min_trace_width": 0.13,
-            "min_via_drill": 0.3,
-            "min_via_size": 0.6
+            "min_track_width": 0.13,
+            "min_via_diameter": 0.6,
+            "min_through_hole_diameter": 0.3,
         }),
     )
     .await;
 
-    let rules = h.json("get_design_rules", json!({ "board": board })).await;
-    let text = rules.to_string();
-    for expected in ["0.15", "0.13", "0.3", "0.6"] {
+    let reported = h.json("get_design_rules", json!({ "board": board })).await;
+    let rules = &reported["rules"];
+    assert_eq!(rules["min_clearance"], json!(0.15));
+    assert_eq!(rules["min_track_width"], json!(0.13));
+    assert_eq!(rules["min_via_diameter"], json!(0.6));
+    assert_eq!(rules["min_through_hole_diameter"], json!(0.3));
+
+    assert_eq!(
+        std::fs::read_to_string(&board).expect("the board is readable"),
+        before,
+        "the board file was modified; KiCAD keeps constraints in the project file"
+    );
+}
+
+/// The project file keeps everything the call did not name.
+#[tokio::test]
+async fn setting_one_constraint_disturbs_nothing_else() {
+    let h = Harness::new();
+    let board = h.write("rules.kicad_pcb", harness::CLEARANCE_BOARD);
+    let project = h.write(
+        "rules.kicad_pro",
+        r#"{
+  "board": {
+    "design_settings": {
+      "defaults": {
+        "board_outline_line_width": 0.05
+      },
+      "rules": {
+        "min_hole_to_hole": 0.25,
+        "min_text_height": 0.8
+      }
+    }
+  },
+  "meta": {
+    "filename": "rules.kicad_pro",
+    "version": 3
+  },
+  "sheets": [["deadbeef", "Root"]]
+}
+"#,
+    );
+
+    h.json(
+        "set_design_rules",
+        json!({ "board": harness::as_str(&board), "min_clearance": 0.42 }),
+    )
+    .await;
+
+    let after: Value = serde_json::from_str(&std::fs::read_to_string(&project).expect("readable"))
+        .expect("still JSON");
+    let rules = &after["board"]["design_settings"]["rules"];
+    assert_eq!(rules["min_clearance"], json!(0.42), "the ask did not land");
+    assert_eq!(
+        rules["min_hole_to_hole"],
+        json!(0.25),
+        "a rule nobody named was changed"
+    );
+    assert_eq!(rules["min_text_height"], json!(0.8));
+    assert_eq!(
+        after["board"]["design_settings"]["defaults"]["board_outline_line_width"],
+        json!(0.05),
+        "a setting outside `rules` was changed"
+    );
+    assert_eq!(after["sheets"], json!([["deadbeef", "Root"]]));
+    assert_eq!(after["meta"]["filename"], json!("rules.kicad_pro"));
+}
+
+/// The three argument names that name nothing in KiCAD are refused, and say
+/// what to ask for instead.
+///
+/// Aliasing them silently is the tempting option and the wrong one:
+/// `min_via_drill` is a constraint KiCAD does not have, so a caller who sends
+/// it believes something that is not true, and quietly applying it to
+/// `min_through_hole_diameter` would confirm the belief.
+#[tokio::test]
+async fn the_old_argument_names_are_refused_by_name() {
+    let h = Harness::new();
+    let board = h.write("rules.kicad_pcb", harness::CLEARANCE_BOARD);
+    h.write("rules.kicad_pro", harness::BLANK_PROJECT);
+    let board = harness::as_str(&board).to_string();
+
+    for (old, replacement) in [
+        ("min_trace_width", "min_track_width"),
+        ("min_via_size", "min_via_diameter"),
+        ("min_via_drill", "min_through_hole_diameter"),
+    ] {
+        let result = h
+            .call("set_design_rules", json!({ "board": board, old: 0.3 }))
+            .await
+            .expect("the tool answered");
+        assert!(result.is_error, "`{old}` was accepted");
+        let text = harness::body(&result).to_string();
         assert!(
-            text.contains(expected),
-            "{expected} was set and is not reported back: {rules}"
+            text.contains(replacement),
+            "the refusal of `{old}` does not name `{replacement}`: {text}"
         );
     }
+}
+
+/// A board whose project file is missing is reported, not repaired.
+#[tokio::test]
+async fn a_missing_project_file_is_an_error_not_a_new_file() {
+    let h = Harness::new();
+    let board = h.write("lonely.kicad_pcb", harness::CLEARANCE_BOARD);
+    let project = h.path("lonely.kicad_pro");
+
+    let result = h
+        .call(
+            "set_design_rules",
+            json!({ "board": harness::as_str(&board), "min_clearance": 0.2 }),
+        )
+        .await
+        .expect("the tool answered");
+
+    assert!(result.is_error, "a missing project file passed silently");
+    assert!(
+        !project.exists(),
+        "the tool invented a project file instead of reporting the broken project"
+    );
+}
+
+/// KiCAD applies the constraints we wrote — the claim no amount of reading our
+/// own bytes back can support.
+///
+/// The oracle is a count, not a string: `kicad-cli`'s violation descriptions
+/// are translated into the user's language, its `type` identifiers are not.
+/// The fixture's two tracks leave a 0.75 mm gap, so a clearance rule below it
+/// is quiet and one above it is not. If KiCAD were ignoring the project file
+/// — or refusing it — both runs would return the same counts and this fails.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn kicad_applies_the_constraints_it_was_given() {
+    let h = Harness::new();
+    let board = h.write("arbitrated.kicad_pcb", harness::CLEARANCE_BOARD);
+    h.write("arbitrated.kicad_pro", harness::BLANK_PROJECT);
+    let board_arg = harness::as_str(&board).to_string();
+
+    h.json(
+        "set_design_rules",
+        json!({ "board": board_arg, "min_clearance": 0.2 }),
+    )
+    .await;
+    let quiet = harness::kicad_reloads(&board);
+    assert_eq!(
+        quiet.get("clearance"),
+        None,
+        "0.2 mm is under the fixture's 0.75 mm gap and should not violate: {quiet:?}"
+    );
+
+    h.json(
+        "set_design_rules",
+        json!({
+            "board": board_arg,
+            "min_clearance": 1.5,
+            "min_track_width": 0.13,
+            "min_via_diameter": 0.6,
+            "min_through_hole_diameter": 0.3,
+        }),
+    )
+    .await;
+    let loud = harness::kicad_reloads(&board);
+    assert_eq!(
+        loud.get("clearance"),
+        Some(&1),
+        "1.5 mm is over the fixture's 0.75 mm gap: KiCAD did not apply the rule: {loud:?}"
+    );
+
+    // Everything else KiCAD found is unchanged: the rule moved, the board did
+    // not.
+    assert_eq!(quiet.get("track_dangling"), loud.get("track_dangling"));
+
+    let reported = h
+        .json("get_design_rules", json!({ "board": board_arg }))
+        .await;
+    assert_eq!(reported["rules"]["min_clearance"], json!(1.5));
+    assert_eq!(reported["rules"]["min_track_width"], json!(0.13));
+    assert_eq!(reported["rules"]["min_via_diameter"], json!(0.6));
+    assert_eq!(reported["rules"]["min_through_hole_diameter"], json!(0.3));
 }
 
 /// A per-layer constraint is written against the layer it names.
