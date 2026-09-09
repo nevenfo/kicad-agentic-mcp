@@ -2,60 +2,66 @@
 
 ## Phase actuelle
 
-**X — Preuve réelle des mutations.** Une mutation KiCad ne peut plus être
-publiée `SUPPORTED` sur la foi de notre propre code : la vérité vient de
-`kicad-cli` ou de l'IPC officiel. Objectif = zéro faux succès, pas plus
-d'outils supportés. La phase W (`v1.1.4`) est close et publiée.
+**X — Preuve réelle des mutations.** X1 à X6 validées et poussées sur
+`ai/mutation-proof-hardening`. Le cœur de la campagne — zéro faux succès sur
+les capacités déclarées supportées — est en place et prouvé par falsification.
+Restent X7 (benchmark PCB live), X8 (upstream + `flip_component`), X9
+(`update_pcb_from_schematic`).
 
 ## Tâche actuelle
 
-X2 — faire du niveau de preuve **exigé** une propriété de la capacité.
+X7/X8 — relever l'état réel d'upstream, puis construire le corpus PCB live.
 
 ## Dernière tâche validée
 
-**X1 — Reproduction des deux défauts contre KiCad.**
+**X6 — Audit ciblé des autres mutations à risque.**
 
 Validation :
-- Projet jetable = copie du demo `microwave` de l'installation. Baseline :
-  `kicad-cli pcb drc` charge le document, exit 0.
-- Transcription fidèle de `set_constraint` appliquée → `kicad-cli` refuse :
-  « Inattendu min_clearance … ligne 77 », exit 3. Le handler retourne pourtant
-  `{"success": true, "changed": [...]}` sans aucune condition.
-- Écriture de `set_active_layer` appliquée → `kicad-cli` refuse : « Inattendu
-  active_layer … ligne 33 », exit 3. Le handler retourne `{"active_layer": …}`.
-- Les deux défauts sont donc de même classe : succès RPC sur un document que
-  KiCad ne charge plus.
+- Troisième défaut de la classe X1 trouvé et corrigé :
+  `set_layer_constraints` insérait un `(rule …)` dans le `(setup …)` du board,
+  que `kicad-cli` refuse (« Inattendu rule », exit 3). Réécrit vers
+  `<board>.kicad_dru`, idempotent, préservant règles et commentaires tiers.
+- Prouvé par `kicad_enforces_the_layer_rule_it_was_given` : la violation
+  attendue apparaît. Plus aucun code n'insère dans `(setup …)`.
+- Angle mort du contrat X2 corrigé : les écritures `Derived` (exports,
+  rapports) exigeaient un rechargement KiCad dénué de sens pour un gerber.
+- Gate complet vert : `cargo fmt`, `clippy -D warnings`, `cargo test
+  --workspace`, plus les suites arbitrées et la suite live.
 
 ## Décisions actives
 
-- Les contraintes globales vivent dans `.kicad_pro` →
-  `board.design_settings.rules`, en mm flottants. Relevé sur deux projets
-  indépendants (`HifiAmp_TPA3255`, demo `CM5_MINIMA_3`), pas supposé.
-- `min_via_size` et `min_via_drill`, arguments actuels de `set_design_rules`,
-  ne nomment **aucune** clé KiCad. Les clés réelles sont `min_via_diameter` et
-  `min_through_hole_diameter`.
-- Un `.kicad_pcb` produit par KiCad ne porte aucune de ces clés dans `(setup)` :
-  zéro occurrence mesurée sur le projet réel.
-- `active_layer` est une préférence **locale** de session : `.kicad_prl`,
-  `board.active_layer`, un **entier** (0 = F.Cu), fichier couramment gitignoré.
-  Ce n'est pas un état du document.
-- L'IPC officiel expose `SetActiveLayer`/`GetActiveLayer`
-  (`board_commands.proto`). Le proto est dans le dépôt, le binding client Rust
-  n'existe pas encore → `set_active_layer` relève du cas « voie fiable ».
-- Les contraintes globales ne sont **pas** exposées par l'IPC
-  (`project_settings.proto` ne couvre que les netclasses) : transport =
-  fichier `.kicad_pro`, arbitre = `kicad-cli`.
-- L'architecture de preuve existe déjà et n'est pas à reconstruire :
-  `capability::MANIFEST` + `coverage::scan` dérivent le statut des tests
-  trouvés. Le défaut est unique et localisé : `Proof::Test` suffit à
-  `Status::Supported`, sans que la capacité puisse exiger mieux.
-- Une baisse du pourcentage de couverture est un résultat acceptable ; les
-  critères ne sont jamais assouplis pour préserver un chiffre.
-- Le lock natif KiCad n'est jamais supprimé, déplacé ni jugé périmé : son
-  contenu (50 octets, `hostname` + `username`) ne permet pas de décider la
-  fraîcheur. Présence vaut refus.
-- Les tests live tournent sur un `KICAD_CONFIG_HOME` dédié, jamais sur le
-  profil réel de l'utilisateur.
+- **Le niveau de preuve exigé est une propriété de la capacité**, dérivée de
+  (effet, domaine, write target, adaptateur) : `Capability::required_proof`.
+  Une preuve plus faible publie `UNPROVEN`. C'est le correctif structurel :
+  `Proof::Test` ne pouvait plus être distingué d'une preuve KiCad.
+- Preuves : `Test` < `Bench` < `Arbitrated` (`kicad_reloads`, KiCad recharge)
+  < `Live` (`kicad_reads_back`, la session relit). Les deux helpers sont
+  nommés par `coverage::{ARBITER, LIVE_ARBITER}` et découverts par scan.
+- Un test `#[ignore]`d qui appelle un arbitre compte : la CI n'installe pas
+  KiCad, donc l'exiger rendrait la preuve forte inatteignable. Le document
+  dit d'où viennent ces preuves (`gate.ps1`, pas la CI).
+- Couverture domaines KiCad : 74,5 % → 27,9 %, 78 `UNPROVEN`. Baisse assumée,
+  aucun critère assoupli. Baseline upstream re-gelée par le même scanner
+  (42 → 13) pour que la comparaison reste tool-for-tool.
+- **`kicad-cli` ne valide ni le `.kicad_pro` ni le `.kicad_dru`** : un fichier
+  illisible donne exit 0 et les défauts KiCad. L'oracle est donc l'**effet**
+  sur le DRC, jamais le code de sortie seul.
+- Oracle DRC : le champ `type` d'une violation est stable ; la `description`
+  est traduite. Ne jamais asserter sur la description.
+- Fixture `clearance_pair.kicad_pcb` : 0,75 mm de cuivre entre deux pistes de
+  nets différents → `min_clearance` 0,2 mm silencieux, 1,5 mm ⇒ exactement une
+  violation `clearance`. C'est l'oracle de toutes les règles.
+- `.kicad_pro` : `board.design_settings.rules`, mm flottants sans unité, clés
+  triées, indentation 2 espaces — `to_string_pretty` reproduit le format.
+  `.kicad_dru` : `(version 1)` puis des `(rule …)`, valeurs **avec** unité.
+- `min_via_size`/`min_via_drill`/`min_trace_width` sont refusés par nom, pas
+  aliasés : ils désignent des contraintes que KiCad n'a pas.
+- `set_active_layer` est IPC pur, sans repli fichier : le repli consisterait à
+  réinventer le champ fautif. Write target `Derived` (il n'écrit rien).
+- `scripts/live-pcb-e2e.ps1` **doit** être lancé avec `pwsh`, pas Windows
+  PowerShell 5.1, où stderr de cargo devient une erreur terminante.
+- Le lock natif KiCad n'est jamais supprimé, déplacé ni jugé périmé.
+- Les tests live tournent sur un `KICAD_CONFIG_HOME` dédié.
 
 ## Blocage actif
 
@@ -63,45 +69,44 @@ Aucun.
 
 ## Observations hors périmètre, non corrigées
 
-- `ToolErrorKind::from_anyhow` ne reconnaît pas `konnect_sexp::SexpError::
-  Conflict` nu : une course GUI se dégrade en `handler_error` au lieu de
-  `conflict`. Préexistant.
-- `crates/konnect-core/tests/board_and_labels.rs:129` porte une fragilité CRLF
-  en assertion négative : satisfaite sans rien vérifier sous un checkout
-  Windows, réelle sur ubuntu et macos.
+- 78 capacités `UNPROVEN` : 70 `sexpr`, 4 `ipc→sexpr`, 3 `ipc`, 1 `cli`.
+  Aucune n'est démontrée fautive ; personne ne les a soumises à KiCad. Suite
+  de travail, action par classe documentée dans la matrice.
+- `ToolErrorKind::from_anyhow` ne reconnaît pas `SexpError::Conflict` nu :
+  une course GUI se dégrade en `handler_error`. Préexistant.
+- `board_and_labels.rs` porte une assertion négative fragile aux CRLF sous
+  Windows ; réelle sur ubuntu et macos.
 
 ## Fichiers / zones utiles
 
-- Défauts : `crates/konnect-core/src/tools/verification.rs`
-  (`set_constraint`, `handle_set_design_rules`, `handle_get_design_rules`) et
-  `crates/konnect-core/src/tools/pcb_board.rs:756`
-  (`handle_set_active_layer`).
-- Preuve : `crates/konnect-core/src/capability/{mod.rs,coverage.rs,render.rs}`,
-  rendu vers `docs/capability-matrix.md` par
-  `crates/konnect-core/tests/capability_matrix.rs`.
-- Tests concernés : `crates/konnect-core/tests/config_and_rules.rs`,
-  `crates/konnect-core/tests/board_and_labels.rs`.
-- IPC : `crates/konnect-ipc/proto/board/board_commands.proto` (SetActiveLayer),
-  `crates/konnect-ipc/src/client.rs`.
-- `gate.ps1` (racine), `scripts/live-pcb-e2e.ps1`.
-- `kicad-cli` : `%LOCALAPPDATA%\Programs\KiCad\10.0\bin\kicad-cli.exe` (10.0.6).
-- Projet jetable : copie du demo `microwave` livré avec l'installation KiCad.
+- Contrat de preuve : `crates/konnect-core/src/capability/{mod.rs,coverage.rs,
+  render.rs,baseline.rs}` → `docs/capability-matrix.md`, régénéré par
+  `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`.
+- Corrigés : `tools/verification.rs` (`set_design_rules`,
+  `set_layer_constraints`), `tools/pcb_board.rs` (`set_active_layer`).
+- Helpers d'arbitrage : `crates/konnect-core/tests/harness/mod.rs`
+  (`kicad_reloads`, `kicad_reads_back`, `Harness::live`, `CLEARANCE_BOARD`).
+- IPC : `crates/konnect-ipc/src/client.rs` (`get_active_layer`,
+  `set_active_layer`), `proto/board/board_commands.proto`.
+- `ReadbackMismatch` : `crates/konnect-core/src/mcp/error.rs`.
+- `gate.ps1`, `scripts/live-pcb-e2e.ps1` (via `pwsh`).
+- `kicad-cli` 10.0.6 : `%LOCALAPPDATA%\Programs\KiCad\10.0\bin\kicad-cli.exe`.
+- Projet jetable : copie du demo `microwave` de l'installation KiCad.
+- Remote `upstream` : `https://github.com/mixelpixx/Konnect.git` (push
+  désactivé).
 
 ## Préconditions de tout test live
 
-1. Un seul répertoire par identifiant de plugin sous `3rdparty` — trois copies
-   tuent l'éditeur 3 s après démarrage.
+1. Un seul répertoire par identifiant de plugin sous `3rdparty`.
 2. Aucune autre instance KiCad ne détient le socket d'API.
-3. Aucun dialogue modal : l'assistant de configuration et l'avis de format
-   ancien font répondre `AS_NOT_READY` sur un pipe pourtant présent.
-4. Les toolsets sont opt-in : sans `load_toolset`, un refus `toolset_not_loaded`
-   fait passer une assertion pour la mauvaise raison.
-5. `CloseMainWindow` poste `WM_CLOSE` sans le garantir : la fermeture se retente.
+3. Aucun dialogue modal, sinon `AS_NOT_READY` sur un pipe pourtant présent.
+4. Les toolsets sont opt-in : sans `load_toolset`, un refus
+   `toolset_not_loaded` fait passer une assertion pour la mauvaise raison.
+5. `CloseMainWindow` poste `WM_CLOSE` sans le garantir.
 
 ## NEXT ACTION
 
-X2.1 — Ajouter à `Capability` le niveau de preuve exigé, dérivé du couple
-(effet, adaptateur) plutôt que déclaré à la main, puis faire rétrograder
-`Capability::status` toute capacité dont la preuve trouvée est plus faible.
-Validation : `cargo test -p konnect-core` vert et au moins une capacité
-effectivement rétrogradée.
+X8.1 — `git fetch upstream`, relever le SHA et l'état réel d'upstream
+aujourd'hui, puis inspecter `flip_component` et `update_pcb_from_schematic`
+sans merge ni rebase. Validation : SHA upstream consigné et périmètre de
+comparaison arrêté, avant de construire le corpus X7 qui doit les mesurer.
