@@ -6568,14 +6568,25 @@ X3, X4.
 
 ### Tâches
 
-- [ ] X5.1 Réintroduire localement, sans jamais la committer, l'écriture
+- [x] X5.1 Réintroduire localement, sans jamais la committer, l'écriture
   fautive dans `(setup ...)`.
-- [ ] X5.2 Vérifier que le gate passe au rouge, et sur quelle assertion.
-- [ ] X5.3 Restaurer l'implémentation correcte et vérifier le retour au vert.
+- [x] X5.2 Vérifier que le gate passe au rouge, et sur quelle assertion.
+- [x] X5.3 Restaurer l'implémentation correcte et vérifier le retour au vert.
 
 ### Validation
 
-Rouge observé avec la variante fautive, vert restauré, `git status` propre.
+Les deux variantes fautives cassent le gate, chacune sur l'assertion prévue, et
+la protection est double :
+
+- `set_design_rules` réécrivant dans `(setup ...)` → le test arbitré échoue sur
+  le verdict de KiCad (« KiCAD refused to load … exit Some(3) »), **et** le test
+  rapide, qui n'a pas besoin de KiCad, échoue sur « the board file was
+  modified ». La CI attrape donc cette classe de défaut sans KiCad installé.
+- `set_active_layer` réécrivant `(active_layer …)` → `set_active_layer_refuses_
+  rather_than_writing_a_field_kicad_does_not_have` échoue sur « a refused call
+  still edited the board ».
+
+Implémentations correctes restaurées, `git status` propre, suites vertes.
 
 ## X6 — Audit ciblé des autres mutations à risque
 
