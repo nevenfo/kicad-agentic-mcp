@@ -48,7 +48,7 @@ does not exercise, break the name.
 
 | | entries | supported | partial | unproven | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|---|
-| KiCAD domains | 170 | 36 | 18 | 88 | 21 | 2 | 5 | 21.8 % |
+| KiCAD domains | 170 | 37 | 18 | 87 | 21 | 2 | 5 | 22.4 % |
 | server's own | 40 | 27 | 10 | 0 | 3 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
@@ -60,7 +60,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 13 | 7.0 % |
-| this fork | 186 | 55 | 29.6 % |
+| this fork | 186 | 56 | 30.1 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -83,7 +83,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`routing`](#routing) | 10 | 1 | 0 | 5 | 0 | 2 | 12.5 % |
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`zones`](#zones) | 3 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
-| [`stackup`](#stackup) | 4 | 1 | 0 | 0 | 0 | 1 | 33.3 % |
+| [`stackup`](#stackup) | 4 | 2 | 0 | 0 | 0 | 1 | 66.7 % |
 | [`rules`](#rules) | 5 | 2 | 0 | 0 | 0 | 0 | 40.0 % |
 | [`erc`](#erc) | 2 | 0 | 1 | 0 | 0 | 0 | 0.0 % |
 | [`drc`](#drc) | 3 | 0 | 1 | 0 | 0 | 0 | 0.0 % |
@@ -111,9 +111,9 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 
 | adapter | tools | needs a running KiCAD |
 |---|---|---|
-| `sexpr` | 125 | no |
+| `sexpr` | 124 | no |
 | `cli` | 22 | no |
-| `ipc` | 21 | yes |
+| `ipc` | 22 | yes |
 | `ipc→sexpr` | 5 | no |
 | `internal` | 19 | no |
 | `external` | 8 | no |
@@ -380,7 +380,7 @@ Not covered by any tool:
 |---|---|---|---|---|---|---|---|---|---|
 | `get_layer_list` | `pcb_board` | `sexpr` | `read` | — | SUPPORTED | unit | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `add_layer` | `pcb_board` | `sexpr` | `write` | design_document | UNPROVEN | kicad-parsed | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
-| `set_active_layer` | `pcb_board` | `sexpr` | `write` | design_document | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `set_active_layer` | `pcb_board` | `ipc` | `write` | derived | SUPPORTED | live | live | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 Not covered by any tool:
 

@@ -6544,11 +6544,11 @@ X1, X2.
 
 ### Tâches
 
-- [ ] X4.1 Supprimer l'écriture fichier du chemin de `set_active_layer`.
-- [ ] X4.2 Ajouter le binding client `SetActiveLayer` / `GetActiveLayer` et
+- [x] X4.1 Supprimer l'écriture fichier du chemin de `set_active_layer`.
+- [x] X4.2 Ajouter le binding client `SetActiveLayer` / `GetActiveLayer` et
   la traduction de nom de couche vers `BoardLayer`.
-- [ ] X4.3 Read-back obligatoire ; sans KiCad vivant, refus structuré.
-- [ ] X4.4 Reclasser la capacité selon le résultat obtenu.
+- [x] X4.3 Read-back obligatoire ; sans KiCad vivant, refus structuré.
+- [x] X4.4 Reclasser la capacité selon le résultat obtenu.
 
 ### Validation
 

@@ -506,8 +506,9 @@ pub enum WriteTarget {
     DesignDocument,
     /// The call writes, but never a source document of the design:
     /// fabrication artifacts (gerbers, drill, BOM, position files), reports,
-    /// or this server's own durable state (task state, config). Allowed
-    /// under `Manufacturing`.
+    /// this server's own durable state (task state, config), or the running
+    /// editor's session state, which outlives no file. Allowed under
+    /// `Manufacturing`.
     Derived,
 }
 
@@ -522,6 +523,11 @@ pub enum WriteTarget {
 /// there is no MANIFEST tool named `export_*` that is a documented
 /// exception to it.
 const DERIVED_WRITES: &[&str] = &[
+    // Moves the editor's cursor between layers and writes nothing at all: the
+    // active layer is session state KiCAD keeps in `.kicad_prl`, and the board
+    // format has no field for it (X4). It was `DesignDocument` while the
+    // implementation invented one.
+    "set_active_layer",
     // Runs kicad-cli and writes only the netlist file the caller asked for,
     // never a project source document.
     "generate_netlist",
@@ -1046,7 +1052,9 @@ pub static MANIFEST: &[Capability] = &[
     cap("get_board_extents", Domain::Pcb, Adapter::IpcOrSexpr),
     cap("get_layer_list", Domain::Stackup, Adapter::Sexpr),
     cap("add_layer", Domain::Stackup, Adapter::Sexpr),
-    cap("set_active_layer", Domain::Stackup, Adapter::Sexpr),
+    // No file fallback on purpose: the active layer is session state, and the
+    // board file has no field for it (X4). IPC or a refusal.
+    cap("set_active_layer", Domain::Stackup, Adapter::Ipc),
     cap("add_board_outline", Domain::Pcb, Adapter::IpcOrSexpr),
     cap("add_mounting_hole", Domain::Pcb, Adapter::Sexpr),
     cap("add_board_text", Domain::Pcb, Adapter::IpcOrSexpr),

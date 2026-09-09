@@ -346,8 +346,12 @@ try {
     # The suites poll get_open_documents themselves until KiCad answers, so no
     # extra settle time is needed here.
     foreach ($suite in @(
-            @{ Package = 'konnect-ipc'; Test = 'live_kicad_test' },
-            @{ Package = 'konnect';     Test = 'live_kicad_tools' })) {
+            @{ Package = 'konnect-ipc';  Test = 'live_kicad_test' },
+            @{ Package = 'konnect';      Test = 'live_kicad_tools' },
+            # X4: set_active_layer has no file to check, so this suite is the
+            # only thing that can prove it — the matrix publishes it SUPPORTED
+            # on the strength of a read-back that happens here.
+            @{ Package = 'konnect-core'; Test = 'board_and_labels' })) {
         Write-Host "`n=== $($suite.Package) :: $($suite.Test) ==="
         # `| Out-Host` keeps cargo's output interleaved with this script's own
         # in the order it happened; without it the two buffer separately and a

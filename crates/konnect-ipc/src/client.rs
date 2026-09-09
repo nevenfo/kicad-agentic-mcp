@@ -622,6 +622,42 @@ impl KiCadIpcClient {
         }
     }
 
+    /// The layer the editor is currently drawing on.
+    ///
+    /// Session state, not document state. The board file has no such field —
+    /// KiCAD keeps the active layer in the project's *local* settings
+    /// (`.kicad_prl`, `board.active_layer`, as an integer), which is a
+    /// per-user preference file and is commonly not even version-controlled.
+    /// Asking the running editor is the only way to know it.
+    pub fn get_active_layer(&self) -> Result<kiapi::board::types::BoardLayer> {
+        let doc = self.get_board_document()?;
+        let cmd = kiapi::board::commands::GetActiveLayer { board: Some(doc) };
+        let response_any = self.send_command(&cmd, "kiapi.board.commands.GetActiveLayer")?;
+        let Some(any) = response_any else {
+            anyhow::bail!("KiCAD answered GetActiveLayer with nothing");
+        };
+        let resp: kiapi::board::commands::BoardLayerResponse = unpack_any(&any)?;
+        kiapi::board::types::BoardLayer::try_from(resp.layer).map_err(|_| {
+            anyhow::anyhow!(
+                "KiCAD reported active layer {}, which is not a BoardLayer",
+                resp.layer
+            )
+        })
+    }
+
+    /// Move the editor to `layer`. Pair it with [`Self::get_active_layer`]:
+    /// KiCAD acknowledges the command without saying what it settled on, and
+    /// a layer that is not on this board is a request it can decline.
+    pub fn set_active_layer(&self, layer: kiapi::board::types::BoardLayer) -> Result<()> {
+        let doc = self.get_board_document()?;
+        let cmd = kiapi::board::commands::SetActiveLayer {
+            board: Some(doc),
+            layer: layer as i32,
+        };
+        self.send_command(&cmd, "kiapi.board.commands.SetActiveLayer")?;
+        Ok(())
+    }
+
     /// Get board items by type.
     pub fn get_items(
         &self,

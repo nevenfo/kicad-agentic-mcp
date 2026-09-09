@@ -66,10 +66,16 @@ fn absent_jlcpcb_db() -> PathBuf {
 /// The `ServerConfig` every `Harness` constructor shares, parameterised only
 /// by the one field a caller has ever needed to vary.
 fn config(kicad_cli: String) -> ServerConfig {
+    config_with_ipc(kicad_cli, String::new())
+}
+
+/// The same, for the live suites: `ipc_address` is the one other field that
+/// changes what the tools can reach.
+fn config_with_ipc(kicad_cli: String, ipc_address: String) -> ServerConfig {
     ServerConfig {
         kicad_cli,
         kicad_binary: String::new(),
-        ipc_address: String::new(),
+        ipc_address,
         project_dir: None,
         jlcpcb_db_path: Some(absent_jlcpcb_db()),
         auto_load_toolsets: false,
@@ -88,6 +94,27 @@ pub struct Harness {
 impl Harness {
     pub fn new() -> Self {
         Self::with_kicad_cli(String::new())
+    }
+
+    /// A harness whose tools talk to a real KiCAD, for the live suites.
+    ///
+    /// Panics when `KICAD_API_SOCKET` is unset: every caller is `#[ignore]`d
+    /// and was asked for explicitly, so a silent skip would report a pass for
+    /// a suite that never ran.
+    pub fn live() -> Self {
+        let socket = std::env::var("KICAD_API_SOCKET")
+            .expect("KICAD_API_SOCKET is required by the live suite");
+        ensure_state_dir();
+        let router = Arc::new(ToolRouter::new());
+        let ctx = Arc::new(ToolContext::new(
+            config_with_ipc(String::new(), socket),
+            router.clone(),
+        ));
+        Harness {
+            router,
+            ctx,
+            dir: tempfile::tempdir().expect("tempdir"),
+        }
     }
 
     /// Same, with a `kicad-cli` path — for a probe that has one.
@@ -354,4 +381,20 @@ pub fn kicad_reloads(board: &Path) -> DrcCounts {
         }
     }
     counts
+}
+
+/// Ask the running KiCAD what it now holds, through a client of our own rather
+/// than through the tool that just wrote.
+///
+/// **Calling this is what earns a tool `Proof::Live`**
+/// (`capability::coverage::LIVE_ARBITER` names this function). It is the
+/// counterpart of [`kicad_reloads`] for operations with no file to parse: the
+/// active layer, for one, lives in the editor's session and nowhere in the
+/// board. Take the answer from `f` and assert on that — asserting on what the
+/// tool returned would only prove the tool agrees with itself.
+pub fn kicad_reads_back<T>(f: impl FnOnce(&konnect_ipc::client::KiCadIpcClient) -> T) -> T {
+    let socket =
+        std::env::var("KICAD_API_SOCKET").expect("KICAD_API_SOCKET is required by the live suite");
+    let client = konnect_ipc::client::KiCadIpcClient::new(socket);
+    f(&client)
 }

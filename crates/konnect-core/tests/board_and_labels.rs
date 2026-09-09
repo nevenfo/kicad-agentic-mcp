@@ -265,17 +265,62 @@ async fn a_layer_is_added_once_and_selecting_one_adds_nothing() {
         after.to_string().contains("In1.Cu"),
         "the new layer is there by count and not by name: {after}"
     );
+}
 
-    h.json(
-        "set_active_layer",
-        json!({ "board": board, "layer": "In1.Cu" }),
-    )
-    .await;
-    let unchanged = h.json("get_layer_list", json!({ "board": board })).await;
+/// With no KiCAD listening, `set_active_layer` refuses and leaves the board
+/// byte-for-byte as it was.
+///
+/// The active layer is the editor's session state — KiCAD keeps it in
+/// `.kicad_prl`, and the board format has no field for it. The previous
+/// implementation invented one, `(active_layer "…")` inside `(setup ...)`,
+/// which made `kicad-cli` refuse to load the board while the tool reported
+/// success (X1). A refusal is the correct answer here, and the assertion that
+/// matters is the second one: nothing was written.
+#[tokio::test]
+async fn set_active_layer_refuses_rather_than_writing_a_field_kicad_does_not_have() {
+    let h = Harness::new();
+    let board = h.write("board.kicad_pcb", harness::BLANK_BOARD);
+    let before = std::fs::read_to_string(&board).expect("the board is readable");
+
+    let result = h
+        .call(
+            "set_active_layer",
+            json!({ "board": harness::as_str(&board), "layer": "B.Cu" }),
+        )
+        .await
+        .expect("the tool answered");
+
+    assert!(result.is_error, "there is no KiCAD to have done this");
     assert_eq!(
-        count(&unchanged),
-        count(&after),
-        "selecting a layer created one: {unchanged}"
+        std::fs::read_to_string(&board).expect("the board is readable"),
+        before,
+        "a refused call still edited the board"
+    );
+    assert!(
+        !before.contains("active_layer"),
+        "the fixture itself carries the invented field"
+    );
+}
+
+/// A layer name KiCAD does not have is refused before any of that.
+#[tokio::test]
+async fn set_active_layer_rejects_a_name_that_is_not_a_layer() {
+    let h = Harness::new();
+    let board = h.write("board.kicad_pcb", harness::BLANK_BOARD);
+
+    let result = h
+        .call(
+            "set_active_layer",
+            json!({ "board": harness::as_str(&board), "layer": "F.Copper" }),
+        )
+        .await
+        .expect("the tool answered");
+
+    assert!(result.is_error, "'F.Copper' was accepted as a layer name");
+    let text = harness::body(&result).to_string();
+    assert!(
+        text.contains("F.Copper"),
+        "the refusal does not name what was refused: {text}"
     );
 }
 
@@ -554,4 +599,39 @@ async fn a_template_comes_back_with_values_and_an_unknown_id_does_not() {
         reported.len() < 400 || reported.contains("not") || reported.contains("unknown"),
         "an unknown template id came back looking like a template: {reported}"
     );
+}
+
+/// A live KiCAD moves to the layer it was asked for, and says so itself.
+///
+/// The assertion deliberately does not read the tool's own answer: it opens a
+/// second client and asks KiCAD. That is the whole difference between this
+/// suite and a unit test, and the reason `set_active_layer` can be published
+/// as working at all — the operation leaves nothing on disk to check.
+///
+/// Needs `KICAD_API_SOCKET` and a KiCAD holding `KONNECT_LIVE_KICAD_BOARD`.
+#[tokio::test]
+#[ignore = "requires a running KiCad GUI with its IPC API enabled"]
+async fn kicad_moves_to_the_active_layer_it_was_given() {
+    let board = std::env::var("KONNECT_LIVE_KICAD_BOARD")
+        .expect("KONNECT_LIVE_KICAD_BOARD is required by the live suite");
+    let h = Harness::live();
+
+    for layer in ["B.Cu", "F.Cu"] {
+        h.json(
+            "set_active_layer",
+            json!({ "board": board, "layer": layer }),
+        )
+        .await;
+
+        let observed =
+            harness::kicad_reads_back(|client| client.get_active_layer().expect("KiCAD answered"));
+        let name = observed
+            .as_str_name()
+            .trim_start_matches("BL_")
+            .replacen('_', ".", 1);
+        assert_eq!(
+            name, layer,
+            "KiCAD is on {name} after being asked for {layer}"
+        );
+    }
 }
