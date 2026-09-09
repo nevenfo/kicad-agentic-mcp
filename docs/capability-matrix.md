@@ -48,10 +48,14 @@ does not exercise, break the name.
 
 | | entries | supported | partial | unproven | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|---|
-| KiCAD domains | 170 | 37 | 18 | 87 | 21 | 2 | 5 | 22.4 % |
+| KiCAD domains | 170 | 46 | 18 | 78 | 21 | 2 | 5 | 27.9 % |
 | server's own | 40 | 27 | 10 | 0 | 3 | 0 | 0 | 67.5 % |
 
-Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when a test that actually runs, or a golden benchmark task, exercises it; the proof is named in the tables below.
+Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when the proof found for it is at least the proof its transport requires; both are named in the tables below, as `needs` and `proof`.
+
+`unproven` is the gap between those two: the tool runs, our own tests agree with it, and KiCAD has never been asked. That is the status a mutation gets when it is only ever exercised against the code that wrote it — which is how `set_design_rules` came to report success on a board `kicad-cli` refuses to load. Clearing it takes KiCAD reloading the document, or a live session reading the result back, and those suites are opt-in: `gate.ps1` runs them on a machine with KiCAD, CI has none installed.
+
+The action follows the adapter. `sexpr` writes edit a document directly and are the class that produced every defect found so far, so each needs a test that mutates a throwaway project and hands it to `kicad-cli`; three turned out to be writing keys KiCAD does not have (`set_design_rules`, `set_active_layer`, `set_layer_constraints`) and are fixed. `ipc` and `ipc→sexpr` writes need a live read-back instead, their effect being on the running editor. None of this says the rest are broken: it says nobody has asked KiCAD, and the three that were asked are why the distinction earns its place.
 
 ## V1 comparison target
 
@@ -60,7 +64,7 @@ The headline above measures this fork's whole surface, which grows as tools are 
 | | inherited tools scored | proved | coverage |
 |---|---|---|---|
 | baseline `5cd6454` | 186 | 13 | 7.0 % |
-| this fork | 186 | 56 | 30.1 % |
+| this fork | 186 | 64 | 34.4 % |
 
 Criterion met: **yes** — ahead of the baseline requires being strictly ahead *and* losing nothing. No tool the baseline proved is unproved here.
 
@@ -84,16 +88,16 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`zones`](#zones) | 3 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`stackup`](#stackup) | 4 | 2 | 0 | 0 | 0 | 1 | 66.7 % |
-| [`rules`](#rules) | 5 | 2 | 0 | 0 | 0 | 0 | 40.0 % |
-| [`erc`](#erc) | 2 | 0 | 1 | 0 | 0 | 0 | 0.0 % |
-| [`drc`](#drc) | 3 | 0 | 1 | 0 | 0 | 0 | 0.0 % |
-| [`bom`](#bom) | 1 | 0 | 0 | 0 | 0 | 0 | 0.0 % |
-| [`3d`](#3d) | 2 | 0 | 0 | 0 | 0 | 1 | 0.0 % |
+| [`rules`](#rules) | 5 | 3 | 0 | 0 | 0 | 0 | 60.0 % |
+| [`erc`](#erc) | 2 | 1 | 1 | 0 | 0 | 0 | 50.0 % |
+| [`drc`](#drc) | 3 | 1 | 1 | 0 | 0 | 0 | 33.3 % |
+| [`bom`](#bom) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
+| [`3d`](#3d) | 2 | 1 | 0 | 0 | 0 | 1 | 100.0 % |
 | [`simulation`](#simulation) | 1 | 0 | 0 | 0 | 0 | 1 | — |
-| [`manufacturing`](#manufacturing) | 3 | 0 | 2 | 0 | 0 | 0 | 0.0 % |
-| [`gerber`](#gerber) | 1 | 0 | 0 | 0 | 0 | 0 | 0.0 % |
-| [`drill`](#drill) | 1 | 0 | 0 | 0 | 0 | 0 | 0.0 % |
-| [`pick_place`](#pick_place) | 1 | 0 | 0 | 0 | 0 | 0 | 0.0 % |
+| [`manufacturing`](#manufacturing) | 3 | 1 | 2 | 0 | 0 | 0 | 33.3 % |
+| [`gerber`](#gerber) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
+| [`drill`](#drill) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
+| [`pick_place`](#pick_place) | 1 | 1 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`datasheet`](#datasheet) | 2 | 1 | 0 | 0 | 0 | 0 | 50.0 % |
 | [`sourcing`](#sourcing) | 5 | 5 | 0 | 0 | 0 | 0 | 100.0 % |
 | [`export`](#export) | 11 | 10 | 1 | 0 | 0 | 0 | 90.9 % |
@@ -150,7 +154,7 @@ The always-visible gateway/discovery tools (`crates/konnect-core/src/router/meta
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
 | `create_project` | `project` | `sexpr` | `write` | design_document | UNPROVEN | kicad-parsed | bench | `bench/probes/divider.yaml` |  |
-| `open_project` | `project` | `ipc` | `write` | derived | NOT_TESTED | live | — | — |  |
+| `open_project` | `project` | `ipc` | `write` | derived | NOT_TESTED | unit | — | — |  |
 | `save_project` | `project` | `ipc` | `write` | design_document | NOT_TESTED | live | — | — |  |
 | `get_project_info` | `project` | `sexpr` | `read` | — | SUPPORTED | unit | test | `crates/konnect-core/src/tools/project.rs` |  |
 | `snapshot_project` | `project` | `internal` | `write` | derived | NOT_TESTED | unit | gated | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` |  |
@@ -380,7 +384,7 @@ Not covered by any tool:
 |---|---|---|---|---|---|---|---|---|---|
 | `get_layer_list` | `pcb_board` | `sexpr` | `read` | — | SUPPORTED | unit | test | `crates/konnect-core/tests/board_and_labels.rs` |  |
 | `add_layer` | `pcb_board` | `sexpr` | `write` | design_document | UNPROVEN | kicad-parsed | test | `crates/konnect-core/src/tools/pcb_board.rs` |  |
-| `set_active_layer` | `pcb_board` | `ipc` | `write` | derived | SUPPORTED | live | live | `crates/konnect-core/tests/board_and_labels.rs` |  |
+| `set_active_layer` | `pcb_board` | `ipc` | `write` | derived | SUPPORTED | unit | live | `crates/konnect-core/tests/board_and_labels.rs` |  |
 
 Not covered by any tool:
 
@@ -396,13 +400,13 @@ Not covered by any tool:
 | `assign_net_to_class` | `pcb_routing` | `sexpr` | `write` | design_document | UNPROVEN | kicad-parsed | test | `crates/konnect-core/src/tools/pcb_routing.rs` |  |
 | `set_design_rules` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | kicad-parsed | kicad-parsed | `crates/konnect-core/tests/config_and_rules.rs` |  |
 | `get_design_rules` | `verification` | `sexpr` | `read` | — | SUPPORTED | unit | kicad-parsed | `crates/konnect-core/tests/config_and_rules.rs` |  |
-| `set_layer_constraints` | `verification` | `sexpr` | `write` | design_document | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/config_and_rules.rs` |  |
+| `set_layer_constraints` | `verification` | `sexpr` | `write` | design_document | SUPPORTED | kicad-parsed | kicad-parsed | `crates/konnect-core/tests/config_and_rules.rs` |  |
 
 ### erc
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
-| `run_erc` | `sch_export` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | bench | `bench/probes/divider.yaml` |  |
+| `run_erc` | `sch_export` | `cli` | `write` | derived | SUPPORTED | unit | bench | `bench/probes/divider.yaml` |  |
 
 Not covered by any tool:
 
@@ -415,20 +419,20 @@ Not covered by any tool:
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
 | `get_drc_violations` | `pcb_export` | `cli` | `write` | design_document | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/cli_tools.rs` |  |
-| `run_drc` | `verification` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `run_drc` | `verification` | `cli` | `write` | derived | SUPPORTED | unit | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `check_clearance` | `verification` | `sexpr` | `read` | — | PARTIAL | unit | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | geometric clearance computed in-process from the file, against no rule set — kicad-cli DRC is the verdict |
 
 ### bom
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
-| `export_bom` | `sch_export` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
+| `export_bom` | `sch_export` | `cli` | `write` | derived | SUPPORTED | unit | bench | `bench/tasks/05_manufacturing_exports.yaml` |  |
 
 ### 3d
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
-| `export_3d` | `pcb_export` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_3d` | `pcb_export` | `cli` | `write` | derived | SUPPORTED | unit | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 Not covered by any tool:
 
@@ -448,7 +452,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
-| `export_manufacturing_package` | `manufacturing` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_manufacturing_package` | `manufacturing` | `cli` | `write` | derived | SUPPORTED | unit | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 | `validate_for_manufacturing` | `manufacturing` | `sexpr` | `read` | — | PARTIAL | unit | test | `crates/konnect-core/src/tools/manufacturing.rs` | heuristic audit, not a validator — ERC/DRC decide whether a design is sound |
 | `estimate_cost` | `manufacturing` | `internal` | `read` | — | PARTIAL | unit | test | `crates/konnect-core/tests/sourcing_and_manufacturing.rs` | an order-of-magnitude estimate from stored per-fab-house rates, not a quote |
 
@@ -456,19 +460,19 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
-| `export_gerber` | `pcb_export` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_gerber` | `pcb_export` | `cli` | `write` | derived | SUPPORTED | unit | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### drill
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
-| `export_drill` | `pcb_export` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
+| `export_drill` | `pcb_export` | `cli` | `write` | derived | SUPPORTED | unit | test | `crates/konnect-core/src/tools/pcb_export.rs` |  |
 
 ### pick_place
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
-| `export_position_file` | `pcb_export` | `cli` | `write` | derived | UNPROVEN | kicad-parsed | test | `crates/konnect-core/tests/cli_tools.rs` |  |
+| `export_position_file` | `pcb_export` | `cli` | `write` | derived | SUPPORTED | unit | test | `crates/konnect-core/tests/cli_tools.rs` |  |
 
 ### datasheet
 

@@ -6601,16 +6601,33 @@ X2, X5.
 
 ### Tâches
 
-- [ ] X6.1 Recenser les mutations par édition directe de S-expression dont les
+- [x] X6.1 Recenser les mutations par édition directe de S-expression dont les
   tests ne vérifient que nos propres structures.
-- [ ] X6.2 Produire la liste : outil, transport, preuve actuelle, preuve
+- [x] X6.2 Produire la liste : outil, transport, preuve actuelle, preuve
   requise, action recommandée.
-- [ ] X6.3 Corriger uniquement ce qui menace immédiatement l'intégrité du
+- [x] X6.3 Corriger uniquement ce qui menace immédiatement l'intégrité du
   document ; documenter le reste comme suite de travail.
 
 ### Validation
 
-Liste committée, et toute correction retenue prouvée par l'arbitre.
+L'audit a trouvé un troisième défaut de la classe X1 et l'a corrigé :
+`set_layer_constraints` insérait un `(rule …)` dans le `(setup …)` du board, et
+`kicad-cli` refusait de charger le résultat (« Inattendu rule », exit 3). Les
+règles personnalisées vivent dans `<board>.kicad_dru`. Corrigé, idempotent
+(une deuxième pose remplace la règle au lieu de l'empiler), et prouvé :
+`kicad_enforces_the_layer_rule_it_was_given` fait apparaître la violation
+attendue. Après correction, plus aucun code n'insère quoi que ce soit dans
+`(setup …)`.
+
+L'audit a aussi trouvé un angle mort du contrat X2 lui-même : les écritures
+`Derived` — exports, rapports — exigeaient un rechargement KiCad qui n'a pas de
+sens pour un gerber. Barre ramenée à `Internal` pour elles ; 8 outils
+retrouvent leur statut.
+
+La liste est la matrice : colonnes `needs` et `proof` par outil, plus l'action
+par classe d'adaptateur. Reste 78 `UNPROVEN` — 70 `sexpr`, 4 `ipc→sexpr`,
+3 `ipc`, 1 `cli` — dont aucun n'est démontré fautif : personne ne les a soumis
+à KiCad. C'est la suite de travail, explicitement documentée.
 
 ## X7 — Benchmark PCB live
 

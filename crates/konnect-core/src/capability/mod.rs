@@ -721,10 +721,19 @@ impl Capability {
     ///   came to report success on a board KiCAD refuses (X1);
     /// * an operation whose whole effect is on the running editor leaves no
     ///   file to parse, so only the live session can confirm it;
-    /// * writes that never touch a KiCAD document — a report, the server's own
-    ///   state, a third-party call — have no KiCAD verdict to seek.
+    /// * writes that never touch a KiCAD document — a report, an export, the
+    ///   server's own state, a third-party call — have no KiCAD verdict to
+    ///   seek.
     pub fn required_proof(&self) -> Bar {
         if tool_effect(self.tool) == Effect::Read || !self.domain.is_kicad_domain() {
+            return Bar::Internal;
+        }
+        // A write that is not a design document has no KiCAD verdict to seek:
+        // `export_gerber` produces a fabrication artifact, and produces it *by*
+        // handing the work to kicad-cli. Asking KiCAD to reload a gerber would
+        // be a bar no correct implementation could clear, which is its own kind
+        // of dishonest matrix.
+        if tool_write_target(self.tool) == WriteTarget::Derived {
             return Bar::Internal;
         }
         match self.adapter {

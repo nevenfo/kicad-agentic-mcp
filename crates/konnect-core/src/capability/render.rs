@@ -124,8 +124,22 @@ pub fn render(coverage: &Coverage) -> String {
     let _ = writeln!(
         out,
         "Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. \
-         An entry is `supported` only when a test that actually runs, or a golden benchmark \
-         task, exercises it; the proof is named in the tables below.\n"
+         An entry is `supported` only when the proof found for it is at least the proof its \
+         transport requires; both are named in the tables below, as `needs` and `proof`.\n\n\
+         `unproven` is the gap between those two: the tool runs, our own tests agree with it, \
+         and KiCAD has never been asked. That is the status a mutation gets when it is only \
+         ever exercised against the code that wrote it — which is how `set_design_rules` came \
+         to report success on a board `kicad-cli` refuses to load. Clearing it takes KiCAD \
+         reloading the document, or a live session reading the result back, and those suites \
+         are opt-in: `gate.ps1` runs them on a machine with KiCAD, CI has none installed.\n\n\
+         The action follows the adapter. `sexpr` writes edit a document directly and are the \
+         class that produced every defect found so far, so each needs a test that mutates a \
+         throwaway project and hands it to `kicad-cli`; three turned out to be writing keys \
+         KiCAD does not have (`set_design_rules`, `set_active_layer`, `set_layer_constraints`) \
+         and are fixed. `ipc` and `ipc→sexpr` writes need a live read-back instead, their \
+         effect being on the running editor. None of this says the rest are broken: it says \
+         nobody has asked KiCAD, and the three that were asked are why the distinction earns \
+         its place.\n"
     );
 
     // ── The V1 comparison target ────────────────────────────────────────────

@@ -413,16 +413,18 @@ async fn kicad_applies_the_constraints_it_was_given() {
     assert_eq!(reported["rules"]["min_through_hole_diameter"], json!(0.3));
 }
 
-/// A per-layer constraint is written against the layer it names.
+/// A per-layer constraint becomes a KiCAD rule, in the file KiCAD reads rules
+/// from, and the board is not touched.
 #[tokio::test]
-async fn a_layer_constraint_names_its_layer() {
+async fn a_layer_constraint_becomes_a_rule_in_the_rules_file() {
     let h = Harness::new();
-    let board = harness::as_str(&h.fixture("test.kicad_pcb")).to_string();
+    let board = h.write("layers.kicad_pcb", harness::CLEARANCE_BOARD);
+    let before = std::fs::read_to_string(&board).expect("the board is readable");
 
     h.json(
         "set_layer_constraints",
         json!({
-            "board": board,
+            "board": harness::as_str(&board),
             "layer": "F.Cu",
             "min_clearance": 0.25,
             "min_trace_width": 0.2
@@ -430,14 +432,109 @@ async fn a_layer_constraint_names_its_layer() {
     )
     .await;
 
-    let text = std::fs::read_to_string(&board).expect("the board is readable");
+    let rules = std::fs::read_to_string(h.path("layers.kicad_dru")).expect("the rules file exists");
     assert!(
-        text.contains("F.Cu"),
-        "the constrained layer is not named in the file"
+        rules.starts_with("(version 1)"),
+        "no rules-file header: {rules}"
     );
     assert!(
-        text.contains("0.25"),
-        "the clearance was not written:\n{text}"
+        rules.contains("(constraint clearance (min 0.25mm))"),
+        "{rules}"
+    );
+    assert!(
+        rules.contains("(constraint track_width (min 0.2mm))"),
+        "{rules}"
+    );
+    assert!(rules.contains("A.Layer == 'F.Cu'"), "{rules}");
+
+    assert_eq!(
+        std::fs::read_to_string(&board).expect("the board is readable"),
+        before,
+        "the board was edited; a (rule ...) there is what KiCAD refuses to load"
+    );
+}
+
+/// Setting the same constraint twice replaces the rule instead of stacking a
+/// second one, and a rule somebody else wrote — comments included — survives.
+#[tokio::test]
+async fn a_second_call_replaces_its_own_rule_and_spares_everyone_elses() {
+    let h = Harness::new();
+    let board = h.write("layers.kicad_pcb", harness::CLEARANCE_BOARD);
+    h.write(
+        "layers.kicad_dru",
+        "(version 1)
+
+# Hand-written, and it stays.
+(rule \"mine\"
+	(constraint clearance (min 0.9mm))
+	(condition \"A.memberOfFootprint('U1')\"))
+",
+    );
+
+    for mm in [0.25, 0.42] {
+        h.json(
+            "set_layer_constraints",
+            json!({ "board": harness::as_str(&board), "layer": "F.Cu", "min_clearance": mm }),
+        )
+        .await;
+    }
+
+    let rules = std::fs::read_to_string(h.path("layers.kicad_dru")).expect("readable");
+    assert_eq!(
+        rules.matches("konnect F.Cu clearance").count(),
+        1,
+        "the rule was stacked rather than replaced: {rules}"
+    );
+    assert!(
+        rules.contains("(min 0.42mm)"),
+        "the second call did not win: {rules}"
+    );
+    assert!(
+        !rules.contains("(min 0.25mm)"),
+        "the first call is still there: {rules}"
+    );
+    assert!(
+        rules.contains("# Hand-written, and it stays."),
+        "a comment was lost: {rules}"
+    );
+    assert!(
+        rules.contains("A.memberOfFootprint('U1')"),
+        "someone else's rule was lost: {rules}"
+    );
+}
+
+/// KiCAD reads the rule and enforces it.
+///
+/// The fixture leaves 0.75 mm between two tracks and the project file asks for
+/// 0.1 mm, so nothing violates until the per-layer rule says 1.5 mm. If the
+/// rule went somewhere KiCAD does not read — as it used to, into the board's
+/// `(setup ...)`, which stops the board loading at all — the count does not
+/// move and this fails.
+#[tokio::test]
+#[ignore = "requires kicad-cli; run with --ignored"]
+async fn kicad_enforces_the_layer_rule_it_was_given() {
+    let h = Harness::new();
+    let board = h.write("layers.kicad_pcb", harness::CLEARANCE_BOARD);
+    h.write("layers.kicad_pro", harness::BLANK_PROJECT);
+    h.json(
+        "set_design_rules",
+        json!({ "board": harness::as_str(&board), "min_clearance": 0.1 }),
+    )
+    .await;
+    let quiet = harness::kicad_reloads(&board);
+    assert_eq!(quiet.get("clearance"), None, "unexpectedly loud: {quiet:?}");
+
+    h.json(
+        "set_layer_constraints",
+        json!({ "board": harness::as_str(&board), "layer": "F.Cu", "min_clearance": 1.5 }),
+    )
+    .await;
+
+    let loud = harness::kicad_reloads(&board);
+    assert_eq!(
+        loud.get("clearance"),
+        Some(&1),
+        "KiCAD did not enforce the layer rule: {loud:?}"
     );
 }
 
