@@ -66,7 +66,7 @@ Rules that survive every phase. Breaking one is a defect, not a trade-off.
 - **INV11 — a checkbox in this file means proof**, not intention: targeted tests,
   integration, gate, or a benchmark run whose artefact is committed.
 
-## Plateforme — KiCad 10 ground truth
+## Plateforme : KiCad 10 ground truth
 
 Verified against KiCad sources, 2026-08-10. These are constraints, not opinions.
 
@@ -6375,3 +6375,308 @@ valeur attendue, plus une validation KiCad pertinente.
 - [x] W.5.3 Installer `v1.1.4` comme seule version en vigueur pour les clients,
   vérifier le runtime actif et conserver uniquement le rollback explicite vers
   `v1.1.3`.
+
+# Phase X — Preuve réelle des mutations
+
+## Objectif
+
+Une mutation ne peut plus être publiée `SUPPORTED` parce que notre propre code
+ou nos propres tests l'affirment. Pour une mutation KiCad, la vérité vient de
+KiCad : `kicad-cli` recharge le document, ou l'IPC officiel le relit. Le but
+n'est pas d'augmenter le nombre d'outils supportés — une baisse de couverture
+est un résultat acceptable — mais d'atteindre **zéro faux succès** sur les
+capacités déclarées supportées.
+
+## Invariants de la phase
+
+- L'architecture ne bouge pas : Plan IR typé, validation, exécution
+  déterministe, transaction, read-back, preuve. PCB par IPC, schématique par
+  S-expression contrôlée, ERC/DRC/exports par `kicad-cli`.
+- Une réponse RPC `success` n'est pas une preuve. La relecture des octets
+  écrits par notre propre code n'est pas une preuve de compatibilité KiCad.
+- KiCad 10.0.6 est la référence de validation. Aucun pari architectural sur
+  KiCad 11 / 10.99 dans cette phase.
+- Aucun réparateur générique de `.kicad_pcb`, aucun parser tolérant, aucun
+  `force=true` contournant une validation KiCad.
+- Ordre des transports : API/IPC officiel > CLI > fichier documenté > GUI en
+  dernier recours.
+- L'upstream Konnect est un réservoir technologique et une source d'étude,
+  jamais une source de vérité : import sélectif compris, adapté et testé, sans
+  merge ni rebase massif.
+- Aucun test n'est supprimé ni affaibli pour obtenir du vert. Un critère de
+  preuve n'est jamais assoupli pour préserver un chiffre de couverture.
+- Les expériences destructrices se font sur projet jetable, jamais sur un
+  projet de l'utilisateur. La variante fautive du test de falsification n'est
+  jamais commitée.
+
+## Vérité KiCad 10.0.6 relevée sur cette machine, pas supposée
+
+Arbitre : `kicad-cli 10.0.6`. Projet jetable : copie du demo `microwave` livré
+avec l'installation. Références croisées : `HifiAmp_TPA3255.kicad_pro` (projet
+réel, `meta.version` 3) et `CM5_MINIMA_3.kicad_pro` (demo officiel).
+
+- Les contraintes globales vivent dans le `.kicad_pro`, sous
+  `board.design_settings.rules`, en millimètres flottants. Clés réelles :
+  `min_clearance`, `min_track_width`, `min_hole_to_hole`,
+  `min_via_diameter`, `min_through_hole_diameter`, `min_via_annular_width`,
+  `min_copper_edge_clearance`, `min_hole_clearance`, `min_microvia_diameter`,
+  `min_microvia_drill`, `min_text_height`, `min_text_thickness`,
+  `min_connection`, `min_resolved_spokes`, `max_error`.
+- **Il n'existe ni `min_via_size` ni `min_via_drill`** dans ce vocabulaire :
+  les deux arguments actuels de `set_design_rules` ne nomment aucune clé
+  KiCad. Le diamètre de via est `min_via_diameter` ; le perçage traversant
+  minimal est `min_through_hole_diameter`.
+- Un `.kicad_pcb` produit par KiCad ne contient **aucune** de ces clés dans son
+  bloc `(setup ...)` : zéro occurrence sur le projet réel mesuré.
+- `active_layer` existe, mais dans le `.kicad_prl` — préférences **locales** du
+  projet — sous `board.active_layer`, et c'est un **entier** (0 = F.Cu), pas
+  une chaîne. Ce fichier est une préférence de session, couramment gitignoré.
+- L'IPC officiel expose `GetActiveLayer` et `SetActiveLayer`
+  (`proto/board/board_commands.proto`), avec `BoardLayer` typé. Le proto est
+  présent dans le dépôt ; le binding client Rust ne l'est pas encore.
+- Les contraintes globales ne sont **pas** exposées par l'IPC :
+  `project_settings.proto` ne couvre que les netclasses (`clearance`,
+  `track_width`, `diff_pair_track_width`). Le transport des design rules est
+  donc le fichier `.kicad_pro`, arbitré par `kicad-cli`.
+
+## X1 — Reproduction des deux défauts contre KiCad
+
+### Objectif
+
+Établir par l'arbitre, et non par lecture de code, que les deux implémentations
+en place produisent un document que KiCad refuse, pendant que le serveur
+annonce un succès.
+
+### Dépendances
+
+Aucune.
+
+### Tâches
+
+- [x] X1.1 Projet jetable : copie du demo `microwave`, baseline `kicad-cli pcb
+  drc` qui charge le document.
+- [x] X1.2 Reproduire l'écriture de `set_design_rules` (transcription fidèle de
+  `set_constraint`) et soumettre le résultat à `kicad-cli`.
+- [x] X1.3 Reproduire l'écriture de `set_active_layer` et soumettre le résultat
+  à `kicad-cli`.
+- [x] X1.4 Relever la vérité de stockage KiCad 10.0.6 pour les deux opérations.
+
+### Validation
+
+`kicad-cli pcb drc` charge la copie intacte (exit 0, 24 violations de fond) et
+refuse les deux copies mutées, exit 3 :
+- `set_design_rules` → « Inattendu min_clearance … ligne 77 », alors que le
+  handler retourne `{"success": true, "changed": [...]}` sans condition ;
+- `set_active_layer` → « Inattendu active_layer … ligne 33 », alors que le
+  handler retourne `{"active_layer": "B.Cu"}`.
+
+## X2 — Le niveau de preuve exigé devient une propriété de la capacité
+
+### Objectif
+
+`Proof::Test` — un test qui n'interroge que notre propre code — ne peut plus
+suffire à publier `SUPPORTED` une mutation dont le résultat n'est vérifiable
+que par KiCad. L'information manquante n'est pas le niveau atteint, déjà
+modélisé par `coverage::Proof`, mais le niveau **exigé** par la capacité.
+
+### Dépendances
+
+X1.
+
+### Tâches
+
+- [ ] X2.1 Ajouter à `Capability` le niveau de preuve exigé, dérivé du couple
+  (effet, adaptateur) plutôt que déclaré à la main, et le rendre visible dans
+  la matrice.
+- [ ] X2.2 `Capability::status` rétrograde toute capacité dont la preuve
+  trouvée est plus faible que la preuve exigée, avec un statut qui nomme la
+  cause.
+- [ ] X2.3 Distinguer dans `coverage::Proof` une preuve arbitrée par KiCad
+  d'une preuve interne, et une preuve live d'une preuve fichier.
+- [ ] X2.4 Régénérer `docs/capability-matrix.md` et absorber la baisse de
+  couverture sans toucher aux critères.
+
+### Validation
+
+`cargo test` du workspace vert, matrice régénérée sans dérive, et au moins une
+capacité effectivement rétrogradée par le nouveau contrat.
+
+## X3 — `set_design_rules` écrit là où KiCad lit
+
+### Objectif
+
+Supprimer l'écriture dans `(setup ...)` et porter l'opération sur
+`board.design_settings.rules` du `.kicad_pro`, avec le vocabulaire réel de
+KiCad 10.0.6 et un read-back arbitré.
+
+### Dépendances
+
+X1, X2.
+
+### Tâches
+
+- [ ] X3.1 Retirer `set_constraint` du chemin de mutation et corriger le
+  vocabulaire d'arguments (`min_via_size` et `min_via_drill` ne nomment aucune
+  clé KiCad).
+- [ ] X3.2 Écrire dans le `.kicad_pro` en préservant toutes les propriétés non
+  demandées, de façon atomique, avec le comportement défini quand le fichier
+  est absent.
+- [ ] X3.3 `get_design_rules` lit la même source que celle où KiCad lit.
+- [ ] X3.4 Aucun succès retourné si le read-back ne confirme pas les valeurs.
+
+### Validation
+
+Sur projet jetable, quatre valeurs volontairement distinctes appliquées
+ensemble, puis relues exactement ; `.kicad_pcb` et `.kicad_pro` toujours
+chargés par `kicad-cli` ; aucune propriété sans rapport modifiée.
+
+## X4 — `set_active_layer` par l'IPC officiel, ou refus explicite
+
+### Objectif
+
+Cesser d'inventer `(active_layer …)` dans le `.kicad_pcb`. La couche active est
+un état de session de l'éditeur : soit elle passe par `SetActiveLayer` avec
+read-back `GetActiveLayer`, soit l'outil refuse sans toucher un octet.
+
+### Dépendances
+
+X1, X2.
+
+### Tâches
+
+- [ ] X4.1 Supprimer l'écriture fichier du chemin de `set_active_layer`.
+- [ ] X4.2 Ajouter le binding client `SetActiveLayer` / `GetActiveLayer` et
+  la traduction de nom de couche vers `BoardLayer`.
+- [ ] X4.3 Read-back obligatoire ; sans KiCad vivant, refus structuré.
+- [ ] X4.4 Reclasser la capacité selon le résultat obtenu.
+
+### Validation
+
+Test live : la couche demandée est relue depuis KiCad. Hors session live, le
+refus est explicite et le `.kicad_pcb` est inchangé octet pour octet.
+
+## X5 — Gate de falsification
+
+### Objectif
+
+Prouver que le nouveau contrat détecte réellement une implémentation fautive,
+au lieu d'accompagner l'implémentation correcte.
+
+### Dépendances
+
+X3, X4.
+
+### Tâches
+
+- [ ] X5.1 Réintroduire localement, sans jamais la committer, l'écriture
+  fautive dans `(setup ...)`.
+- [ ] X5.2 Vérifier que le gate passe au rouge, et sur quelle assertion.
+- [ ] X5.3 Restaurer l'implémentation correcte et vérifier le retour au vert.
+
+### Validation
+
+Rouge observé avec la variante fautive, vert restauré, `git status` propre.
+
+## X6 — Audit ciblé des autres mutations à risque
+
+### Objectif
+
+Trouver les mutations qui partagent le même défaut — succès annoncé sans preuve
+externe — sans ouvrir un chantier sans fin.
+
+### Dépendances
+
+X2, X5.
+
+### Tâches
+
+- [ ] X6.1 Recenser les mutations par édition directe de S-expression dont les
+  tests ne vérifient que nos propres structures.
+- [ ] X6.2 Produire la liste : outil, transport, preuve actuelle, preuve
+  requise, action recommandée.
+- [ ] X6.3 Corriger uniquement ce qui menace immédiatement l'intégrité du
+  document ; documenter le reste comme suite de travail.
+
+### Validation
+
+Liste committée, et toute correction retenue prouvée par l'arbitre.
+
+## X7 — Benchmark PCB live
+
+### Objectif
+
+Un petit corpus représentatif qui sépare succès RPC, succès fonctionnel,
+validité du document, read-back et rollback, avec au moins un cas conçu pour
+détecter un faux succès.
+
+### Dépendances
+
+X2, X3, X4, X5.
+
+### Tâches
+
+- [ ] X7.1 Environnement enregistré : version KiCad exacte, OS, SHA du fork,
+  SHA upstream testé.
+- [ ] X7.2 Corpus : lecture, mutation simple, flip, routage, design rules,
+  atomicité/rollback, anti-faux-succès.
+- [ ] X7.3 Mesures par tâche : succès fonctionnel, validité KiCad, appels MCP,
+  durée, comportement en erreur, rollback, différences non demandées.
+
+### Validation
+
+Résultats committés, corpus assez petit pour être honnête et assez large pour
+couvrir les classes visées ; aucune conclusion de supériorité globale.
+
+## X8 — Comparaison upstream et `flip_component`
+
+### Objectif
+
+Comparer le fork à l'upstream Konnect au moment de l'exécution sur les seules
+zones pertinentes, puis importer `flip_component` si le bénéfice est net.
+
+### Dépendances
+
+X7.
+
+### Tâches
+
+- [ ] X8.1 Relever l'état réel d'upstream, sans repartir de chiffres datés.
+- [ ] X8.2 Inspecter `flip_component`, `update_pcb_from_schematic`, design
+  rules, read-back, transaction, footprints board-only, dry-run.
+- [ ] X8.3 Implémenter `flip_component` par la voie officielle si justifié :
+  identité préservée, read-back, transaction et rollback existants.
+- [ ] X8.4 Fixture propre, indépendante de tout projet utilisateur, proche du
+  cas `C310`/`C311`.
+
+### Validation
+
+`F.Cu → B.Cu` et `B.Cu → F.Cu` relus depuis KiCad ; side, orientation,
+position, pastilles, références et identité vérifiés ; aucun changement
+parasite.
+
+## X9 — Évaluation de `update_pcb_from_schematic`
+
+### Objectif
+
+Décider explicitement entre importer/adapter, construire une variante plus
+simple, ou reporter — jamais importer au seul motif que la fonctionnalité
+existe upstream.
+
+### Dépendances
+
+X8.
+
+### Tâches
+
+- [ ] X9.1 Répondre aux questions d'invariants : calcul du delta, identité des
+  composants, cas limites, protection du placement et du routage, dry-run,
+  plan périmé, transaction, read-back, bugs historiques et protections ajoutées.
+- [ ] X9.2 Trancher A / B / C et écrire la décision.
+- [ ] X9.3 Si implémentation : chemin vertical minimal fiable, plan périmé
+  refusé, aucune mutation partielle silencieuse.
+
+### Validation
+
+Décision écrite et justifiée. Si report, le report est explicite. Si
+implémentation, read-back valide réellement l'opération et le routage existant
+n'est pas silencieusement détruit.
