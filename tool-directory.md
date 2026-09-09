@@ -10,7 +10,7 @@ Canonical reference for every MCP tool exposed by Konnect. Generated from the Ru
 ## Overview
 
 - **22 toolsets** organized into 13 categories
-- **203 registered tools** + **13 always-visible meta-tools** = **216 total**
+- **204 registered tools** + **13 always-visible meta-tools** = **217 total**
 - **Four ways to reach a tool**, cheapest last:
   1. **Toolset loading** — `list_toolboxes` → `load_toolset(name)` exposes a whole domain in `tools/list`; `unload_toolset(name)` prunes it. Coarse, and every load makes the client re-fetch the entire catalogue.
   2. **Tool loading** — `find_capabilities(intent)` → `load_tools([names])` exposes exactly the tools named. Same refresh, far less of it.
@@ -36,7 +36,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 
 | Tool | Purpose |
 |------|---------|
-| `find_capabilities` | Search all 203 tools by plain-language intent; returns name + toolset + one-line summary. |
+| `find_capabilities` | Search all 204 tools by plain-language intent; returns name + toolset + one-line summary. |
 | `load_tools` | Expose specific tools by name without loading their toolset. |
 | `list_toolboxes` | List all 22 toolsets with category, tool count, and whether each is currently loaded. |
 | `load_toolset` | Load a toolset by name to expose its tools in `tools/list`. Returns the list of tools added. |
@@ -223,14 +223,14 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `get_board_extents` | Return the bounding box of all objects on the board (IPC, falls back to file parse). |
 | `get_layer_list` | Return all layers defined in the board with names and types. |
 | `add_layer` | Add a new inner copper or technical layer to the board stack. |
-| `set_active_layer` | Set the active layer recorded in the board file's setup section. |
+| `set_active_layer` | Move the running KiCAD editor to a layer. Session state, not board content — KiCAD keeps it outside the `.kicad_pcb` — so it needs a live editor holding this board, and the result is read back from KiCAD before it is reported. |
 | `add_board_outline` | Add a rectangular board outline on the Edge.Cuts layer at specified coordinates. |
 | `add_mounting_hole` | Add an NPTH mounting hole footprint at the specified position. |
 | `add_board_text` | Add a silkscreen or fabrication text string to the board. |
 | `add_zone` | Add a copper fill zone polygon on a specified layer and net. |
 | `import_svg_logo` | Import an SVG file as filled silkscreen/copper artwork (curves flattened to polygons). |
 
-### `pcb_components` · 13 tools
+### `pcb_components` · 14 tools
 **Purpose:** Place, move, rotate, align, and duplicate PCB footprints.
 **Source:** [`crates/konnect-core/src/tools/pcb_components.rs`](crates/konnect-core/src/tools/pcb_components.rs)
 
@@ -241,6 +241,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `rotate_component` | Set the rotation angle of a placed footprint via KiCAD IPC. |
 | `delete_component` | Remove a footprint from the board via KiCAD IPC. |
 | `edit_component` | Update the value or other properties of a placed footprint via KiCAD IPC. |
+| `flip_component` | Set a placed footprint to F.Cu or B.Cu with KiCAD-equivalent geometry mirroring. Requires a closed board: it refuses while KiCAD holds this board, refuses geometry it cannot mirror, and checks the revision before writing. |
 | `find_component` | Find a footprint by reference designator and return its position. |
 | `get_component_pads` | Return pad positions and net assignments for a footprint. |
 | `get_pad_position` | Return the schematic-space position of a specific pad number on a footprint. |
@@ -346,12 +347,12 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | Tool | Description |
 |------|-------------|
 | `run_drc` | Run the Design Rule Check on the PCB and return structured violation results. |
-| `set_design_rules` | Set board-level design rules (clearance, trace width, via size) in the PCB file. |
+| `set_design_rules` | Set the board-wide design constraints. KiCAD keeps these in the project file (`<board>.kicad_pro`, under `board.design_settings.rules`), never in the board, so that file must exist. Argument names are KiCAD's own, and the values are read back after the write. |
 | `get_design_rules` | Return the current design rule constraints defined in the PCB file. |
 | `check_kicad_ui` | Check whether the KiCAD GUI application is running and responsive. |
 | `launch_kicad_ui` | Launch the KiCAD GUI application and optionally open a project file. |
 | `copy_routing_pattern` | Copy a routing pattern (traces and vias) from one region of the board to another. |
-| `set_layer_constraints` | Set per-layer design constraints (min trace width, clearance) in board setup. |
+| `set_layer_constraints` | Set per-layer design constraints as KiCAD custom rules, in the board's own rules file (`<board>.kicad_dru`), created if absent. A second call for the same layer and constraint replaces its rule rather than stacking another beside it. |
 | `check_clearance` | Check the physical clearance (distance) between two components on the PCB. |
 
 ---

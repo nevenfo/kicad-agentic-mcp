@@ -15,7 +15,8 @@ use crate::tools::{get_path, require_f64, require_str, require_u64, ToolContext,
 use crate::try_arg;
 use anyhow::Context;
 use konnect_sexp::writer::{
-    apply_edits, find_balanced_block, find_block_starts, new_uuid, write_atomic,
+    apply_edits, find_balanced_block, find_block_starts, find_direct_child_blocks, new_uuid,
+    read_consistent, write_atomic, write_atomic_if_unchanged,
 };
 use konnect_sexp::SexpEdit;
 use serde_json::json;
@@ -825,6 +826,635 @@ fn insert_into_board(board_path: &Path, blocks: &[String]) -> anyhow::Result<()>
     Ok(())
 }
 
+fn footprint_reference(footprint: &konnect_sexp::SexpNode) -> Option<String> {
+    footprint
+        .find_all("property")
+        .into_iter()
+        .find(|property| {
+            property.get(1).and_then(konnect_sexp::SexpNode::as_str) == Some("Reference")
+        })
+        .and_then(|property| property.get(2))
+        .and_then(konnect_sexp::SexpNode::as_str)
+        .or_else(|| {
+            footprint
+                .find_all("fp_text")
+                .into_iter()
+                .find(|text| {
+                    text.get(1).and_then(konnect_sexp::SexpNode::as_str) == Some("reference")
+                })
+                .and_then(|text| text.get(2))
+                .and_then(konnect_sexp::SexpNode::as_str)
+        })
+        .map(str::to_string)
+}
+
+fn persist_board_replacement(
+    board_path: &Path,
+    expected: &str,
+    replacement: &str,
+) -> Result<(), konnect_sexp::SexpError> {
+    write_atomic_if_unchanged(board_path, expected, replacement)
+}
+
+/// Why a closed-board placement update could not be applied.
+///
+/// The handlers have to tell a caller's mistake — a reference that is not on
+/// this board — from a board Konnect declines to edit, from a genuine I/O
+/// failure, and report each differently. Deciding that by matching on the
+/// error's message text is exactly what the typed IPC boundary
+/// (`tools::ipc_boundary`) forbids, and it left every case except the missing
+/// reference surfacing as an unstructured `handler_error` (#194's class).
+#[derive(Debug)]
+pub(crate) enum ClosedBoardError {
+    /// No footprint on this board carries that reference.
+    ReferenceNotFound(String),
+    /// More than one does, so "the" footprint is ambiguous.
+    ReferenceAmbiguous(String),
+    /// The board is not a shape this tool will edit, before or after.
+    Unusable(String),
+    /// Reading or writing failed, or the file changed under us.
+    Io(anyhow::Error),
+}
+
+impl ClosedBoardError {
+    /// The result to hand back. Never `Err`: every one of these is something
+    /// the caller can act on, and all of them leave the board untouched.
+    ///
+    /// Fork adaptation: `board` is taken because this fork's error catalogue
+    /// (D.6.1, `tests/error_catalog_debt.rs`) leaves no room for a plain-text
+    /// `CallToolResult::error`, and the two kinds that are true of `Unusable`
+    /// and `Io` — `MalformedDocument` and `Io` — both name the document. The
+    /// prose is upstream's, unchanged; only the classification is added.
+    pub(crate) fn into_result(self, board: &Path) -> CallToolResult {
+        match self {
+            Self::ReferenceNotFound(reference) => CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "reference".to_string(),
+                    reason: format!("no footprint '{reference}' on this board"),
+                },
+                format!(
+                    "Footprint '{reference}' is not on this board, so there was nothing to \
+                     update. The board file was not modified."
+                ),
+            ),
+            Self::ReferenceAmbiguous(reference) => CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "reference".to_string(),
+                    reason: format!("'{reference}' appears more than once on this board"),
+                },
+                format!(
+                    "Footprint reference '{reference}' appears more than once on the board, so \
+                     it does not identify one footprint. The board file was not modified — \
+                     give the duplicates distinct references first."
+                ),
+            ),
+            Self::Unusable(reason) => CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::MalformedDocument {
+                    path: board.display().to_string(),
+                    detail: reason.clone(),
+                },
+                format!("Refusing to edit the board: {reason}. The board file was not modified."),
+            ),
+            Self::Io(error) => CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::Io {
+                    code: "board_edit_failed",
+                    detail: format!("{error:#}"),
+                },
+                format!("{error:#}"),
+            ),
+        }
+    }
+}
+
+fn direct_children_with_tags(
+    source: &str,
+    parent_tag: &str,
+) -> anyhow::Result<Vec<(usize, usize, String)>> {
+    find_direct_child_blocks(source, parent_tag)
+        .into_iter()
+        .map(|(start, end)| {
+            let node = konnect_sexp::parse_sexp(&source[start..end])?;
+            let tag = node
+                .head()
+                .context("direct child has no S-expression tag")?
+                .to_string();
+            Ok((start, end, tag))
+        })
+        .collect()
+}
+
+/// Whether `source` has at least one direct `(child_tag …)`, without caring
+/// how many or failing on a block that has none.
+fn has_direct_child(source: &str, parent_tag: &str, child_tag: &str) -> bool {
+    direct_children_with_tags(source, parent_tag)
+        .map(|children| children.iter().any(|(_, _, tag)| tag == child_tag))
+        .unwrap_or(false)
+}
+
+fn exactly_one_direct_child(
+    source: &str,
+    parent_tag: &str,
+    child_tag: &str,
+) -> anyhow::Result<(usize, usize)> {
+    let matches: Vec<_> = direct_children_with_tags(source, parent_tag)?
+        .into_iter()
+        .filter_map(|(start, end, tag)| (tag == child_tag).then_some((start, end)))
+        .collect();
+    let [(start, end)] = matches.as_slice() else {
+        anyhow::bail!("{parent_tag} must contain exactly one direct ({child_tag} ...) block");
+    };
+    Ok((*start, *end))
+}
+
+fn at_components(block: &str) -> anyhow::Result<(f64, f64, f64, Vec<String>)> {
+    let at = konnect_sexp::parse_sexp(block)?;
+    if at.head() != Some("at") {
+        anyhow::bail!("expected an (at ...) block");
+    }
+    let x = at
+        .get_f64(1)
+        .context("(at ...) has an invalid X position")?;
+    let y = at
+        .get_f64(2)
+        .context("(at ...) has an invalid Y position")?;
+    let children = at.children().unwrap_or_default();
+    let angle = at.get_f64(3).unwrap_or(0.0);
+    let suffix_start = if at.get_f64(3).is_some() { 4 } else { 3 };
+    let suffix = children
+        .iter()
+        .skip(suffix_start)
+        .map(|child| {
+            child
+                .as_str()
+                .map(str::to_string)
+                .context("(at ...) contains a non-atomic suffix")
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok((x, y, angle, suffix))
+}
+
+fn format_at_with_suffix(x: f64, y: f64, angle: f64, suffix: &[String]) -> String {
+    let mut formatted = format_at(x, y, angle);
+    if !suffix.is_empty() {
+        formatted.insert_str(formatted.len() - 1, &format!(" {}", suffix.join(" ")));
+    }
+    formatted
+}
+
+fn format_xy(tag: &str, x: f64, y: f64) -> String {
+    let at = format_at(x, y, 0.0);
+    format!("({tag}{})", &at["(at".len()..at.len() - 1])
+}
+
+fn normalize_angle(angle: f64) -> f64 {
+    angle.rem_euclid(360.0)
+}
+
+fn normalize_angle_180(angle: f64) -> f64 {
+    let normalized = normalize_angle(angle);
+    if normalized > 180.0 {
+        normalized - 360.0
+    } else {
+        normalized
+    }
+}
+
+fn flipped_layer(layer: &str) -> anyhow::Result<String> {
+    const SIDE_PAIRS: &[(&str, &str)] = &[
+        ("F.Cu", "B.Cu"),
+        ("F.Adhes", "B.Adhes"),
+        ("F.Paste", "B.Paste"),
+        ("F.SilkS", "B.SilkS"),
+        ("F.Mask", "B.Mask"),
+        ("F.CrtYd", "B.CrtYd"),
+        ("F.Fab", "B.Fab"),
+    ];
+    for (front, back) in SIDE_PAIRS {
+        if layer == *front {
+            return Ok((*back).to_string());
+        }
+        if layer == *back {
+            return Ok((*front).to_string());
+        }
+    }
+    if layer.starts_with("F.") || layer.starts_with("B.") {
+        anyhow::bail!("unsupported side-specific KiCad layer '{layer}'");
+    }
+    Ok(layer.to_string())
+}
+
+fn flip_layer_block(block: &str) -> anyhow::Result<String> {
+    let layer = konnect_sexp::parse_sexp(block)?;
+    let name = layer
+        .get(1)
+        .and_then(konnect_sexp::SexpNode::as_str)
+        .context("(layer ...) has no layer name")?;
+    Ok(format!(
+        "(layer {})",
+        quote_sexp_string(&flipped_layer(name)?)
+    ))
+}
+
+fn flip_layers_block(block: &str) -> anyhow::Result<String> {
+    let layers = konnect_sexp::parse_sexp(block)?;
+    let names = layers
+        .children()
+        .unwrap_or_default()
+        .iter()
+        .skip(1)
+        .map(|child| {
+            let name = child
+                .as_str()
+                .context("(layers ...) contains a non-atomic layer name")?;
+            flipped_layer(name).map(|flipped| quote_sexp_string(&flipped))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(format!("(layers {})", names.join(" ")))
+}
+
+fn toggle_text_mirror(effects: &str) -> anyhow::Result<String> {
+    let justify = direct_children_with_tags(effects, "effects")?
+        .into_iter()
+        .filter_map(|(start, end, tag)| (tag == "justify").then_some((start, end)))
+        .collect::<Vec<_>>();
+    match justify.as_slice() {
+        [] => Ok(apply_edits(
+            effects.to_string(),
+            vec![SexpEdit::insert(effects.len() - 1, " (justify mirror)")],
+        )),
+        [(start, end)] => {
+            let node = konnect_sexp::parse_sexp(&effects[*start..*end])?;
+            let mut values = node
+                .children()
+                .unwrap_or_default()
+                .iter()
+                .skip(1)
+                .map(|child| {
+                    child
+                        .as_str()
+                        .map(str::to_string)
+                        .context("(justify ...) contains a non-atomic value")
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            if let Some(index) = values.iter().position(|value| value == "mirror") {
+                values.remove(index);
+            } else {
+                values.push("mirror".to_string());
+            }
+            let replacement = if values.is_empty() {
+                String::new()
+            } else {
+                format!("(justify {})", values.join(" "))
+            };
+            Ok(apply_edits(
+                effects.to_string(),
+                vec![SexpEdit::replace(*start, *end, replacement)],
+            ))
+        }
+        _ => anyhow::bail!("text effects contain duplicate (justify ...) blocks"),
+    }
+}
+
+fn flip_text_block(block: &str, tag: &str) -> anyhow::Result<String> {
+    let (at_start, at_end) = exactly_one_direct_child(block, tag, "at")?;
+    let (x, y, angle, suffix) = at_components(&block[at_start..at_end])?;
+    let (layer_start, layer_end) = exactly_one_direct_child(block, tag, "layer")?;
+    let layer_block = &block[layer_start..layer_end];
+    let layer = konnect_sexp::parse_sexp(layer_block)?;
+    let layer_name = layer
+        .get(1)
+        .and_then(konnect_sexp::SexpNode::as_str)
+        .context("(layer ...) has no layer name")?;
+    let flipped_layer_name = flipped_layer(layer_name)?;
+    let (effects_start, effects_end) = exactly_one_direct_child(block, tag, "effects")?;
+    let effects = if flipped_layer_name == layer_name {
+        block[effects_start..effects_end].to_string()
+    } else {
+        toggle_text_mirror(&block[effects_start..effects_end])?
+    };
+    Ok(apply_edits(
+        block.to_string(),
+        vec![
+            SexpEdit::replace(
+                at_start,
+                at_end,
+                format_at_with_suffix(x, -y, normalize_angle(180.0 - angle), &suffix),
+            ),
+            SexpEdit::replace(
+                layer_start,
+                layer_end,
+                format!("(layer {})", quote_sexp_string(&flipped_layer_name)),
+            ),
+            SexpEdit::replace(effects_start, effects_end, effects),
+        ],
+    ))
+}
+
+fn flip_graphic_block(block: &str, tag: &str) -> anyhow::Result<String> {
+    let point_tags: &[&str] = match tag {
+        "fp_line" | "fp_rect" => &["start", "end"],
+        "fp_circle" => &["center", "end"],
+        "fp_arc" => &["start", "mid", "end"],
+        _ => anyhow::bail!("unsupported footprint graphic '{tag}'"),
+    };
+    let mut edits = Vec::new();
+    let mut points = Vec::new();
+    for point_tag in point_tags {
+        let (start, end) = exactly_one_direct_child(block, tag, point_tag)?;
+        let point = konnect_sexp::parse_sexp(&block[start..end])?;
+        points.push((
+            start,
+            end,
+            point
+                .get_f64(1)
+                .with_context(|| format!("({point_tag} ...) has an invalid X position"))?,
+            -point
+                .get_f64(2)
+                .with_context(|| format!("({point_tag} ...) has an invalid Y position"))?,
+        ));
+    }
+    let source_order: Vec<usize> = if tag == "fp_arc" {
+        vec![2, 1, 0]
+    } else {
+        (0..points.len()).collect()
+    };
+    for (target_index, point_tag) in point_tags.iter().enumerate() {
+        let (target_start, target_end, _, _) = points[target_index];
+        let (_, _, x, y) = points[source_order[target_index]];
+        edits.push(SexpEdit::replace(
+            target_start,
+            target_end,
+            format_xy(point_tag, x, y),
+        ));
+    }
+    let (layer_start, layer_end) = exactly_one_direct_child(block, tag, "layer")?;
+    edits.push(SexpEdit::replace(
+        layer_start,
+        layer_end,
+        flip_layer_block(&block[layer_start..layer_end])?,
+    ));
+    Ok(apply_edits(block.to_string(), edits))
+}
+
+fn flip_poly_block(block: &str) -> anyhow::Result<String> {
+    let (pts_start, pts_end) = exactly_one_direct_child(block, "fp_poly", "pts")?;
+    let pts = &block[pts_start..pts_end];
+    let mut point_edits = Vec::new();
+    for (start, end, tag) in direct_children_with_tags(pts, "pts")? {
+        if tag != "xy" {
+            anyhow::bail!("fp_poly contains unsupported point block '{tag}'");
+        }
+        let point = konnect_sexp::parse_sexp(&pts[start..end])?;
+        let x = point.get_f64(1).context("(xy ...) has an invalid X")?;
+        let y = point.get_f64(2).context("(xy ...) has an invalid Y")?;
+        point_edits.push(SexpEdit::replace(start, end, format_xy("xy", x, -y)));
+    }
+    let mirrored_pts = apply_edits(pts.to_string(), point_edits);
+    let (layer_start, layer_end) = exactly_one_direct_child(block, "fp_poly", "layer")?;
+    Ok(apply_edits(
+        block.to_string(),
+        vec![
+            SexpEdit::replace(pts_start, pts_end, mirrored_pts),
+            SexpEdit::replace(
+                layer_start,
+                layer_end,
+                flip_layer_block(&block[layer_start..layer_end])?,
+            ),
+        ],
+    ))
+}
+
+fn contains_descendant_tag(node: &konnect_sexp::SexpNode, tag: &str) -> bool {
+    node.children().is_some_and(|children| {
+        children
+            .iter()
+            .any(|child| child.head() == Some(tag) || contains_descendant_tag(child, tag))
+    })
+}
+
+fn flip_pad_block(block: &str) -> anyhow::Result<String> {
+    let pad = konnect_sexp::parse_sexp(block)?;
+    if pad.get(3).and_then(konnect_sexp::SexpNode::as_str) == Some("custom") {
+        anyhow::bail!("custom pads are not supported by closed-board footprint flipping");
+    }
+    for unsupported in ["offset", "rect_delta", "chamfer_ratio", "primitives"] {
+        if contains_descendant_tag(&pad, unsupported) {
+            anyhow::bail!(
+                "pad geometry containing ({unsupported} ...) is not supported by closed-board footprint flipping"
+            );
+        }
+    }
+    let (at_start, at_end) = exactly_one_direct_child(block, "pad", "at")?;
+    let (x, y, angle, suffix) = at_components(&block[at_start..at_end])?;
+    let (layers_start, layers_end) = exactly_one_direct_child(block, "pad", "layers")?;
+    Ok(apply_edits(
+        block.to_string(),
+        vec![
+            SexpEdit::replace(
+                at_start,
+                at_end,
+                format_at_with_suffix(x, -y, normalize_angle(-angle), &suffix),
+            ),
+            SexpEdit::replace(
+                layers_start,
+                layers_end,
+                flip_layers_block(&block[layers_start..layers_end])?,
+            ),
+        ],
+    ))
+}
+
+/// Refuse a `(model …)` whose placement a flip would have to move.
+///
+/// KiCad's own flip transforms a model's Y offset and its X/Y rotation; this
+/// tool leaves `(model …)` untouched, which is silently wrong for any model
+/// where those are non-zero. Rather than guess the transform — I have not been
+/// able to measure KiCad's flip directly, because KiCad 10.0.5 exposes no
+/// `FlipItems` to drive it and its demo boards contain no back-side footprint
+/// with a non-zero offset to compare against — this refuses, consistent with
+/// how the rest of this path treats geometry it cannot mirror.
+///
+/// The cost of refusing is close to nothing. Across all **14,818** footprints
+/// in KiCad 10's standard libraries that carry a `(model …)`: `offset.y` is
+/// non-zero in **3**, and `rotate.x`/`rotate.y` in **none**. The three are
+/// `RaspberryPi_Pico_Common_THT` (-24.13 mm, badly wrong if ignored) and two
+/// sub-0.04 mm cases. The 84 footprints with a non-zero `rotate.z` are
+/// unaffected either way, since a flip does not touch Z.
+fn refuse_model_a_flip_would_move(block: &str) -> anyhow::Result<()> {
+    let model = konnect_sexp::parse_sexp(block)?;
+    for (tag, fields) in [("offset", ["x", "y", "z"]), ("rotate", ["x", "y", "z"])] {
+        let Some(node) = model.find_all(tag).into_iter().next() else {
+            continue;
+        };
+        let Some(xyz) = node.find_all("xyz").into_iter().next() else {
+            continue;
+        };
+        // A flip negates offset.y, rotate.x and rotate.y; Z and offset.x ride
+        // along unchanged, so a non-zero value there is not a problem.
+        let moved: &[usize] = if tag == "offset" { &[2] } else { &[1, 2] };
+        for &index in moved {
+            let value = xyz.get_f64(index).unwrap_or(0.0);
+            if value != 0.0 {
+                anyhow::bail!(
+                    "the 3D model's {tag}.{} is {value}, and a flip would have to move it; \
+                     flipping this footprint would leave the model where it was",
+                    fields[index - 1]
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn flip_footprint_block(footprint: &str) -> anyhow::Result<String> {
+    let root = konnect_sexp::parse_sexp(footprint)?;
+    if root.head() != Some("footprint") {
+        anyhow::bail!("expected a footprint root");
+    }
+    let (root_at_start, root_at_end) = exactly_one_direct_child(footprint, "footprint", "at")?;
+    let (x, y, angle, suffix) = at_components(&footprint[root_at_start..root_at_end])?;
+    let (root_layer_start, root_layer_end) =
+        exactly_one_direct_child(footprint, "footprint", "layer")?;
+    let mut edits = vec![
+        SexpEdit::replace(
+            root_at_start,
+            root_at_end,
+            format_at_with_suffix(x, y, normalize_angle_180(-angle), &suffix),
+        ),
+        SexpEdit::replace(
+            root_layer_start,
+            root_layer_end,
+            flip_layer_block(&footprint[root_layer_start..root_layer_end])?,
+        ),
+    ];
+
+    for (start, end, tag) in direct_children_with_tags(footprint, "footprint")? {
+        let block = &footprint[start..end];
+        let replacement = match tag.as_str() {
+            // A property with no `(at …)` carries no geometry, so there is
+            // nothing to mirror and it passes through untouched.
+            //
+            // This is not an edge case. KiCad writes
+            // `(property ki_fp_filters "R_* Resistor_*")` — a bare token, no
+            // position, no layer — into every footprint it places from a
+            // library: 779 of them across the 19 boards shipped in
+            // `share/kicad/demos`. Requiring exactly one `(at …)` on every
+            // property therefore refused practically every real board with
+            // "property must contain exactly one direct (at ...) block",
+            // which is what the first live run of this tool hit. The
+            // synthetic fixture has only positioned properties, so nothing
+            // offline could have caught it.
+            "property" if !has_direct_child(block, "property", "at") => None,
+            "property" | "fp_text" => Some(flip_text_block(block, &tag)?),
+            "fp_line" | "fp_rect" | "fp_circle" | "fp_arc" => {
+                Some(flip_graphic_block(block, &tag)?)
+            }
+            "fp_poly" => Some(flip_poly_block(block)?),
+            "pad" => Some(flip_pad_block(block)?),
+            "model" => {
+                refuse_model_a_flip_would_move(block)?;
+                None
+            }
+            unsupported if unsupported.starts_with("fp_") || unsupported == "zone" => {
+                anyhow::bail!(
+                    "unsupported footprint child '{unsupported}' prevents a safe closed-board flip"
+                )
+            }
+            _ => None,
+        };
+        if let Some(replacement) = replacement {
+            edits.push(SexpEdit::replace(start, end, replacement));
+        }
+    }
+
+    let flipped = apply_edits(footprint.to_string(), edits);
+    let parsed = konnect_sexp::parse_sexp(&flipped)?;
+    if parsed.head() != Some("footprint") {
+        anyhow::bail!("flip changed the footprint root");
+    }
+    Ok(flipped)
+}
+
+fn footprint_layer(footprint: &str) -> anyhow::Result<String> {
+    let (start, end) = exactly_one_direct_child(footprint, "footprint", "layer")?;
+    let layer = konnect_sexp::parse_sexp(&footprint[start..end])?;
+    layer
+        .get(1)
+        .and_then(konnect_sexp::SexpNode::as_str)
+        .map(str::to_string)
+        .context("footprint layer has no name")
+}
+
+fn prepare_closed_board_footprint_side(
+    content: &str,
+    reference: &str,
+    target_layer: &str,
+) -> Result<(String, bool), ClosedBoardError> {
+    if let Err(reason) = check_single_board_form(content) {
+        return Err(ClosedBoardError::Unusable(reason.to_string()));
+    }
+    let mut matched = None;
+    for (start, end, tag) in
+        direct_children_with_tags(content, "kicad_pcb").map_err(ClosedBoardError::Io)?
+    {
+        if tag != "footprint" {
+            continue;
+        }
+        let footprint = konnect_sexp::parse_sexp(&content[start..end])
+            .map_err(|e| ClosedBoardError::Io(e.into()))?;
+        if footprint_reference(&footprint).as_deref() == Some(reference)
+            && matched.replace((start, end)).is_some()
+        {
+            return Err(ClosedBoardError::ReferenceAmbiguous(reference.to_string()));
+        }
+    }
+    let (start, end) =
+        matched.ok_or_else(|| ClosedBoardError::ReferenceNotFound(reference.to_string()))?;
+    let block = &content[start..end];
+    let current_layer = footprint_layer(block).map_err(ClosedBoardError::Io)?;
+    if !matches!(current_layer.as_str(), "F.Cu" | "B.Cu") {
+        return Err(ClosedBoardError::Unusable(format!(
+            "footprint '{reference}' sits on root layer '{current_layer}', which is neither \
+             side of the board"
+        )));
+    }
+    if current_layer == target_layer {
+        return Ok((content.to_string(), false));
+    }
+    let flipped = flip_footprint_block(block)
+        .map_err(|error| ClosedBoardError::Unusable(format!("{error:#}")))?;
+    if footprint_layer(&flipped).map_err(ClosedBoardError::Io)? != target_layer {
+        return Err(ClosedBoardError::Unusable(format!(
+            "flipping '{reference}' did not produce target layer '{target_layer}'"
+        )));
+    }
+    let updated = apply_edits(
+        content.to_string(),
+        vec![SexpEdit::replace(start, end, flipped)],
+    );
+    if let Err(reason) = check_single_board_form(&updated) {
+        return Err(ClosedBoardError::Unusable(format!(
+            "flipping '{reference}' would have produced {reason}"
+        )));
+    }
+    Ok((updated, true))
+}
+
+fn set_closed_board_footprint_side(
+    board_path: &Path,
+    reference: &str,
+    target_layer: &str,
+) -> Result<bool, ClosedBoardError> {
+    let content = read_consistent(board_path).map_err(|e| ClosedBoardError::Io(e.into()))?;
+    let (updated, changed) =
+        prepare_closed_board_footprint_side(&content, reference, target_layer)?;
+    if changed {
+        persist_board_replacement(board_path, &content, &updated)
+            .map_err(|e| ClosedBoardError::Io(e.into()))?;
+    }
+    Ok(changed)
+}
+
 /// Verify `content` is exactly one `(kicad_pcb …)` form and nothing else.
 ///
 /// Checking only that *a* balanced block exists is too weak to back the promise
@@ -923,6 +1553,23 @@ pub fn tools() -> Vec<ToolDef> {
             }),
             |args, ctx| async move { handle_rotate_component(args, ctx).await }
         ),
+        tool!(
+            "flip_component",
+            "Set a placed footprint to F.Cu or B.Cu with KiCAD-equivalent geometry mirroring. \
+             This operation requires a closed board: it safely flips supported footprints with \
+             revision checks and fails closed when KiCAD is reachable or geometry is unsupported.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "board":     { "type": "string" },
+                    "reference": { "type": "string" },
+                    "layer":     { "type": "string", "enum": ["F.Cu", "B.Cu"] }
+                },
+                "required": ["board", "reference", "layer"]
+            }),
+            |args, ctx| async move { handle_flip_component(args, ctx).await }
+        ),
+
         tool!(
             "delete_component",
             "Remove a footprint from the board via KiCAD IPC.",
@@ -1266,6 +1913,106 @@ async fn handle_rotate_component(
     Ok(CallToolResult::json(
         &json!({ "rotated": reference, "rotation": rotation }),
     ))
+}
+
+/// Refuse a direct file edit when KiCAD is reachable AND holds this very
+/// board open: pcbnew saves from its in-memory state, so the file edit would
+/// be silently discarded on its next save — success reported, nothing kept
+/// (#192). For a tool with no IPC implementation this guard is the honest
+/// alternative to the guarded `ipc!` macro, whose unconditional error return
+/// would deny the only path this tool has. A reachable KiCAD holding a
+/// *different* board (or none) does not interfere with this file, and neither
+/// does an unreachable transport, so every failure classification proceeds.
+async fn refuse_if_board_open_in_kicad(
+    ctx: &ToolContext,
+    board_path: &Path,
+    what: &str,
+) -> anyhow::Result<Option<CallToolResult>> {
+    let addr = ctx.config.ipc_address.clone();
+    let requested = board_path.to_path_buf();
+    match crate::tools::ipc_boundary::with_ipc(addr, move |client| {
+        client.ensure_board_is_active(&requested)
+    })
+    .await?
+    {
+        // `Conflict` is the catalogued kind that is true of this: another
+        // writer — KiCad itself, which does not honor the advisory lock —
+        // owns the document, so the identical call works once that writer
+        // lets go, which is what its `TransientClass::State` says.
+        Ok(()) => Ok(Some(CallToolResult::error_kind(
+            crate::mcp::error::ToolErrorKind::Conflict {
+                path: board_path.display().to_string(),
+            },
+            format!(
+                "KiCAD currently holds this board open, and a {what} written to the file \
+                 would be discarded by KiCAD's next save. Close the board in KiCAD (or make \
+                 the edit there) and retry — this tool has no IPC path for a live board yet."
+            ),
+        ))),
+        // `BoardMismatch` is KiCAD answering that it does not hold this board;
+        // `Rejected` is a KiCAD that answered but did not confirm holding it;
+        // `Unreachable`/`Unconfigured` is no live KiCAD at all. None of the
+        // three can discard a write to this file, so all three proceed.
+        Err(_) => Ok(None),
+    }
+}
+
+async fn handle_flip_component(
+    args: &serde_json::Value,
+    ctx: &ToolContext,
+) -> anyhow::Result<CallToolResult> {
+    let board = get_path(args, "board")?;
+    let reference = match require_str(args, "reference") {
+        Ok(value) => value.to_string(),
+        Err(error) => return Ok(error),
+    };
+    let layer = match require_str(args, "layer") {
+        Ok(value) if matches!(value, "F.Cu" | "B.Cu") => value.to_string(),
+        Ok(value) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::InvalidArgument {
+                    field: "layer".to_string(),
+                    reason: format!("must be F.Cu or B.Cu, got '{value}'"),
+                },
+                format!("Footprints can only be flipped between F.Cu and B.Cu, got '{value}'"),
+            ))
+        }
+        Err(error) => return Ok(error),
+    };
+
+    // KiCAD 10.0.5 and the protocol Konnect vendors carry no FlipItems command,
+    // so this tool has no IPC implementation at all — which makes
+    // `refuse_if_board_open_in_kicad` the right gate rather than
+    // `attempt_ipc_write`.
+    //
+    // The distinction is not cosmetic. Running `ensure_board_is_active` and
+    // then bailing unconditionally produced an `anyhow` classified as
+    // `Rejected` — so *every* reachable KiCAD refused the flip, including one
+    // holding an unrelated project, where this board file is demonstrably
+    // free. It also reported Konnect's own refusal as "KiCAD rejected the
+    // footprint flip over IPC", which is the class fixed in v0.5.0. That
+    // misclassification is now gone at the source: "not open" carries the
+    // `BoardNotOpen` marker and classifies as its own answer.
+    //
+    // The helper refuses only when KiCAD holds *this* board, because that is
+    // the only case where the edit would be discarded by its next save.
+    //
+    if let Some(refusal) = refuse_if_board_open_in_kicad(ctx, &board, "footprint flip").await? {
+        return Ok(refusal);
+    }
+
+    match set_closed_board_footprint_side(&board, &reference, &layer) {
+        Ok(changed) => Ok(CallToolResult::json(&json!({
+            "flipped": reference,
+            "layer": layer,
+            "changed": changed,
+            "source": "file",
+            "warning": "KiCAD has no footprint-flip command over IPC, so the board file was \
+                        flipped directly with a revision check. Reopen the board in KiCAD to \
+                        see it."
+        }))),
+        Err(error) => Ok(error.into_result(&board)),
+    }
 }
 
 async fn handle_delete_component(
@@ -2657,6 +3404,687 @@ mod tests {
         let body: serde_json::Value = serde_json::from_str(&result_text(&pad)).unwrap();
         assert_eq!(body["source"], json!("file"), "body: {body}");
         assert_eq!(body["number"], json!("1"), "body: {body}");
+    }
+
+    /// A `ToolContext` whose IPC address is `address`. An empty one classifies
+    /// as transport-unreachable, which is the file-editing path.
+    fn ctx_talking_to(address: String) -> ToolContext {
+        ToolContext::new(
+            crate::tools::ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: address,
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            std::sync::Arc::new(crate::router::ToolRouter::new()),
+        )
+    }
+
+    /// A rep0 endpoint playing a KiCad that holds `board` open: it answers
+    /// `GetOpenDocuments` with that one PCB document and `AS_OK` to everything
+    /// else, which is all `ensure_board_is_active` — and therefore
+    /// `refuse_if_board_open_in_kicad` — looks at.
+    fn spawn_kicad_holding_board(board: &Path) -> String {
+        use konnect_ipc::gen::kiapi;
+        use nng::options::Options;
+        use prost::Message;
+
+        let documents = vec![kiapi::common::types::DocumentSpecifier {
+            r#type: kiapi::common::types::DocumentType::DoctypePcb as i32,
+            project: None,
+            identifier: Some(
+                kiapi::common::types::document_specifier::Identifier::BoardFilename(
+                    board.to_string_lossy().to_string(),
+                ),
+            ),
+        }];
+
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let url = format!("tcp://127.0.0.1:{port}");
+        let socket = nng::Socket::new(nng::Protocol::Rep0).expect("mock rep socket");
+        socket
+            .set_opt::<nng::options::RecvTimeout>(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
+        socket.listen(&url).expect("mock listen");
+
+        std::thread::spawn(move || {
+            while let Ok(message) = socket.recv() {
+                let request = kiapi::common::ApiRequest::decode(message.as_slice()).unwrap();
+                let command = request.message.expect("a command");
+                let body = command.type_url.ends_with("GetOpenDocuments").then(|| {
+                    konnect_ipc::builders::pack_any(
+                        &kiapi::common::commands::GetOpenDocumentsResponse {
+                            documents: documents.clone(),
+                        },
+                        "kiapi.common.commands.GetOpenDocumentsResponse",
+                    )
+                });
+                let response = kiapi::common::ApiResponse {
+                    status: Some(kiapi::common::ApiResponseStatus {
+                        status: kiapi::common::ApiStatusCode::AsOk as i32,
+                        error_message: String::new(),
+                    }),
+                    header: None,
+                    message: body,
+                };
+                if socket
+                    .send(nng::Message::from(response.encode_to_vec().as_slice()))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        url
+    }
+
+    const FLIP_FOOTPRINT: &str = r#"(footprint "Test:Flip"
+  (layer "F.Cu")
+  (at 10 20 30)
+  (property "Reference" "U1"
+    (at 1 -2 40)
+    (layer "F.SilkS")
+    (effects (font (size 1 1)) (justify left))
+  )
+  (fp_line (start 1 2) (end 3 4)
+    (stroke (width 0.1) (type solid))
+    (layer "F.SilkS")
+  )
+  (fp_arc (start 1 2) (mid 3 4) (end 5 6)
+    (stroke (width 0.1) (type solid))
+    (layer "F.Fab")
+  )
+  (fp_poly (pts (xy 1 2) (xy 3 4) (xy 5 6))
+    (stroke (width 0.1) (type solid))
+    (fill no)
+    (layer "F.CrtYd")
+  )
+  (pad "1" smd roundrect (at 2 3 50) (size 1 2)
+    (layers "F.Cu" "F.Paste" "F.Mask")
+    (roundrect_rratio 0.25)
+  )
+  (model "../models/Test.step"
+    (offset (xyz 0 0 0))
+    (scale (xyz 1 1 1))
+    (rotate (xyz 0 0 90))
+  )
+)"#;
+
+    fn flip_board(footprints: &[&str], eol: &str) -> String {
+        let body = footprints
+            .iter()
+            .flat_map(|footprint| footprint.lines())
+            .map(|line| format!("  {line}"))
+            .collect::<Vec<_>>()
+            .join(eol);
+        format!(
+            "(kicad_pcb{eol}  (version 20260206){eol}  (generator \"pcbnew\"){eol}  \
+             (net 0 \"\"){eol}{body}{eol}){eol}"
+        )
+    }
+
+    #[test]
+    fn flip_footprint_matches_kicads_library_frame_transform() {
+        let flipped = flip_footprint_block(FLIP_FOOTPRINT).unwrap();
+
+        assert!(flipped.contains("(layer \"B.Cu\")"), "{flipped}");
+        assert!(flipped.contains("(at 10 20 -30)"), "{flipped}");
+        assert!(flipped.contains("(at 1 2 140)"), "{flipped}");
+        assert!(flipped.contains("(layer \"B.SilkS\")"), "{flipped}");
+        assert!(flipped.contains("(justify left mirror)"), "{flipped}");
+        assert!(flipped.contains("(start 1 -2)"), "{flipped}");
+        assert!(flipped.contains("(end 3 -4)"), "{flipped}");
+        assert!(flipped.contains("(start 5 -6)"), "{flipped}");
+        assert!(flipped.contains("(mid 3 -4)"), "{flipped}");
+        assert!(flipped.contains("(end 1 -2)"), "{flipped}");
+        assert!(flipped.contains("(xy 1 -2)"), "{flipped}");
+        assert!(flipped.contains("(at 2 -3 310)"), "{flipped}");
+        assert!(
+            flipped.contains("(layers \"B.Cu\" \"B.Paste\" \"B.Mask\")"),
+            "{flipped}"
+        );
+        // The model is carried through verbatim. That is only safe because a
+        // model whose placement a flip would have to move is refused outright
+        // — see `a_model_a_flip_would_move_is_refused`. `rotate.z` is not one
+        // of those: a flip does not touch Z.
+        assert!(
+            flipped.contains("(offset (xyz 0 0 0))") && flipped.contains("(rotate (xyz 0 0 90))"),
+            "a model a flip does not move must survive verbatim: {flipped}"
+        );
+        assert!(konnect_sexp::parse_sexp(&flipped).is_ok());
+    }
+
+    /// A property with no position is metadata, not geometry, and must not
+    /// stop the flip.
+    ///
+    /// KiCad writes `(property ki_fp_filters "R_* Resistor_*")` — a bare
+    /// token, no `(at …)`, no layer — into every footprint it places from a
+    /// library. There are **779** of them across the 19 boards in
+    /// `share/kicad/demos`. Requiring exactly one `(at …)` on every property
+    /// therefore refused practically every real board with "property must
+    /// contain exactly one direct (at ...) block", which is what the first
+    /// live run of this tool hit on the stock ecc83 demo.
+    ///
+    /// Nothing offline could have caught it: the synthetic fixture has only
+    /// positioned properties.
+    #[test]
+    fn a_positionless_property_does_not_block_the_flip() {
+        let with_metadata = FLIP_FOOTPRINT.replace(
+            "  (pad \"1\"",
+            "  (property ki_fp_filters \"R_* Resistor_*\")\n  (pad \"1\"",
+        );
+        assert!(
+            with_metadata.contains("ki_fp_filters"),
+            "fixture must carry the metadata property"
+        );
+
+        let flipped = flip_footprint_block(&with_metadata)
+            .expect("a positionless property must not block the flip");
+
+        // Carried through untouched — it has no geometry to mirror.
+        assert!(
+            flipped.contains("(property ki_fp_filters \"R_* Resistor_*\")"),
+            "{flipped}"
+        );
+        // And the positioned ones still flipped.
+        assert!(flipped.contains("(layer \"B.Cu\")"), "{flipped}");
+        assert!(konnect_sexp::parse_sexp(&flipped).is_ok());
+    }
+
+    /// A footprint that is not on either copper side has no "other side" to
+    /// flip to, so it is refused rather than moved to one.
+    ///
+    /// Reachable on any board a user hand-edited or an older tool wrote — and
+    /// the guard existed with nothing exercising it, which the neuter pass
+    /// found.
+    #[tokio::test]
+    async fn a_footprint_on_neither_side_of_the_board_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("inner.kicad_pcb");
+        let stranded = FLIP_FOOTPRINT.replace("(layer \"F.Cu\")", "(layer \"In1.Cu\")");
+        let before = flip_board(&[&stranded], "\n");
+        std::fs::write(&board, &before).unwrap();
+
+        let refusal = handle_flip_component(
+            &json!({
+                "board": board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "B.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(refusal.is_error, "{:?}", refusal.content);
+        let text = result_text(&refusal);
+        assert!(text.contains("In1.Cu"), "{text}");
+        assert!(text.contains("neither side"), "{text}");
+        assert_eq!(std::fs::read_to_string(board).unwrap(), before);
+    }
+
+    /// KiCad's own flip transforms a model's Y offset and its X/Y rotation.
+    /// This path does not transform models at all, so rather than silently
+    /// leave one behind it refuses — the same policy the rest of the flip
+    /// applies to geometry it cannot mirror.
+    ///
+    /// Refusing costs almost nothing. Across all **14,818** footprints in
+    /// KiCad 10's standard libraries carrying a `(model …)`, `offset.y` is
+    /// non-zero in **3** and `rotate.x`/`rotate.y` in **none**; the worst is
+    /// `RaspberryPi_Pico_Common_THT` at -24.13 mm, which would put its model
+    /// roughly 48 mm out. The 84 with a non-zero `rotate.z` are unaffected.
+    #[test]
+    fn a_model_a_flip_would_move_is_refused() {
+        for (label, replacement, needle) in [
+            ("offset.y", "(offset (xyz 0 -24.13 0))", "offset.y"),
+            ("rotate.x", "(rotate (xyz 90 0 0))", "rotate.x"),
+            ("rotate.y", "(rotate (xyz 0 90 0))", "rotate.y"),
+        ] {
+            let source = FLIP_FOOTPRINT
+                .replace("(offset (xyz 0 0 0))", replacement)
+                .replace("(rotate (xyz 0 0 90))", replacement);
+            let error = flip_footprint_block(&source).unwrap_err().to_string();
+            assert!(error.contains(needle), "{label}: {error}");
+            assert!(error.contains("would have to move it"), "{label}: {error}");
+        }
+
+        // The fields a flip leaves alone must not trip it.
+        for untouched in ["(offset (xyz 8.89 0 0))", "(rotate (xyz 0 0 90))"] {
+            let source = FLIP_FOOTPRINT
+                .replace("(offset (xyz 0 0 0))", untouched)
+                .replace("(rotate (xyz 0 0 90))", untouched);
+            assert!(
+                flip_footprint_block(&source).is_ok(),
+                "{untouched} is not moved by a flip and must be accepted"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unreachable_ipc_flips_an_existing_footprint_to_the_requested_side() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("flip.kicad_pcb");
+        std::fs::write(
+            &board,
+            format!(
+                "(kicad_pcb\n  (version 20260206)\n  (generator \"pcbnew\")\n  (net 0 \"\")\n{}\n)\n",
+                FLIP_FOOTPRINT
+                    .lines()
+                    .map(|line| format!("  {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        )
+        .unwrap();
+
+        let flipped = handle_flip_component(
+            &json!({
+                "board": board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "B.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(!flipped.is_error, "{:?}", flipped.content);
+        let result: serde_json::Value =
+            serde_json::from_str(&result_text(&flipped)).expect("flip result must be JSON");
+        assert_eq!(result["source"], "file");
+        assert_eq!(result["layer"], "B.Cu");
+        let written = std::fs::read_to_string(&board).unwrap();
+        assert!(written.contains("(layer \"B.Cu\")"), "{written}");
+        assert!(written.contains("(layers \"B.Cu\" \"B.Paste\" \"B.Mask\")"));
+
+        let repeated = handle_flip_component(
+            &json!({
+                "board": board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "B.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!repeated.is_error, "{:?}", repeated.content);
+        assert_eq!(std::fs::read_to_string(board).unwrap(), written);
+    }
+
+    #[tokio::test]
+    async fn reachable_rejection_prevents_flip_file_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("flip.kicad_pcb");
+        let before = format!(
+            "(kicad_pcb\n  (version 20260206)\n  (generator \"pcbnew\")\n  (net 0 \"\")\n{}\n)\n",
+            FLIP_FOOTPRINT
+                .lines()
+                .map(|line| format!("  {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        std::fs::write(&board, &before).unwrap();
+        let ctx = ToolContext::new(
+            crate::tools::ServerConfig {
+                kicad_cli: String::new(),
+                kicad_binary: String::new(),
+                ipc_address: spawn_rejecting_kicad(),
+                project_dir: None,
+                jlcpcb_db_path: None,
+                auto_load_toolsets: false,
+                mode: kam_state::OperatingMode::Write,
+            },
+            std::sync::Arc::new(crate::router::ToolRouter::new()),
+        );
+
+        let flipped = handle_flip_component(
+            &json!({
+                "board": board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "B.Cu",
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // A KiCAD that answers but does not confirm holding *this* board does
+        // not block the flip: nothing it has open can discard a write to this
+        // file, so refusing would deny a safe edit to anyone with an unrelated
+        // project open. That is `refuse_if_board_open_in_kicad`'s contract,
+        // shared with `add_zone` and the copper-pour path.
+        assert!(!flipped.is_error, "{:?}", flipped.content);
+        let result: serde_json::Value =
+            serde_json::from_str(&result_text(&flipped)).expect("flip result must be JSON");
+        assert_eq!(result["source"], "file");
+        assert_eq!(result["changed"], true);
+        assert_ne!(std::fs::read_to_string(board).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn flip_refuses_the_exact_open_board_without_touching_the_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("flip.kicad_pcb");
+        let before = format!(
+            "(kicad_pcb\n  (version 20260206)\n  (generator \"pcbnew\")\n  (net 0 \"\")\n{}\n)\n",
+            FLIP_FOOTPRINT
+                .lines()
+                .map(|line| format!("  {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        std::fs::write(&board, &before).unwrap();
+        let address = spawn_kicad_holding_board(&board);
+        let ctx = ctx_talking_to(address);
+
+        let result = handle_flip_component(
+            &json!({"board": board, "reference": "U1", "layer": "B.Cu"}),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        assert!(result.is_error);
+        assert!(result_text(&result).contains("footprint flip"));
+        assert_eq!(std::fs::read_to_string(&board).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn flip_proceeds_when_kicad_holds_a_different_board() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("flip.kicad_pcb");
+        let other = tmp.path().join("other.kicad_pcb");
+        let before = format!(
+            "(kicad_pcb\n  (version 20260206)\n  (generator \"pcbnew\")\n  (net 0 \"\")\n{}\n)\n",
+            FLIP_FOOTPRINT
+                .lines()
+                .map(|line| format!("  {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        std::fs::write(&board, &before).unwrap();
+        std::fs::write(&other, "").unwrap();
+        let address = spawn_kicad_holding_board(&other);
+        let ctx = ctx_talking_to(address);
+
+        let result = handle_flip_component(
+            &json!({"board": board, "reference": "U1", "layer": "B.Cu"}),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        assert!(!result.is_error, "{:?}", result.content);
+        assert_ne!(std::fs::read_to_string(&board).unwrap(), before);
+    }
+
+    #[test]
+    fn flip_refuses_custom_pad_geometry_instead_of_corrupting_it() {
+        let custom = FLIP_FOOTPRINT.replace("roundrect (at 2 3 50)", "custom (at 2 3 50)");
+
+        let error = flip_footprint_block(&custom).unwrap_err();
+
+        assert!(error.to_string().contains("custom pads"));
+    }
+
+    #[test]
+    fn flip_refuses_nested_drill_offsets_instead_of_mirroring_only_part_of_the_padstack() {
+        let offset_drill = FLIP_FOOTPRINT.replace(
+            "(roundrect_rratio 0.25)",
+            "(roundrect_rratio 0.25)\n    (drill oval 0.4 0.8 (offset 0.2 0.1))",
+        );
+
+        let error = flip_footprint_block(&offset_drill).unwrap_err();
+
+        assert!(error.to_string().contains("offset"), "{error}");
+    }
+
+    #[test]
+    fn flip_does_not_mirror_text_on_a_non_side_specific_layer() {
+        let user_text = FLIP_FOOTPRINT.replace(
+            "(layer \"F.SilkS\")\n    (effects (font (size 1 1)) (justify left))",
+            "(layer \"User.Drawings\")\n    (effects (font (size 1 1)) (justify left))",
+        );
+
+        let flipped = flip_footprint_block(&user_text).unwrap();
+
+        assert!(flipped.contains("(layer \"User.Drawings\")"), "{flipped}");
+        assert!(flipped.contains("(justify left)"), "{flipped}");
+        assert!(!flipped.contains("(justify left mirror)"), "{flipped}");
+    }
+
+    #[test]
+    fn supported_footprint_round_trip_restores_the_original_semantics() {
+        let no_justify = FLIP_FOOTPRINT.replace(" (justify left)", "");
+        let back = flip_footprint_block(&no_justify).unwrap();
+        let front = flip_footprint_block(&back).unwrap();
+
+        assert_eq!(
+            konnect_sexp::parse_sexp(&front).unwrap(),
+            konnect_sexp::parse_sexp(&no_justify).unwrap()
+        );
+    }
+
+    #[test]
+    fn non_cardinal_root_orientation_round_trips_without_drift() {
+        let non_cardinal = FLIP_FOOTPRINT.replace("(at 10 20 30)", "(at 10 20 37.5)");
+
+        let back = flip_footprint_block(&non_cardinal).unwrap();
+        assert!(back.contains("(at 10 20 -37.5)"), "{back}");
+        let front = flip_footprint_block(&back).unwrap();
+
+        assert_eq!(
+            konnect_sexp::parse_sexp(&front).unwrap(),
+            konnect_sexp::parse_sexp(&non_cardinal).unwrap()
+        );
+    }
+
+    #[test]
+    fn through_hole_pad_layers_survive_a_flip_round_trip() {
+        let through_hole = FLIP_FOOTPRINT.replace(
+            "(pad \"1\" smd roundrect (at 2 3 50) (size 1 2)\n    \
+             (layers \"F.Cu\" \"F.Paste\" \"F.Mask\")\n    (roundrect_rratio 0.25)",
+            "(pad \"1\" thru_hole oval (at 2 3 50) (size 1 2)\n    \
+             (drill oval 0.4 0.8)\n    (layers \"*.Cu\" \"*.Mask\")",
+        );
+
+        let back = flip_footprint_block(&through_hole).unwrap();
+        assert!(back.contains("(layers \"*.Cu\" \"*.Mask\")"), "{back}");
+        assert!(back.contains("(drill oval 0.4 0.8)"), "{back}");
+        let front = flip_footprint_block(&back).unwrap();
+
+        assert_eq!(
+            konnect_sexp::parse_sexp(&front).unwrap(),
+            konnect_sexp::parse_sexp(&through_hole).unwrap()
+        );
+    }
+
+    #[test]
+    fn hidden_property_stays_hidden_when_flipped() {
+        let hidden = FLIP_FOOTPRINT.replace(
+            "(effects (font (size 1 1)) (justify left))",
+            "(effects (font (size 1 1)) (justify left))\n    (hide yes)",
+        );
+
+        let flipped = flip_footprint_block(&hidden).unwrap();
+
+        assert!(flipped.contains("(hide yes)"), "{flipped}");
+        assert!(flipped.contains("(justify left mirror)"), "{flipped}");
+    }
+
+    #[test]
+    fn legacy_fp_text_reference_flips_and_round_trips() {
+        let legacy = FLIP_FOOTPRINT.replace(
+            "(property \"Reference\" \"U1\"",
+            "(fp_text reference \"U1\"",
+        );
+
+        let back = flip_footprint_block(&legacy).unwrap();
+        assert!(back.contains("(fp_text reference \"U1\""), "{back}");
+        let front = flip_footprint_block(&back).unwrap();
+
+        assert_eq!(
+            konnect_sexp::parse_sexp(&front).unwrap(),
+            konnect_sexp::parse_sexp(&legacy).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_flip_layer_is_structured_and_leaves_the_board_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("invalid-layer.kicad_pcb");
+        let before = flip_board(&[FLIP_FOOTPRINT], "\n");
+        std::fs::write(&board, &before).unwrap();
+
+        let result = handle_flip_component(
+            &json!({
+                "board": board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "In1.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(result.is_error);
+        assert_eq!(
+            crate::mcp::error::extract_error_kind(&result).as_deref(),
+            Some("invalid_argument")
+        );
+        assert_eq!(std::fs::read_to_string(board).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn missing_and_duplicate_flip_references_leave_the_board_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing_board = tmp.path().join("missing.kicad_pcb");
+        let missing_before = flip_board(&[FLIP_FOOTPRINT], "\n");
+        std::fs::write(&missing_board, &missing_before).unwrap();
+
+        let missing = handle_flip_component(
+            &json!({
+                "board": missing_board.to_string_lossy(),
+                "reference": "U404",
+                "layer": "B.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(missing.is_error);
+        assert_eq!(
+            std::fs::read_to_string(&missing_board).unwrap(),
+            missing_before
+        );
+
+        let duplicate_board = tmp.path().join("duplicate.kicad_pcb");
+        let duplicate_before = flip_board(&[FLIP_FOOTPRINT, FLIP_FOOTPRINT], "\n");
+        std::fs::write(&duplicate_board, &duplicate_before).unwrap();
+        let duplicate = handle_flip_component(
+            &json!({
+                "board": duplicate_board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "B.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        // A structured refusal naming the offending field, not a bubbled
+        // `anyhow` the caller has to read prose out of.
+        assert!(duplicate.is_error);
+        let text = result_text(&duplicate);
+        assert!(text.contains("invalid_argument"), "{text}");
+        assert!(text.contains("\"field\":\"reference\""), "{text}");
+        assert!(text.contains("more than once"), "{text}");
+        assert_eq!(
+            std::fs::read_to_string(duplicate_board).unwrap(),
+            duplicate_before
+        );
+    }
+
+    #[tokio::test]
+    async fn closed_board_flip_preserves_crlf_line_endings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("crlf.kicad_pcb");
+        let before = flip_board(&[FLIP_FOOTPRINT], "\r\n");
+        std::fs::write(&board, &before).unwrap();
+
+        let result = handle_flip_component(
+            &json!({
+                "board": board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "B.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+        assert!(!result.is_error, "{:?}", result.content);
+
+        let written = std::fs::read_to_string(board).unwrap();
+        assert_eq!(
+            written
+                .match_indices('\n')
+                .filter(|(index, _)| *index == 0 || written.as_bytes()[index - 1] != b'\r')
+                .count(),
+            0,
+            "{written:?}"
+        );
+    }
+
+    #[test]
+    fn stale_closed_board_flip_is_rejected_without_overwriting_newer_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("stale-flip.kicad_pcb");
+        let expected = flip_board(&[FLIP_FOOTPRINT], "\n");
+        let (replacement, changed) =
+            prepare_closed_board_footprint_side(&expected, "U1", "B.Cu").unwrap();
+        assert!(changed);
+        let newer = expected.replace("(net 0 \"\")", "(net 0 \"\")\n  (net 1 \"GND\")");
+        std::fs::write(&board, &newer).unwrap();
+
+        let error = persist_board_replacement(&board, &expected, &replacement)
+            .expect_err("a stale flip source must conflict");
+
+        assert!(matches!(error, konnect_sexp::SexpError::Conflict { .. }));
+        assert_eq!(std::fs::read_to_string(board).unwrap(), newer);
+    }
+
+    #[tokio::test]
+    async fn unsupported_flip_geometry_returns_zero_writes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let board = tmp.path().join("unsupported.kicad_pcb");
+        let custom = FLIP_FOOTPRINT.replace("roundrect (at 2 3 50)", "custom (at 2 3 50)");
+        let before = flip_board(&[&custom], "\n");
+        std::fs::write(&board, &before).unwrap();
+
+        let refusal = handle_flip_component(
+            &json!({
+                "board": board.to_string_lossy(),
+                "reference": "U1",
+                "layer": "B.Cu",
+            }),
+            &test_ctx(),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            refusal.is_error,
+            "unsupported pad geometry must fail closed"
+        );
+        let text = result_text(&refusal);
+        assert!(text.contains("custom pads"), "{text}");
+        assert!(text.contains("not modified"), "{text}");
+        assert_eq!(std::fs::read_to_string(board).unwrap(), before);
     }
 }
 

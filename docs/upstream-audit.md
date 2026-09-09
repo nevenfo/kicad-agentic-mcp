@@ -2,6 +2,24 @@
 
 **Baseline** `5cd6454` (fork point, `Merge pull request #132`) · **Upstream** `mixelpixx/Konnect`, remote `upstream`, ref `upstream/main` · **Date** 2026-08-24
 
+## Status of this document — re-checked 2026-09-09
+
+The verdicts below were measured on **2026-08-24**, and the `State in this fork` lines have not
+aged well: they say "Still present" 21 times, and spot-checking three of them found all three
+already fixed.
+
+- `9a56233` + #220 (`create_netclass` writes into the board) — **fixed**. `pcb_routing.rs` now
+  loads and saves `net_settings` in the sibling `.kicad_pro`, refuses a board with no project
+  file, and applies #220's rule that an update moves only the fields the caller named.
+- #174 (string escapes decoded in several passes) — **fixed**. `konnect-sexp`'s `unescape` is a
+  single left-to-right scan that keeps an unknown escape's two characters rather than guessing.
+- The `DrcReport` fix — **fixed**. `cli.rs` returns a `DrcReport` carrying `missing_categories()`,
+  so "no findings" and "the category was never reported" are distinguishable.
+
+The other 18 were not re-checked. **Read every `State in this fork` line below as a claim dated
+2026-08-24, and verify it against the code before acting on it.** Upstream itself has also moved:
+the audit's `upstream/main` is not today's, which is `ab33781` (2026-09-09).
+
 ## Scope
 
 This is a differential audit of upstream's correctness and safety fixes, not a synchronisation.

@@ -6643,17 +6643,41 @@ X2, X3, X4, X5.
 
 ### Tâches
 
-- [ ] X7.1 Environnement enregistré : version KiCad exacte, OS, SHA du fork,
+- [x] X7.1 Environnement enregistré : version KiCad exacte, OS, SHA du fork,
   SHA upstream testé.
-- [ ] X7.2 Corpus : lecture, mutation simple, flip, routage, design rules,
+- [x] X7.2 Corpus : lecture, mutation simple, flip, routage, design rules,
   atomicité/rollback, anti-faux-succès.
-- [ ] X7.3 Mesures par tâche : succès fonctionnel, validité KiCad, appels MCP,
+- [x] X7.3 Mesures par tâche : succès fonctionnel, validité KiCad, appels MCP,
   durée, comportement en erreur, rollback, différences non demandées.
 
 ### Validation
 
-Résultats committés, corpus assez petit pour être honnête et assez large pour
-couvrir les classes visées ; aucune conclusion de supériorité globale.
+Environnement : KiCad **10.0.6**, Windows 11 26200.9445, rustc 1.96.0, fork sur
+`ai/mutation-proof-hardening`, upstream `ab337816` (2026-09-09).
+
+Le corpus vit dans `crates/konnect-core/tests/kicad_arbitration.rs`, quatre
+tests arbitrés par `kicad-cli`, exécutés par l'étape `arbitrated` de `gate.ps1`
+(ajoutée ici : sans elle ces preuves ne tournaient nulle part, ni en CI ni au
+gate) :
+
+- `the_oracle_can_fail` — **le test anti-faux-succès**. Il ne vérifie pas une
+  mutation : il vérifie que l'oracle peut rougir. 0,2 mm → aucune violation,
+  1,5 mm → exactement une, 0,2 mm → aucune. Sans ce contrôle, les trois autres
+  tests seraient verts même si `kicad_reloads` avait cessé de rapporter quoi
+  que ce soit.
+- `the_board_still_loads_after_each_mutation` — lecture puis trois mutations,
+  KiCad recharge après chacune, et le constat sans rapport (`track_dangling`)
+  est inchangé : aucune différence non demandée.
+- `a_refusal_leaves_the_project_byte_for_byte` — deux refus, board et
+  `.kicad_pro` inchangés octet pour octet, projet toujours chargeable.
+- `a_flip_lands_on_the_other_side_and_comes_back` — voir X8.
+
+**Limites du corpus, dites franchement.** Quatre tests ne mesurent pas une
+surface de 204 outils : ils couvrent les *classes de défaut* que la campagne a
+rencontrées, pas la fonctionnalité. Le corpus tourne sur `kicad-cli`, pas sur
+une session GUI, sauf la suite live de X4. Aucune mesure de tokens ni de durée
+n'est reportée ici : elles n'auraient pas de comparant honnête, et la priorité
+annoncée est correction > fiabilité > sécurité > ergonomie > tokens > temps.
 
 ## X8 — Comparaison upstream et `flip_component`
 
@@ -6668,19 +6692,57 @@ X7.
 
 ### Tâches
 
-- [ ] X8.1 Relever l'état réel d'upstream, sans repartir de chiffres datés.
-- [ ] X8.2 Inspecter `flip_component`, `update_pcb_from_schematic`, design
+- [x] X8.1 Relever l'état réel d'upstream, sans repartir de chiffres datés.
+- [x] X8.2 Inspecter `flip_component`, `update_pcb_from_schematic`, design
   rules, read-back, transaction, footprints board-only, dry-run.
-- [ ] X8.3 Implémenter `flip_component` par la voie officielle si justifié :
+- [x] X8.3 Implémenter `flip_component` par la voie officielle si justifié :
   identité préservée, read-back, transaction et rollback existants.
-- [ ] X8.4 Fixture propre, indépendante de tout projet utilisateur, proche du
+- [x] X8.4 Fixture propre, indépendante de tout projet utilisateur, proche du
   cas `C310`/`C311`.
 
 ### Validation
 
-`F.Cu → B.Cu` et `B.Cu → F.Cu` relus depuis KiCad ; side, orientation,
-position, pastilles, références et identité vérifiés ; aucun changement
-parasite.
+**Upstream au moment de l'exécution :** `ab337816`, 2026-09-09. Le brief
+supposait un flip IPC déterministe ; c'est faux et c'est upstream qui le dit :
+KiCad 10 n'expose **aucune** commande de flip, donc `flip_component` est une
+mutation fichier, refusée tant que KiCad tient ce board. Le fork l'a importée
+sous cette forme, sans merge ni rebase.
+
+L'implémentation upstream est de grande qualité et a été portée avec ses
+commentaires de conception, qui portent des mesures réelles (les 14 818
+empreintes des bibliothèques KiCad servant à justifier le refus d'un
+`(model …)` déplaçable ; les 779 `ki_fp_filters` sans position). Elle refuse
+plutôt que de deviner : géométrie de pastille non gérée, décalage de perçage
+imbriqué, enfant `fp_*` inconnu, empreinte sur une couche qui n'est ni l'une ni
+l'autre face.
+
+**Adaptations, et ce qu'elles coûtent.** `refuse_if_board_open_in_kicad` a dû
+être réécrit : upstream s'appuie sur un suivi de session, un verrou frère et une
+classification d'échec IPC qui n'existent pas ici. La version du fork refuse
+quand l'IPC répond que KiCad tient *ce* board, et procède sinon. La sûreté
+perdue est le veto d'upstream lorsque le transport est injoignable alors que
+KiCad tient le board. Ce n'est **pas une régression** : le fork n'a jamais eu de
+garde de verrou côté PCB — c'est une décision déjà en vigueur, le `.kicad_pcb`
+passant par l'IPC — mais c'est un écart réel avec upstream et il est nommé ici.
+Les trois erreurs portées ont été cataloguées sans changer leur prose, le fork
+interdisant tout nouveau `CallToolResult::error(` nu.
+
+**Preuve.** 21 tests unitaires portés ou adaptés, plus l'arbitrage KiCad de
+`a_flip_lands_on_the_other_side_and_comes_back`, sur un fixture neuf
+(`flip_pair.kicad_pcb`) délibérément **asymétrique** — une empreinte symétrique
+est correctement retournée par une implémentation qui ne miroite rien — et
+nommé `C310`, le cas qui avait bloqué le stress-test Hi-Fi, sans dépendre du
+projet de l'utilisateur.
+
+L'oracle est `kicad-cli pcb export pos` : c'est KiCad qui lit le board et dit la
+face, la position et la rotation, et sa colonne `Side` vaut `top`/`bottom` dans
+toutes les langues. Mesuré : `F.Cu → B.Cu` donne `side = bottom` avec `PosX`,
+`PosY` et l'ensemble des références inchangés ; `B.Cu → F.Cu` restitue
+exactement ce que KiCad rapportait au départ. La géométrie fait un aller-retour
+exact ; seule la graphie bouge, en deux points mesurés — `(at x y 0)` revient en
+`(at x y)`, et un `(effects …)` réécrit gagne une espace avant sa parenthèse
+fermante. `flip_component` est publié `SUPPORTED`, preuve `kicad-parsed`, dès
+son import.
 
 ## X9 — Évaluation de `update_pcb_from_schematic`
 
@@ -6696,15 +6758,55 @@ X8.
 
 ### Tâches
 
-- [ ] X9.1 Répondre aux questions d'invariants : calcul du delta, identité des
+- [x] X9.1 Répondre aux questions d'invariants : calcul du delta, identité des
   composants, cas limites, protection du placement et du routage, dry-run,
   plan périmé, transaction, read-back, bugs historiques et protections ajoutées.
-- [ ] X9.2 Trancher A / B / C et écrire la décision.
+- [x] X9.2 Trancher A / B / C et écrire la décision.
 - [ ] X9.3 Si implémentation : chemin vertical minimal fiable, plan périmé
   refusé, aucune mutation partielle silencieuse.
 
 ### Validation
 
-Décision écrite et justifiée. Si report, le report est explicite. Si
-implémentation, read-back valide réellement l'opération et le routage existant
-n'est pas silencieusement détruit.
+**Décision : C — report explicite.** Justifiée, pas subie.
+
+Invariants relevés dans `upstream/main:crates/konnect-core/src/tools/pcb_sync.rs`
+(2900 lignes pour la seule planification, plus le handler et l'adaptateur IPC) :
+
+- **Delta.** Netlist plate exportée par KiCad + snapshot du board vivant lu par
+  IPC, comparés en mémoire ; le plan est immuable.
+- **Identité.** `kiid` (UUID KiCad) et `symbol_path` (chemin hiérarchique).
+- **Cas traités.** `PlannedChange` ne connaît que `Add` et `Update` : **aucune
+  suppression**. Les empreintes board-only sont comptées
+  (`board_only_preserved`) et conservées. `skipped_by_flag` porte les symboles
+  exclus. Les conflits sont des diagnostics nommés, pas des exceptions.
+- **Protection.** `Update` transporte un `PreservedBoardState { position,
+  rotation, layer, locked }` : le placement survit. `BoardState.routed_nets`
+  compte le cuivre par net, ce qui permet de refuser une réaffectation de pad
+  qui détruirait du routage.
+- **Dry-run.** `dry_run` vaut **true** par défaut ; `expected_plan_revision`
+  est **obligatoire** dès que `dry_run` est faux.
+- **Plan périmé.** `plan_revision` est un hash de l'identité structurelle de la
+  netlist et de l'état du board ; une divergence rend `stale_plan_revision` et
+  refuse d'appliquer.
+- **Transaction.** `client.run_commit(...)` : une seule transaction KiCad, donc
+  un Ctrl-Z. Sans IPC, `BoardWrite::File` est un conflit — aucun repli fichier.
+- **Read-back.** `verify_board_matches_what_was_sent` relit et diagnostique.
+
+Le design est sain et répond aux exigences. Le report ne porte pas sur sa
+qualité mais sur son coût de **preuve** dans ce fork : son adaptateur est `Ipc`
+et sa cible un document de conception, donc sa barre X2 est `LiveReadback`.
+L'importer sans construire d'abord une suite live dédiée — KiCad ouvert,
+netlist exportée, comparaison avant/après sur un projet hiérarchique — le
+publierait `UNPROVEN`, c'est-à-dire exactement ce que cette phase existe pour
+empêcher. Un chemin vertical minimal fiable est préférable à une primitive
+complète non prouvée.
+
+Ce que le report coûte, dit franchement : le fork reste sans synchronisation
+schéma → PCB. Ce qu'il évite : une primitive de 2900 lignes, la plus risquée de
+la surface, importée dans une session qui n'a pas les moyens de la prouver.
+
+Reprise : l'analyse ci-dessus est le travail non trivial et elle est faite. Une
+session ultérieure ouvre une phase dédiée, construit la suite live d'abord, et
+tranche alors entre A (importer/adapter) et B (variante minimale : `Update` des
+seuls champs, sans `Add`, ce qui supprime `prepare_additions` et la moitié du
+risque).

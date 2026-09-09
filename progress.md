@@ -2,66 +2,76 @@
 
 ## Phase actuelle
 
-**X — Preuve réelle des mutations.** X1 à X6 validées et poussées sur
-`ai/mutation-proof-hardening`. Le cœur de la campagne — zéro faux succès sur
-les capacités déclarées supportées — est en place et prouvé par falsification.
-Restent X7 (benchmark PCB live), X8 (upstream + `flip_component`), X9
-(`update_pcb_from_schematic`).
+**X — Preuve réelle des mutations.** X1 à X9 validées sur
+`ai/mutation-proof-hardening`. Zéro faux succès sur les capacités déclarées
+supportées, prouvé par falsification ; quatre défauts de corruption corrigés ou
+écartés ; `flip_component` importé et prouvé ; `update_pcb_from_schematic`
+explicitement reporté avec son analyse.
 
 ## Tâche actuelle
 
-X7/X8 — relever l'état réel d'upstream, puis construire le corpus PCB live.
+Aucune. La phase X est complète ; reste la décision utilisateur sur la
+livraison (PR vers `agentic/main`, et release éventuelle).
 
 ## Dernière tâche validée
 
-**X6 — Audit ciblé des autres mutations à risque.**
+**X7, X8, X9 — corpus arbitré, `flip_component`, décision de report.**
 
 Validation :
-- Troisième défaut de la classe X1 trouvé et corrigé :
-  `set_layer_constraints` insérait un `(rule …)` dans le `(setup …)` du board,
-  que `kicad-cli` refuse (« Inattendu rule », exit 3). Réécrit vers
-  `<board>.kicad_dru`, idempotent, préservant règles et commentaires tiers.
-- Prouvé par `kicad_enforces_the_layer_rule_it_was_given` : la violation
-  attendue apparaît. Plus aucun code n'insère dans `(setup …)`.
-- Angle mort du contrat X2 corrigé : les écritures `Derived` (exports,
-  rapports) exigeaient un rechargement KiCad dénué de sens pour un gerber.
-- Gate complet vert : `cargo fmt`, `clippy -D warnings`, `cargo test
-  --workspace`, plus les suites arbitrées et la suite live.
+- Corpus `crates/konnect-core/tests/kicad_arbitration.rs`, 4 tests arbitrés par
+  `kicad-cli`, dont `the_oracle_can_fail` qui prouve que l'oracle peut rougir
+  (0,2 → rien, 1,5 → une violation, 0,2 → rien). Sans lui, les autres seraient
+  verts même si l'arbitre s'était tu.
+- `gate.ps1` gagne une étape `arbitrated` : ces preuves ne tournaient nulle
+  part, ni en CI (aucun KiCad) ni au gate. Elle saute bruyamment sans
+  `kicad-cli`.
+- `flip_component` importé d'upstream `ab337816`, adapté, 21 tests unitaires
+  plus l'arbitrage KiCad. Publié `SUPPORTED`/`kicad-parsed` dès l'import.
+- `update_pcb_from_schematic` : décision **C — report explicite**, analyse
+  complète des invariants consignée dans `plan.md` (X9).
+- `gate.ps1` complet vert : fmt, clippy `-D warnings`, tests workspace,
+  doctests, build release, étape arbitrée.
 
 ## Décisions actives
 
-- **Le niveau de preuve exigé est une propriété de la capacité**, dérivée de
+- **Le niveau de preuve exigé est une propriété de la capacité**, dérivé de
   (effet, domaine, write target, adaptateur) : `Capability::required_proof`.
-  Une preuve plus faible publie `UNPROVEN`. C'est le correctif structurel :
-  `Proof::Test` ne pouvait plus être distingué d'une preuve KiCad.
-- Preuves : `Test` < `Bench` < `Arbitrated` (`kicad_reloads`, KiCad recharge)
-  < `Live` (`kicad_reads_back`, la session relit). Les deux helpers sont
-  nommés par `coverage::{ARBITER, LIVE_ARBITER}` et découverts par scan.
-- Un test `#[ignore]`d qui appelle un arbitre compte : la CI n'installe pas
-  KiCad, donc l'exiger rendrait la preuve forte inatteignable. Le document
-  dit d'où viennent ces preuves (`gate.ps1`, pas la CI).
-- Couverture domaines KiCad : 74,5 % → 27,9 %, 78 `UNPROVEN`. Baisse assumée,
-  aucun critère assoupli. Baseline upstream re-gelée par le même scanner
-  (42 → 13) pour que la comparaison reste tool-for-tool.
-- **`kicad-cli` ne valide ni le `.kicad_pro` ni le `.kicad_dru`** : un fichier
-  illisible donne exit 0 et les défauts KiCad. L'oracle est donc l'**effet**
-  sur le DRC, jamais le code de sortie seul.
-- Oracle DRC : le champ `type` d'une violation est stable ; la `description`
-  est traduite. Ne jamais asserter sur la description.
-- Fixture `clearance_pair.kicad_pcb` : 0,75 mm de cuivre entre deux pistes de
-  nets différents → `min_clearance` 0,2 mm silencieux, 1,5 mm ⇒ exactement une
-  violation `clearance`. C'est l'oracle de toutes les règles.
-- `.kicad_pro` : `board.design_settings.rules`, mm flottants sans unité, clés
-  triées, indentation 2 espaces — `to_string_pretty` reproduit le format.
-  `.kicad_dru` : `(version 1)` puis des `(rule …)`, valeurs **avec** unité.
+  Une preuve plus faible publie `UNPROVEN`. C'est le correctif structurel.
+- `Test` < `Bench` < `Arbitrated` (`kicad_reloads` : KiCad recharge) < `Live`
+  (`kicad_reads_back` : la session relit). Helpers nommés par
+  `coverage::{ARBITER, LIVE_ARBITER}`, découverts par scan. Un test `#[ignore]`d
+  qui appelle un arbitre compte — la CI n'a pas KiCad, l'exiger rendrait la
+  preuve forte inatteignable ; le document dit d'où elle vient (`gate.ps1`).
+- Couverture domaines KiCad 74,5 % → 28,9 %, 77 `UNPROVEN`. Baisse assumée,
+  aucun critère assoupli ; baseline upstream re-gelée par le même scanner
+  (42 → 13) pour rester tool-for-tool.
+- **`kicad-cli` ne valide ni `.kicad_pro` ni `.kicad_dru`** : un fichier
+  illisible donne exit 0 et les défauts KiCad. L'oracle est l'**effet** (le DRC
+  bouge), jamais le code de sortie. Le champ `type` d'une violation est stable,
+  sa `description` est traduite : ne jamais asserter dessus.
+- Fixtures oracles : `clearance_pair.kicad_pcb` (0,75 mm de cuivre → 0,2 mm
+  silencieux, 1,5 mm ⇒ une violation) et `flip_pair.kicad_pcb` (empreinte
+  asymétrique `C310`). Oracle de placement : `kicad-cli pcb export pos`,
+  colonne `Side` en `top`/`bottom`, indépendante de la langue.
+- Emplacements KiCad : contraintes globales dans `.kicad_pro`
+  (`board.design_settings.rules`, mm sans unité) ; règles personnalisées dans
+  `.kicad_dru` (`(version 1)`, valeurs **avec** unité) ; couche active dans
+  `.kicad_prl`, donc session, donc IPC. Rien de tout cela n'est dans le board.
 - `min_via_size`/`min_via_drill`/`min_trace_width` sont refusés par nom, pas
   aliasés : ils désignent des contraintes que KiCad n'a pas.
-- `set_active_layer` est IPC pur, sans repli fichier : le repli consisterait à
-  réinventer le champ fautif. Write target `Derived` (il n'écrit rien).
-- `scripts/live-pcb-e2e.ps1` **doit** être lancé avec `pwsh`, pas Windows
+- `set_active_layer` est IPC pur, sans repli fichier (le repli réinventerait le
+  champ fautif). KiCad n'expose **aucune** commande de flip : `flip_component`
+  est nécessairement fichier, refusé tant que KiCad tient ce board — et son
+  aller-retour est géométriquement exact, seule la graphie bouge (`(at x y 0)`
+  revient en `(at x y)` ; un `(effects …)` réécrit gagne une espace).
+- `refuse_if_board_open_in_kicad` (fork) refuse quand l'IPC dit que KiCad tient
+  *ce* board, procède sinon. Écart assumé avec upstream : pas de veto par
+  verrou si le transport est injoignable — cohérent avec le fork, où le
+  `.kicad_pcb` passe par l'IPC et le garde de verrou ne vise que `.kicad_sch`.
+- `scripts/live-pcb-e2e.ps1` et `gate.ps1` se lancent avec `pwsh`, pas Windows
   PowerShell 5.1, où stderr de cargo devient une erreur terminante.
-- Le lock natif KiCad n'est jamais supprimé, déplacé ni jugé périmé.
-- Les tests live tournent sur un `KICAD_CONFIG_HOME` dédié.
+- Le lock natif KiCad n'est jamais supprimé, déplacé ni jugé périmé. Les tests
+  live tournent sur un `KICAD_CONFIG_HOME` dédié.
 
 ## Blocage actif
 
@@ -69,9 +79,9 @@ Aucun.
 
 ## Observations hors périmètre, non corrigées
 
-- 78 capacités `UNPROVEN` : 70 `sexpr`, 4 `ipc→sexpr`, 3 `ipc`, 1 `cli`.
-  Aucune n'est démontrée fautive ; personne ne les a soumises à KiCad. Suite
-  de travail, action par classe documentée dans la matrice.
+- 77 capacités `UNPROVEN` (majorité `sexpr`). Aucune n'est démontrée fautive ;
+  personne ne les a soumises à KiCad. Suite de travail, action par classe
+  documentée dans la matrice.
 - `ToolErrorKind::from_anyhow` ne reconnaît pas `SexpError::Conflict` nu :
   une course GUI se dégrade en `handler_error`. Préexistant.
 - `board_and_labels.rs` porte une assertion négative fragile aux CRLF sous
@@ -106,7 +116,6 @@ Aucun.
 
 ## NEXT ACTION
 
-X8.1 — `git fetch upstream`, relever le SHA et l'état réel d'upstream
-aujourd'hui, puis inspecter `flip_component` et `update_pcb_from_schematic`
-sans merge ni rebase. Validation : SHA upstream consigné et périmètre de
-comparaison arrêté, avant de construire le corpus X7 qui doit les mesurer.
+Ouvrir la PR de `ai/mutation-proof-hardening` vers `agentic/main` et attendre
+la CI 7/7. Aucune action autonome au-delà : publier une release, ou reprendre
+D1.8 du plan Hi-Fi, relève d'une décision de l'utilisateur.

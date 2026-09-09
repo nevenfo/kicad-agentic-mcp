@@ -398,3 +398,67 @@ pub fn kicad_reads_back<T>(f: impl FnOnce(&konnect_ipc::client::KiCadIpcClient) 
     let client = konnect_ipc::client::KiCadIpcClient::new(socket);
     f(&client)
 }
+
+/// One footprint as KiCAD reports it in a position file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Placement {
+    pub x: f64,
+    pub y: f64,
+    pub rotation: f64,
+    /// `top` or `bottom`, KiCAD's own words.
+    pub side: String,
+}
+
+/// Ask KiCAD where every footprint sits and which side it is on, by exporting
+/// a position file and reading it back.
+///
+/// This is [`kicad_reloads`] for placement, and it is the only oracle
+/// available for a flip: KiCAD exposes no flip command to compare against, so
+/// the question "did this land?" has to be answered by KiCAD's own reading of
+/// the board rather than by re-parsing the bytes we wrote. The CSV's `Side`
+/// column is `top`/`bottom` regardless of the user's language, unlike a DRC
+/// description.
+///
+/// Panics on a board KiCAD will not load, for the same reason
+/// [`kicad_reloads`] does.
+pub fn kicad_places(board: &Path) -> BTreeMap<String, Placement> {
+    let report = board.with_extension("pos.csv");
+    let output = std::process::Command::new(kicad_cli_path())
+        .args([
+            "pcb", "export", "pos", "--format", "csv", "--units", "mm", "--side", "both", "-o",
+        ])
+        .arg(&report)
+        .arg(board)
+        .output()
+        .unwrap_or_else(|e| panic!("kicad-cli is required by this suite: {e}"));
+    assert!(
+        output.status.success(),
+        "KiCAD refused to place {}: exit {:?}\n{}{}",
+        board.display(),
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let text = std::fs::read_to_string(&report).expect("kicad-cli wrote its position file");
+    let mut out = BTreeMap::new();
+    for line in text.lines().skip(1) {
+        // Ref,Val,Package,PosX,PosY,Rot,Side — the first three are quoted.
+        let cells: Vec<&str> = line.split(',').collect();
+        if cells.len() < 7 {
+            continue;
+        }
+        let reference = cells[0].trim().trim_matches('"').to_string();
+        let parse = |cell: &str| cell.trim().parse::<f64>().unwrap_or(f64::NAN);
+        out.insert(
+            reference,
+            Placement {
+                x: parse(cells[3]),
+                y: parse(cells[4]),
+                rotation: parse(cells[5]),
+                side: cells[6].trim().trim_matches('"').to_string(),
+            },
+        );
+    }
+    out
+}
