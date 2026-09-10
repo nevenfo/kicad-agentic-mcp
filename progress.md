@@ -2,35 +2,29 @@
 
 ## Phase actuelle
 
-**X — Preuve réelle des mutations.** X1 à X9 validées sur
-`ai/mutation-proof-hardening`. Zéro faux succès sur les capacités déclarées
-supportées, prouvé par falsification ; quatre défauts de corruption corrigés ou
-écartés ; `flip_component` importé et prouvé ; `update_pcb_from_schematic`
-explicitement reporté avec son analyse.
+**X — Preuve réelle des mutations : livrée.** X1 à X9 validées, PR #19 mergée
+dans `agentic/main`. Zéro faux succès sur les capacités déclarées supportées,
+prouvé par falsification ; quatre défauts de corruption corrigés ou écartés ;
+`flip_component` importé et prouvé ; `update_pcb_from_schematic` explicitement
+reporté avec son analyse.
+
+Aucune phase n'est ouverte. La suite — release, ou reprise du benchmark Hi-Fi —
+attend une décision de l'utilisateur.
 
 ## Tâche actuelle
 
-Aucune. La phase X est complète ; reste la décision utilisateur sur la
-livraison (PR vers `agentic/main`, et release éventuelle).
+Aucune.
 
 ## Dernière tâche validée
 
-**X7, X8, X9 — corpus arbitré, `flip_component`, décision de report.**
+**Livraison de la phase X — merge de la PR #19 dans `agentic/main`.**
 
 Validation :
-- Corpus `crates/konnect-core/tests/kicad_arbitration.rs`, 4 tests arbitrés par
-  `kicad-cli`, dont `the_oracle_can_fail` qui prouve que l'oracle peut rougir
-  (0,2 → rien, 1,5 → une violation, 0,2 → rien). Sans lui, les autres seraient
-  verts même si l'arbitre s'était tu.
-- `gate.ps1` gagne une étape `arbitrated` : ces preuves ne tournaient nulle
-  part, ni en CI (aucun KiCad) ni au gate. Elle saute bruyamment sans
-  `kicad-cli`.
-- `flip_component` importé d'upstream `ab337816`, adapté, 21 tests unitaires
-  plus l'arbitrage KiCad. Publié `SUPPORTED`/`kicad-parsed` dès l'import.
-- `update_pcb_from_schematic` : décision **C — report explicite**, analyse
-  complète des invariants consignée dans `plan.md` (X9).
-- `gate.ps1` complet vert : fmt, clippy `-D warnings`, tests workspace,
-  doctests, build release, étape arbitrée.
+- PR #19, `ai/mutation-proof-hardening` → `agentic/main`, CI 7/7 verte avant
+  merge, puis mergée en merge commit `9dd4b26`.
+- CI post-merge sur `agentic/main` verte 7/7 : Format, Clippy,
+  Check & Test (ubuntu / macos / windows), Schematic viewer, PCM packaging.
+- X9.3 reste décochée : conditionnelle, écartée par la décision C de X9.
 
 ## Décisions actives
 
@@ -49,21 +43,21 @@ Validation :
   illisible donne exit 0 et les défauts KiCad. L'oracle est l'**effet** (le DRC
   bouge), jamais le code de sortie. Le champ `type` d'une violation est stable,
   sa `description` est traduite : ne jamais asserter dessus.
-- Fixtures oracles : `clearance_pair.kicad_pcb` (0,75 mm de cuivre → 0,2 mm
-  silencieux, 1,5 mm ⇒ une violation) et `flip_pair.kicad_pcb` (empreinte
-  asymétrique `C310`). Oracle de placement : `kicad-cli pcb export pos`,
-  colonne `Side` en `top`/`bottom`, indépendante de la langue.
+- Fixtures oracles : `clearance_pair.kicad_pcb` (0,2 mm silencieux, 1,5 mm ⇒
+  une violation) et `flip_pair.kicad_pcb` (`C310` asymétrique). Oracle de
+  placement : `kicad-cli pcb export pos`, colonne `Side`, indépendante de la
+  langue.
 - Emplacements KiCad : contraintes globales dans `.kicad_pro`
   (`board.design_settings.rules`, mm sans unité) ; règles personnalisées dans
-  `.kicad_dru` (`(version 1)`, valeurs **avec** unité) ; couche active dans
-  `.kicad_prl`, donc session, donc IPC. Rien de tout cela n'est dans le board.
+  `.kicad_dru` (valeurs **avec** unité) ; couche active dans `.kicad_prl`, donc
+  session, donc IPC. Rien de cela n'est dans le board. Détail complet : `plan.md`
+  phase X.
 - `min_via_size`/`min_via_drill`/`min_trace_width` sont refusés par nom, pas
   aliasés : ils désignent des contraintes que KiCad n'a pas.
 - `set_active_layer` est IPC pur, sans repli fichier (le repli réinventerait le
   champ fautif). KiCad n'expose **aucune** commande de flip : `flip_component`
-  est nécessairement fichier, refusé tant que KiCad tient ce board — et son
-  aller-retour est géométriquement exact, seule la graphie bouge (`(at x y 0)`
-  revient en `(at x y)` ; un `(effects …)` réécrit gagne une espace).
+  est nécessairement fichier, refusé tant que KiCad tient ce board ; son
+  aller-retour est géométriquement exact, seule la graphie bouge.
 - `refuse_if_board_open_in_kicad` (fork) refuse quand l'IPC dit que KiCad tient
   *ce* board, procède sinon. Écart assumé avec upstream : pas de veto par
   verrou si le transport est injoignable — cohérent avec le fork, où le
@@ -72,10 +66,23 @@ Validation :
   PowerShell 5.1, où stderr de cargo devient une erreur terminante.
 - Le lock natif KiCad n'est jamais supprimé, déplacé ni jugé périmé. Les tests
   live tournent sur un `KICAD_CONFIG_HOME` dédié.
+- Convention de livraison : une branche `ai/<phase>` par phase, une PR par
+  phase, merge commit, branche distante conservée après merge.
 
 ## Blocage actif
 
 Aucun.
+
+## Décision utilisateur en attente
+
+La version publiée reste **v1.1.4** (tag `v1.1.4`, `Cargo.toml` inchangé) : la
+phase X n'a pas bumpé la version. Trois suites possibles, aucune n'est
+autonome :
+
+1. **Release** de la phase X (numéro de version et périmètre à fixer par
+   l'utilisateur avant toute modification).
+2. **Reprise du benchmark Hi-Fi** à D1.8 (plan hors de ce dépôt).
+3. **Nouvelle phase** sur les observations hors périmètre ci-dessous.
 
 ## Observations hors périmètre, non corrigées
 
@@ -116,6 +123,7 @@ Aucun.
 
 ## NEXT ACTION
 
-Ouvrir la PR de `ai/mutation-proof-hardening` vers `agentic/main` et attendre
-la CI 7/7. Aucune action autonome au-delà : publier une release, ou reprendre
-D1.8 du plan Hi-Fi, relève d'une décision de l'utilisateur.
+Obtenir de l'utilisateur la décision consignée sous « Décision utilisateur en
+attente » — release (avec numéro de version et périmètre), reprise Hi-Fi D1.8,
+ou nouvelle phase — puis ouvrir l'unité correspondante dans `plan.md`. Aucune
+action autonome ne reste dans le périmètre livré.
