@@ -6891,10 +6891,10 @@ Y1 validée.
 
 ### Tâches
 
-- [ ] Y2.1 Brancher `ai/release-v1.2.0`, ouvrir la PR vers `agentic/main`,
+- [x] Y2.1 Brancher `ai/release-v1.2.0`, ouvrir la PR vers `agentic/main`,
   obtenir la CI 7/7 verte, merger.
-- [ ] Y2.2 Taguer `v1.2.0` sur le commit de merge et pousser le tag.
-- [ ] Y2.3 Vérifier que le workflow `Release` conclut vert et que la release
+- [x] Y2.2 Taguer `v1.2.0` sur le commit de merge et pousser le tag.
+- [x] Y2.3 Vérifier que le workflow `Release` conclut vert et que la release
   publiée porte les assets attendus.
 
 ### Validation
@@ -6902,6 +6902,10 @@ Y1 validée.
 La release GitHub `v1.2.0` existe, ni draft ni prerelease, et contient
 exactement un asset nommé `konnect-pcm-v1.2.0-windows.zip` — le nom exact que
 `Get-WindowsPcmAsset` exige, faute de quoi le bootstrap refuse la mise à jour.
+
+Obtenu : PR #20 mergée en `d8b5950` après CI 7/7 verte, tag annoté `v1.2.0` sur
+ce commit, workflow `Release` vert — quatre cibles, trois paquets PCM, et
+l'E2E réel KiCad en portier. Les sept assets attendus sont publiés.
 
 ## Y3 — Installation effective chez le client
 
@@ -6916,10 +6920,10 @@ Y2 validée ; KiCad fermé pendant le remplacement du répertoire de plugin.
 
 ### Tâches
 
-- [ ] Y3.1 Déclencher le bootstrap et constater l'installation de `v1.2.0`.
-- [ ] Y3.2 Vérifier que `bin/konnect.exe` installé annonce `1.2.0` et expose
+- [x] Y3.1 Déclencher le bootstrap et constater l'installation de `v1.2.0`.
+- [x] Y3.2 Vérifier que `bin/konnect.exe` installé annonce `1.2.0` et expose
   `flip_component` après `load_toolset pcb_components`.
-- [ ] Y3.3 Vérifier que le rollback vers `v1.1.4` est conservé sous
+- [x] Y3.3 Vérifier que le rollback vers `v1.1.4` est conservé sous
   `%LOCALAPPDATA%\konnect-bootstrap\rollback`.
 
 ### Validation
@@ -6927,6 +6931,22 @@ Y2 validée ; KiCad fermé pendant le remplacement du répertoire de plugin.
 Le binaire du répertoire de plugin annonce `1.2.0` ; un `tools/list` après
 `load_toolset pcb_components` contient `flip_component` ; le répertoire de
 rollback contient la v1.1.4 déposée par la mise à jour.
+
+Obtenu : `konnect 1.2.0` installé, `flip_component` exposé avec ses arguments
+`board`/`reference`/`layer`, `plugin.json` servi annonçant 204 outils, rollback
+`v1.1.4-20260910092644-…` conservé et lui-même vérifié en `konnect 1.1.4`.
+
+**Un défaut du bootstrap a dû être corrigé pour y arriver**, dans l'outillage
+personnel hors dépôt `~/.agents/konnect/konnect-bootstrap.ps1` (sauvegarde
+`.bak-20260910112615` à côté). `ConvertFrom-Json` rend `published_at` déjà
+converti en `[datetime]` ; `[string]` sur cette valeur la formate dans la
+culture courante, et `[DateTimeOffset]::Parse` la relit dans cette même culture,
+ce qui échoue dès que l'ordre jour/mois diffère — la mise à jour tombait alors
+en `fallback` sur la version locale, en le disant sur stderr. Un helper
+`ConvertTo-KonnectInstant` prend la valeur telle qu'elle vient et ne parse
+qu'une vraie chaîne, en `InvariantCulture` ; `Select-LatestStableRelease` et
+`Test-KonnectCacheCurrent` l'utilisent. Sans cela, **aucune release future
+n'aurait pu s'installer** : le défaut n'était pas propre à v1.2.0.
 
 ## Y4 — Reprise de F1.2-b1 sur le projet Hi-Fi
 

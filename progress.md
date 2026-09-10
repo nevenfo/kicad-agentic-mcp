@@ -2,29 +2,32 @@
 
 ## Phase actuelle
 
-**Y — Release v1.2.0.** La phase X est mergée dans `agentic/main` (`9dd4b26`,
-CI 7/7 verte). Y existe parce que le plugin installé chez l'utilisateur est en
-v1.1.4 et ne porte donc pas `flip_component` : le bootstrap client n'installe
-qu'une release stable strictement plus récente, donc la release est le seul
-canal honnête pour livrer la phase X.
+**Y — Release v1.2.0.** Y1, Y2 et Y3 validées : la release est publiée et
+**installée**. Reste Y4, qui se joue dans l'autre dépôt.
 
 ## Tâche actuelle
 
-**Y2.1 — PR #20 vers `agentic/main`, CI en cours.** Y1 validée et commitée
-(`b3c51cc`).
+**Y4.1 — reprendre F1.2-b1 sur le projet Hi-Fi**, dont le blocage GUI est
+maintenant levé : `flip_component` fait par MCP le geste qui exigeait l'interface.
 
 ## Dernière tâche validée
 
-**Y1 — version, notes et compte d'outils.**
+**Y3 — installation effective chez le client.**
 
 Validation :
-- `gate.ps1` vert de bout en bout, étape `arbitrated` comprise (4 tests, dont
-  `the_oracle_can_fail`).
-- `konnect --version` du build local annonce `1.2.0` et le binaire porte
-  `flip_component`.
-- Compte d'outils corrigé 203 → 204 sur 22 toolsets, d'après le registre testé
-  contre `tools_for` : `plugin/plugin.json` et `packaging/metadata.json` sont
-  servis au gestionnaire de plugins, publier 203 aurait livré un chiffre faux.
+- Le binaire du répertoire de plugin annonce `konnect 1.2.0` et expose
+  `flip_component` (`board`/`reference`/`layer`) après
+  `load_toolset pcb_components` ; `plugin.json` servi annonce 204 outils.
+- Rollback `v1.1.4-20260910092644-…` conservé, lui-même vérifié en `konnect
+  1.1.4`.
+- Release `v1.2.0` publiée, ni draft ni prerelease, sept assets dont
+  `konnect-pcm-v1.2.0-windows.zip` ; workflow `Release` vert, E2E réel KiCad
+  compris.
+- Dérisquage du geste Y4, fait avant la release sur une **copie** jetable du
+  board réel : `flip_component` a retourné `C310` et `C311`, `kicad-cli pcb
+  export pos` les a confirmés `bottom`, 124 empreintes préservées, original
+  intact (MD5 `2cc389a517fef7deb02fb5a290e66bef`). Un second appel rend
+  `changed:false` : l'opération est idempotente.
 
 ## Décisions actives
 
@@ -53,6 +56,13 @@ Validation :
   version que le binaire **annonce** à la dernière release stable et n'installe
   que si elle est strictement plus récente. Un build local posé à la main
   survivrait donc, mais mentirait sur sa version : écarté pour cette raison.
+- **Le bootstrap ne doit jamais faire transiter un instant par une chaîne
+  formatée selon la culture.** `ConvertFrom-Json` rend `published_at` déjà
+  converti en `[datetime]` ; `[string]` puis `Parse` échouait dès que l'ordre
+  jour/mois différait, et toute mise à jour tombait en `fallback`. Corrigé par
+  `ConvertTo-KonnectInstant` (fichier hors dépôt, sauvegarde `.bak-…` à côté).
+  Le défaut n'était pas propre à v1.2.0 : aucune release future ne se serait
+  installée.
 - `scripts/live-pcb-e2e.ps1` et `gate.ps1` se lancent avec `pwsh`, pas Windows
   PowerShell 5.1.
 - Le lock natif KiCad n'est jamais supprimé, déplacé ni jugé périmé. Les tests
@@ -105,5 +115,8 @@ Aucun.
 
 ## NEXT ACTION
 
-Y2.1 — attendre la CI 7/7 de la PR #20, merger, puis taguer `v1.2.0` sur le
-commit de merge et pousser le tag pour déclencher le workflow `Release`.
+Y4.1 — sur le projet Hi-Fi (`~/Documents/Etabli/Projets/Chaine Hifi`, dépôt et
+continuité distincts), exécuter sa propre `NEXT ACTION` F1.2-b1 : `C310` et
+`C311` sur `B.Cu` par `flip_component`, board fermé, puis reroutage `/PVDD` par
+vias sous les broches de `U6` en IPC, KiCad rouvert. Valider par les critères
+que porte ce projet, pas par ceux d'ici.
