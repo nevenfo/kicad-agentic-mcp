@@ -236,27 +236,15 @@ pub static BASELINE_TOOLS: &[&str] = &[
 /// [`coverage::scan`](super::coverage::scan) at [`BASELINE_COMMIT`]. Frozen
 /// because that tree is not present in a build; re-derived by a test rather
 /// than trusted.
+///
+/// This list shrank from 42 to 13 when the bar became a property of the
+/// capability (X2): the tools that left it are all *mutations* — `add_wire`,
+/// `place_component`, `route_trace`, `create_footprint` — that the baseline
+/// exercises only against its own code. They are not less tested than before;
+/// what they were never doing, on either side of this comparison, was letting
+/// KiCAD judge the document they produced. The fork is measured by the same
+/// scanner under the same rule, so the comparison stays tool-for-tool.
 pub static BASELINE_COVERED: &[&str] = &[
-    "add_hierarchical_sheet",
-    "add_schematic_component",
-    "add_sheet_pin",
-    "add_wire",
-    "add_zone",
-    "batch_connect_pins",
-    "batch_delete",
-    "batch_delete_no_connect",
-    "batch_place_components",
-    "connect_pins",
-    "create_footprint",
-    "create_project",
-    "create_schematic",
-    "create_symbol",
-    "delete_no_connect",
-    "delete_sheet",
-    "delete_sheet_pin",
-    "duplicate_sheet",
-    "edit_sheet",
-    "edit_sheet_pin",
     "export_dxf",
     "export_gencad",
     "export_ipc2581",
@@ -266,18 +254,9 @@ pub static BASELINE_COVERED: &[&str] = &[
     "get_schematic_pin_locations",
     "get_sheet_hierarchy",
     "get_symbol_info",
-    "import_sheet_pins",
-    "import_svg_logo",
     "list_footprint_libraries",
     "list_symbols_in_library",
-    "move_labels_by_offset",
-    "move_sheet",
-    "place_component",
-    "renumber_sheet_pages",
-    "replace_component",
-    "route_trace",
     "search_jlcpcb_parts",
-    "split_wire_at_point",
     "validate_sheet_pins",
 ];
 

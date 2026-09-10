@@ -1,7 +1,9 @@
 //! `verification` toolset — DRC, design rules, KiCAD UI management, routing utilities.
 //!
-//! DRC delegates to `kicad-cli`. Design rules are read/written as S-expressions.
-//! KiCAD UI management uses process inspection + subprocess spawning.
+//! DRC delegates to `kicad-cli`. Design rules are read and written in the
+//! project file, which is where KiCAD keeps them — the board file has never
+//! held them, and writing them there produced a board KiCAD would not load
+//! (X1). KiCAD UI management uses process inspection + subprocess spawning.
 
 use crate::mcp::error::ToolErrorKind;
 use crate::mcp::protocol::CallToolResult;
@@ -51,15 +53,15 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "set_design_rules",
-            "Set board-level design rules (clearance, trace width, via size) in the PCB file.",
+            "Set the board-wide design constraints. KiCAD keeps these in the project file              (`<board>.kicad_pro`, under `board.design_settings.rules`), never in the board,              so the project file must exist. Argument names are KiCAD's own; the values are              read back after the write and a mismatch is an error, not a success.",
             json!({
                 "type": "object",
                 "properties": {
-                    "board": { "type": "string", "description": "Path to .kicad_pcb file" },
-                    "min_clearance": { "type": "number", "description": "Minimum clearance in mm" },
-                    "min_trace_width": { "type": "number", "description": "Minimum trace width in mm" },
-                    "min_via_drill": { "type": "number", "description": "Minimum via drill diameter in mm" },
-                    "min_via_size": { "type": "number", "description": "Minimum via pad diameter in mm" },
+                    "board": { "type": "string", "description": "Path to .kicad_pcb file; its .kicad_pro sibling is what gets written" },
+                    "min_clearance": { "type": "number", "description": "Minimum copper clearance in mm" },
+                    "min_track_width": { "type": "number", "description": "Minimum track width in mm" },
+                    "min_via_diameter": { "type": "number", "description": "Minimum via pad diameter in mm" },
+                    "min_through_hole_diameter": { "type": "number", "description": "Minimum through hole diameter in mm" },
                     "min_hole_to_hole": { "type": "number", "description": "Minimum hole-to-hole clearance in mm" }
                 },
                 "required": ["board"]
@@ -68,7 +70,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "get_design_rules",
-            "Return the current design rule constraints defined in the PCB file.",
+            "Return the board-wide design constraints KiCAD holds for this board, read from              the project file. Reports every constraint stored, not only the ones this server              can set; `null` means the project file does not carry it and KiCAD uses its own              default.",
             json!({
                 "type": "object",
                 "properties": {
@@ -140,7 +142,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "set_layer_constraints",
-            "Set per-layer design constraints (e.g. min trace width, clearance) in the board setup section.",
+            "Set per-layer design constraints as KiCAD custom rules. These live in the board's              own rules file (`<board>.kicad_dru`), not in the board, and the file is created if              it is not there. Calling twice for the same layer and constraint replaces the rule              rather than stacking another beside it.",
             json!({
                 "type": "object",
                 "properties": {
@@ -249,76 +251,89 @@ async fn handle_run_drc(
     ))
 }
 
-// ─── Design rules S-expression helpers ───────────────────────────────────────
+// ─── Design rules ────────────────────────────────────────────────────────────
 
-/// Read a rule value from `(setup (rules (rule_severity key val) ...))`.
-/// KiCAD stores rules in: `(setup ... (rules (rule_severity "..." ...) ...))`
-/// But simple constraints are in `(setup (constraints ...))`.
-fn read_constraint(content: &str, key: &str) -> Option<f64> {
-    // Pattern: `(constraint clearance (min VAL))` or `(min_clearance VAL)` in setup
-    // Try legacy format first: `(key VAL)` inside setup section
-    let pat = format!("({} ", key);
-    if let Some(pos) = content.find(&pat) {
-        let after = &content[pos + pat.len()..];
-        if let Some(end) = after.find(')') {
-            return after[..end].trim().parse::<f64>().ok();
-        }
-    }
-    // Try constraint format: `(constraint min_clearance (min VAL))`
-    let cpat = format!("(constraint {} (min ", key);
-    if let Some(pos) = content.find(&cpat) {
-        let after = &content[pos + cpat.len()..];
-        if let Some(end) = after.find(')') {
-            return after[..end].trim().parse::<f64>().ok();
-        }
-    }
-    None
+/// The board-wide constraints KiCAD stores, under the names KiCAD stores them.
+///
+/// Read off files KiCAD 10.0.6 wrote — a real project and a shipped demo,
+/// which agree — rather than off our own writer: they live in the *project*
+/// file, `<board>.kicad_pro`, under `board.design_settings.rules`, as
+/// millimetre floats.
+///
+/// The board file has nothing to do with them. The previous implementation
+/// inserted `(min_clearance 0.25)` and friends into the board's `(setup ...)`
+/// block, and `kicad-cli` then refused to load the result at all — "Unexpected
+/// min_clearance", exit 3 — while the tool answered `{"success": true}` (X1).
+/// No such key appears anywhere in a board KiCAD wrote.
+const RULE_KEYS: &[&str] = &[
+    "min_clearance",
+    "min_track_width",
+    "min_via_diameter",
+    "min_through_hole_diameter",
+    "min_hole_to_hole",
+];
+
+/// Argument names this tool used to accept that name nothing in KiCAD, and
+/// what to ask for instead.
+///
+/// They are refused rather than quietly aliased. `min_via_drill` is the clear
+/// case: a caller asking for it is thinking of a drill constraint KiCAD does
+/// not have, and mapping it to `min_through_hole_diameter` behind their back
+/// would leave them believing they had set something else.
+const RENAMED_ARGS: &[(&str, &str)] = &[
+    ("min_trace_width", "min_track_width"),
+    ("min_via_size", "min_via_diameter"),
+    ("min_via_drill", "min_through_hole_diameter"),
+];
+
+/// Where KiCAD keeps this board's constraints.
+fn project_for(board: &std::path::Path) -> std::path::PathBuf {
+    board.with_extension("kicad_pro")
 }
 
-/// Set or insert a rule inside the `(setup ...)` section.
-fn set_constraint(content: &str, key: &str, value: f64) -> String {
-    let pat = format!("({} ", key);
+/// The JSON pointer to the rules object, and the path to build if it is absent.
+const RULES_PATH: &[&str] = &["board", "design_settings", "rules"];
 
-    if let Some(pos) = content.find(&pat) {
-        // Replace existing value
-        let end = content[pos..]
-            .find(')')
-            .map(|i| pos + i + 1)
-            .unwrap_or(content.len());
-        let new_entry = format!("({} {})", key, value);
-        format!("{}{}{}", &content[..pos], new_entry, &content[end..])
-    } else {
-        // Insert into setup section before its closing paren
-        if let Some(setup_pos) = content.find("(setup") {
-            let setup_end = {
-                let mut depth = 0i32;
-                let mut end = setup_pos;
-                for (i, ch) in content[setup_pos..].char_indices() {
-                    match ch {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                end = setup_pos + i;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                end
-            };
-            let new_entry = format!("\n  ({} {})", key, value);
-            format!(
-                "{}{}{}",
-                &content[..setup_end],
-                new_entry,
-                &content[setup_end..]
-            )
-        } else {
-            content.to_string()
+fn rules_of(document: &serde_json::Value) -> Option<&serde_json::Value> {
+    RULES_PATH
+        .iter()
+        .try_fold(document, |node, key| node.get(*key))
+}
+
+/// The same object, creating the empty parents a fresh project file has not
+/// grown yet. Anything already there is left exactly as it is.
+fn rules_mut(document: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
+    let mut node = document;
+    for key in RULES_PATH {
+        if !node.is_object() {
+            return None;
         }
+        node = node
+            .as_object_mut()
+            .expect("checked")
+            .entry(*key)
+            .or_insert_with(|| json!({}));
     }
+    node.is_object().then_some(node)
+}
+
+/// Serialize the way KiCAD does: two-space indent, trailing newline. KiCAD
+/// writes its keys sorted, and `serde_json::Value` is backed by a `BTreeMap`,
+/// so round-tripping a project file reorders nothing.
+fn to_project_json(document: &serde_json::Value) -> String {
+    let mut text = serde_json::to_string_pretty(document).unwrap_or_default();
+    text.push('\n');
+    text
+}
+
+fn invalid(field: &str, reason: String) -> CallToolResult {
+    CallToolResult::error_kind(
+        ToolErrorKind::InvalidArgument {
+            field: field.to_string(),
+            reason: reason.clone(),
+        },
+        format!("`{field}`: {reason}"),
+    )
 }
 
 async fn handle_set_design_rules(
@@ -326,36 +341,141 @@ async fn handle_set_design_rules(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let board = get_path(args, "board")?;
-    let mut content = tokio::fs::read_to_string(&board).await?;
+    let project = project_for(&board);
 
-    let mut changed = Vec::new();
-
-    let rules: &[(&str, &str)] = &[
-        ("min_clearance", "min_clearance"),
-        ("min_track_width", "min_trace_width"),
-        ("min_via_drill", "min_via_drill"),
-        ("min_via_size", "min_via_size"),
-        ("min_hole_to_hole", "min_hole_to_hole"),
-    ];
-
-    for (sexp_key, arg_key) in rules {
-        if let Some(val) = args[arg_key].as_f64() {
-            content = set_constraint(&content, sexp_key, val);
-            changed.push(format!("{} = {}", sexp_key, val));
+    for (old, replacement) in RENAMED_ARGS {
+        if !args[*old].is_null() {
+            return Ok(invalid(
+                old,
+                format!("names no KiCAD design rule; use `{replacement}`"),
+            ));
         }
     }
 
-    if !changed.is_empty() {
-        write_atomic(&board, &content)?;
+    let mut requested: Vec<(&str, f64)> = Vec::new();
+    for key in RULE_KEYS {
+        match &args[*key] {
+            serde_json::Value::Null => {}
+            value => match value.as_f64() {
+                Some(mm) if mm.is_finite() && mm >= 0.0 => requested.push((key, mm)),
+                _ => {
+                    return Ok(invalid(
+                        key,
+                        "expected a non-negative number of millimetres".to_string(),
+                    ))
+                }
+            },
+        }
+    }
+    if requested.is_empty() {
+        return Ok(invalid(
+            "min_clearance",
+            format!(
+                "nothing to set — name at least one of: {}",
+                RULE_KEYS.join(", ")
+            ),
+        ));
     }
 
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "success": true,
-            "changed": changed
-        }))
-        .unwrap(),
-    ))
+    // The project file is not created here. A board whose project file is
+    // missing is a broken project, and inventing one would hide that behind a
+    // successful-looking write of constraints KiCAD would then read out of a
+    // file the rest of the project does not use.
+    let original = match tokio::fs::read_to_string(&project).await {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::FileNotFound {
+                    path: project.display().to_string(),
+                },
+                format!(
+                    "KiCAD keeps board constraints in the project file, and {} does not exist",
+                    project.display()
+                ),
+            ))
+        }
+        Err(e) => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::from_io(&e),
+                format!("Failed to read {}: {e}", project.display()),
+            ))
+        }
+    };
+
+    let mut document: serde_json::Value = match serde_json::from_str(&original) {
+        Ok(value) => value,
+        Err(e) => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: project.display().to_string(),
+                    detail: e.to_string(),
+                },
+                format!("{} is not valid JSON: {e}", project.display()),
+            ))
+        }
+    };
+
+    let Some(rules) = rules_mut(&mut document) else {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::MalformedDocument {
+                path: project.display().to_string(),
+                detail: "board.design_settings.rules is not an object".to_string(),
+            },
+            format!(
+                "{} does not have a `board.design_settings.rules` object",
+                project.display()
+            ),
+        ));
+    };
+    for (key, mm) in &requested {
+        rules[*key] = json!(mm);
+    }
+
+    write_atomic(&project, &to_project_json(&document))?;
+
+    // Read back from disk rather than from the value just written. It is the
+    // weaker half of the contract — the strong half is a test that hands the
+    // result to `kicad-cli` — but it is the half that runs on every call, and
+    // it is what stops this tool from reporting a write it did not land.
+    let written = tokio::fs::read_to_string(&project).await?;
+    let reread: serde_json::Value = serde_json::from_str(&written)?;
+    let stored = rules_of(&reread);
+    for (key, mm) in &requested {
+        let actual = stored
+            .and_then(|rules| rules.get(*key))
+            .and_then(|v| v.as_f64());
+        if actual != Some(*mm) {
+            let rolled_back = write_atomic(&project, &original).is_ok();
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::ReadbackMismatch {
+                    document: project.display().to_string(),
+                    field: (*key).to_string(),
+                    expected: mm.to_string(),
+                    actual: actual.map(|v| v.to_string()),
+                    mutated: true,
+                    rolled_back,
+                },
+                format!(
+                    "{key} read back as {} after writing {mm}{}",
+                    actual.map_or_else(|| "absent".to_string(), |v| v.to_string()),
+                    if rolled_back {
+                        "; the project file was restored"
+                    } else {
+                        "; the project file could NOT be restored and needs inspection"
+                    }
+                ),
+            ));
+        }
+    }
+
+    let applied: serde_json::Map<String, serde_json::Value> = requested
+        .iter()
+        .map(|(key, mm)| ((*key).to_string(), json!(mm)))
+        .collect();
+    Ok(CallToolResult::json(&json!({
+        "project": project.display().to_string(),
+        "applied_mm": applied,
+    })))
 }
 
 async fn handle_get_design_rules(
@@ -363,21 +483,61 @@ async fn handle_get_design_rules(
     _ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let board = get_path(args, "board")?;
-    let content = tokio::fs::read_to_string(&board).await?;
+    let project = project_for(&board);
 
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "board": board.to_str().unwrap_or(""),
-            "rules": {
-                "min_clearance": read_constraint(&content, "min_clearance"),
-                "min_trace_width": read_constraint(&content, "min_track_width"),
-                "min_via_drill": read_constraint(&content, "min_via_drill"),
-                "min_via_size": read_constraint(&content, "min_via_size"),
-                "min_hole_to_hole": read_constraint(&content, "min_hole_to_hole")
-            }
-        }))
-        .unwrap(),
-    ))
+    let text = match tokio::fs::read_to_string(&project).await {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::FileNotFound {
+                    path: project.display().to_string(),
+                },
+                format!(
+                    "KiCAD keeps board constraints in the project file, and {} does not exist",
+                    project.display()
+                ),
+            ))
+        }
+        Err(e) => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::from_io(&e),
+                format!("Failed to read {}: {e}", project.display()),
+            ))
+        }
+    };
+    let document: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(value) => value,
+        Err(e) => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::MalformedDocument {
+                    path: project.display().to_string(),
+                    detail: e.to_string(),
+                },
+                format!("{} is not valid JSON: {e}", project.display()),
+            ))
+        }
+    };
+
+    // Report every constraint KiCAD holds, not only the five this tool writes:
+    // a caller checking a board against a fab's limits needs the ones we do
+    // not set as much as the ones we do. `null` means the project file does
+    // not carry it, which is how KiCAD reads it as its own default.
+    let stored = rules_of(&document);
+    let mut rules = serde_json::Map::new();
+    if let Some(serde_json::Value::Object(map)) = stored {
+        for (key, value) in map {
+            rules.insert(key.clone(), value.clone());
+        }
+    }
+    for key in RULE_KEYS {
+        rules.entry((*key).to_string()).or_insert(json!(null));
+    }
+
+    Ok(CallToolResult::json(&json!({
+        "project": project.display().to_string(),
+        "writable_mm": RULE_KEYS,
+        "rules": rules,
+    })))
 }
 
 // ─── KiCAD UI management ──────────────────────────────────────────────────────
@@ -749,6 +909,82 @@ fn reassign_uuids(content: &str, insert_boundary: usize) -> String {
 
 // ─── Layer constraints ───────────────────────────────────────────────────────
 
+// ─── Per-layer constraints ───────────────────────────────────────────────────
+
+/// KiCAD's custom design rules live in their own file, `<board>.kicad_dru`,
+/// and nowhere else.
+///
+/// The board's `(setup ...)` block does not accept a `(rule ...)`: writing one
+/// there produced a board `kicad-cli` refuses to load — "Unexpected rule",
+/// exit 3 — while the tool answered `{"success": true}`. That is the same
+/// defect `set_design_rules` had (X1), found by the X6 audit and fixed the
+/// same way: write where KiCAD reads.
+///
+/// Unlike the project file, this one is optional — a board with no custom
+/// rules simply has none — so creating it is legitimate rather than a way of
+/// papering over a broken project.
+fn rules_file_for(board: &std::path::Path) -> std::path::PathBuf {
+    board.with_extension("kicad_dru")
+}
+
+/// The header KiCAD writes at the top of a rules file.
+const DRU_HEADER: &str = "(version 1)\n";
+
+/// The name this server gives the rule it owns for `layer` and `constraint`.
+///
+/// Deterministic so a second call replaces the rule rather than stacking
+/// another one beside it: without this, setting a clearance twice would leave
+/// two rules and let the older one keep winning wherever it is stricter.
+fn rule_name(layer: &str, constraint: &str) -> String {
+    format!("konnect {layer} {constraint}")
+}
+
+/// The span of `(rule "<name>" ...)` in `text`, if it is there.
+///
+/// Parenthesis counting skips anything inside a string, because a condition
+/// routinely contains them — `"A.memberOfFootprint('U1')"` is ordinary — and
+/// counting those would end the rule in the middle of itself.
+fn rule_span(text: &str, name: &str) -> Option<std::ops::Range<usize>> {
+    let needle = format!("(rule \"{name}\"");
+    let start = text.find(&needle)?;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    for (offset, ch) in text[start..].char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' if !in_string => depth += 1,
+            ')' if !in_string => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(start..start + offset + ch.len_utf8());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Add `rule`, or replace the one already carrying that name, leaving every
+/// other byte of the file where it was — including the comments a human wrote
+/// between their own rules.
+fn upsert_rule(text: &str, name: &str, rule: &str) -> String {
+    if let Some(span) = rule_span(text, name) {
+        let mut out = String::with_capacity(text.len() + rule.len());
+        out.push_str(&text[..span.start]);
+        out.push_str(rule);
+        out.push_str(&text[span.end..]);
+        return out;
+    }
+    let mut out = text.to_string();
+    if !out.ends_with('\n') && !out.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(rule);
+    out.push('\n');
+    out
+}
+
 async fn handle_set_layer_constraints(
     args: &serde_json::Value,
     _ctx: &ToolContext,
@@ -758,89 +994,93 @@ async fn handle_set_layer_constraints(
         Ok(v) => v.to_string(),
         Err(e) => return Ok(e),
     };
-    let mut content = tokio::fs::read_to_string(&board).await?;
-    let mut changed = Vec::new();
+    if konnect_ipc::builders::try_layer_from_name(&layer).is_none() {
+        return Ok(invalid(
+            "layer",
+            format!("'{layer}' is not a KiCAD layer name"),
+        ));
+    }
 
-    // Build a layer constraint rule block to insert into (setup ...)
-    // KiCAD uses `(rule "name" (constraint ...) (condition "A.Layer == 'LAYER'"))` inside setup
-    let rule_name = format!("{}_constraints", layer.replace('.', "_"));
-
-    if let Some(clearance) = args["min_clearance"].as_f64() {
-        let rule_sexp = format!(
-            "\n    (rule \"{rule_name}_clearance\"\n      (constraint clearance (min {clearance}))\n      (condition \"A.Layer == '{layer}'\")\n    )"
-        );
-        // Insert into setup block
-        if let Some(setup_pos) = content.find("(setup") {
-            let mut depth = 0i32;
-            let mut setup_end = setup_pos;
-            for (i, ch) in content[setup_pos..].char_indices() {
-                match ch {
-                    '(' => depth += 1,
-                    ')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            setup_end = setup_pos + i;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            content = format!(
-                "{}{}{}",
-                &content[..setup_end],
-                rule_sexp,
-                &content[setup_end..]
-            );
-            changed.push(format!("clearance = {} on {}", clearance, layer));
+    // `track_width`, not `trace_width`: the argument keeps the name it had,
+    // but the constraint written is the one KiCAD's rule grammar defines.
+    let wanted: Vec<(&str, f64)> = [
+        ("clearance", "min_clearance"),
+        ("track_width", "min_trace_width"),
+    ]
+    .iter()
+    .filter_map(|(constraint, arg)| args[*arg].as_f64().map(|mm| (*constraint, mm)))
+    .collect();
+    if wanted.is_empty() {
+        return Ok(invalid(
+            "min_clearance",
+            "nothing to set — name min_clearance or min_trace_width".to_string(),
+        ));
+    }
+    for (constraint, mm) in &wanted {
+        if !mm.is_finite() || *mm < 0.0 {
+            return Ok(invalid(
+                constraint,
+                "expected a non-negative number of millimetres".to_string(),
+            ));
         }
     }
 
-    if let Some(trace_width) = args["min_trace_width"].as_f64() {
-        let rule_sexp = format!(
-            "\n    (rule \"{rule_name}_trace_width\"\n      (constraint track_width (min {trace_width}))\n      (condition \"A.Layer == '{layer}'\")\n    )"
+    let rules_path = rules_file_for(&board);
+    let original = match tokio::fs::read_to_string(&rules_path).await {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => DRU_HEADER.to_string(),
+        Err(e) => {
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::from_io(&e),
+                format!("Failed to read {}: {e}", rules_path.display()),
+            ))
+        }
+    };
+
+    let mut text = original.clone();
+    let mut applied = serde_json::Map::new();
+    for (constraint, mm) in &wanted {
+        let name = rule_name(&layer, constraint);
+        // Values in a rules file carry their unit, unlike the project file's
+        // bare millimetre floats.
+        let rule = format!(
+            "(rule \"{name}\"\n\t(constraint {constraint} (min {mm}mm))\n\t(condition \"A.Layer == '{layer}'\"))"
         );
-        if let Some(setup_pos) = content.find("(setup") {
-            let mut depth = 0i32;
-            let mut setup_end = setup_pos;
-            for (i, ch) in content[setup_pos..].char_indices() {
-                match ch {
-                    '(' => depth += 1,
-                    ')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            setup_end = setup_pos + i;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            content = format!(
-                "{}{}{}",
-                &content[..setup_end],
-                rule_sexp,
-                &content[setup_end..]
-            );
-            changed.push(format!("min_trace_width = {} on {}", trace_width, layer));
+        text = upsert_rule(&text, &name, &rule);
+        applied.insert((*constraint).to_string(), json!(mm));
+    }
+
+    write_atomic(&rules_path, &text)?;
+
+    let written = tokio::fs::read_to_string(&rules_path).await?;
+    for (constraint, _) in &wanted {
+        let name = rule_name(&layer, constraint);
+        if rule_span(&written, &name).is_none() {
+            let rolled_back = if original == DRU_HEADER {
+                std::fs::remove_file(&rules_path).is_ok()
+            } else {
+                write_atomic(&rules_path, &original).is_ok()
+            };
+            return Ok(CallToolResult::error_kind(
+                ToolErrorKind::ReadbackMismatch {
+                    document: rules_path.display().to_string(),
+                    field: name.clone(),
+                    expected: format!("a {constraint} rule on {layer}"),
+                    actual: None,
+                    mutated: true,
+                    rolled_back,
+                },
+                format!("the {constraint} rule for {layer} is not in the file after writing it"),
+            ));
         }
     }
 
-    if !changed.is_empty() {
-        write_atomic(&board, &content)?;
-    }
-
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
-            "success": true,
-            "layer": layer,
-            "changed": changed
-        }))
-        .unwrap(),
-    ))
+    Ok(CallToolResult::json(&json!({
+        "rules_file": rules_path.display().to_string(),
+        "layer": layer,
+        "applied_mm": applied,
+    })))
 }
-
-// ─── Check clearance ─────────────────────────────────────────────────────────
 
 async fn handle_check_clearance(
     args: &serde_json::Value,

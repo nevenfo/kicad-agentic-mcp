@@ -35,6 +35,7 @@ struct Counts {
     external: usize,
     partial: usize,
     not_tested: usize,
+    unproven: usize,
     gap: usize,
     out_of_scope: usize,
 }
@@ -47,6 +48,7 @@ impl Counts {
             Status::ExternalTool => self.external += 1,
             Status::Partial => self.partial += 1,
             Status::NotTested => self.not_tested += 1,
+            Status::Unproven => self.unproven += 1,
             Status::Gap => self.gap += 1,
             Status::GuiOnlyNoApi | Status::RequiresCustomKiCad => self.out_of_scope += 1,
         }
@@ -105,6 +107,7 @@ pub fn render(coverage: &Coverage) -> String {
         target.external += counts.external;
         target.partial += counts.partial;
         target.not_tested += counts.not_tested;
+        target.unproven += counts.unproven;
         target.gap += counts.gap;
         target.out_of_scope += counts.out_of_scope;
     }
@@ -112,17 +115,31 @@ pub fn render(coverage: &Coverage) -> String {
     let _ = writeln!(out, "## Headline\n");
     let _ = writeln!(
         out,
-        "| | entries | supported | partial | not tested | gap | KiCAD has no API | coverage |"
+        "| | entries | supported | partial | unproven | not tested | gap | KiCAD has no API | coverage |"
     );
-    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|");
     row(&mut out, "KiCAD domains", &kicad);
     row(&mut out, "server's own", &server);
     let _ = writeln!(out);
     let _ = writeln!(
         out,
         "Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. \
-         An entry is `supported` only when a test that actually runs, or a golden benchmark \
-         task, exercises it; the proof is named in the tables below.\n"
+         An entry is `supported` only when the proof found for it is at least the proof its \
+         transport requires; both are named in the tables below, as `needs` and `proof`.\n\n\
+         `unproven` is the gap between those two: the tool runs, our own tests agree with it, \
+         and KiCAD has never been asked. That is the status a mutation gets when it is only \
+         ever exercised against the code that wrote it — which is how `set_design_rules` came \
+         to report success on a board `kicad-cli` refuses to load. Clearing it takes KiCAD \
+         reloading the document, or a live session reading the result back, and those suites \
+         are opt-in: `gate.ps1` runs them on a machine with KiCAD, CI has none installed.\n\n\
+         The action follows the adapter. `sexpr` writes edit a document directly and are the \
+         class that produced every defect found so far, so each needs a test that mutates a \
+         throwaway project and hands it to `kicad-cli`; three turned out to be writing keys \
+         KiCAD does not have (`set_design_rules`, `set_active_layer`, `set_layer_constraints`) \
+         and are fixed. `ipc` and `ipc→sexpr` writes need a live read-back instead, their \
+         effect being on the running editor. None of this says the rest are broken: it says \
+         nobody has asked KiCAD, and the three that were asked are why the distinction earns \
+         its place.\n"
     );
 
     // ── The V1 comparison target ────────────────────────────────────────────
@@ -298,9 +315,9 @@ pub fn render(coverage: &Coverage) -> String {
         if !tools.is_empty() {
             let _ = writeln!(
                 out,
-                "| tool | toolset | adapter | effect | write target | status | proof | evidence | note |"
+                "| tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |"
             );
-            let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|");
+            let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|");
             for capability in tools {
                 let evidence = coverage.get(capability.tool);
                 let status = capability.status(evidence.proof);
@@ -315,13 +332,14 @@ pub fn render(coverage: &Coverage) -> String {
                 };
                 let _ = writeln!(
                     out,
-                    "| `{}` | `{}` | `{}` | `{}` | {} | {} | {} | {} | {} |",
+                    "| `{}` | `{}` | `{}` | `{}` | {} | {} | {} | {} | {} | {} |",
                     capability.tool,
                     toolsets.get(capability.tool).copied().unwrap_or("—"),
                     capability.adapter.label(),
                     effect.label(),
                     write_target,
                     status.label(),
+                    capability.required_proof().label(),
                     evidence.proof.label(),
                     evidence
                         .source
@@ -398,11 +416,12 @@ pub fn render(coverage: &Coverage) -> String {
 fn row(out: &mut String, label: &str, counts: &Counts) {
     let _ = writeln!(
         out,
-        "| {} | {} | {} | {} | {} | {} | {} | {} |",
+        "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
         label,
         counts.total,
         counts.supported + counts.external,
         counts.partial,
+        counts.unproven,
         counts.not_tested,
         counts.gap,
         counts.out_of_scope,

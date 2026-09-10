@@ -201,16 +201,22 @@ autopilot.
 | Reference circuits | USB-C, LDO, buck converter, STM32, I2C and LED templates with verified values |
 | Bundled for the client | 6 skills and 2 agents carrying KiCad conventions |
 
-**Surface, as a technical fact rather than a headline:** 203 domain tools across
-22 toolsets, plus 13 always-visible meta-tools — 216 served in total. The client
+**Surface, as a technical fact rather than a headline:** 204 domain tools across
+22 toolsets, plus 13 always-visible meta-tools — 217 served in total. The client
 does not see them all: startup exposes a **21-tool** starter kit, toolsets load on
 demand, and the gateway calls anything by name without listing it at all. Every
 tool, with its source file, is in [tool-directory.md](tool-directory.md).
 
-Of the 186 tools inherited from Konnect v0.2.2, 137 (73.7 %) have a test that
-actually runs in this repository; `#[ignore]`d tests needing a live KiCad GUI do
-not count. That matrix is generated from the source and a test fails if it has
-drifted — [docs/capability-matrix.md](docs/capability-matrix.md).
+Of the 186 tools inherited from Konnect v0.2.2, 65 (34.9 %) clear the proof
+their transport requires; the baseline itself clears 13, scored by the same
+scanner. A tool that only edits a document is not counted until KiCAD has
+reloaded what it wrote, and one whose whole effect is on the running editor is
+not counted until a live session has been asked what it holds — because three
+tools were reporting success while writing keys KiCAD does not have, and no
+test made only of our own code could see it. The number was 73.7 % under the
+older rule, which asked merely that *a* test run. That matrix is generated from
+the source and a test fails if it has drifted —
+[docs/capability-matrix.md](docs/capability-matrix.md).
 
 ## Quick start
 

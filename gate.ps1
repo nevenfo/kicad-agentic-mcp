@@ -51,6 +51,34 @@ Step "test"    { cargo test --workspace --locked --lib --tests }
 Step "doctest" { cargo test --workspace --locked --doc }
 Step "build"   { cargo build --release -p konnect }
 
+# The arbitrated suites: mutations judged by KiCAD, not by us. They are
+# `#[ignore]`d because CI has no KiCAD to run them against, so without this
+# step they would run nowhere at all — and `docs/capability-matrix.md`
+# publishes tools as SUPPORTED on the strength of exactly these tests.
+#
+# Skipped, loudly, when there is no kicad-cli: a machine without KiCAD can
+# still run the rest of the gate, but it must not be able to mistake that for
+# having proved anything.
+$kicadCli = $env:KONNECT_KICAD_CLI
+if (-not $kicadCli) {
+    $kicadCli = (Get-Command kicad-cli -ErrorAction SilentlyContinue).Source
+}
+if (-not $kicadCli) {
+    $kicadCli = Get-ChildItem "$env:LOCALAPPDATA\Programs\KiCad\*\bin\kicad-cli.exe" -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+}
+if ($kicadCli) {
+    $env:KONNECT_KICAD_CLI = $kicadCli
+    Write-Host "arbiter: $kicadCli" -ForegroundColor DarkGray
+    Step "arbitrated" {
+        cargo test -p konnect-core --locked --test kicad_arbitration --test config_and_rules -- --ignored
+    }
+} else {
+    Write-Host "`n=== arbitrated ===" -ForegroundColor Cyan
+    Write-Host "SKIPPED: no kicad-cli found. The KiCAD-judged suites did not run, so nothing" -ForegroundColor Yellow
+    Write-Host "in this pass proves a mutation is one KiCAD accepts. Set KONNECT_KICAD_CLI." -ForegroundColor Yellow
+}
+
 if ($Bench) {
     $py = Resolve-BenchPython
     $PyExe = $py[0]

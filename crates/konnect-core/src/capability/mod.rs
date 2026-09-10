@@ -193,8 +193,11 @@ pub static ALL_DOMAINS: &[Domain] = &[
 /// running with the board loaded" when the socket is silent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Adapter {
-    /// The S-expression document engine (`konnect-sexp`,
-    /// `konnect-schematic-editor`): reads and writes project files directly.
+    /// The document engine (`konnect-sexp`, `konnect-schematic-editor`):
+    /// reads and writes the project's own files directly, with no KiCAD in the
+    /// loop. Mostly S-expressions, which is what it is named for, but the
+    /// project file is JSON and belongs here too — `set_design_rules` writes
+    /// `.kicad_pro`, because that is where KiCAD keeps board constraints.
     Sexpr,
     /// KiCAD's IPC API over NNG. Requires a running KiCAD with the API
     /// enabled; there is no file fallback.
@@ -293,6 +296,7 @@ const VERB_EFFECTS: &[(&str, Effect)] = &[
     ("enrich_", Effect::Write),
     ("export_", Effect::Write),
     ("fix_", Effect::Write),
+    ("flip_", Effect::Write),
     ("generate_", Effect::Write),
     ("group_", Effect::Write),
     ("import_", Effect::Write),
@@ -503,8 +507,9 @@ pub enum WriteTarget {
     DesignDocument,
     /// The call writes, but never a source document of the design:
     /// fabrication artifacts (gerbers, drill, BOM, position files), reports,
-    /// or this server's own durable state (task state, config). Allowed
-    /// under `Manufacturing`.
+    /// this server's own durable state (task state, config), or the running
+    /// editor's session state, which outlives no file. Allowed under
+    /// `Manufacturing`.
     Derived,
 }
 
@@ -519,6 +524,11 @@ pub enum WriteTarget {
 /// there is no MANIFEST tool named `export_*` that is a documented
 /// exception to it.
 const DERIVED_WRITES: &[&str] = &[
+    // Moves the editor's cursor between layers and writes nothing at all: the
+    // active layer is session state KiCAD keeps in `.kicad_prl`, and the board
+    // format has no field for it (X4). It was `DesignDocument` while the
+    // implementation invented one.
+    "set_active_layer",
     // Runs kicad-cli and writes only the netlist file the caller asked for,
     // never a project source document.
     "generate_netlist",
@@ -645,6 +655,13 @@ pub enum Status {
     RequiresCustomKiCad,
     ExternalTool,
     NotTested,
+    /// Exercised, and never by KiCAD. The code runs and our own tests agree
+    /// with it, but the proof its [`Bar`] requires — KiCAD reloading the
+    /// document, or a live session reading the result back — has never been
+    /// obtained. Distinct from `NOT_TESTED`, which means nobody ran it at all,
+    /// and it is deliberately not covered: this is the status that stops a
+    /// mutation from being published as working because we said so.
+    Unproven,
 }
 
 impl Status {
@@ -657,6 +674,7 @@ impl Status {
             Status::RequiresCustomKiCad => "REQUIRES_CUSTOM_KICAD",
             Status::ExternalTool => "EXTERNAL_TOOL",
             Status::NotTested => "NOT_TESTED",
+            Status::Unproven => "UNPROVEN",
         }
     }
 
@@ -689,11 +707,49 @@ pub struct Capability {
 }
 
 impl Capability {
+    /// How much proof this capability needs before it may be published as
+    /// working. Derived from what the call can damage, never declared, so a
+    /// tool cannot be exempted by whoever adds it.
+    ///
+    /// Reading is held to our own tests: a read that is wrong returns a wrong
+    /// answer, and the next call is free to disagree. Writing is not, and the
+    /// bar then follows the transport, because that is what decides who can
+    /// even see the result:
+    ///
+    /// * a document written as S-expressions or handed to `kicad-cli` is only
+    ///   as good as KiCAD's willingness to load it back — and re-reading our
+    ///   own bytes proves nothing, which is exactly how `set_design_rules`
+    ///   came to report success on a board KiCAD refuses (X1);
+    /// * an operation whose whole effect is on the running editor leaves no
+    ///   file to parse, so only the live session can confirm it;
+    /// * writes that never touch a KiCAD document — a report, an export, the
+    ///   server's own state, a third-party call — have no KiCAD verdict to
+    ///   seek.
+    pub fn required_proof(&self) -> Bar {
+        if tool_effect(self.tool) == Effect::Read || !self.domain.is_kicad_domain() {
+            return Bar::Internal;
+        }
+        // A write that is not a design document has no KiCAD verdict to seek:
+        // `export_gerber` produces a fabrication artifact, and produces it *by*
+        // handing the work to kicad-cli. Asking KiCAD to reload a gerber would
+        // be a bar no correct implementation could clear, which is its own kind
+        // of dishonest matrix.
+        if tool_write_target(self.tool) == WriteTarget::Derived {
+            return Bar::Internal;
+        }
+        match self.adapter {
+            Adapter::Ipc | Adapter::Process => Bar::LiveReadback,
+            Adapter::Sexpr | Adapter::IpcOrSexpr | Adapter::Cli => Bar::KicadArbitrated,
+            Adapter::Internal | Adapter::External => Bar::Internal,
+        }
+    }
+
     /// Combine the declared limitation with the discovered proof.
     ///
     /// A limitation that is a fact about KiCAD wins outright — an untested
     /// GUI-only capability is still GUI-only. Otherwise no proof means
-    /// `NOT_TESTED`, whatever the code does.
+    /// `NOT_TESTED`, whatever the code does, and a proof weaker than
+    /// [`Capability::required_proof`] means `UNPROVEN`, whatever our tests say.
     pub fn status(&self, proof: coverage::Proof) -> Status {
         match self.limitation {
             Limitation::GuiOnlyNoApi(_) => return Status::GuiOnlyNoApi,
@@ -704,10 +760,55 @@ impl Capability {
         if !proof.is_evidence() {
             return Status::NotTested;
         }
+        // An external tool answers to its own vendor, not to KiCAD.
+        if self.adapter == Adapter::External {
+            return Status::ExternalTool;
+        }
+        if proof < self.required_proof().needs() {
+            return Status::Unproven;
+        }
         match self.limitation {
             Limitation::Partial(_) => Status::Partial,
-            _ if self.adapter == Adapter::External => Status::ExternalTool,
             _ => Status::Supported,
+        }
+    }
+}
+
+// ─── Required proof ──────────────────────────────────────────────────────────
+
+/// The weakest proof that may publish a capability as `SUPPORTED`.
+///
+/// This is the half of the matrix that was missing. [`coverage::Proof`] has
+/// always said how strongly a tool is exercised; nothing said how strongly it
+/// *had* to be, so a unit test — our code agreeing with our code — was enough
+/// for any claim. Two names for the same idea are kept apart on purpose: the
+/// bar belongs to the capability and is derived from its transport, the proof
+/// belongs to the repository and is discovered by scanning it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Bar {
+    /// Our own tests settle it.
+    Internal,
+    /// KiCAD must load the resulting document back.
+    KicadArbitrated,
+    /// A live KiCAD must perform it and be asked what it now holds.
+    LiveReadback,
+}
+
+impl Bar {
+    /// The weakest [`coverage::Proof`] that clears this bar.
+    pub fn needs(self) -> coverage::Proof {
+        match self {
+            Bar::Internal => coverage::Proof::Test,
+            Bar::KicadArbitrated => coverage::Proof::Arbitrated,
+            Bar::LiveReadback => coverage::Proof::Live,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Bar::Internal => "unit",
+            Bar::KicadArbitrated => "kicad-parsed",
+            Bar::LiveReadback => "live",
         }
     }
 }
@@ -961,7 +1062,9 @@ pub static MANIFEST: &[Capability] = &[
     cap("get_board_extents", Domain::Pcb, Adapter::IpcOrSexpr),
     cap("get_layer_list", Domain::Stackup, Adapter::Sexpr),
     cap("add_layer", Domain::Stackup, Adapter::Sexpr),
-    cap("set_active_layer", Domain::Stackup, Adapter::Sexpr),
+    // No file fallback on purpose: the active layer is session state, and the
+    // board file has no field for it (X4). IPC or a refusal.
+    cap("set_active_layer", Domain::Stackup, Adapter::Ipc),
     cap("add_board_outline", Domain::Pcb, Adapter::IpcOrSexpr),
     cap("add_mounting_hole", Domain::Pcb, Adapter::Sexpr),
     cap("add_board_text", Domain::Pcb, Adapter::IpcOrSexpr),
@@ -971,6 +1074,7 @@ pub static MANIFEST: &[Capability] = &[
     cap("place_component", Domain::Placement, Adapter::Ipc),
     cap("move_component", Domain::Placement, Adapter::Ipc),
     cap("rotate_component", Domain::Placement, Adapter::Ipc),
+    cap("flip_component", Domain::Placement, Adapter::Sexpr),
     cap("delete_component", Domain::Placement, Adapter::Ipc),
     cap("edit_component", Domain::Placement, Adapter::Ipc),
     cap("find_component", Domain::Placement, Adapter::Ipc),

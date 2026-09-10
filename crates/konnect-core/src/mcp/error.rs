@@ -303,6 +303,37 @@ pub enum ToolErrorKind {
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// The mutation was written and the result read back does not match what
+    /// was asked for.
+    ///
+    /// This is the error the whole proof contract exists to make reachable. A
+    /// tool that writes and then answers `success` because its own function
+    /// returned `Ok` is exactly how `set_design_rules` reported five applied
+    /// constraints on a board `kicad-cli` then refused to load (X1). Where a
+    /// result can be re-read, it is, and a mismatch is an error rather than a
+    /// success with a caveat.
+    ///
+    /// The last two fields are the ones a caller cannot recover without: an
+    /// error that does not say whether the document was touched leaves them
+    /// unable to decide between retrying and inspecting.
+    ReadbackMismatch {
+        /// The document the mutation was aimed at.
+        document: String,
+        /// The property that came back wrong, in the vocabulary the caller
+        /// used to ask for it.
+        field: String,
+        /// What was asked for, rendered.
+        expected: String,
+        /// What the read-back returned, rendered. Absent when the property was
+        /// missing entirely rather than wrong.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        actual: Option<String>,
+        /// Whether anything was written before the mismatch was found.
+        mutated: bool,
+        /// Whether the document was restored to its prior contents. False with
+        /// `mutated: true` means the file needs inspection, and says so.
+        rolled_back: bool,
+    },
 }
 
 impl ToolErrorKind {
@@ -329,6 +360,7 @@ impl ToolErrorKind {
             Self::BoardNotOpen { .. } => "board_not_open",
             Self::HandlerError { .. } => "handler_error",
             Self::PostconditionFailed { .. } => "postcondition_failed",
+            Self::ReadbackMismatch { .. } => "readback_mismatch",
         }
     }
 
@@ -414,6 +446,10 @@ impl ToolErrorKind {
             // Deterministic: the same plan broke the same promise. A retry
             // needs a different plan, not a second attempt at this one.
             Self::PostconditionFailed { .. } => TransientClass::None,
+            // KiCAD, or the document itself, disagreed with what we wrote. The
+            // identical call writes the identical bytes and is read back the
+            // identical way.
+            Self::ReadbackMismatch { .. } => TransientClass::None,
         }
     }
 

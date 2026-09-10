@@ -229,7 +229,7 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         tool!(
             "set_active_layer",
-            "Set the active layer recorded in the board file's setup section.",
+            "Move the running KiCAD editor to a layer. This is session state, not board              content — KiCAD keeps it outside the .kicad_pcb — so it requires a live editor              holding this board, and the result is read back from KiCAD before it is reported.",
             json!({
                 "type": "object",
                 "properties": {
@@ -753,9 +753,23 @@ async fn handle_add_layer(
     })))
 }
 
+/// Move the running editor to a layer, and confirm with KiCAD that it went.
+///
+/// There is no file path here, and that is the fix. The previous
+/// implementation wrote `(active_layer "B.Cu")` into the board's
+/// `(setup ...)` block — a field KiCAD does not have. `kicad-cli` then refused
+/// to load the board at all ("Unexpected active_layer", exit 3) while the tool
+/// answered `{"active_layer": "B.Cu"}` (X1). The active layer is session
+/// state: KiCAD keeps it in `.kicad_prl`, a per-user preference file, and the
+/// board file has never carried it.
+///
+/// So this is IPC or nothing. There is deliberately no file fallback, unlike
+/// the board-geometry tools above: falling back would mean inventing the same
+/// broken field again, and a refusal a caller can read is worth more than a
+/// mutation that corrupts the document.
 async fn handle_set_active_layer(
     args: &serde_json::Value,
-    _ctx: &ToolContext,
+    ctx: &ToolContext,
 ) -> anyhow::Result<CallToolResult> {
     let board_path = get_path(args, "board")?;
     let layer = match require_str(args, "layer") {
@@ -763,32 +777,66 @@ async fn handle_set_active_layer(
         Err(e) => return Ok(e),
     };
 
-    let content = std::fs::read_to_string(&board_path)?;
-    let new_content = if let Some(pos) = content.find("(active_layer ") {
-        let after = pos + "(active_layer ".len();
-        let close = content[after..].find(')').unwrap_or(0);
-        let layer_end = after + close;
-        apply_edits(
-            content,
-            vec![SexpEdit::replace(after, layer_end, format!("\"{layer}\""))],
-        )
-    } else {
-        // Insert into setup block
-        let setup_close = content
-            .find("(setup")
-            .and_then(|p| content[p..].find('\n').map(|off| p + off))
-            .unwrap_or(content.rfind(')').unwrap_or(content.len()));
-        apply_edits(
-            content,
-            vec![SexpEdit::insert(
-                setup_close,
-                format!("\n    (active_layer \"{layer}\")"),
-            )],
-        )
+    let Some(target) = builders::try_layer_from_name(&layer) else {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::InvalidArgument {
+                field: "layer".to_string(),
+                reason: format!("'{layer}' is not a KiCAD layer name"),
+            },
+            format!("'{layer}' is not a KiCAD layer name (try 'F.Cu', 'B.SilkS', …)"),
+        ));
     };
-    write_atomic(&board_path, &new_content)?;
 
-    Ok(CallToolResult::json(&json!({ "active_layer": layer })))
+    let requested_board = board_path.clone();
+    let observed = match with_ipc(ctx.config.ipc_address.clone(), move |c| {
+        // Same reason as add_board_outline: without this the command lands on
+        // whichever board KiCAD happened to open first.
+        c.ensure_board_is_active(&requested_board)?;
+        c.set_active_layer(target)?;
+        // KiCAD acknowledges the command without saying what it settled on, so
+        // the answer comes from asking it again rather than from the fact that
+        // the request did not error.
+        c.get_active_layer()
+    })
+    .await?
+    {
+        Ok(layer) => layer,
+        Err(failure) => return Ok(ipc_error_result(&failure)),
+    };
+
+    if observed != target {
+        return Ok(CallToolResult::error_kind(
+            ToolErrorKind::ReadbackMismatch {
+                document: board_path.display().to_string(),
+                field: "active_layer".to_string(),
+                expected: layer.clone(),
+                actual: Some(layer_display_name(observed)),
+                // The editor's own state, and nothing was written: there is no
+                // document to restore and nothing to inspect.
+                mutated: false,
+                rolled_back: false,
+            },
+            format!(
+                "KiCAD is on {} after being asked for {layer}",
+                layer_display_name(observed)
+            ),
+        ));
+    }
+
+    Ok(CallToolResult::json(&json!({
+        "active_layer": layer,
+        "source": "ipc",
+    })))
+}
+
+/// `BL_F_Cu` -> `F.Cu`. The inverse of `builders::try_layer_from_name`, and
+/// the same mapping `layers_canonical_names_match_kicads_own_enum` pins down:
+/// drop the `BL_` prefix, and the first remaining `_` is the dot.
+fn layer_display_name(layer: konnect_ipc::gen::kiapi::board::types::BoardLayer) -> String {
+    layer
+        .as_str_name()
+        .trim_start_matches("BL_")
+        .replacen('_', ".", 1)
 }
 
 async fn handle_add_board_outline(
