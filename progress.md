@@ -2,128 +2,108 @@
 
 ## Phase actuelle
 
-**X — Preuve réelle des mutations : livrée.** X1 à X9 validées, PR #19 mergée
-dans `agentic/main`. Zéro faux succès sur les capacités déclarées supportées,
-prouvé par falsification ; quatre défauts de corruption corrigés ou écartés ;
-`flip_component` importé et prouvé ; `update_pcb_from_schematic` explicitement
-reporté avec son analyse.
-
-Aucune phase n'est ouverte. La suite — release, ou reprise du benchmark Hi-Fi —
-attend une décision de l'utilisateur.
+**Y — Release v1.2.0.** La phase X est mergée dans `agentic/main` (`9dd4b26`,
+CI 7/7 verte). Y existe parce que le plugin installé chez l'utilisateur est en
+v1.1.4 et ne porte donc pas `flip_component` : le bootstrap client n'installe
+qu'une release stable strictement plus récente, donc la release est le seul
+canal honnête pour livrer la phase X.
 
 ## Tâche actuelle
 
-Aucune.
+**Y2.1 — PR #20 vers `agentic/main`, CI en cours.** Y1 validée et commitée
+(`b3c51cc`).
 
 ## Dernière tâche validée
 
-**Livraison de la phase X — merge de la PR #19 dans `agentic/main`.**
+**Y1 — version, notes et compte d'outils.**
 
 Validation :
-- PR #19, `ai/mutation-proof-hardening` → `agentic/main`, CI 7/7 verte avant
-  merge, puis mergée en merge commit `9dd4b26`.
-- CI post-merge sur `agentic/main` verte 7/7 : Format, Clippy,
-  Check & Test (ubuntu / macos / windows), Schematic viewer, PCM packaging.
-- X9.3 reste décochée : conditionnelle, écartée par la décision C de X9.
+- `gate.ps1` vert de bout en bout, étape `arbitrated` comprise (4 tests, dont
+  `the_oracle_can_fail`).
+- `konnect --version` du build local annonce `1.2.0` et le binaire porte
+  `flip_component`.
+- Compte d'outils corrigé 203 → 204 sur 22 toolsets, d'après le registre testé
+  contre `tools_for` : `plugin/plugin.json` et `packaging/metadata.json` sont
+  servis au gestionnaire de plugins, publier 203 aurait livré un chiffre faux.
 
 ## Décisions actives
 
-- **Le niveau de preuve exigé est une propriété de la capacité**, dérivé de
-  (effet, domaine, write target, adaptateur) : `Capability::required_proof`.
-  Une preuve plus faible publie `UNPROVEN`. C'est le correctif structurel.
-- `Test` < `Bench` < `Arbitrated` (`kicad_reloads` : KiCad recharge) < `Live`
-  (`kicad_reads_back` : la session relit). Helpers nommés par
-  `coverage::{ARBITER, LIVE_ARBITER}`, découverts par scan. Un test `#[ignore]`d
-  qui appelle un arbitre compte — la CI n'a pas KiCad, l'exiger rendrait la
-  preuve forte inatteignable ; le document dit d'où elle vient (`gate.ps1`).
-- Couverture domaines KiCad 74,5 % → 28,9 %, 77 `UNPROVEN`. Baisse assumée,
-  aucun critère assoupli ; baseline upstream re-gelée par le même scanner
-  (42 → 13) pour rester tool-for-tool.
+- **Numéro mineur v1.2.0, choisi par l'utilisateur** : la matrice publiée n'est
+  pas comparable à celle de v1.1.4 (28,9 % contre 74,5 %, 77 `UNPROVEN`), non
+  par régression mais parce qu'elle est mesurée contre une règle plus stricte.
+- **Le niveau de preuve exigé est une propriété de la capacité**
+  (`Capability::required_proof`, dérivé de effet/domaine/write target/adaptateur).
+  Une preuve plus faible publie `UNPROVEN`. `Test` < `Bench` < `Arbitrated`
+  (`kicad_reloads`) < `Live` (`kicad_reads_back`). Un test `#[ignore]`d qui
+  appelle un arbitre compte : la CI n'a pas KiCad, l'exiger rendrait la preuve
+  forte inatteignable ; `gate.ps1` dit d'où elle vient.
 - **`kicad-cli` ne valide ni `.kicad_pro` ni `.kicad_dru`** : un fichier
-  illisible donne exit 0 et les défauts KiCad. L'oracle est l'**effet** (le DRC
-  bouge), jamais le code de sortie. Le champ `type` d'une violation est stable,
-  sa `description` est traduite : ne jamais asserter dessus.
-- Fixtures oracles : `clearance_pair.kicad_pcb` (0,2 mm silencieux, 1,5 mm ⇒
-  une violation) et `flip_pair.kicad_pcb` (`C310` asymétrique). Oracle de
-  placement : `kicad-cli pcb export pos`, colonne `Side`, indépendante de la
-  langue.
+  illisible donne exit 0. L'oracle est l'**effet** (le DRC bouge), jamais le
+  code de sortie. Le champ `type` d'une violation est stable, sa `description`
+  est traduite : ne jamais asserter dessus.
 - Emplacements KiCad : contraintes globales dans `.kicad_pro`
   (`board.design_settings.rules`, mm sans unité) ; règles personnalisées dans
   `.kicad_dru` (valeurs **avec** unité) ; couche active dans `.kicad_prl`, donc
-  session, donc IPC. Rien de cela n'est dans le board. Détail complet : `plan.md`
+  session, donc IPC. Rien de cela n'est dans le board. Détail : `plan.md`,
   phase X.
-- `min_via_size`/`min_via_drill`/`min_trace_width` sont refusés par nom, pas
-  aliasés : ils désignent des contraintes que KiCad n'a pas.
-- `set_active_layer` est IPC pur, sans repli fichier (le repli réinventerait le
-  champ fautif). KiCad n'expose **aucune** commande de flip : `flip_component`
-  est nécessairement fichier, refusé tant que KiCad tient ce board ; son
-  aller-retour est géométriquement exact, seule la graphie bouge.
-- `refuse_if_board_open_in_kicad` (fork) refuse quand l'IPC dit que KiCad tient
-  *ce* board, procède sinon. Écart assumé avec upstream : pas de veto par
-  verrou si le transport est injoignable — cohérent avec le fork, où le
-  `.kicad_pcb` passe par l'IPC et le garde de verrou ne vise que `.kicad_sch`.
+- `set_active_layer` est IPC pur, sans repli fichier. KiCad n'expose **aucune**
+  commande de flip : `flip_component` est nécessairement fichier, refusé tant
+  que KiCad tient ce board ; son aller-retour est géométriquement exact.
+- Le bootstrap client (`~/.agents/konnect/konnect-bootstrap.ps1`) compare la
+  version que le binaire **annonce** à la dernière release stable et n'installe
+  que si elle est strictement plus récente. Un build local posé à la main
+  survivrait donc, mais mentirait sur sa version : écarté pour cette raison.
 - `scripts/live-pcb-e2e.ps1` et `gate.ps1` se lancent avec `pwsh`, pas Windows
-  PowerShell 5.1, où stderr de cargo devient une erreur terminante.
+  PowerShell 5.1.
 - Le lock natif KiCad n'est jamais supprimé, déplacé ni jugé périmé. Les tests
   live tournent sur un `KICAD_CONFIG_HOME` dédié.
 - Convention de livraison : une branche `ai/<phase>` par phase, une PR par
-  phase, merge commit, branche distante conservée après merge.
+  phase, merge commit, branche distante conservée.
 
 ## Blocage actif
 
 Aucun.
 
-## Décision utilisateur en attente
-
-La version publiée reste **v1.1.4** (tag `v1.1.4`, `Cargo.toml` inchangé) : la
-phase X n'a pas bumpé la version. Trois suites possibles, aucune n'est
-autonome :
-
-1. **Release** de la phase X (numéro de version et périmètre à fixer par
-   l'utilisateur avant toute modification).
-2. **Reprise du benchmark Hi-Fi** à D1.8 (plan hors de ce dépôt).
-3. **Nouvelle phase** sur les observations hors périmètre ci-dessous.
-
 ## Observations hors périmètre, non corrigées
 
+- **Flake de test** : `kam-llm openai_compat::absent_backend_is_unreachable_not_a_panic`
+  a rendu `Malformed` au lieu de `Unreachable` une fois sur deux exécutions du
+  gate. Le test libère un port éphémère puis parie que rien ne le reprend ;
+  isolé il passe 3 fois sur 3, et la CI le passe sur les trois OS. Antérieur à
+  la phase Y, dont l'invariant interdit qu'un correctif s'y glisse.
 - 77 capacités `UNPROVEN` (majorité `sexpr`). Aucune n'est démontrée fautive ;
-  personne ne les a soumises à KiCad. Suite de travail, action par classe
-  documentée dans la matrice.
-- `ToolErrorKind::from_anyhow` ne reconnaît pas `SexpError::Conflict` nu :
-  une course GUI se dégrade en `handler_error`. Préexistant.
+  personne ne les a soumises à KiCad. Action par classe dans la matrice.
+- `ToolErrorKind::from_anyhow` ne reconnaît pas `SexpError::Conflict` nu : une
+  course GUI se dégrade en `handler_error`. Préexistant.
 - `board_and_labels.rs` porte une assertion négative fragile aux CRLF sous
   Windows ; réelle sur ubuntu et macos.
 
 ## Fichiers / zones utiles
 
-- Contrat de preuve : `crates/konnect-core/src/capability/{mod.rs,coverage.rs,
-  render.rs,baseline.rs}` → `docs/capability-matrix.md`, régénéré par
-  `KAM_UPDATE_MATRIX=1 cargo test -p konnect-core --test capability_matrix`.
-- Corrigés : `tools/verification.rs` (`set_design_rules`,
-  `set_layer_constraints`), `tools/pcb_board.rs` (`set_active_layer`).
-- Helpers d'arbitrage : `crates/konnect-core/tests/harness/mod.rs`
-  (`kicad_reloads`, `kicad_reads_back`, `Harness::live`, `CLEARANCE_BOARD`).
-- IPC : `crates/konnect-ipc/src/client.rs` (`get_active_layer`,
-  `set_active_layer`), `proto/board/board_commands.proto`.
-- `ReadbackMismatch` : `crates/konnect-core/src/mcp/error.rs`.
-- `gate.ps1`, `scripts/live-pcb-e2e.ps1` (via `pwsh`).
+- Release : `Cargo.toml`, `crates/schematic-viewer/{Cargo.toml,tauri.conf.json}`,
+  `RELEASE_NOTES.md`, `plugin/plugin.json`, `packaging/metadata.json`.
+- Le workflow `Release` se déclenche sur tag `v*` et produit lui-même
+  `konnect-pcm-v<version>-windows.zip` ; il exige l'E2E KiCad vert.
+- Contrat de preuve : `crates/konnect-core/src/capability/` →
+  `docs/capability-matrix.md`, régénéré par `KAM_UPDATE_MATRIX=1 cargo test
+  -p konnect-core --test capability_matrix`.
+- Helpers d'arbitrage : `crates/konnect-core/tests/harness/mod.rs`.
+- Plugin installé : `~/Documents/KiCad/10.0/3rdparty/plugins/
+  com_github_mixelpixx_konnect/bin/konnect.exe`.
 - `kicad-cli` 10.0.6 : `%LOCALAPPDATA%\Programs\KiCad\10.0\bin\kicad-cli.exe`.
-- Projet jetable : copie du demo `microwave` de l'installation KiCad.
-- Remote `upstream` : `https://github.com/mixelpixx/Konnect.git` (push
-  désactivé).
+- Projet Hi-Fi (dépôt distinct, continuité propre) :
+  `~/Documents/Etabli/Projets/Chaine Hifi`, branche `main`, à jour.
 
 ## Préconditions de tout test live
 
 1. Un seul répertoire par identifiant de plugin sous `3rdparty`.
 2. Aucune autre instance KiCad ne détient le socket d'API.
 3. Aucun dialogue modal, sinon `AS_NOT_READY` sur un pipe pourtant présent.
-4. Les toolsets sont opt-in : sans `load_toolset`, un refus
+4. Les toolsets sont opt-in : sans `load_toolset <nom>`, un refus
    `toolset_not_loaded` fait passer une assertion pour la mauvaise raison.
 5. `CloseMainWindow` poste `WM_CLOSE` sans le garantir.
 
 ## NEXT ACTION
 
-Obtenir de l'utilisateur la décision consignée sous « Décision utilisateur en
-attente » — release (avec numéro de version et périmètre), reprise Hi-Fi D1.8,
-ou nouvelle phase — puis ouvrir l'unité correspondante dans `plan.md`. Aucune
-action autonome ne reste dans le périmètre livré.
+Y2.1 — attendre la CI 7/7 de la PR #20, merger, puis taguer `v1.2.0` sur le
+commit de merge et pousser le tag pour déclencher le workflow `Release`.
