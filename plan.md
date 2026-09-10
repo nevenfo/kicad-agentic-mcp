@@ -6810,3 +6810,150 @@ session ultérieure ouvre une phase dédiée, construit la suite live d'abord, e
 tranche alors entre A (importer/adapter) et B (variante minimale : `Update` des
 seuls champs, sans `Add`, ce qui supprime `prepare_additions` et la moitié du
 risque).
+
+# Phase Y — Release v1.2.0
+
+## Objectif
+
+Livrer la phase X aux clients. Le plugin installé porte `flip_component` et les
+trois correctifs de mutation, et ce que le binaire annonce est vrai. Cette phase
+ne modifie aucun comportement : elle publie ce qui est déjà sur `agentic/main`
+et déjà prouvé.
+
+Numéro **mineur**, choisi par l'utilisateur : la matrice publiée change de façon
+visible pour un intégrateur — couverture des domaines KiCad 74,5 % → 28,9 %, 77
+capacités repassées en `UNPROVEN` — ce qui dépasse ce qu'un patch annonce, même
+sans rupture d'API.
+
+## Invariants de la phase
+
+- Aucun changement fonctionnel dans cette phase. Un correctif découvert pendant
+  la release ouvre une tâche, il ne se glisse pas dans le commit de version.
+- Le bootstrap client (`~/.agents/konnect/konnect-bootstrap.ps1`) n'installe
+  qu'une release stable **strictement plus récente** que la version que le
+  binaire local annonce. La version annoncée est donc la seule chose qui
+  autorise l'installation : elle ne peut pas mentir.
+- Le workflow `Release` se déclenche sur tag `v*` et produit lui-même
+  `konnect-pcm-v<version>-windows.zip`. Aucun asset n'est construit à la main.
+- Aucun secret poussé, `upstream` jamais poussé.
+
+## Y1 — Version et notes
+
+### Objectif
+
+Porter la version partout où elle est déclarée, et dire dans les notes ce que
+cette release change réellement — y compris la baisse de couverture, qui est le
+fait le plus visible pour un intégrateur.
+
+### Dépendances
+
+Phase X mergée dans `agentic/main` (fait : `9dd4b26`, CI 7/7 verte).
+
+### Tâches
+
+- [x] Y1.1 Porter `1.1.4` → `1.2.0` dans `Cargo.toml`,
+  `crates/schematic-viewer/Cargo.toml`, `crates/schematic-viewer/tauri.conf.json`,
+  et régénérer les deux `Cargo.lock`.
+- [x] Y1.2 Mettre à jour `README.md` : statut de version, et la phrase sur les
+  suites exécutées contre KiCad 10.0.6.
+- [x] Y1.3 Réécrire `RELEASE_NOTES.md` pour v1.2.0 : le contrat de preuve
+  (`Capability::required_proof`), les trois mutations corrigées, l'arrivée de
+  `flip_component`, le report explicite de `update_pcb_from_schematic`, et la
+  baisse de couverture assumée avec sa raison.
+- [x] Y1.4 Corriger le compte d'outils, resté à 203 alors que `flip_component`
+  porte le registre — testé contre `tools_for` — à 204 sur 22 toolsets :
+  `plugin/plugin.json`, `packaging/metadata.json`, la skill embarquée, `DEV.md`
+  et les notes. Publier 203 aurait mis un chiffre faux dans le manifeste servi
+  au gestionnaire de plugins.
+
+### Validation
+
+`gate.ps1` vert de bout en bout, étape `arbitrated` comprise ; plus aucune
+occurrence de `1.1.4` dans les fichiers versionnés hors dépendances tierces ;
+`konnect --version` du build local annonce `1.2.0` et le binaire porte
+`flip_component`.
+
+Flake rencontré puis écarté : `kam-llm openai_compat::absent_backend_is_unreachable_not_a_panic` a rendu `Malformed` au lieu de
+`Unreachable` à la première exécution. Le test libère un port éphémère puis
+parie que rien ne le reprend ; isolé il passe 3 fois sur 3, et la CI le passe
+sur les trois OS. Antérieur à cette phase, non corrigé ici par l'invariant
+ci-dessus.
+
+## Y2 — Tag et release
+
+### Objectif
+
+Publier la release stable que le bootstrap client saura installer.
+
+### Dépendances
+
+Y1 validée.
+
+### Tâches
+
+- [ ] Y2.1 Brancher `ai/release-v1.2.0`, ouvrir la PR vers `agentic/main`,
+  obtenir la CI 7/7 verte, merger.
+- [ ] Y2.2 Taguer `v1.2.0` sur le commit de merge et pousser le tag.
+- [ ] Y2.3 Vérifier que le workflow `Release` conclut vert et que la release
+  publiée porte les assets attendus.
+
+### Validation
+
+La release GitHub `v1.2.0` existe, ni draft ni prerelease, et contient
+exactement un asset nommé `konnect-pcm-v1.2.0-windows.zip` — le nom exact que
+`Get-WindowsPcmAsset` exige, faute de quoi le bootstrap refuse la mise à jour.
+
+## Y3 — Installation effective chez le client
+
+### Objectif
+
+Ne pas confondre « publié » et « installé ». La phase n'est finie que lorsque le
+plugin qui tourne réellement porte `flip_component`.
+
+### Dépendances
+
+Y2 validée ; KiCad fermé pendant le remplacement du répertoire de plugin.
+
+### Tâches
+
+- [ ] Y3.1 Déclencher le bootstrap et constater l'installation de `v1.2.0`.
+- [ ] Y3.2 Vérifier que `bin/konnect.exe` installé annonce `1.2.0` et expose
+  `flip_component` après `load_toolset pcb_components`.
+- [ ] Y3.3 Vérifier que le rollback vers `v1.1.4` est conservé sous
+  `%LOCALAPPDATA%\konnect-bootstrap\rollback`.
+
+### Validation
+
+Le binaire du répertoire de plugin annonce `1.2.0` ; un `tools/list` après
+`load_toolset pcb_components` contient `flip_component` ; le répertoire de
+rollback contient la v1.1.4 déposée par la mise à jour.
+
+## Y4 — Reprise de F1.2-b1 sur le projet Hi-Fi
+
+### Objectif
+
+Consommer ce qui vient d'être livré : lever le blocage GUI de F1.2-b1 du projet
+`tpA3255-hifi-amplifier`, où `C310` et `C311` attendent de passer sur `B.Cu`.
+Cette unité s'exécute dans **l'autre dépôt** et suit sa continuité, pas celle-ci.
+
+### Dépendances
+
+Y3 validée. Le geste a déjà été dérisqué : sur une copie jetable du board réel,
+`flip_component` a retourné les deux empreintes, et `kicad-cli pcb export pos`
+les a confirmées `bottom`, 124 empreintes préservées, original intact
+(MD5 `2cc389a517fef7deb02fb5a290e66bef`).
+
+### Tâches
+
+- [ ] Y4.1 Rendre la main au projet Hi-Fi : y reprendre sa propre `NEXT ACTION`
+  F1.2-b1, board fermé pour le flip, puis reroutage `/PVDD` par vias en IPC.
+- [ ] Y4.2 Mettre à jour `docs/kicad-operations.md` du projet Hi-Fi : le
+  retournement n'est plus un geste GUI, et `set_design_rules` /
+  `set_active_layer` ne sont plus proscrits mais corrigés.
+
+### Validation
+
+Portée par le projet Hi-Fi : boucle de découplage ≤ 7,71 mm, colonne
+`x` ∈ [276,15 ; 278,85] libre de cuivre `F.Cu`, DRC sans `clearance`,
+`shorting_items` ni `track_dangling`, parité 3, 124 empreintes et 119 blocs
+`(units`.

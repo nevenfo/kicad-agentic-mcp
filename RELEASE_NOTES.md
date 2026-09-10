@@ -1,87 +1,97 @@
-# KiCad Agentic MCP v1.1.4
+# KiCad Agentic MCP v1.2.0
 
-Capability release for three limitations the Hi-Fi benchmark demonstrated on
-real work: a schematic KiCad had open could be written under it, a generated
-courtyard could be smaller than the part it enclosed with no way to fix it from
-the MCP, and `on_board` / `in_bom` / `dnp` were neither readable nor writable.
-The architecture does not move — PCB over IPC, schematic over the controlled
-S-expression engine, ERC/DRC and exports over `kicad-cli` — and the
-`DocumentType` routing v1.1.3 fixed is untouched. One tool is added, so the
-surface is now **203 tools across 22 toolsets**.
+Proof release, and a deliberately uncomfortable one. Until now a mutation could
+be published `SUPPORTED` because our own code and our own tests said so. For a
+KiCad mutation that is not evidence: the document belongs to KiCad, and only
+KiCad can say whether it still reads it. This release makes the level of proof a
+**property of the capability**, applies it, and publishes the result — including
+a headline coverage figure that falls by two thirds.
+
+Three mutations turned out to write where KiCad does not read. All three
+answered `success`. One tool is added, so the surface is now **204 tools across
+22 toolsets**. No tool signature changes and no parameter is removed.
+
+The minor version marks what an integrator actually sees: the published
+capability matrix is not comparable to v1.1.4's, because it is measured against
+a stricter rule.
 
 The benchmark and model-fit figures further down were taken on 2026-08-24 for
 v1.0.0, on the machine named at the top of
 [docs/benchmark.md](docs/benchmark.md), from artefacts committed under
 `bench/results/`. This release did not re-run them, so those numbers describe
-v1.0.0 and are reproduced unchanged. The separate Windows binary-size figure
-was measured on v1.1.0 and is labelled as such. Where a target was missed, it
-says so and the target is not moved.
+v1.0.0 and are reproduced unchanged. The separate Windows binary-size figure was
+measured on v1.1.0 and is labelled as such. Where a target was missed, it says
+so and the target is not moved.
 
-## What changed in v1.1.4
+## What changed in v1.2.0
 
-- **A schematic KiCad owns is no longer written under it.** Opening
-  `X.kicad_sch` in Eeschema creates a sibling `~X.kicad_sch.lck`; until v1.1.3
-  a mutation went through anyway, and the editor's next save silently discarded
-  it. Every schematic write path funnels through `konnect-sexp`'s writer or
-  `commit_file_transaction`, so the guard sits there once, and is re-checked
-  immediately before the `rename` that commits — an editor opened *during* the
-  operation is refused too, not only one open when it started. A refusal leaves
-  the file byte-identical, with no scratch file and no journal entry. It reaches
-  the client as `error_kind: conflict`, naming the lock file so a human knows
-  which editor to close.
-- **The lock is never removed, moved, or judged stale.** KiCad's lock file
-  holds exactly `{"hostname":…,"username":…}` — 50 bytes, no PID, no timestamp.
-  Freshness is not decidable from it, so it is not decided: presence is refusal.
-  The guard covers `.kicad_sch` only; the board goes through IPC into the
-  running editor, where KiCad itself arbitrates.
-- **Footprint graphics are editable.** The new `set_footprint_graphics` appends,
-  replaces or deletes `fp_line`, `fp_arc`, `fp_rect`, `fp_circle` and `fp_poly`
-  on one layer of a `.kicad_mod`, as a single revision-checked atomic
-  replacement. It is an API typed by primitive, not a text editor: one layer per
-  call, everything else carried through as it was. A primitive that a
-  `(group …)` references is refused for replace and delete rather than silently
-  dropped, which would leave KiCad a dangling reference. `get_footprint_info`
-  now returns graphics in the shape `set_footprint_graphics` takes back.
-- **A generated courtyard encloses the body, not just the pads.**
-  `create_footprint` derived it from the pad envelope alone, so a part whose
-  body overhangs its pads — `CF_Film_Box_P5.00mm_7.2x3.5mm` — got a courtyard
-  smaller than itself. It is now the envelope of body **and** pads plus the
-  clearance, aligned outward onto the KLC grid.
-- **The pin-1 marker is declared, not guessed.** It is a client input, `true` by
-  default, because the expensive mistake is a polarised part shipped without
-  one. A non-polarised part is no longer given a marker it should not have, and
-  the marker stays inside the courtyard —
-  `Fuse_Schurter_UMT-H_5.3x16mm` had one outside it.
-- **`on_board`, `in_bom` and `dnp` are read and written as the tags they are.**
-  `get_schematic_component` and `list_schematic_components` always return the
-  three: an absent tag is KiCad's default, not an undetermined field.
-  `edit_schematic_component` and `batch_edit_schematic_components` take them as
-  booleans and write them as symbol tags, never as custom properties — a
-  `(property "dnp" "yes")` merely shows up in the field list and changes neither
-  the netlist, nor the BOM, nor *Update PCB from schematic*. A missing tag is
-  inserted where eeschema writes it, after `on_board` and before `uuid`, at the
-  file's own indentation; a call addressed by reference reaches every unit of a
-  multi-unit symbol; a non-boolean value is refused.
-- **A field set to `null` removes the property.** There was no way to delete
-  one, only to add or update. `fields: {"key": null}` now removes the whole
-  `(property …)` block and its own lines with it — eight, for a property
-  eeschema wrote — so the document reads as it did before the property existed.
-  `Reference` and `Value` are refused, KiCad requires them, and deleting an
-  absent property is reported rather than dressed up as a change.
+- **The proof a capability needs is now derived from what it can damage.**
+  `Capability::required_proof` reads (effect, domain, write target, adapter): a
+  read or a non-KiCad write settles internally; a written design document needs
+  KiCad to load it back; a live-editor operation needs the running session to be
+  asked what it now holds. Anything proved more weakly than its own bar
+  publishes `UNPROVEN`. Previously nothing said how strong a proof had to be, so
+  a unit test — our code agreeing with our code — sufficed for any claim.
 
-Verified against real KiCad 10, not mocks. `gate.ps1` is green end to end (fmt,
-`clippy -D warnings`, workspace tests, doctests, release build) over 1 318 new
-lines of integration tests in `kicad_editor_lock.rs`, `footprint_graphics.rs`
-and `symbol_attributes.rs`. Three live suites pass on a dedicated
-`KICAD_CONFIG_HOME` — schematic `DocumentType` routing, PCB over IPC, and the
-new lock refusal — and each Pareto fix was replayed on the Hi-Fi benchmark
-through the MCP alone: both defective footprints repaired, and B2.8 lifted in a
-single call. Hi-Fi ERC is unchanged either side of that edit, 0 errors and 15
-warnings, the same as at gate C2.
+- **Published coverage of the KiCad domains falls from 74.5 % to 28.9 %, with 77
+  entries `UNPROVEN`.** Nothing regressed and no test was deleted or weakened:
+  those mutations were never arbitrated by KiCad, and the matrix now says so
+  instead of counting them. The frozen upstream baseline moves the same way,
+  42 → 13, because the same scanner measures both sides — the comparison stays
+  tool-for-tool. `UNPROVEN` means *nobody has submitted this to KiCad*, not
+  *this is broken*.
 
-This release adds one tool and removes no parameter. Existing calls keep their
-meaning, with one deliberate exception: a `null` field value used to mean "a
-value with no textual form" and now means deletion.
+- **`set_design_rules` wrote `(min_clearance …)` into the board's `(setup …)`
+  block.** KiCad keeps board constraints in the project file, under
+  `board.design_settings.rules`, and refuses a board carrying those keys
+  outright. It now writes `.kicad_pro` under KiCad's own key names and reads
+  back before answering; a mismatch is a `ReadbackMismatch` with a rollback, not
+  a success. `min_trace_width`, `min_via_size` and `min_via_drill` are refused
+  by name rather than aliased: they name constraints KiCad does not have.
+
+- **`set_active_layer` wrote a field KiCad does not have.** `kicad-cli` refused
+  the resulting board outright — "Unexpected active_layer", exit 3 — while the
+  tool answered success. The active layer is session state, kept in `.kicad_prl`
+  as an integer; the board format has no field for it. It now goes through the
+  official IPC `Set`/`GetActiveLayer` with a read-back from a second client, and
+  deliberately has **no file fallback** — falling back would mean inventing the
+  broken field again. With no live KiCad it refuses instead of writing.
+
+- **`set_layer_constraints` inserted a `(rule …)` into `(setup …)`**, same class,
+  same silent success, same outright refusal by `kicad-cli`. Custom rules live in
+  `<board>.kicad_dru`, so that is where they go: the file is created when absent,
+  values carry their unit as that format wants, and a second call for the same
+  layer and constraint replaces its own rule rather than stacking another beside
+  it. A rule somebody else wrote, and the comments around it, survive untouched.
+  After this, nothing in the codebase inserts anything into `(setup …)`.
+
+- **`flip_component` (new).** KiCad 10 exposes no footprint-flip command at all,
+  over IPC or otherwise, so flipping is necessarily a file mutation — and it is
+  refused while KiCad holds that board. The round trip is geometrically exact;
+  only spelling moves. Imported from upstream `ab337816` with its design
+  comments intact, because they carry real measurements rather than commentary.
+
+- **`update_pcb_from_schematic` is deliberately not imported.** Its upstream
+  design is sound — immutable plan, `kiid` identity, preserved placement,
+  dry-run by default, a plan revision that goes stale, one KiCad transaction —
+  but its adapter is IPC and its target a design document, so its bar is a live
+  read-back. Importing 2,900 lines of the riskiest primitive on the surface into
+  a release that cannot yet prove it would publish it `UNPROVEN`, which is
+  exactly what this release exists to prevent. Said plainly: this fork still has
+  no schematic → PCB synchronisation. The invariant analysis is written down so
+  a later phase starts from it rather than from scratch.
+
+- **The falsification gate.** The corrected implementations were replaced
+  locally by the defective ones to check that the new tests actually go red, and
+  on which assertion. `gate.ps1` gains an `arbitrated` step, because these
+  proofs ran nowhere: CI installs no KiCad and the gate never passed
+  `--ignored`. It skips loudly rather than silently when `kicad-cli` is absent,
+  so a pass on a machine without KiCad cannot be mistaken for having proved
+  something. One of the four arbitrated tests mutates nothing and exists only to
+  prove the oracle can fail — an oracle that cannot fail agrees with anything.
+
+Upgrading from v1.1.4 changes no call you already make. What changes is what the
+matrix claims on your behalf.
 
 ## What this is
 
@@ -124,8 +134,8 @@ second way in, and the machinery behind it:
 - **Tool annotations and capability metadata** — every tool declares its
   read/write character, and advisory analysis says so where a model reads it.
 
-The tool surface itself grew to **203 tools across 22 toolsets** plus 13
-meta-tools — 216 served by the catalogue.
+The tool surface itself grew to **204 tools across 22 toolsets** plus 13
+meta-tools — 217 served by the catalogue.
 
 ## Measured results
 
@@ -228,7 +238,7 @@ and stays open until KiCad 11 can be measured here.
 ## Getting started
 
 - **Install**: KiCad 10 → Plugin and Content Manager → *Install from File* with
-  `konnect-pcm-v1.1.4-<platform>.zip` from this release, or use the standalone
+  `konnect-pcm-v1.2.0-<platform>.zip` from this release, or use the standalone
   server binary. Full steps, including the Claude Desktop and Claude Code
   configuration, are in [README.md](README.md).
 - **macOS: the binaries are not signed or notarised.** Gatekeeper will refuse
