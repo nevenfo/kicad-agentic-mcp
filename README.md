@@ -25,7 +25,7 @@ diffs are held server-side, outside any model's context.
 The model is asked to reason where reasoning helps: turning a vague request into
 a plan. Everything that has to be exact is code.
 
-**Status: v1.1.4**, AGPL-3.0. The server binary is called `konnect`. Every figure
+**Status: v1.2.0**, AGPL-3.0. The server binary is called `konnect`. Every figure
 below traces to [docs/benchmark.md](docs/benchmark.md) or to the document named
 beside it; what was missed is stated as missed. Issues and PRs are welcome —
 [CONTRIBUTING.md](CONTRIBUTING.md), [naming conventions](docs/NAMING_CONVENTIONS.md).
@@ -295,7 +295,7 @@ machine that is not the maintainer's.
 ### Requirements
 
 - **KiCad 10.** Built and measured against 10.0.3; the live schematic and PCB
-  suites of v1.1.4 were also run against 10.0.6. Other 10.0.x releases are
+  suites of v1.2.0 were also run against 10.0.6. Other 10.0.x releases are
   untested here rather than known-bad.
 - **`kicad-cli`**, which ships with KiCad and is used for exports, ERC and DRC.
   KiCad's installer does not put it on `PATH`; the server searches the usual
