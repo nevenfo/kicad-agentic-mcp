@@ -8,11 +8,11 @@ attente : la revue du 2026-10-04 a priorité.
 
 ## Tâche actuelle
 
-Z3.2 — scénario A (sync schéma → PCB).
+Z4.1 — matrice complète, 3 runs.
 
 ## Dernière tâche validée
 
-**Z1 (scénario B) et Z3.1 (scénario E).**
+**Z1 et Z3 — les cinq scénarios, contrôles valides, un run chacun.**
 
 Validation :
 - Contrôles injectés par `kipy` : bon = vert, mauvais = rouge
@@ -22,6 +22,9 @@ Validation :
   position live (`source: ipc`), DRC propre.
 - E : contrôles valides ; fork **faux vert** (`run_drc` sans
   `--schematic-parity` → 0 quand l'arbitre trouve 1) ; upstream 1 puis 0.
+- A : fork capacité absente ; upstream conforme (R3 posé hors contour).
+- C : upstream refuse à tort (#779 reproduit) ; fork capacité absente.
+- D : les deux conformes ; fork exige un redémarrage de l'éditeur.
 - Un run par implémentation ; trois runs restent à faire (Z4).
 - Z2 fait côté recherche (à consigner dans le rapport) : #700 = défaut B, fermé
   upstream par PR #719 avant v0.13.0 ; #779 (zone ⇒ tous nets « routés »)
@@ -65,7 +68,6 @@ Aucun.
 
 ## NEXT ACTION
 
-Z3.2 — scénario A : sur `fixtures/divider/`, modifier le schéma (ajout d'un
-symbole R3 + changement de valeur), demander à chaque serveur la sync schéma →
-PCB, juger par `kipy` (R1/R2 et H1/H2 aux mêmes positions, piste /VOUT
-intacte, R3 présent) puis parité `kicad-cli` = 0 ; contrôles bon/mauvais.
+Z4.1 — lancer `run.py` sur les cinq scénarios, 3 runs par implémentation,
+sortie `bench/results/pcb_live_v2-<date>.json`, puis vérifier contrôles
+valides et reproductibilité par cellule.

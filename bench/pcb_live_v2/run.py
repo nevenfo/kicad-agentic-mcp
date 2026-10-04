@@ -237,9 +237,268 @@ def e_judge(s: ks.PcbnewSession, ctx: dict, board: Path, work: Path) -> dict:
             "false_green": d.get("reported_parity") == 0, "phases": ctx["phases"]}
 
 
+# ── scenario A — schematic → PCB sync ────────────────────────────────────
+#
+# The schematic changes (R2 10k → 4.7k, a new unconnected R3); intention:
+# "bring the open board up to date with the schematic". Correct: the delta is
+# applied (R2's value, R3 present) and nothing else moves — R1/R2 placement,
+# the /VOUT copper and the board-only mounting holes H1/H2 are kept. Parity is
+# then 0 under `kicad-cli`. Good control: a fixture already in the expected end
+# state. Bad control: a naive sync that applies the value but drops H1.
+
+sys.path.insert(0, str(FIXTURES))
+from make_divider import edit_schematic_for_a  # noqa: E402
+
+A_KEEP = ("R1", "R2", "H1", "H2")
+
+
+def a_snapshot(s: ks.PcbnewSession) -> dict:
+    fps = {}
+    for fp in s.board_handle().get_footprints():
+        fps[fp.reference_field.text.value] = {
+            "pos": (ks.mm(fp.position.x), ks.mm(fp.position.y)),
+            "layer": int(fp.layer), "value": fp.value_field.text.value}
+    tracks = sorted((t["net"], t["start"], t["end"]) for t in s.live_tracks())
+    return {"footprints": fps, "tracks": tracks}
+
+
+def a_prepare(s: ks.PcbnewSession) -> dict:
+    sch = s.board.with_suffix(".kicad_sch")
+    sch.write_text(edit_schematic_for_a(sch.read_text(encoding="utf-8")), encoding="utf-8")
+    return {"before": a_snapshot(s)}
+
+
+def a_act(srv: Server, board: Path, s: ks.PcbnewSession, ctx: dict) -> list[dict]:
+    sch = str(board.with_suffix(".kicad_sch"))
+    calls = [srv.call("load_toolset", {"name": "sch_export"})]
+    listed = {t["name"] for t in (srv.client.tools_list().result or {}).get("tools", [])}
+    if "update_pcb_from_schematic" not in listed:
+        ctx["capability_absent"] = True
+        return calls
+    dry = srv.call("update_pcb_from_schematic", {"schematic": sch, "board": str(board), "dry_run": True})
+    calls.append(dry)
+    rev = find_key(dry["body"], "plan_revision") if isinstance(dry["body"], dict) else None
+    ctx["sync_status"] = find_key(dry["body"], "status") if isinstance(dry["body"], dict) else dry["body"]
+    if ctx["sync_status"] not in (None, "ready"):
+        ctx["sync_diagnostics"] = find_key(dry["body"], "diagnostics")
+        ctx["refused"] = True
+        return calls
+    if rev:
+        calls.append(srv.call("update_pcb_from_schematic", {
+            "schematic": sch, "board": str(board), "dry_run": False, "expected_plan_revision": rev}))
+    return calls
+
+
+def a_control(s: ks.PcbnewSession, ctx: dict, kind: str, board: Path) -> None:
+    if kind == "bad":
+        s.set_value_live("R2", "4.7k")
+        s.board_handle().remove_items(s.footprint("H1"))
+    # good: the fixture already holds the expected end state (see SCENARIOS)
+
+
+def a_judge(s: ks.PcbnewSession, ctx: dict, board: Path, work: Path) -> dict:
+    before, after = ctx["before"], a_snapshot(s)
+    bf, af = before["footprints"], after["footprints"]
+    kept = {r: r in af and _near(af[r]["pos"], bf[r]["pos"], 1e-3) and af[r]["layer"] == bf[r]["layer"]
+            for r in A_KEEP if r in bf}
+    copper_kept = after["tracks"] == before["tracks"]
+    delta = af.get("R2", {}).get("value") == "4.7k" and "R3" in af
+    s.save()
+    d = ks.drc(board, work / "drc.json", parity=True)
+    return {"pass": all(kept.values()) and copper_kept and delta and d["parity"] == 0,
+            "placement_kept": kept, "copper_kept": copper_kept, "delta_applied": delta,
+            "parity_after": d["parity"], "capability_absent": ctx.get("capability_absent", False),
+            "footprints_after": af}
+
+
+# ── scenario C — copper zone + net change (class of upstream #779) ───────
+#
+# Same divider with a GND zone on F.Cu. The supply symbol becomes +5V, so R1
+# pad 1 — whose net carries no copper at all — must change net. A zone on GND
+# must not make every net look "routed" and block the change. Correct: R1.1 on
+# +5V, zone and tracks unchanged, placement kept, parity 0. Good control: the
+# expected end state; bad control: nothing applied (the #779 refusal).
+
+from make_divider import edit_schematic_for_c  # noqa: E402
+
+
+def c_snapshot(s: ks.PcbnewSession) -> dict:
+    snap = a_snapshot(s)
+    snap["zones"] = sorted((z.net.name, int(z.layer) if hasattr(z, "layer") else 0)
+                           for z in s.board_handle().get_zones())
+    return snap
+
+
+def c_prepare(s: ks.PcbnewSession) -> dict:
+    sch = s.board.with_suffix(".kicad_sch")
+    sch.write_text(edit_schematic_for_c(sch.read_text(encoding="utf-8")), encoding="utf-8")
+    return {"before": c_snapshot(s)}
+
+
+def c_control(s: ks.PcbnewSession, ctx: dict, kind: str, board: Path) -> None:
+    pass  # good: end-state fixture; bad: nothing applied
+
+
+def c_judge(s: ks.PcbnewSession, ctx: dict, board: Path, work: Path) -> dict:
+    before, after = ctx["before"], c_snapshot(s)
+    bf, af = before["footprints"], after["footprints"]
+    kept = {r: r in af and _near(af[r]["pos"], bf[r]["pos"], 1e-3) for r in A_KEEP}
+    pad_net = s.live_pad("R1", "1").net
+    s.save()
+    d = ks.drc(board, work / "drc.json", parity=True)
+    ok = (all(kept.values()) and after["tracks"] == before["tracks"]
+          and after["zones"] == before["zones"] and pad_net == "+5V" and d["parity"] == 0)
+    return {"pass": ok, "placement_kept": kept, "copper_kept": after["tracks"] == before["tracks"],
+            "zones_kept": after["zones"] == before["zones"], "zones_after": after["zones"],
+            "r1_pad1_net": pad_net, "parity_after": d["parity"],
+            "capability_absent": ctx.get("capability_absent", False),
+            "sync_status": ctx.get("sync_status"), "sync_diagnostics": ctx.get("sync_diagnostics")}
+
+
+# ── scenario D — flip + layer change through a via (Hi-Fi C310/C311) ─────
+#
+# Intention: put C310 and C311 on B.Cu where they stand, then join C310 pad 1
+# to U1 pad 1 (PVDD) — B.Cu track to a via at D_VIA, F.Cu track on to U1.
+# The scripted agent takes pad positions from the server's own read-back after
+# the flip, so a stale read-back shows up as misplaced copper. Correct: both on
+# B.Cu, same XY, pads mirrored, a PVDD copper chain pad → via → pad, and a
+# saved file KiCad's DRC finds clean of dangling/short/clearance with exactly
+# one connection fewer to make. Good control: KiCad's own FlipItems plus copper
+# by `kipy`; bad control: the same, but copper starts at the pre-flip pad.
+
+D_VIA = (100.0, 46.5)  # clear of both pads under either flip convention
+D_REFS = ("C310", "C311")
+
+
+def pad_xy(body, number: str) -> tuple[float, float] | None:
+    """Find pad `number`'s board position in a server's free-form read-back."""
+    if isinstance(body, dict):
+        num = next((body[k] for k in ("number", "pad", "pad_number", "name") if k in body), None)
+        if str(num) == number:
+            pos = body.get("position") if isinstance(body.get("position"), dict) else body
+            if "x" in pos and "y" in pos:
+                return float(pos["x"]), float(pos["y"])
+        for v in body.values():
+            r = pad_xy(v, number)
+            if r:
+                return r
+    elif isinstance(body, list):
+        for v in body:
+            r = pad_xy(v, number)
+            if r:
+                return r
+    return None
+
+
+def d_snapshot(s: ks.PcbnewSession) -> dict:
+    out = {}
+    for ref in (*D_REFS, "U1"):
+        fp = s.footprint(ref)
+        out[ref] = {"pos": (ks.mm(fp.position.x), ks.mm(fp.position.y)),
+                    "layer": ks.LAYER_NAMES.get(fp.layer, int(fp.layer)),
+                    "pads": {p.number: (p.x, p.y) for p in s.live_pads() if p.ref == ref}}
+    return out
+
+
+def d_prepare(s: ks.PcbnewSession) -> dict:
+    return {"before": d_snapshot(s)}
+
+
+def d_act(srv: Server, board: Path, s: ks.PcbnewSession, ctx: dict) -> list[dict]:
+    b = str(board)
+    calls = [srv.call("load_toolset", {"name": "pcb_components"}),
+             srv.call("load_toolset", {"name": "pcb_routing"})]
+    first = srv.call("flip_component", {"board": b, "reference": D_REFS[0], "layer": "B.Cu"})
+    calls.append(first)
+    if first["ok"]:
+        calls.append(srv.call("flip_component", {"board": b, "reference": D_REFS[1], "layer": "B.Cu"}))
+    else:
+        # The server's own documented route: board closed, flip, reopen.
+        ctx["live_flip_refused"] = str(first["body"])[:300]
+        ctx["session_restart"] = True
+
+        def flip_closed():
+            for ref in D_REFS:
+                calls.append(srv.call("flip_component", {"board": b, "reference": ref, "layer": "B.Cu"}))
+        s.restart(flip_closed)
+    c_pads = srv.call("get_component_pads", {"board": b, "reference": "C310"})
+    u_pads = srv.call("get_component_pads", {"board": b, "reference": "U1"})
+    calls += [c_pads, u_pads]
+    cp, up = pad_xy(c_pads["body"], "1"), pad_xy(u_pads["body"], "1")
+    ctx["server_readback"] = {"C310.1": cp, "U1.1": up}
+    if not cp or not up:
+        ctx["readback_unusable"] = True
+        return calls
+    vx, vy = D_VIA
+    calls += [
+        srv.call("route_trace", {"board": b, "net_name": "PVDD", "layer": "B.Cu", "width": 0.25,
+                                 "x1": cp[0], "y1": cp[1], "x2": vx, "y2": vy}),
+        srv.call("add_via", {"board": b, "net_name": "PVDD", "x": vx, "y": vy}),
+        srv.call("route_trace", {"board": b, "net_name": "PVDD", "layer": "F.Cu", "width": 0.25,
+                                 "x1": vx, "y1": vy, "x2": up[0], "y2": up[1]}),
+    ]
+    return calls
+
+
+def d_control(s: ks.PcbnewSession, ctx: dict, kind: str, board: Path) -> None:
+    s.flip_live(*D_REFS)
+    cp = s.live_pad("C310", "1") if kind == "good" else None
+    start = (cp.x, cp.y) if cp else ctx["before"]["C310"]["pads"]["1"]
+    up = s.live_pad("U1", "1")
+    s.add_track_live("PVDD", *start, *D_VIA, layer="B.Cu")
+    s.add_via_live("PVDD", *D_VIA)
+    s.add_track_live("PVDD", *D_VIA, up.x, up.y, layer="F.Cu")
+
+
+def d_judge(s: ks.PcbnewSession, ctx: dict, board: Path, work: Path) -> dict:
+    before, after = ctx["before"], d_snapshot(s)
+    flips = {}
+    for ref in D_REFS:
+        b, a = before[ref], after[ref]
+        fx, fy = b["pos"]
+        # KiCad flips top/bottom by default and left/right on request; both
+        # are a correct flip, nothing else is.
+        lr = all(_near(a["pads"][n], (2 * fx - b["pads"][n][0], b["pads"][n][1]), 0.01) for n in b["pads"])
+        tb = all(_near(a["pads"][n], (b["pads"][n][0], 2 * fy - b["pads"][n][1]), 0.01) for n in b["pads"])
+        flips[ref] = {"layer": a["layer"], "xy_kept": _near(a["pos"], b["pos"], 1e-3),
+                      "pads_mirrored": "left_right" if lr else "top_bottom" if tb else False,
+}
+    tracks, vias = s.live_tracks(), s.live_vias()
+    cpad, upad = after["C310"]["pads"]["1"], after["U1"]["pads"]["1"]
+    chain = copper_joins(tracks, "PVDD", cpad, upad)
+    b_side = any(t["layer"] == "B.Cu" and (_near(t["start"], cpad, 0.05) or _near(t["end"], cpad, 0.05))
+                 for t in tracks if t["net"] == "PVDD")
+    via_ok = any(v["net"] == "PVDD" and _near(v["pos"], D_VIA, 0.05) for v in vias)
+    s.save()
+    # Pad copper side, read from the file KiCad itself just wrote: the IPC
+    # padstack reports the footprint-definition layer, flipped or not.
+    saved = ks.saved_pad_layers(board)
+    for ref in D_REFS:
+        flips[ref]["saved_pad_layers"] = saved.get(ref)
+        flips[ref]["pad_copper_on_B"] = bool(saved.get(ref)) and all(
+            "B.Cu" in ls and "F.Cu" not in ls for ls in saved[ref].values())
+    flips_ok = all(f["layer"] == "B.Cu" and f["xy_kept"] and f["pads_mirrored"] and f["pad_copper_on_B"]
+                   for f in flips.values())
+    d = ks.drc(board, work / "drc.json")
+    bad = {k: d["violations"].get(k, 0) for k in ("track_dangling", "via_dangling", "shorting_items",
+                                                  "clearance", "copper_edge_clearance")}
+    saved_ok = d["unconnected"] == 3 and not any(bad.values())
+    return {"pass": flips_ok and chain and b_side and via_ok and saved_ok, "flips": flips,
+            "copper_chain": chain, "b_side_at_pad": b_side, "via_ok": via_ok,
+            "saved_drc": {"unconnected": d["unconnected"], **bad, "all": d["violations"]},
+            "server_readback": ctx.get("server_readback"), "live_pad_C310.1": cpad,
+            "session_restart": ctx.get("session_restart", False)}
+
+
 SCENARIOS = {
     "B": {"fixture": "live_saved.kicad_pcb", "prepare": b_prepare, "act": b_act,
           "judge": b_judge, "control": b_control},
+    "A": {"fixture": "divider", "control_fixture": {"good": "divider_a_final"},
+          "prepare": a_prepare, "act": a_act, "judge": a_judge, "control": a_control},
+    "C": {"fixture": "divider_zone", "control_fixture": {"good": "divider_c_final"},
+          "prepare": c_prepare, "act": a_act, "judge": c_judge, "control": c_control},
+    "D": {"fixture": "flip_vias.kicad_pcb", "prepare": d_prepare, "act": d_act,
+          "judge": d_judge, "control": d_control},
     "E": {"fixture": "divider", "prepare": e_prepare, "act": e_act,
           "judge": e_judge, "control": e_control},
 }
@@ -265,7 +524,10 @@ def fresh_copy(fixture: str, root: Path) -> tuple[Path, Path]:
 def run_once(scn: str, subject: str, root: Path) -> dict:
     """subject is an implementation name, or `control:good` / `control:bad`."""
     spec = SCENARIOS[scn]
-    work, board = fresh_copy(spec["fixture"], root)
+    fixture = spec["fixture"]
+    if subject.startswith("control:"):
+        fixture = spec.get("control_fixture", {}).get(subject.split(":")[1], fixture)
+    work, board = fresh_copy(fixture, root)
     fixture_sha = ks.sha256(board)
     rec: dict = {"scenario": scn, "subject": subject, "fixture_sha256": fixture_sha}
     t0 = time.perf_counter()
@@ -286,10 +548,17 @@ def run_once(scn: str, subject: str, root: Path) -> dict:
         rec["harness_error"] = repr(e)
     rec["seconds"] = round(time.perf_counter() - t0, 1)
     calls = rec.get("calls", [])
-    rec["mcp_success"] = bool(calls) and all(c["ok"] for c in calls)
+    rec["capability_absent"] = bool(rec.get("oracle", {}).get("capability_absent"))
+    rec["refused"] = bool(rec.get("context", {}).get("refused"))
+    # A server with no tool for the intention, or one that refused it, made no
+    # success claim: neither can be a false success.
+    rec["mcp_success"] = (bool(calls) and all(c["ok"] for c in calls)
+                          and not rec["capability_absent"] and not rec["refused"])
     rec["functional"] = bool(rec.get("oracle", {}).get("pass"))
     rec["false_success"] = rec["mcp_success"] and not rec["functional"]
-    rec["gui_intervention"] = False  # nothing in this harness touches the GUI
+    # Nothing here clicks in the GUI; an editor restart forced by a server that
+    # refuses while KiCad holds the board is the manual step a user would make.
+    rec["gui_intervention"] = bool(rec.get("context", {}).get("session_restart"))
     return rec
 
 

@@ -7067,11 +7067,11 @@ Z1.
 
 - [x] Z3.1 E — divergence schéma ↔ PCB injectée, parité réellement exécutée
   (`kicad-cli pcb drc --schematic-parity`), rouge puis vert après restauration.
-- [ ] Z3.2 A — schéma modifié puis sync PCB : placement, cuivre et board-only
+- [x] Z3.2 A — schéma modifié puis sync PCB : placement, cuivre et board-only
   (`H1`/`H2`) conservés, delta appliqué.
-- [ ] Z3.3 C — zone GND + changement de net : un net non routé ne devient pas
+- [x] Z3.3 C — zone GND + changement de net : un net non routé ne devient pas
   « routé » du fait de la zone (classe #779).
-- [ ] Z3.4 D — flip `C310`/`C311` vers `B.Cu` + vias : couche, coordonnées,
+- [x] Z3.4 D — flip `C310`/`C311` vers `B.Cu` + vias : couche, coordonnées,
   connectivité, relecture KiCad, DRC.
 
 ### Validation
@@ -7084,6 +7084,24 @@ contrôles valides (reporter réel vert, reporter « toujours 0 » rouge) ; arbi
 1 → 0. Fork : **faux vert** — `run_drc` n'appelle pas `--schematic-parity`,
 KiCad 10 écrit alors un tableau vide, le fork publie 0 (`tools/cli.rs`
 `run_drc`). Upstream : 1 puis 0, conforme.
+
+A (`divider/` + `edit_schematic_for_a`) : contrôles valides (état final attendu
+vert, sync naïve qui perd H1 rouge). Fork : capacité absente. Upstream : delta
+appliqué, placement, cuivre et H1/H2 conservés, parité 0 ; R3 posé hors contour.
+
+C (`divider_zone/`, alimentation renommée +5V) : contrôles valides. Upstream :
+refus `routed_pad_net_change` alors que `+3V3` ne porte aucun cuivre — #779
+reproduit. Fork : capacité absente.
+
+D (`flip_vias.kicad_pcb`) : contrôles valides (FlipItems natif via `kipy`).
+Les deux atteignent l'état correct (flip haut/bas, pads B.Cu dans le fichier
+écrit par KiCad, chaîne pad → via → pad, DRC propre). Fork : flip live refusé,
+redémarrage de l'éditeur requis, message « no footprint-flip command over IPC »
+faux sur 10.0.6. Upstream : flip IPC natif.
+
+Pièges d'oracle relevés : KiCad flippe haut/bas par défaut ; le padstack IPC
+rapporte la couche de définition même après flip (côté lu dans le fichier
+sauvé).
 
 ## Z4 — Répétitions et matrice
 

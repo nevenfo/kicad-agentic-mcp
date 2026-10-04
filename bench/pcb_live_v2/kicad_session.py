@@ -31,6 +31,11 @@ SOCKET = f"ipc://{SOCKET_FILE}"
 
 NM = 1_000_000  # kipy speaks nanometres
 
+from kipy.proto.board.board_types_pb2 import BoardLayer  # noqa: E402
+
+LAYERS = {"F.Cu": BoardLayer.BL_F_Cu, "B.Cu": BoardLayer.BL_B_Cu}
+LAYER_NAMES = {v: k for k, v in LAYERS.items()}
+
 
 def mm(v_nm: int) -> float:
     return v_nm / NM
@@ -82,6 +87,7 @@ class Pad:
     x: float
     y: float
     net: str
+    layers: tuple = ()
 
 
 class PcbnewSession:
@@ -150,7 +156,8 @@ class PcbnewSession:
         for fp in self.board_handle().get_footprints():
             ref = fp.reference_field.text.value
             for p in fp.definition.pads:
-                out.append(Pad(ref, p.number, mm(p.position.x), mm(p.position.y), p.net.name))
+                layers = tuple(LAYER_NAMES.get(c.layer, int(c.layer)) for c in p.padstack.copper_layers)
+                out.append(Pad(ref, p.number, mm(p.position.x), mm(p.position.y), p.net.name, layers))
         return out
 
     def live_pad(self, ref: str, number: str) -> Pad:
@@ -160,7 +167,7 @@ class PcbnewSession:
         raise KeyError(f"{ref}.{number}")
 
     def live_tracks(self) -> list[dict]:
-        return [{"net": t.net.name, "layer": int(t.layer),
+        return [{"net": t.net.name, "layer": LAYER_NAMES.get(t.layer, int(t.layer)),
                  "start": (mm(t.start.x), mm(t.start.y)), "end": (mm(t.end.x), mm(t.end.y))}
                 for t in self.board_handle().get_tracks()]
 
@@ -177,19 +184,47 @@ class PcbnewSession:
         board.update_items(fp)
 
     def add_track_live(self, net: str, x1: float, y1: float, x2: float, y2: float,
-                       width_mm: float = 0.25) -> None:
-        """Negative-control injector: copper drawn by the oracle side itself."""
+                       width_mm: float = 0.25, layer: str = "F.Cu") -> None:
+        """Control injector: copper drawn by the oracle side itself."""
         from kipy.board_types import Track
-        from kipy.proto.board.board_types_pb2 import BoardLayer
         board = self.board_handle()
         nets = {n.name: n for n in board.get_nets()}
         t = Track()
         t.start = Vector2.from_xy(round(x1 * NM), round(y1 * NM))
         t.end = Vector2.from_xy(round(x2 * NM), round(y2 * NM))
         t.width = round(width_mm * NM)
-        t.layer = BoardLayer.BL_F_Cu
+        t.layer = LAYERS[layer]
         t.net = nets[net]
         board.create_items(t)
+
+    def add_via_live(self, net: str, x: float, y: float, dia_mm: float = 0.6,
+                     drill_mm: float = 0.3) -> None:
+        from kipy.board_types import Via
+        board = self.board_handle()
+        v = Via()
+        v.position = Vector2.from_xy(round(x * NM), round(y * NM))
+        v.net = {n.name: n for n in board.get_nets()}[net]
+        if len(v.padstack.copper_layers) == 0:
+            v.padstack.proto.copper_layers.add().layer = LAYERS["F.Cu"]
+        v.diameter = round(dia_mm * NM)
+        v.drill_diameter = round(drill_mm * NM)
+        board.create_items(v)
+
+    def flip_live(self, *refs: str) -> None:
+        board = self.board_handle()
+        board.flip_items([self.footprint(r) for r in refs])
+
+    def restart(self, while_closed=None) -> None:
+        """Close pcbnew (board saved first), run `while_closed()`, reopen.
+
+        The documented route for a mutation that refuses while KiCad holds the
+        board: it is an editor session restart, which this benchmark counts as
+        a manual intervention."""
+        self.save()
+        self.__exit__()
+        if while_closed is not None:
+            while_closed()
+        self.__enter__()
 
     def set_value_live(self, ref: str, value: str) -> None:
         board = self.board_handle()
@@ -199,6 +234,34 @@ class PcbnewSession:
 
     def save(self) -> None:
         self.board_handle().save()
+
+
+def saved_pad_layers(board: Path) -> dict[str, dict[str, list[str]]]:
+    """{reference: {pad: [layers]}} from a board file as KiCad wrote it.
+
+    Deliberately crude — balanced-paren scan, no parser shared with either
+    server — because its only job is to read KiCad's own output."""
+    import re
+    text = board.read_text(encoding="utf-8")
+    out: dict[str, dict[str, list[str]]] = {}
+    for m in re.finditer(r'\n\t\(footprint "', text):
+        depth, i = 0, m.start() + 2
+        start = i
+        while True:
+            c = text[i]
+            depth += (c == "(") - (c == ")")
+            i += 1
+            if depth == 0:
+                break
+        block = text[start:i]
+        ref = re.search(r'\(property "Reference" "([^"]+)"', block)
+        if not ref:
+            continue
+        pads = {}
+        for pm in re.finditer(r'\(pad "([^"]*)"[^\n]*\n(?:\t{3}[^\n]*\n)*?\t{3}\(layers ([^)]*)\)', block):
+            pads[pm.group(1)] = re.findall(r'"([^"]+)"', pm.group(2))
+        out[ref.group(1)] = pads
+    return out
 
 
 def drc(board: Path, out: Path, parity: bool = False, refill: bool = False) -> dict:
