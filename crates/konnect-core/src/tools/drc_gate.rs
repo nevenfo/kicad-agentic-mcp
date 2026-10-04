@@ -156,11 +156,16 @@ pub(crate) fn assess(evidence: &DrcEvidence) -> DrcGate {
         .map(|c| c.json_key())
         .collect();
     for key in &missing {
+        // A parity pass that was requested but compared nothing says why.
+        let cause = match (*key, &report.schematic_parity_diagnostic) {
+            ("schematic_parity", Some(reason)) => format!(" ({reason})"),
+            _ => String::new(),
+        };
         findings.push(DrcFinding {
             severity: "warning",
             issue: format!(
                 "DRC did not report a '{key}' section, so that pass is unmeasured — \
-                 its absence is not zero findings"
+                 its absence is not zero findings{cause}"
             ),
             fix: "Re-run DRC with a kicad-cli that emits every section of \
                   schemas.kicad.org/drc.v1.json before treating the board as clear"
@@ -168,14 +173,18 @@ pub(crate) fn assess(evidence: &DrcEvidence) -> DrcGate {
         });
     }
 
-    DrcGate {
-        summary: json!({
+    let mut summary = json!({
             "violations": report.violations.as_ref().map(Vec::len),
             "unconnected_items": report.unconnected_items.as_ref().map(Vec::len),
             "schematic_parity": report.schematic_parity.as_ref().map(Vec::len),
             "errors": report.error_count(),
             "missing_categories": missing,
-        }),
+    });
+    if let Some(reason) = &report.schematic_parity_diagnostic {
+        summary["schematic_parity_diagnostic"] = json!(reason);
+    }
+    DrcGate {
+        summary,
         findings,
         incomplete: !missing.is_empty(),
         connectivity_measured: report.unconnected_items.is_some(),
@@ -213,6 +222,7 @@ mod tests {
             violations: Some(vec![]),
             unconnected_items: Some(vec![]),
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         }));
         assert!(!clean.incomplete);
         assert!(clean.findings.is_empty());
@@ -222,6 +232,7 @@ mod tests {
             violations: Some(vec![]),
             unconnected_items: None,
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         }));
         assert!(short.incomplete);
         assert!(!short.connectivity_measured);
@@ -242,6 +253,7 @@ mod tests {
                 "Missing connection: Pad 2 [SCL] on C1",
             )]),
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         }));
         assert_eq!(gate.summary["errors"], json!(1));
         assert_eq!(gate.findings.len(), 2);

@@ -1278,6 +1278,7 @@ mod drc_in_the_review_tests {
                 items: Vec::new(),
             }]),
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         }))
         .await;
         assert_eq!(out["errors"], json!(1), "{out}");
@@ -1304,6 +1305,7 @@ mod drc_in_the_review_tests {
             violations: Some(vec![]),
             unconnected_items: Some(vec![]),
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         }))
         .await;
         assert!(

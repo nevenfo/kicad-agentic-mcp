@@ -10,7 +10,7 @@ Canonical reference for every MCP tool exposed by Konnect. Generated from the Ru
 ## Overview
 
 - **22 toolsets** organized into 13 categories
-- **204 registered tools** + **13 always-visible meta-tools** = **217 total**
+- **205 registered tools** + **13 always-visible meta-tools** = **218 total**
 - **Four ways to reach a tool**, cheapest last:
   1. **Toolset loading** — `list_toolboxes` → `load_toolset(name)` exposes a whole domain in `tools/list`; `unload_toolset(name)` prunes it. Coarse, and every load makes the client re-fetch the entire catalogue.
   2. **Tool loading** — `find_capabilities(intent)` → `load_tools([names])` exposes exactly the tools named. Same refresh, far less of it.
@@ -36,7 +36,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 
 | Tool | Purpose |
 |------|---------|
-| `find_capabilities` | Search all 204 tools by plain-language intent; returns name + toolset + one-line summary. |
+| `find_capabilities` | Search all 205 tools by plain-language intent; returns name + toolset + one-line summary. |
 | `load_tools` | Expose specific tools by name without loading their toolset. |
 | `list_toolboxes` | List all 22 toolsets with category, tool count, and whether each is currently loaded. |
 | `load_toolset` | Load a toolset by name to expose its tools in `tools/list`. Returns the list of tools added. |
@@ -163,7 +163,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `batch_place_components` | Place multiple symbols from KiCAD libraries in a single file read/write cycle. Pass explicit references -- there is no auto-numbering; an omitted reference becomes '?' like an eeschema-unannotated symbol, same as `add_schematic_component`. |
 | `batch_connect_pins` | Connect multiple component pin pairs by reference and pin number, in a single file read/write cycle. |
 
-### `sch_export` · 7 tools
+### `sch_export` · 8 tools
 **Purpose:** Export schematic to SVG/PDF/netlist/BOM, run ERC.
 **Source:** [`crates/konnect-core/src/tools/sch_export.rs`](crates/konnect-core/src/tools/sch_export.rs)
 
@@ -176,6 +176,7 @@ Thirteen tools, grouped into *gateway*, *discovery/routing* and *observability*.
 | `run_erc` | Run the Electrical Rules Check via kicad-cli and return violations filtered by severity. |
 | `fix_connectivity` | Scan for near-miss wire endpoints within `snap_tolerance` of a pin/label and snap them into place. Supports `dry_run`. |
 | `export_bom` | Generate a Bill of Materials (BOM) CSV from the schematic's component data. |
+| `update_pcb_from_schematic` | Plan or atomically apply saved schematic changes to the live KiCAD PCB. Dry run by default; apply requires the plan revision. Preserves placement, routing and board-only footprints; a copper zone counts as routing only for its own net. Ported from Konnect v0.13.0. |
 
 ### `sch_buses` · 5 tools
 **Purpose:** Buses: bus segments, bus entries, bus aliases, and expanding a bus name into the nets it carries.

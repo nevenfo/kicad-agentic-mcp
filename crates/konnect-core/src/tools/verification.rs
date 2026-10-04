@@ -220,8 +220,7 @@ async fn handle_run_drc(
         .map(|c| c.json_key())
         .collect();
 
-    Ok(CallToolResult::text(
-        serde_json::to_string(&json!({
+    let mut summary = json!({
             "total_violations": all.len(),
             "filtered_count": filtered.len(),
             "errors": errors,
@@ -246,8 +245,14 @@ async fn handle_run_drc(
                     "uuid": item.uuid,
                 })).collect::<Vec<_>>()
             })).collect::<Vec<_>>()
-        }))
-        .unwrap(),
+    });
+    // Why a null `schematic_parity` is "not checked" rather than a gap in the
+    // report; absent when parity was measured.
+    if let Some(reason) = &report.schematic_parity_diagnostic {
+        summary["schematic_parity_diagnostic"] = json!(reason);
+    }
+    Ok(CallToolResult::text(
+        serde_json::to_string(&summary).unwrap(),
     ))
 }
 

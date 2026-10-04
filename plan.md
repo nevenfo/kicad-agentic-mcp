@@ -6977,3 +6977,249 @@ Portée par le projet Hi-Fi : boucle de découplage ≤ 7,71 mm, colonne
 `x` ∈ [276,15 ; 278,85] libre de cuivre `F.Cu`, DRC sans `clearance`,
 `shorting_items` ni `track_dangling`, parité 3, 124 empreintes et 119 blocs
 `(units`.
+
+# Phase Z — Benchmark PCB live V2 contre Konnect v0.13.0
+
+## Objectif
+
+Remplacer « le fork battait Konnect v0.2.2 en août » par une mesure : sur cinq
+workflows PCB live réels, KiCad arbitre, où le fork gagne, perd ou échoue face
+à Konnect **v0.13.0** (`6bbe3e4f`, 2026-10-01). Puis n'intégrer que les
+changements que cette mesure justifie, et rejouer.
+
+## Invariants de la phase
+
+- Architecture inchangée : planner → Plan IR → exécution déterministe → KiCad →
+  validation indépendante. La question rouverte est la provenance des
+  primitives KiCad, pas cette chaîne.
+- Comparaison **intention → état KiCad final**, jamais appel MCP → JSON. Un
+  `success` sans relecture KiCad conforme est un faux succès.
+- Arbitres indépendants des deux serveurs : `kipy` 0.8.0 (binding IPC officiel,
+  venv `../_bench-venv`) pour le live, `kicad-cli` 10.0.6 pour le saved.
+- Chaque oracle a deux contrôles injectés par le côté oracle : résultat correct
+  (doit passer) et défaut connu (doit échouer). Contrôles non séparés → scénario
+  invalide, non noté.
+- Baseline figée : KiCad 10.0.6, upstream tag `v0.13.0` (worktree
+  `../_upstream-v0.13.0`, build `../_upstream-target`). Jamais `main` en silence.
+- Aucun rebase global, aucune copie de la surface upstream, aucun framework de
+  benchmark générique, aucun autorouteur, aucune nouvelle couche.
+- Fixtures jetables, copiées par run ; jamais un projet de l'utilisateur.
+
+## Z1 — Environnement et premier vertical (B, live ≠ saved)
+
+### Objectif
+
+Prouver la chaîne complète sur un scénario : fixture, session pcbnew isolée,
+deux serveurs, oracle live + saved, contrôles.
+
+### Dépendances
+
+Aucune.
+
+### Tâches
+
+- [x] Z1.1 Builds release fork et upstream `v0.13.0`, SHA enregistrés par run.
+- [x] Z1.2 Harness `bench/pcb_live_v2/` : `kicad_session.py` (pcbnew + profil
+  dédié + relecture `kipy` + DRC `kicad-cli`), `run.py` (scénarios, contrôles,
+  métriques, JSON).
+- [x] Z1.3 Scénario B : R2 déplacé en live non sauvegardé, `route_pad_to_pad`
+  R1.2 → R2.1 ; oracle = cuivre live jusqu'au pad live, empreinte conservée,
+  DRC du fichier sauvé (1 non-connecté, 0 `track_dangling`).
+
+### Validation
+
+Contrôles B : bon = vert, mauvais (piste vers la position sauvegardée) = rouge
+(`track_dangling` 1, non-connectés 2). Premier run : fork **faux succès**
+(lit les pads dans le fichier sauvé, `pcb_routing.rs` `handle_route_pad_to_pad`),
+upstream correct (`source: ipc`).
+
+## Z2 — Vérification externe
+
+### Objectif
+
+Confirmer tag/commit upstream, statut des issues de classe #700/#779, version
+stable KiCad, corrections publiées depuis la revue du 2026-10-04.
+
+### Dépendances
+
+Aucune.
+
+### Tâches
+
+- [x] Z2.1 Faits sourcés consignés dans `docs/benchmark-pcb-live-v2.md`.
+
+### Validation
+
+Chaque fait porte une URL primaire ; écart éventuel entre `v0.13.0` et `main`
+documenté sans changer la baseline.
+
+## Z3 — Scénarios A, C, D, E
+
+### Objectif
+
+Étendre le harness aux quatre autres familles, chacune avec oracle et contrôles.
+
+### Dépendances
+
+Z1.
+
+### Tâches
+
+- [x] Z3.1 E — divergence schéma ↔ PCB injectée, parité réellement exécutée
+  (`kicad-cli pcb drc --schematic-parity`), rouge puis vert après restauration.
+- [x] Z3.2 A — schéma modifié puis sync PCB : placement, cuivre et board-only
+  (`H1`/`H2`) conservés, delta appliqué.
+- [x] Z3.3 C — zone GND + changement de net : un net non routé ne devient pas
+  « routé » du fait de la zone (classe #779).
+- [x] Z3.4 D — flip `C310`/`C311` vers `B.Cu` + vias : couche, coordonnées,
+  connectivité, relecture KiCad, DRC.
+
+### Validation
+
+Pour chaque scénario : contrôle bon vert, contrôle mauvais rouge, un run par
+implémentation exécuté sans erreur de harness.
+
+E (fixture `divider/`, générée par `fixtures/make_divider.py`, DRC 0, parité 0) :
+contrôles valides (reporter réel vert, reporter « toujours 0 » rouge) ; arbitre
+1 → 0. Fork : **faux vert** — `run_drc` n'appelle pas `--schematic-parity`,
+KiCad 10 écrit alors un tableau vide, le fork publie 0 (`tools/cli.rs`
+`run_drc`). Upstream : 1 puis 0, conforme.
+
+A (`divider/` + `edit_schematic_for_a`) : contrôles valides (état final attendu
+vert, sync naïve qui perd H1 rouge). Fork : capacité absente. Upstream : delta
+appliqué, placement, cuivre et H1/H2 conservés, parité 0 ; R3 posé hors contour.
+
+C (`divider_zone/`, alimentation renommée +5V) : contrôles valides. Upstream :
+refus `routed_pad_net_change` alors que `+3V3` ne porte aucun cuivre — #779
+reproduit. Fork : capacité absente.
+
+D (`flip_vias.kicad_pcb`) : contrôles valides (FlipItems natif via `kipy`).
+Les deux atteignent l'état correct (flip haut/bas, pads B.Cu dans le fichier
+écrit par KiCad, chaîne pad → via → pad, DRC propre). Fork : flip live refusé,
+redémarrage de l'éditeur requis, message « no footprint-flip command over IPC »
+faux sur 10.0.6. Upstream : flip IPC natif.
+
+Pièges d'oracle relevés : KiCad flippe haut/bas par défaut ; le padstack IPC
+rapporte la couche de définition même après flip (côté lu dans le fichier
+sauvé).
+
+## Z4 — Répétitions et matrice
+
+### Objectif
+
+Trois runs par scénario et par implémentation, matrice comparative.
+
+### Dépendances
+
+Z3.
+
+### Tâches
+
+- [x] Z4.1 Résultats bruts commités sous `bench/results/pcb_live_v2-*.json`.
+- [x] Z4.2 `docs/benchmark-pcb-live-v2.md` : matrice (fork meilleur / upstream
+  meilleur / équivalent / non concluant / défaut critique), faits,
+  interprétations, incertitudes.
+
+### Validation
+
+5 scénarios × 2 implémentations × 3 runs, contrôles valides, reproductibilité
+notée par cellule.
+
+`pcb_live_v2-baseline-20261004.json` : 40 runs, 0 erreur de harness, chaque
+cellule identique sur ses 3 runs. Fork : B et E faux succès 3/3, A et C absents,
+D fonctionnel 3/3 avec redémarrage éditeur. Upstream : A, B, D, E fonctionnels
+3/3 ; C refus à tort 3/3 (#779). Classification et décisions :
+`docs/benchmark-pcb-live-v2.md`.
+
+## Z5 — Mises à jour justifiées
+
+### Objectif
+
+Backport minimal là où upstream gagne sans régression critique ; conservation
+documentée là où upstream échoue.
+
+### Dépendances
+
+Z4.
+
+### Tâches
+
+- [x] Z5.1 B : `route_pad_to_pad` lit les pads du board live (IPC), repli
+  fichier seulement si l'IPC est injoignable, comme upstream.
+- [x] Z5.2 E : `run_drc` passe toujours `--schematic-parity` ; parité non
+  exécutée par KiCad (stderr « Failed to fetch schematic netlist… » ou pas de
+  schéma racine) ⇒ `null` + diagnostic, jamais 0.
+- [x] Z5.3 D : message et commentaire de `flip_component` corrigés (KiCad
+  10.0.6 répond à `FlipItems` ; le fork ne le pilote pas). Pas de backport du
+  flip IPC : état final déjà correct, coût = un redémarrage éditeur.
+
+### Validation
+
+Scénario concerné vert ×3 sur le fork ; tests unitaires et `gate.ps1` verts.
+
+`pcb_live_v2-after-z5-20261004.json` : B fork 3/3 fonctionnel (`source: ipc`),
+E fork 3/3 (1 puis 0), D inchangé (3/3, redémarrage éditeur), contrôles
+valides. `cargo fmt --check`, `clippy -D warnings`, `cargo test -p konnect-core
+-p konnect-ipc` (lib 677 passed) verts. `pad_positions_of` (konnect-ipc) et
+`apply_parity_evidence` (cli.rs) couverts par tests unitaires.
+
+## Z6 — Rejeu, validation dépôt, documentation
+
+### Objectif
+
+Rejouer les cinq scénarios après modification et aligner les affirmations
+publiques sur les nouvelles preuves.
+
+### Dépendances
+
+Z5, Z7.
+
+### Tâches
+
+- [x] Z6.1 Rejeu complet, résultats commités.
+- [ ] Z6.2 `pwsh gate.ps1` vert (fmt, clippy, tests, matrice).
+- [x] Z6.3 README / `docs/benchmark.md` : la comparaison v0.2.2 n'est plus
+  présentée comme preuve de supériorité actuelle ; renvoi vers V2.
+- [ ] Z6.4 PR `ai/pcb-live-bench-v2` → `agentic/main`.
+
+### Validation
+
+Rejeu sans faux succès fork sur les cellules corrigées ; gate vert ; CI verte.
+
+## Z7 — Synchronisation schéma → PCB (A, C)
+
+### Objectif
+
+Combler le seul manque fonctionnel mesuré du fork (A) en important
+`update_pcb_from_schematic` d'upstream v0.13.0, et corriger au passage #779 (C)
+pour que la présence d'une zone ne marque plus tous les nets comme routés.
+
+### Dépendances
+
+Z5 validée et rejouée sur B/D/E (binaire release reconstruit) avant d'ajouter
+une primitive lourde.
+
+### Tâches
+
+- [x] Z7.1 Porter `tools/pcb_sync.rs` (≈2 080 lignes hors tests) et ses
+  dépendances IPC absentes du fork (`run_commit_recovering_in`,
+  `save_document_to_string_in`, `update_items_in`, `get_nets_in`, `IpcVector`,
+  `MockIpcServer` de test), sans rebase ni import hors de ce périmètre.
+- [x] Z7.2 #779 : le net d'une zone est lisible
+  (`Zone.settings.copper_settings.net`) ; seul le cuivre d'un net le rend routé.
+- [x] Z7.3 Classement dans la matrice de capacités : preuve live exigée
+  (`LiveReadback`), test `#[ignore]`d arbitré, sinon `UNPROVEN` assumé.
+
+### Validation
+
+Bench A et C : fork fonctionnel 3/3, 0 faux succès ; B/D/E inchangés ; gate
+vert.
+
+Port par `code-worker` en worktree, intégré fichier à fichier (35 fichiers).
+`record_zone_nets` (`pcb_sync.rs`) lit `CopperZoneSettings.net` ; 5 tests #779.
+Worktree : fmt, clippy `--workspace -D warnings`, `cargo test --workspace` (74
+binaires ok, 55 tests `pcb_sync`). Matrice : `update_pcb_from_schematic`
+`UNPROVEN` (preuve `live` exigée, `test` actuelle). `pcb_live_v2-after-z7-
+20261004.json` : fork A, B, C, D, E fonctionnels 3/3, 0 faux succès ; upstream
+C refus 3/3. Écarts au port : pas de `run_commit_recovering_in` (commit global
+du fork), pas de verdict « incertain », deux tests upstream non portés.

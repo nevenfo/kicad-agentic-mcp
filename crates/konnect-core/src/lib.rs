@@ -8,5 +8,7 @@ pub mod mode_gate;
 pub mod observability;
 pub mod plan;
 pub mod router;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod tools;
 pub mod verification_agent;

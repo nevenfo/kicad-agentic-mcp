@@ -601,7 +601,11 @@ impl KiCadIpcClient {
 
     /// Get all nets on the board.
     pub fn get_nets(&self) -> Result<Vec<IpcNet>> {
-        let doc = self.get_board_document()?;
+        self.get_nets_in(self.get_board_document()?)
+    }
+
+    /// As [`Self::get_nets`], targeting a specific open document.
+    pub fn get_nets_in(&self, doc: kiapi::common::types::DocumentSpecifier) -> Result<Vec<IpcNet>> {
         let cmd = kiapi::board::commands::GetNets {
             board: Some(doc),
             netclass_filter: vec![],
@@ -829,11 +833,20 @@ impl KiCadIpcClient {
     /// Update existing items by KIID. Generic wrapper mirroring create_items/delete_items;
     /// each `Any` must be a fully-formed board item with an existing `id` populated.
     pub fn update_items(&self, items: Vec<prost_types::Any>) -> Result<()> {
+        self.update_items_in(self.get_board_document()?, items)
+    }
+
+    /// As [`Self::update_items`], targeting a specific open document.
+    pub fn update_items_in(
+        &self,
+        document: kiapi::common::types::DocumentSpecifier,
+        items: Vec<prost_types::Any>,
+    ) -> Result<()> {
         if items.is_empty() {
             return Ok(());
         }
         let expected_count = items.len();
-        let header = self.make_header()?;
+        let header = header_for(document);
         let cmd = kiapi::common::commands::UpdateItems {
             header: Some(header),
             items,
@@ -1090,6 +1103,30 @@ impl KiCadIpcClient {
     pub fn get_footprint(&self, reference: &str) -> Result<Option<IpcFootprint>> {
         let footprints = self.list_footprints()?;
         Ok(footprints.into_iter().find(|fp| fp.reference == reference))
+    }
+
+    /// Read a placed footprint's pads from the open board, or `None` when no
+    /// footprint carries `reference`. A reference that appears twice is an
+    /// error: either footprint could be the one meant.
+    ///
+    /// Positions are absolute board coordinates, because that is how KiCAD
+    /// serializes a footprint's children: the anchor/rotation transform that
+    /// the saved file needs applied is already baked in.
+    pub fn get_footprint_pads(&self, reference: &str) -> Result<Option<Vec<IpcPadPosition>>> {
+        self.get_footprint_pads_in(self.get_board_document()?, reference)
+    }
+
+    /// As [`Self::get_footprint_pads`], targeting a specific open document.
+    pub fn get_footprint_pads_in(
+        &self,
+        document: kiapi::common::types::DocumentSpecifier,
+        reference: &str,
+    ) -> Result<Option<Vec<IpcPadPosition>>> {
+        let items = self.get_items_in(
+            document,
+            kiapi::common::types::KiCadObjectType::KotPcbFootprint,
+        )?;
+        pad_positions_of(&items, reference)
     }
 
     /// Find a footprint's KIID by reference.
@@ -1419,7 +1456,6 @@ impl KiCadIpcClient {
     /// docs), so every footprint-local point is rotated and translated here.
     #[allow(clippy::too_many_arguments)]
     pub fn build_footprint_item(
-        &self,
         lib_id: &str,
         reference: &str,
         value: &str,
@@ -1670,7 +1706,7 @@ impl KiCadIpcClient {
         {
             anyhow::bail!("footprint reference '{reference}' already exists on the board");
         }
-        let item = self.build_footprint_item(
+        let item = Self::build_footprint_item(
             lib_id, reference, value, pads, graphics, fields, x, y, rotation, layer,
         )?;
         self.create_items_in(document.clone(), vec![item])?;
@@ -1693,8 +1729,18 @@ impl KiCadIpcClient {
 
     /// Get board extents (bounding box of all items).
     pub fn get_board_extents(&self) -> Result<IpcBoardExtents> {
+        self.get_optional_board_extents_in(self.get_board_document()?)?
+            .context("No bounding box returned from KiCAD")
+    }
+
+    /// Return no bounds for a completely empty board instead of treating the
+    /// valid empty `GetBoundingBox` response as an IPC failure.
+    pub fn get_optional_board_extents_in(
+        &self,
+        document: kiapi::common::types::DocumentSpecifier,
+    ) -> Result<Option<IpcBoardExtents>> {
         // Use GetBoundingBox with no specific items = board extents
-        let header = self.make_header()?;
+        let header = header_for(document);
         let cmd = kiapi::common::commands::GetBoundingBox {
             header: Some(header),
             items: vec![], // empty = all items
@@ -1706,7 +1752,7 @@ impl KiCadIpcClient {
             if let Some(bbox) = resp.boxes.first() {
                 let pos = bbox.position.as_ref();
                 let size = bbox.size.as_ref();
-                return Ok(IpcBoardExtents {
+                return Ok(Some(IpcBoardExtents {
                     min: IpcVector2 {
                         x: pos
                             .map(|p| crate::builders::nm_to_mm(p.x_nm))
@@ -1729,10 +1775,10 @@ impl KiCadIpcClient {
                                 .map(|s| crate::builders::nm_to_mm(s.y_nm))
                                 .unwrap_or(0.0),
                     },
-                });
+                }));
             }
         }
-        anyhow::bail!("No bounding box returned from KiCAD")
+        Ok(None)
     }
 
     /// Get enabled layers.
@@ -1937,6 +1983,66 @@ fn build_graphic_child(
     }
 }
 
+/// Pure half of [`KiCadIpcClient::get_footprint_pads_in`]: the pads of the
+/// footprint named `reference` among `items`, `None` if there is none.
+fn pad_positions_of(
+    items: &[prost_types::Any],
+    reference: &str,
+) -> Result<Option<Vec<IpcPadPosition>>> {
+    let mut found = None;
+    for item in items {
+        if !item
+            .type_url
+            .ends_with("kiapi.board.types.FootprintInstance")
+        {
+            continue;
+        }
+        let fp = kiapi::board::types::FootprintInstance::decode(item.value.as_slice())
+            .context("KiCAD returned an unreadable footprint instance")?;
+        let fp_reference = fp
+            .reference_field
+            .as_ref()
+            .and_then(|f| f.text.as_ref())
+            .and_then(|bt| bt.text.as_ref())
+            .map(|t| t.text.as_str())
+            .unwrap_or("");
+        if fp_reference != reference {
+            continue;
+        }
+        if found.is_some() {
+            anyhow::bail!(
+                "footprint reference '{}' appears more than once on the board",
+                reference
+            );
+        }
+        let definition = fp
+            .definition
+            .as_ref()
+            .with_context(|| format!("footprint '{reference}' has no definition"))?;
+        let mut pads = Vec::new();
+        for child in &definition.items {
+            if !child.type_url.ends_with("kiapi.board.types.Pad") {
+                continue;
+            }
+            let pad = kiapi::board::types::Pad::decode(child.value.as_slice())
+                .with_context(|| format!("footprint '{reference}' has an unreadable pad"))?;
+            let position = pad.position.with_context(|| {
+                format!(
+                    "footprint '{reference}' pad '{}' has no position",
+                    pad.number
+                )
+            })?;
+            pads.push(IpcPadPosition {
+                number: pad.number,
+                x: nm_to_mm(position.x_nm),
+                y: nm_to_mm(position.y_nm),
+            });
+        }
+        found = Some(pads);
+    }
+    Ok(found)
+}
+
 fn header_for(
     document: kiapi::common::types::DocumentSpecifier,
 ) -> kiapi::common::types::ItemHeader {
@@ -2028,23 +2134,20 @@ mod footprint_graphics_tests {
         y: f64,
         rotation: f64,
     ) -> kiapi::board::types::FootprintInstance {
-        // build_footprint_item is pure — no IPC round-trip — so the socket
-        // path is never dialed.
-        let client = KiCadIpcClient::new("tcp://never-dialed");
-        let any = client
-            .build_footprint_item(
-                "Lib:Fp",
-                "R1",
-                "R",
-                &[],
-                graphics,
-                &crate::types::IpcFieldPlacement::default(),
-                x,
-                y,
-                rotation,
-                "F.Cu",
-            )
-            .unwrap();
+        // build_footprint_item is pure — no IPC round-trip, no client needed.
+        let any = KiCadIpcClient::build_footprint_item(
+            "Lib:Fp",
+            "R1",
+            "R",
+            &[],
+            graphics,
+            &crate::types::IpcFieldPlacement::default(),
+            x,
+            y,
+            rotation,
+            "F.Cu",
+        )
+        .unwrap();
         kiapi::board::types::FootprintInstance::decode(any.value.as_slice()).unwrap()
     }
 
@@ -2265,21 +2368,19 @@ mod footprint_graphics_tests {
         };
 
         for layer in ["F.Cu", "B.Cu"] {
-            let client = KiCadIpcClient::new("tcp://never-dialed");
-            let any = client
-                .build_footprint_item(
-                    "Lib:Fp",
-                    "R1",
-                    "R",
-                    &[pad(layer)],
-                    &[],
-                    &crate::types::IpcFieldPlacement::default(),
-                    10.0,
-                    10.0,
-                    0.0,
-                    "F.Cu",
-                )
-                .unwrap();
+            let any = KiCadIpcClient::build_footprint_item(
+                "Lib:Fp",
+                "R1",
+                "R",
+                &[pad(layer)],
+                &[],
+                &crate::types::IpcFieldPlacement::default(),
+                10.0,
+                10.0,
+                0.0,
+                "F.Cu",
+            )
+            .unwrap();
             let fp = kiapi::board::types::FootprintInstance::decode(any.value.as_slice()).unwrap();
             let pad_any = fp
                 .definition
@@ -2336,8 +2437,8 @@ mod footprint_layer_validation_tests {
         graphics: &[IpcGraphicDefinition],
         layer: &str,
     ) -> Result<prost_types::Any> {
-        // build_footprint_item is pure — the socket path is never dialed.
-        KiCadIpcClient::new("tcp://never-dialed").build_footprint_item(
+        // build_footprint_item is pure — no client needed.
+        KiCadIpcClient::build_footprint_item(
             "Lib:Fp",
             "U1",
             "MCU",
@@ -2437,5 +2538,42 @@ mod footprint_layer_validation_tests {
             "F.Cu",
         )
         .expect("a footprint drawn on ordinary layers must still build");
+    }
+
+    /// A footprint placed at (10, 10) holding one pad at local (1.5, -2):
+    /// the board-space pad the router has to aim at is (11.5, 8).
+    fn placed(reference: &str) -> prost_types::Any {
+        let mut p = pad(&["F.Cu"]);
+        p.number = "2".to_string();
+        p.x = 1.5;
+        p.y = -2.0;
+        KiCadIpcClient::build_footprint_item(
+            "Lib:Fp",
+            reference,
+            "v",
+            &[p],
+            &[],
+            &IpcFieldPlacement::default(),
+            10.0,
+            10.0,
+            0.0,
+            "F.Cu",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn pads_are_read_in_board_coordinates() {
+        let pads = pad_positions_of(&[placed("U1")], "U1").unwrap().unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].number, "2");
+        assert!((pads[0].x - 11.5).abs() < 1e-6 && (pads[0].y - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_absent_reference_is_none_and_a_duplicate_is_an_error() {
+        assert!(pad_positions_of(&[placed("U1")], "U2").unwrap().is_none());
+        let err = pad_positions_of(&[placed("U1"), placed("U1")], "U1").unwrap_err();
+        assert!(err.to_string().contains("more than once"), "{err}");
     }
 }
