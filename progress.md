@@ -8,28 +8,22 @@ attente : la revue du 2026-10-04 a priorité.
 
 ## Tâche actuelle
 
-Z4.1 — matrice complète, 3 runs.
+Z5 — backports justifiés par la matrice : B (pads live) et E (parité
+réellement exécutée) délégués à un `code-worker` (non commités tant que non
+validés) ; Z5.3 (message flip D) fait dans `pcb_components.rs`, non commité.
 
 ## Dernière tâche validée
 
-**Z1 et Z3 — les cinq scénarios, contrôles valides, un run chacun.**
+**Z4 — matrice de base** `bench/results/pcb_live_v2-baseline-20261004.json`.
 
 Validation :
-- Contrôles injectés par `kipy` : bon = vert, mauvais = rouge
-  (`track_dangling` 1, non-connectés 2). Oracle valide.
-- Fork : `route_pad_to_pad` répond `routed: true` mais trace vers la position
-  **sauvegardée** de R2 → faux succès. Upstream `v0.13.0` : trace vers la
-  position live (`source: ipc`), DRC propre.
-- E : contrôles valides ; fork **faux vert** (`run_drc` sans
-  `--schematic-parity` → 0 quand l'arbitre trouve 1) ; upstream 1 puis 0.
-- A : fork capacité absente ; upstream conforme (R3 posé hors contour).
-- C : upstream refuse à tort (#779 reproduit) ; fork capacité absente.
-- D : les deux conformes ; fork exige un redémarrage de l'éditeur.
-- Un run par implémentation ; trois runs restent à faire (Z4).
-- Z2 fait côté recherche (à consigner dans le rapport) : #700 = défaut B, fermé
-  upstream par PR #719 avant v0.13.0 ; #779 (zone ⇒ tous nets « routés »)
-  **ouverte** ; #791 fermée par #805 (après v0.13.0) ; KiCad stable 10.0.6,
-  10.0.7 en RC2.
+- 40 runs, 0 erreur de harness, contrôles valides dans les 5 scénarios,
+  chaque cellule identique sur ses 3 runs.
+- Fork : B et E faux succès 3/3 ; A et C capacité absente ; D fonctionnel 3/3
+  mais redémarrage éditeur requis. Upstream v0.13.0 : A, B, D, E 3/3 ; C refus
+  à tort 3/3 (#779, cause : toute zone ⇒ tous nets « routés »,
+  `pcb_sync.rs` ~l.1600).
+- Rapport : `docs/benchmark-pcb-live-v2.md`.
 
 ## Décisions actives
 
@@ -68,6 +62,6 @@ Aucun.
 
 ## NEXT ACTION
 
-Z4.1 — lancer `run.py` sur les cinq scénarios, 3 runs par implémentation,
-sortie `bench/results/pcb_live_v2-<date>.json`, puis vérifier contrôles
-valides et reproductibilité par cellule.
+Z5.1/Z5.2 — vérifier le retour du worker (diff, fmt, clippy, tests), puis
+`cargo build --release -p konnect`, rejouer B, D, E ×3 et committer si le fork
+y est fonctionnel sans faux succès.
