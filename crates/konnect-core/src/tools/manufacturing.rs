@@ -818,6 +818,7 @@ mod drc_gate_tests {
                 "Missing connection between items: Pad 2 [SCL] on C1",
             )]),
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         };
         let out = validate_with(ROUTED_EXCEPT_ONE_NET, DrcEvidence::Measured(report)).await;
         assert_eq!(
@@ -859,6 +860,7 @@ mod drc_gate_tests {
             violations: Some(vec![]),
             unconnected_items: None,
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         };
         let out = validate_with(ROUTED_EXCEPT_ONE_NET, DrcEvidence::Measured(report)).await;
         assert_eq!(out["verdict"], "INCOMPLETE", "{out}");
@@ -886,6 +888,7 @@ mod drc_gate_tests {
             violations: Some(vec![]),
             unconnected_items: Some(vec![]),
             schematic_parity: Some(vec![]),
+            schematic_parity_diagnostic: None,
         };
         let out = validate_with(unrouted, DrcEvidence::Measured(report)).await;
         assert!(

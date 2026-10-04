@@ -678,7 +678,7 @@ async fn handle_get_drc_violations(
         .map(|c| c.json_key())
         .collect();
 
-    let summary = json!({
+    let mut summary = json!({
         "total": all.len(),
         "filtered_count": filtered.len(),
         "severity_filter": severity_filter,
@@ -700,6 +700,10 @@ async fn handle_get_drc_violations(
             })).collect::<Vec<_>>()
         })).collect::<Vec<_>>()
     });
+    // Why a null `schematic_parity` is "not checked"; absent when measured.
+    if let Some(reason) = &report.schematic_parity_diagnostic {
+        summary["schematic_parity_diagnostic"] = json!(reason);
+    }
 
     Ok(CallToolResult::text(
         serde_json::to_string(&summary).unwrap(),

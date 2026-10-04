@@ -1981,7 +1981,10 @@ async fn handle_flip_component(
     };
 
     // KiCAD 10.0.5 and the protocol Konnect vendors carry no FlipItems command,
-    // so this tool has no IPC implementation at all — which makes
+    // so this tool has no IPC implementation at all. KiCAD 10.0.6 does answer
+    // FlipItems (measured by the PCB live V2 benchmark, scenario D, through
+    // kipy); driving it needs a newer vendored proto and is not done here —
+    // the closed-board file path stays the only one, which makes
     // `refuse_if_board_open_in_kicad` the right gate rather than
     // `attempt_ipc_write`.
     //
@@ -2007,9 +2010,9 @@ async fn handle_flip_component(
             "layer": layer,
             "changed": changed,
             "source": "file",
-            "warning": "KiCAD has no footprint-flip command over IPC, so the board file was \
-                        flipped directly with a revision check. Reopen the board in KiCAD to \
-                        see it."
+            "warning": "This server does not drive KiCAD's IPC flip (FlipItems, KiCAD \
+                        10.0.6+), so the board file was flipped directly with a revision \
+                        check. Reopen the board in KiCAD to see it."
         }))),
         Err(error) => Ok(error.into_result(&board)),
     }

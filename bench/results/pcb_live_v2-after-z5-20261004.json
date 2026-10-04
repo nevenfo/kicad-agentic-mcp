@@ -1,0 +1,5229 @@
+{
+ "environment": {
+  "kicad": "10.0.6",
+  "os": "Windows-11-10.0.26200-SP0",
+  "fork_sha": "6b93bc2d8cff62ab0f93d54c29228810ac28865a",
+  "upstream_tag": "v0.13.0",
+  "upstream_sha": "6bbe3e4f890ba1d37c0e5d5f38ccd03d90958c9e",
+  "binaries": {
+   "fork": "afa522484af6317c7efd445e0a35b7a57f46efd2e399133aa6d23a58f89c1dfd",
+   "upstream": "421859dd8c8a8a6e5ad4dfecac13ac289d2ce6d034ebe0f2f025866a07ad11d4"
+  },
+  "started": "2026-10-04T11:10:32+00:00"
+ },
+ "results": [
+  {
+   "scenario": "B",
+   "subject": "control:good",
+   "fixture_sha256": "375de79f5dcfb7b65e18ab6ad9bab0af007689af68b36501f133ec9c03d0c54c",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [],
+   "mcp_tool_calls": 0,
+   "oracle": {
+    "pass": true,
+    "live_copper_reaches_live_pad": true,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 1
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       109.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       60.0
+      ]
+     },
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 6.1,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false
+  },
+  {
+   "scenario": "B",
+   "subject": "control:bad",
+   "fixture_sha256": "bc39e690d49717f1ff17ee7763e0c7cffdd39b372dd2262ba0cdcb2400d2691e",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [],
+   "mcp_tool_calls": 0,
+   "oracle": {
+    "pass": false,
+    "live_copper_reaches_live_pad": false,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "track_dangling": 1,
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 2
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 5.0,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": false,
+   "false_success": false,
+   "gui_intervention": false
+  },
+  {
+   "scenario": "B",
+   "subject": "fork",
+   "fixture_sha256": "2a19b2ead998fc4beb66f03b917ad5c2d518f56440af46610c0ffa449e7aaf58",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.5,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       "add_net",
+       "route_trace",
+       "route_pad_to_pad",
+       "add_via",
+       "add_copper_pour",
+       "delete_trace",
+       "query_traces",
+       "get_nets_list",
+       "modify_trace",
+       "create_netclass",
+       "assign_net_to_class",
+       "route_differential_pair"
+      ],
+      "tools_added": 12
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_pad_to_pad",
+     "ok": true,
+     "ms": 7.1,
+     "body": {
+      "from": {
+       "pad": "2",
+       "ref": "R1",
+       "x": 100.5,
+       "y": 50.0
+      },
+      "layer": "F.Cu",
+      "net": "GND",
+      "routed": true,
+      "source": "ipc",
+      "to": {
+       "pad": "1",
+       "ref": "R2",
+       "x": 109.5,
+       "y": 60.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 2,
+   "response_bytes": 20512,
+   "oracle": {
+    "pass": true,
+    "live_copper_reaches_live_pad": true,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 1
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       109.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       60.0
+      ]
+     },
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 5.3,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 1
+  },
+  {
+   "scenario": "B",
+   "subject": "fork",
+   "fixture_sha256": "28d8fa8e46e456eef362f3fdcf6c70c43baf945c981a8e745a648f618ac61a12",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.4,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       "add_net",
+       "route_trace",
+       "route_pad_to_pad",
+       "add_via",
+       "add_copper_pour",
+       "delete_trace",
+       "query_traces",
+       "get_nets_list",
+       "modify_trace",
+       "create_netclass",
+       "assign_net_to_class",
+       "route_differential_pair"
+      ],
+      "tools_added": 12
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_pad_to_pad",
+     "ok": true,
+     "ms": 10.0,
+     "body": {
+      "from": {
+       "pad": "2",
+       "ref": "R1",
+       "x": 100.5,
+       "y": 50.0
+      },
+      "layer": "F.Cu",
+      "net": "GND",
+      "routed": true,
+      "source": "ipc",
+      "to": {
+       "pad": "1",
+       "ref": "R2",
+       "x": 109.5,
+       "y": 60.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 2,
+   "response_bytes": 20512,
+   "oracle": {
+    "pass": true,
+    "live_copper_reaches_live_pad": true,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 1
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       109.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       60.0
+      ]
+     },
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 5.0,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 2
+  },
+  {
+   "scenario": "B",
+   "subject": "fork",
+   "fixture_sha256": "94a016a34c7413b87c5cdf6a2754a5a296907c923acfece3e3b8f6a84d80b943",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.0,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       "add_net",
+       "route_trace",
+       "route_pad_to_pad",
+       "add_via",
+       "add_copper_pour",
+       "delete_trace",
+       "query_traces",
+       "get_nets_list",
+       "modify_trace",
+       "create_netclass",
+       "assign_net_to_class",
+       "route_differential_pair"
+      ],
+      "tools_added": 12
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_pad_to_pad",
+     "ok": true,
+     "ms": 8.7,
+     "body": {
+      "from": {
+       "pad": "2",
+       "ref": "R1",
+       "x": 100.5,
+       "y": 50.0
+      },
+      "layer": "F.Cu",
+      "net": "GND",
+      "routed": true,
+      "source": "ipc",
+      "to": {
+       "pad": "1",
+       "ref": "R2",
+       "x": 109.5,
+       "y": 60.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 2,
+   "response_bytes": 20512,
+   "oracle": {
+    "pass": true,
+    "live_copper_reaches_live_pad": true,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 1
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       109.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       60.0
+      ]
+     },
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 5.0,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 3
+  },
+  {
+   "scenario": "B",
+   "subject": "upstream",
+   "fixture_sha256": "8b695f0a8494635c31b2e7ff84466b4db6a5f6edc00b5db809c2bc5df8571afa",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.9,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       {
+        "description": "Idempotently add a net to the top-level net table of a pre-KiCad-10 board (S-expression insert, no KiCAD IPC required). An existing name returns its observed ID without writing. Fails on a KiCad 10 board, which has no net table \u2014 there, name the net on copper (route_trace, add_via, add_copper_pour) instead.",
+        "name": "add_net"
+       },
+       {
+        "description": "Route a trace segment between two points on a copper layer via KiCAD IPC.",
+        "name": "route_trace"
+       },
+       {
+        "description": "Route a direct trace between two pads of named components (L-bend routing) via KiCAD IPC.",
+        "name": "route_pad_to_pad"
+       },
+       {
+        "description": "Add a through-hole via at a given position and assign it to a net via KiCAD IPC.",
+        "name": "add_via"
+       },
+       {
+        "description": "Validate a Freerouting Specctra SES against its revision-bound Konnect manifest and the exact live KiCad board. Returns every track and via that would be created; never mutates or saves the board.",
+        "name": "plan_specctra_ses_import"
+       },
+       {
+        "description": "Apply a fully validated Freerouting SES to the exact live KiCad board as one undo transaction, without saving over the source. Creates a new candidate .kicad_pcb, proves IPC read-back counts, and runs KiCad DRC before committing.",
+        "name": "apply_specctra_ses"
+       },
+       {
+        "description": "Alias of pcb_board's add_zone, kept for compatibility: identical arguments, defaults and behaviour. Adds a copper fill zone polygon on a layer/net, trying KiCAD IPC first and falling back to an S-expression file insert (with a warning) only when no live KiCAD answers.",
+        "name": "add_copper_pour"
+       },
+       {
+        "description": "Delete a trace segment identified by its UUID via KiCAD IPC. Refuses UUIDs that are not observed trace segments on the requested board, then verifies the segment is absent before reporting success. Returns the observed preimage and postcondition.",
+        "name": "delete_trace"
+       },
+       {
+        "description": "List trace segments on the board, optionally filtered by net and/or layer. Each result includes the track's UUID, which delete_trace takes.",
+        "name": "query_traces"
+       },
+       {
+        "description": "Return all nets defined on the PCB via KiCAD IPC.",
+        "name": "get_nets_list"
+       },
+       {
+        "description": "Modify a trace segment by deleting and re-adding it with new parameters.",
+        "name": "modify_trace"
+       },
+       {
+        "description": "Create or update a netclass in the project's design rules. Writes net_settings in the sibling .kicad_pro (where KiCad keeps netclasses since v7); the board file is never touched. Requires the project file to exist. An update changes only the settings you name. To see what a class holds, call get_netclasses rather than this tool: naming a class that does not exist here creates it with the defaults, so a call meant as a look writes one instead \u2014 and its result is nearly indistinguishable from a read of an existing class. The class named 'Default' is special: it is written complete, because KiCad replaces its own default with it and backfills every other class from it. Calling this on an existing, incomplete 'Default' repairs it in place without touching values already set.",
+        "name": "create_netclass"
+       },
+       {
+        "description": "Read every netclass in the project's design rules, with its settings, its netclass_patterns and the board nets those patterns match. The answer is mixed-source and says so in 'sources': definitions and patterns always come from the sibling .kicad_pro, while the board nets come from the board KiCad holds open where it can and from the saved board file otherwise ('board_source' selects that); KiCad need not be running. Call before create_netclass to see what a class holds \u2014 an update changes only the values you name, and this is the only way to see the rest. A net can match several classes: KiCad takes each property from the highest-priority class that sets it (lower number = higher priority) and falls back to Default. Settings are reported resolved, with 'inherits' naming the ones a class takes from the Default rather than setting itself; 'missing_fields' on the Default names settings nothing can resolve. 'orphan_patterns' lists patterns naming a class that does not exist; 'unmatched_patterns' lists patterns whose class exists but which fit no net on the board read (null when its nets are unavailable).",
+        "name": "get_netclasses"
+       },
+       {
+        "description": "Assign a net to an existing netclass, as a netclass_patterns entry in the sibling .kicad_pro. The class must already exist (create_netclass). Reassigning moves the net's entry to the new class.",
+        "name": "assign_net_to_class"
+       },
+       {
+        "description": "Route a differential pair (two parallel traces with a specified gap).",
+        "name": "route_differential_pair"
+       }
+      ],
+      "tools_added": 15
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_pad_to_pad",
+     "ok": true,
+     "ms": 6.3,
+     "body": {
+      "from": {
+       "pad": "2",
+       "ref": "R1",
+       "x": 100.5,
+       "y": 50.0
+      },
+      "layer": "F.Cu",
+      "net": "GND",
+      "routed": true,
+      "source": "ipc",
+      "to": {
+       "pad": "1",
+       "ref": "R2",
+       "x": 109.5,
+       "y": 60.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 2,
+   "response_bytes": 27220,
+   "oracle": {
+    "pass": true,
+    "live_copper_reaches_live_pad": true,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 1
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       109.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       60.0
+      ]
+     },
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 5.1,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 1
+  },
+  {
+   "scenario": "B",
+   "subject": "upstream",
+   "fixture_sha256": "4bae2e79cc67a07ef34406bc86deb08323af3bdb3a97f216271435a5eb1b0f85",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.5,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       {
+        "description": "Idempotently add a net to the top-level net table of a pre-KiCad-10 board (S-expression insert, no KiCAD IPC required). An existing name returns its observed ID without writing. Fails on a KiCad 10 board, which has no net table \u2014 there, name the net on copper (route_trace, add_via, add_copper_pour) instead.",
+        "name": "add_net"
+       },
+       {
+        "description": "Route a trace segment between two points on a copper layer via KiCAD IPC.",
+        "name": "route_trace"
+       },
+       {
+        "description": "Route a direct trace between two pads of named components (L-bend routing) via KiCAD IPC.",
+        "name": "route_pad_to_pad"
+       },
+       {
+        "description": "Add a through-hole via at a given position and assign it to a net via KiCAD IPC.",
+        "name": "add_via"
+       },
+       {
+        "description": "Validate a Freerouting Specctra SES against its revision-bound Konnect manifest and the exact live KiCad board. Returns every track and via that would be created; never mutates or saves the board.",
+        "name": "plan_specctra_ses_import"
+       },
+       {
+        "description": "Apply a fully validated Freerouting SES to the exact live KiCad board as one undo transaction, without saving over the source. Creates a new candidate .kicad_pcb, proves IPC read-back counts, and runs KiCad DRC before committing.",
+        "name": "apply_specctra_ses"
+       },
+       {
+        "description": "Alias of pcb_board's add_zone, kept for compatibility: identical arguments, defaults and behaviour. Adds a copper fill zone polygon on a layer/net, trying KiCAD IPC first and falling back to an S-expression file insert (with a warning) only when no live KiCAD answers.",
+        "name": "add_copper_pour"
+       },
+       {
+        "description": "Delete a trace segment identified by its UUID via KiCAD IPC. Refuses UUIDs that are not observed trace segments on the requested board, then verifies the segment is absent before reporting success. Returns the observed preimage and postcondition.",
+        "name": "delete_trace"
+       },
+       {
+        "description": "List trace segments on the board, optionally filtered by net and/or layer. Each result includes the track's UUID, which delete_trace takes.",
+        "name": "query_traces"
+       },
+       {
+        "description": "Return all nets defined on the PCB via KiCAD IPC.",
+        "name": "get_nets_list"
+       },
+       {
+        "description": "Modify a trace segment by deleting and re-adding it with new parameters.",
+        "name": "modify_trace"
+       },
+       {
+        "description": "Create or update a netclass in the project's design rules. Writes net_settings in the sibling .kicad_pro (where KiCad keeps netclasses since v7); the board file is never touched. Requires the project file to exist. An update changes only the settings you name. To see what a class holds, call get_netclasses rather than this tool: naming a class that does not exist here creates it with the defaults, so a call meant as a look writes one instead \u2014 and its result is nearly indistinguishable from a read of an existing class. The class named 'Default' is special: it is written complete, because KiCad replaces its own default with it and backfills every other class from it. Calling this on an existing, incomplete 'Default' repairs it in place without touching values already set.",
+        "name": "create_netclass"
+       },
+       {
+        "description": "Read every netclass in the project's design rules, with its settings, its netclass_patterns and the board nets those patterns match. The answer is mixed-source and says so in 'sources': definitions and patterns always come from the sibling .kicad_pro, while the board nets come from the board KiCad holds open where it can and from the saved board file otherwise ('board_source' selects that); KiCad need not be running. Call before create_netclass to see what a class holds \u2014 an update changes only the values you name, and this is the only way to see the rest. A net can match several classes: KiCad takes each property from the highest-priority class that sets it (lower number = higher priority) and falls back to Default. Settings are reported resolved, with 'inherits' naming the ones a class takes from the Default rather than setting itself; 'missing_fields' on the Default names settings nothing can resolve. 'orphan_patterns' lists patterns naming a class that does not exist; 'unmatched_patterns' lists patterns whose class exists but which fit no net on the board read (null when its nets are unavailable).",
+        "name": "get_netclasses"
+       },
+       {
+        "description": "Assign a net to an existing netclass, as a netclass_patterns entry in the sibling .kicad_pro. The class must already exist (create_netclass). Reassigning moves the net's entry to the new class.",
+        "name": "assign_net_to_class"
+       },
+       {
+        "description": "Route a differential pair (two parallel traces with a specified gap).",
+        "name": "route_differential_pair"
+       }
+      ],
+      "tools_added": 15
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_pad_to_pad",
+     "ok": true,
+     "ms": 8.8,
+     "body": {
+      "from": {
+       "pad": "2",
+       "ref": "R1",
+       "x": 100.5,
+       "y": 50.0
+      },
+      "layer": "F.Cu",
+      "net": "GND",
+      "routed": true,
+      "source": "ipc",
+      "to": {
+       "pad": "1",
+       "ref": "R2",
+       "x": 109.5,
+       "y": 60.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 2,
+   "response_bytes": 27220,
+   "oracle": {
+    "pass": true,
+    "live_copper_reaches_live_pad": true,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 1
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       109.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       60.0
+      ]
+     },
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 5.0,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 2
+  },
+  {
+   "scenario": "B",
+   "subject": "upstream",
+   "fixture_sha256": "7a80802b83e674edc6ec348e468f9103b73253ee392bff7d6ae3efd766ea34bd",
+   "context": {
+    "from": [
+     100.5,
+     50.0
+    ],
+    "to": [
+     109.5,
+     60.0
+    ],
+    "stale_to": [
+     109.5,
+     50.0
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.5,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       {
+        "description": "Idempotently add a net to the top-level net table of a pre-KiCad-10 board (S-expression insert, no KiCAD IPC required). An existing name returns its observed ID without writing. Fails on a KiCad 10 board, which has no net table \u2014 there, name the net on copper (route_trace, add_via, add_copper_pour) instead.",
+        "name": "add_net"
+       },
+       {
+        "description": "Route a trace segment between two points on a copper layer via KiCAD IPC.",
+        "name": "route_trace"
+       },
+       {
+        "description": "Route a direct trace between two pads of named components (L-bend routing) via KiCAD IPC.",
+        "name": "route_pad_to_pad"
+       },
+       {
+        "description": "Add a through-hole via at a given position and assign it to a net via KiCAD IPC.",
+        "name": "add_via"
+       },
+       {
+        "description": "Validate a Freerouting Specctra SES against its revision-bound Konnect manifest and the exact live KiCad board. Returns every track and via that would be created; never mutates or saves the board.",
+        "name": "plan_specctra_ses_import"
+       },
+       {
+        "description": "Apply a fully validated Freerouting SES to the exact live KiCad board as one undo transaction, without saving over the source. Creates a new candidate .kicad_pcb, proves IPC read-back counts, and runs KiCad DRC before committing.",
+        "name": "apply_specctra_ses"
+       },
+       {
+        "description": "Alias of pcb_board's add_zone, kept for compatibility: identical arguments, defaults and behaviour. Adds a copper fill zone polygon on a layer/net, trying KiCAD IPC first and falling back to an S-expression file insert (with a warning) only when no live KiCAD answers.",
+        "name": "add_copper_pour"
+       },
+       {
+        "description": "Delete a trace segment identified by its UUID via KiCAD IPC. Refuses UUIDs that are not observed trace segments on the requested board, then verifies the segment is absent before reporting success. Returns the observed preimage and postcondition.",
+        "name": "delete_trace"
+       },
+       {
+        "description": "List trace segments on the board, optionally filtered by net and/or layer. Each result includes the track's UUID, which delete_trace takes.",
+        "name": "query_traces"
+       },
+       {
+        "description": "Return all nets defined on the PCB via KiCAD IPC.",
+        "name": "get_nets_list"
+       },
+       {
+        "description": "Modify a trace segment by deleting and re-adding it with new parameters.",
+        "name": "modify_trace"
+       },
+       {
+        "description": "Create or update a netclass in the project's design rules. Writes net_settings in the sibling .kicad_pro (where KiCad keeps netclasses since v7); the board file is never touched. Requires the project file to exist. An update changes only the settings you name. To see what a class holds, call get_netclasses rather than this tool: naming a class that does not exist here creates it with the defaults, so a call meant as a look writes one instead \u2014 and its result is nearly indistinguishable from a read of an existing class. The class named 'Default' is special: it is written complete, because KiCad replaces its own default with it and backfills every other class from it. Calling this on an existing, incomplete 'Default' repairs it in place without touching values already set.",
+        "name": "create_netclass"
+       },
+       {
+        "description": "Read every netclass in the project's design rules, with its settings, its netclass_patterns and the board nets those patterns match. The answer is mixed-source and says so in 'sources': definitions and patterns always come from the sibling .kicad_pro, while the board nets come from the board KiCad holds open where it can and from the saved board file otherwise ('board_source' selects that); KiCad need not be running. Call before create_netclass to see what a class holds \u2014 an update changes only the values you name, and this is the only way to see the rest. A net can match several classes: KiCad takes each property from the highest-priority class that sets it (lower number = higher priority) and falls back to Default. Settings are reported resolved, with 'inherits' naming the ones a class takes from the Default rather than setting itself; 'missing_fields' on the Default names settings nothing can resolve. 'orphan_patterns' lists patterns naming a class that does not exist; 'unmatched_patterns' lists patterns whose class exists but which fit no net on the board read (null when its nets are unavailable).",
+        "name": "get_netclasses"
+       },
+       {
+        "description": "Assign a net to an existing netclass, as a netclass_patterns entry in the sibling .kicad_pro. The class must already exist (create_netclass). Reassigning moves the net's entry to the new class.",
+        "name": "assign_net_to_class"
+       },
+       {
+        "description": "Route a differential pair (two parallel traces with a specified gap).",
+        "name": "route_differential_pair"
+       }
+      ],
+      "tools_added": 15
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_pad_to_pad",
+     "ok": true,
+     "ms": 6.5,
+     "body": {
+      "from": {
+       "pad": "2",
+       "ref": "R1",
+       "x": 100.5,
+       "y": 50.0
+      },
+      "layer": "F.Cu",
+      "net": "GND",
+      "routed": true,
+      "source": "ipc",
+      "to": {
+       "pad": "1",
+       "ref": "R2",
+       "x": 109.5,
+       "y": 60.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 2,
+   "response_bytes": 27220,
+   "oracle": {
+    "pass": true,
+    "live_copper_reaches_live_pad": true,
+    "copper_reaches_saved_pad": true,
+    "moved_footprint_kept": true,
+    "saved_drc": {
+     "violations": {
+      "lib_footprint_mismatch": 2
+     },
+     "unconnected": 1
+    },
+    "live_tracks": [
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       109.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       60.0
+      ]
+     },
+     {
+      "net": "GND",
+      "layer": "F.Cu",
+      "start": [
+       100.5,
+       50.0
+      ],
+      "end": [
+       109.5,
+       50.0
+      ]
+     }
+    ]
+   },
+   "seconds": 5.0,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 3
+  },
+  {
+   "scenario": "D",
+   "subject": "control:good",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    }
+   },
+   "calls": [],
+   "mcp_tool_calls": 0,
+   "oracle": {
+    "pass": true,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "left_right",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "left_right",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": true,
+    "b_side_at_pad": true,
+    "via_ok": true,
+    "saved_drc": {
+     "unconnected": 3,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 0,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {}
+    },
+    "server_readback": null,
+    "live_pad_C310.1": [
+     100.95,
+     50.0
+    ],
+    "session_restart": false
+   },
+   "seconds": 5.1,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false
+  },
+  {
+   "scenario": "D",
+   "subject": "control:bad",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    }
+   },
+   "calls": [],
+   "mcp_tool_calls": 0,
+   "oracle": {
+    "pass": false,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "left_right",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "left_right",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": false,
+    "b_side_at_pad": false,
+    "via_ok": false,
+    "saved_drc": {
+     "unconnected": 4,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 1,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {
+      "shorting_items": 1
+     }
+    },
+    "server_readback": null,
+    "live_pad_C310.1": [
+     100.95,
+     50.0
+    ],
+    "session_restart": false
+   },
+   "seconds": 5.2,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": false,
+   "false_success": false,
+   "gui_intervention": false
+  },
+  {
+   "scenario": "D",
+   "subject": "fork",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    },
+    "live_flip_refused": "{'error': {'kind': 'conflict', 'path': 'C:\\\\Users\\\\FlowUP\\\\AppData\\\\Local\\\\Temp\\\\kam-pcb-live-v2-ovkw06lv\\\\kam-v2-8xtn7uva\\\\p\\\\flip_vias.kicad_pcb', 'transient': 'state'}, 'message': \"KiCAD currently holds this board open, and a footprint flip written to the file would be discarded by KiCAD's next s",
+    "session_restart": true,
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    }
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.4,
+     "body": {
+      "loaded": "pcb_components",
+      "tools": [
+       "place_component",
+       "move_component",
+       "rotate_component",
+       "flip_component",
+       "delete_component",
+       "edit_component",
+       "find_component",
+       "get_component_pads",
+       "get_pad_position",
+       "get_component_list",
+       "place_component_array",
+       "align_components",
+       "duplicate_component",
+       "get_board_2d_view"
+      ],
+      "tools_added": 14
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.2,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       "add_net",
+       "route_trace",
+       "route_pad_to_pad",
+       "add_via",
+       "add_copper_pour",
+       "delete_trace",
+       "query_traces",
+       "get_nets_list",
+       "modify_trace",
+       "create_netclass",
+       "assign_net_to_class",
+       "route_differential_pair"
+      ],
+      "tools_added": 12
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": false,
+     "ms": 3.8,
+     "body": {
+      "error": {
+       "kind": "conflict",
+       "path": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-pcb-live-v2-ovkw06lv\\kam-v2-8xtn7uva\\p\\flip_vias.kicad_pcb",
+       "transient": "state"
+      },
+      "message": "KiCAD currently holds this board open, and a footprint flip written to the file would be discarded by KiCAD's next save. Close the board in KiCAD (or make the edit there) and retry \u2014 this tool has no IPC path for a live board yet."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 10.6,
+     "body": {
+      "changed": true,
+      "flipped": "C310",
+      "layer": "B.Cu",
+      "source": "file",
+      "warning": "This server does not drive KiCAD's IPC flip (FlipItems, KiCAD 10.0.6+), so the board file was flipped directly with a revision check. Reopen the board in KiCAD to see it."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 7.5,
+     "body": {
+      "changed": true,
+      "flipped": "C311",
+      "layer": "B.Cu",
+      "source": "file",
+      "warning": "This server does not drive KiCAD's IPC flip (FlipItems, KiCAD 10.0.6+), so the board file was flipped directly with a revision check. Reopen the board in KiCAD to see it."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 1.1,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "net": "PVDD",
+        "number": "1",
+        "x": 99.05,
+        "y": 50.0
+       },
+       {
+        "net": "GND",
+        "number": "2",
+        "x": 100.95,
+        "y": 50.0
+       }
+      ],
+      "reference": "C310",
+      "source": "file"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 1.0,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "net": "PVDD",
+        "number": "1",
+        "x": 109.0875,
+        "y": 50.0
+       },
+       {
+        "net": "GND",
+        "number": "2",
+        "x": 110.9125,
+        "y": 50.0
+       }
+      ],
+      "reference": "U1",
+      "source": "file"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 29.4,
+     "body": {
+      "from": {
+       "x": 99.05,
+       "y": 50.0
+      },
+      "layer": "B.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "add_via",
+     "ok": true,
+     "ms": 14.4,
+     "body": {
+      "drill": 0.4,
+      "net": "PVDD",
+      "pad_size": 0.8,
+      "x": 100.0,
+      "y": 46.5
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 7.1,
+     "body": {
+      "from": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "layer": "F.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 109.0875,
+       "y": 50.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 10,
+   "response_bytes": 56607,
+   "oracle": {
+    "pass": true,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": true,
+    "b_side_at_pad": true,
+    "via_ok": true,
+    "saved_drc": {
+     "unconnected": 3,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 0,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {}
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    },
+    "live_pad_C310.1": [
+     99.05,
+     50.0
+    ],
+    "session_restart": true
+   },
+   "seconds": 8.8,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": true,
+   "run": 1
+  },
+  {
+   "scenario": "D",
+   "subject": "fork",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    },
+    "live_flip_refused": "{'error': {'kind': 'conflict', 'path': 'C:\\\\Users\\\\FlowUP\\\\AppData\\\\Local\\\\Temp\\\\kam-pcb-live-v2-ovkw06lv\\\\kam-v2-1apofjbv\\\\p\\\\flip_vias.kicad_pcb', 'transient': 'state'}, 'message': \"KiCAD currently holds this board open, and a footprint flip written to the file would be discarded by KiCAD's next s",
+    "session_restart": true,
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    }
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.5,
+     "body": {
+      "loaded": "pcb_components",
+      "tools": [
+       "place_component",
+       "move_component",
+       "rotate_component",
+       "flip_component",
+       "delete_component",
+       "edit_component",
+       "find_component",
+       "get_component_pads",
+       "get_pad_position",
+       "get_component_list",
+       "place_component_array",
+       "align_components",
+       "duplicate_component",
+       "get_board_2d_view"
+      ],
+      "tools_added": 14
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.0,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       "add_net",
+       "route_trace",
+       "route_pad_to_pad",
+       "add_via",
+       "add_copper_pour",
+       "delete_trace",
+       "query_traces",
+       "get_nets_list",
+       "modify_trace",
+       "create_netclass",
+       "assign_net_to_class",
+       "route_differential_pair"
+      ],
+      "tools_added": 12
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": false,
+     "ms": 3.6,
+     "body": {
+      "error": {
+       "kind": "conflict",
+       "path": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-pcb-live-v2-ovkw06lv\\kam-v2-1apofjbv\\p\\flip_vias.kicad_pcb",
+       "transient": "state"
+      },
+      "message": "KiCAD currently holds this board open, and a footprint flip written to the file would be discarded by KiCAD's next save. Close the board in KiCAD (or make the edit there) and retry \u2014 this tool has no IPC path for a live board yet."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 12.5,
+     "body": {
+      "changed": true,
+      "flipped": "C310",
+      "layer": "B.Cu",
+      "source": "file",
+      "warning": "This server does not drive KiCAD's IPC flip (FlipItems, KiCAD 10.0.6+), so the board file was flipped directly with a revision check. Reopen the board in KiCAD to see it."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 7.1,
+     "body": {
+      "changed": true,
+      "flipped": "C311",
+      "layer": "B.Cu",
+      "source": "file",
+      "warning": "This server does not drive KiCAD's IPC flip (FlipItems, KiCAD 10.0.6+), so the board file was flipped directly with a revision check. Reopen the board in KiCAD to see it."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 1.1,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "net": "PVDD",
+        "number": "1",
+        "x": 99.05,
+        "y": 50.0
+       },
+       {
+        "net": "GND",
+        "number": "2",
+        "x": 100.95,
+        "y": 50.0
+       }
+      ],
+      "reference": "C310",
+      "source": "file"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 0.8,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "net": "PVDD",
+        "number": "1",
+        "x": 109.0875,
+        "y": 50.0
+       },
+       {
+        "net": "GND",
+        "number": "2",
+        "x": 110.9125,
+        "y": 50.0
+       }
+      ],
+      "reference": "U1",
+      "source": "file"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 5.3,
+     "body": {
+      "from": {
+       "x": 99.05,
+       "y": 50.0
+      },
+      "layer": "B.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "add_via",
+     "ok": true,
+     "ms": 7.1,
+     "body": {
+      "drill": 0.4,
+      "net": "PVDD",
+      "pad_size": 0.8,
+      "x": 100.0,
+      "y": 46.5
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 32.7,
+     "body": {
+      "from": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "layer": "F.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 109.0875,
+       "y": 50.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 10,
+   "response_bytes": 56607,
+   "oracle": {
+    "pass": true,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": true,
+    "b_side_at_pad": true,
+    "via_ok": true,
+    "saved_drc": {
+     "unconnected": 3,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 0,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {}
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    },
+    "live_pad_C310.1": [
+     99.05,
+     50.0
+    ],
+    "session_restart": true
+   },
+   "seconds": 8.8,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": true,
+   "run": 2
+  },
+  {
+   "scenario": "D",
+   "subject": "fork",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    },
+    "live_flip_refused": "{'error': {'kind': 'conflict', 'path': 'C:\\\\Users\\\\FlowUP\\\\AppData\\\\Local\\\\Temp\\\\kam-pcb-live-v2-ovkw06lv\\\\kam-v2-h31_hzhs\\\\p\\\\flip_vias.kicad_pcb', 'transient': 'state'}, 'message': \"KiCAD currently holds this board open, and a footprint flip written to the file would be discarded by KiCAD's next s",
+    "session_restart": true,
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    }
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.5,
+     "body": {
+      "loaded": "pcb_components",
+      "tools": [
+       "place_component",
+       "move_component",
+       "rotate_component",
+       "flip_component",
+       "delete_component",
+       "edit_component",
+       "find_component",
+       "get_component_pads",
+       "get_pad_position",
+       "get_component_list",
+       "place_component_array",
+       "align_components",
+       "duplicate_component",
+       "get_board_2d_view"
+      ],
+      "tools_added": 14
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.0,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       "add_net",
+       "route_trace",
+       "route_pad_to_pad",
+       "add_via",
+       "add_copper_pour",
+       "delete_trace",
+       "query_traces",
+       "get_nets_list",
+       "modify_trace",
+       "create_netclass",
+       "assign_net_to_class",
+       "route_differential_pair"
+      ],
+      "tools_added": 12
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": false,
+     "ms": 3.5,
+     "body": {
+      "error": {
+       "kind": "conflict",
+       "path": "C:\\Users\\FlowUP\\AppData\\Local\\Temp\\kam-pcb-live-v2-ovkw06lv\\kam-v2-h31_hzhs\\p\\flip_vias.kicad_pcb",
+       "transient": "state"
+      },
+      "message": "KiCAD currently holds this board open, and a footprint flip written to the file would be discarded by KiCAD's next save. Close the board in KiCAD (or make the edit there) and retry \u2014 this tool has no IPC path for a live board yet."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 11.3,
+     "body": {
+      "changed": true,
+      "flipped": "C310",
+      "layer": "B.Cu",
+      "source": "file",
+      "warning": "This server does not drive KiCAD's IPC flip (FlipItems, KiCAD 10.0.6+), so the board file was flipped directly with a revision check. Reopen the board in KiCAD to see it."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 7.0,
+     "body": {
+      "changed": true,
+      "flipped": "C311",
+      "layer": "B.Cu",
+      "source": "file",
+      "warning": "This server does not drive KiCAD's IPC flip (FlipItems, KiCAD 10.0.6+), so the board file was flipped directly with a revision check. Reopen the board in KiCAD to see it."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 1.2,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "net": "PVDD",
+        "number": "1",
+        "x": 99.05,
+        "y": 50.0
+       },
+       {
+        "net": "GND",
+        "number": "2",
+        "x": 100.95,
+        "y": 50.0
+       }
+      ],
+      "reference": "C310",
+      "source": "file"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 0.9,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "net": "PVDD",
+        "number": "1",
+        "x": 109.0875,
+        "y": 50.0
+       },
+       {
+        "net": "GND",
+        "number": "2",
+        "x": 110.9125,
+        "y": 50.0
+       }
+      ],
+      "reference": "U1",
+      "source": "file"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 19.7,
+     "body": {
+      "from": {
+       "x": 99.05,
+       "y": 50.0
+      },
+      "layer": "B.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "add_via",
+     "ok": true,
+     "ms": 32.1,
+     "body": {
+      "drill": 0.4,
+      "net": "PVDD",
+      "pad_size": 0.8,
+      "x": 100.0,
+      "y": 46.5
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 32.7,
+     "body": {
+      "from": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "layer": "F.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 109.0875,
+       "y": 50.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 10,
+   "response_bytes": 56607,
+   "oracle": {
+    "pass": true,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": true,
+    "b_side_at_pad": true,
+    "via_ok": true,
+    "saved_drc": {
+     "unconnected": 3,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 0,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {}
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    },
+    "live_pad_C310.1": [
+     99.05,
+     50.0
+    ],
+    "session_restart": true
+   },
+   "seconds": 8.8,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": true,
+   "run": 3
+  },
+  {
+   "scenario": "D",
+   "subject": "upstream",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    }
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 3.0,
+     "body": {
+      "loaded": "pcb_components",
+      "tools": [
+       {
+        "description": "Place a footprint on the PCB. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "place_component"
+       },
+       {
+        "description": "Move a placed footprint to a new X/Y position. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "move_component"
+       },
+       {
+        "description": "Set the rotation angle of a placed footprint. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "rotate_component"
+       },
+       {
+        "description": "Set X/Y positions and rotations for multiple existing footprints atomically. Uses one live KiCAD IPC update and one undo step when reachable; otherwise safely edits a closed board file once with revision checks.",
+        "name": "set_component_placements"
+       },
+       {
+        "description": "Set a placed footprint to F.Cu or B.Cu. When the board is open in KiCad 10.0.6 or newer, this uses KiCad's own native FlipItems IPC command \u2014 the same transform the GUI's F key performs, including 3D-model offset/rotation \u2014 inside one KiCad undo step. Older or unsupported KiCad reachable over IPC returns an explicit unsupported_capability error rather than falling back to the file. Only when no live KiCad holds this board does it fall back to a guarded closed-board file edit, which flips supported geometry with revision checks and refuses any footprint whose 3D model would need a transform the file path cannot perform.",
+        "name": "flip_component"
+       },
+       {
+        "description": "Remove a footprint from the board via KiCAD IPC.",
+        "name": "delete_component"
+       },
+       {
+        "description": "Update the value or other properties of a placed footprint via KiCAD IPC.",
+        "name": "edit_component"
+       },
+       {
+        "description": "Repair the exact legacy corruption from Konnect issue #244: footprint drawing shapes rewritten as anonymous pads with empty layer sets. Resolves each affected footprint from its library, restores its pads and drawing shapes while preserving placement, identity and pad nets, and applies every requested repair in one KiCad undo commit. Defaults to a non-mutating dry run; apply requires the exact returned plan revision. Requires KiCAD running with the requested board open.",
+        "name": "repair_corrupted_footprints"
+       },
+       {
+        "description": "Find a footprint on the board by reference designator and return its position.",
+        "name": "find_component"
+       },
+       {
+        "description": "Plan or atomically apply KiCad's Update Footprints from Library operation to placed footprints on the live board. Defaults to a non-mutating dry run; apply requires its exact plan revision. Preserves placed-instance state and pad nets while refreshing supported library-owned content.",
+        "name": "update_footprints_from_library"
+       },
+       {
+        "description": "List the graphic items inside a footprint placed on the board \u2014 silkscreen, fabrication, and courtyard artwork \u2014 with the UUID needed to edit one. Points are footprint-local millimetres, as the .kicad_mod shows them. Each item reports 'editable', plus 'outlines' and 'holes' for polygons: 'points' covers the first outline only, so an item with more than one outline or any holes is reported but cannot be edited here. Requires KiCAD running with the board open.",
+        "name": "list_board_footprint_graphics"
+       },
+       {
+        "description": "Replace the vertices of a polygon inside a footprint placed on the board, selected by UUID. Points are footprint-local millimetres, as the .kicad_mod shows them. Use this to bring one placed instance in line with a library change without re-placing the part. Only a single-outline polygon with no holes can be replaced; anything else is refused by name rather than flattened. Requires KiCAD running with the board open.",
+        "name": "edit_board_footprint_graphic"
+       },
+       {
+        "description": "Return live board-space pad positions, effective rotations, physical geometry, drills, copper-layer shapes, layers and net assignments for a footprint. Reads the board open in KiCad when it is reachable and falls back to the file only when no live KiCad holds this board \u2014 IPC unreachable, or that board not open \u2014 'source' says which, so unsaved placements are visible without a save. A pad's 'net' is its net name, \"\" if the pad carries no net (unconnected), or \u2014 reading the file \u2014 null if the net node is present but unreadable; treat null as an error, not as an unconnected pad.",
+        "name": "get_component_pads"
+       },
+       {
+        "description": "Return the live board-space position, effective rotation, physical geometry, drill, layers and net of a specific pad number on a footprint.",
+        "name": "get_pad_position"
+       },
+       {
+        "description": "List all footprints on the board with their positions, layers, and values.",
+        "name": "get_component_list"
+       },
+       {
+        "description": "Place multiple copies of a footprint in a grid or line array via KiCAD IPC.",
+        "name": "place_component_array"
+       },
+       {
+        "description": "Align multiple footprints along a common X or Y axis via KiCAD IPC.",
+        "name": "align_components"
+       },
+       {
+        "description": "Duplicate an existing footprint at a new position via KiCAD IPC.",
+        "name": "duplicate_component"
+       },
+       {
+        "description": "Render the board with kicad-cli and return it as a base64 PNG. Note this is              kicad-cli's 3-D board render viewed from the top, not a layer plot -- there is              no layer selection. Use export_svg for layer-aware 2-D output.",
+        "name": "get_board_2d_view"
+       },
+       {
+        "description": "Inspect, append, replace, or remove one exact 3D-model entry on a placed footprint. Requires the requested board open in KiCad and uses one native undo transaction; it never rewrites an open board file. Inspect first, then pass its exact models_revision for every mutation. Results come from a fresh live readback.",
+        "name": "set_placed_footprint_models"
+       }
+      ],
+      "tools_added": 20
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.3,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       {
+        "description": "Idempotently add a net to the top-level net table of a pre-KiCad-10 board (S-expression insert, no KiCAD IPC required). An existing name returns its observed ID without writing. Fails on a KiCad 10 board, which has no net table \u2014 there, name the net on copper (route_trace, add_via, add_copper_pour) instead.",
+        "name": "add_net"
+       },
+       {
+        "description": "Route a trace segment between two points on a copper layer via KiCAD IPC.",
+        "name": "route_trace"
+       },
+       {
+        "description": "Route a direct trace between two pads of named components (L-bend routing) via KiCAD IPC.",
+        "name": "route_pad_to_pad"
+       },
+       {
+        "description": "Add a through-hole via at a given position and assign it to a net via KiCAD IPC.",
+        "name": "add_via"
+       },
+       {
+        "description": "Validate a Freerouting Specctra SES against its revision-bound Konnect manifest and the exact live KiCad board. Returns every track and via that would be created; never mutates or saves the board.",
+        "name": "plan_specctra_ses_import"
+       },
+       {
+        "description": "Apply a fully validated Freerouting SES to the exact live KiCad board as one undo transaction, without saving over the source. Creates a new candidate .kicad_pcb, proves IPC read-back counts, and runs KiCad DRC before committing.",
+        "name": "apply_specctra_ses"
+       },
+       {
+        "description": "Alias of pcb_board's add_zone, kept for compatibility: identical arguments, defaults and behaviour. Adds a copper fill zone polygon on a layer/net, trying KiCAD IPC first and falling back to an S-expression file insert (with a warning) only when no live KiCAD answers.",
+        "name": "add_copper_pour"
+       },
+       {
+        "description": "Delete a trace segment identified by its UUID via KiCAD IPC. Refuses UUIDs that are not observed trace segments on the requested board, then verifies the segment is absent before reporting success. Returns the observed preimage and postcondition.",
+        "name": "delete_trace"
+       },
+       {
+        "description": "List trace segments on the board, optionally filtered by net and/or layer. Each result includes the track's UUID, which delete_trace takes.",
+        "name": "query_traces"
+       },
+       {
+        "description": "Return all nets defined on the PCB via KiCAD IPC.",
+        "name": "get_nets_list"
+       },
+       {
+        "description": "Modify a trace segment by deleting and re-adding it with new parameters.",
+        "name": "modify_trace"
+       },
+       {
+        "description": "Create or update a netclass in the project's design rules. Writes net_settings in the sibling .kicad_pro (where KiCad keeps netclasses since v7); the board file is never touched. Requires the project file to exist. An update changes only the settings you name. To see what a class holds, call get_netclasses rather than this tool: naming a class that does not exist here creates it with the defaults, so a call meant as a look writes one instead \u2014 and its result is nearly indistinguishable from a read of an existing class. The class named 'Default' is special: it is written complete, because KiCad replaces its own default with it and backfills every other class from it. Calling this on an existing, incomplete 'Default' repairs it in place without touching values already set.",
+        "name": "create_netclass"
+       },
+       {
+        "description": "Read every netclass in the project's design rules, with its settings, its netclass_patterns and the board nets those patterns match. The answer is mixed-source and says so in 'sources': definitions and patterns always come from the sibling .kicad_pro, while the board nets come from the board KiCad holds open where it can and from the saved board file otherwise ('board_source' selects that); KiCad need not be running. Call before create_netclass to see what a class holds \u2014 an update changes only the values you name, and this is the only way to see the rest. A net can match several classes: KiCad takes each property from the highest-priority class that sets it (lower number = higher priority) and falls back to Default. Settings are reported resolved, with 'inherits' naming the ones a class takes from the Default rather than setting itself; 'missing_fields' on the Default names settings nothing can resolve. 'orphan_patterns' lists patterns naming a class that does not exist; 'unmatched_patterns' lists patterns whose class exists but which fit no net on the board read (null when its nets are unavailable).",
+        "name": "get_netclasses"
+       },
+       {
+        "description": "Assign a net to an existing netclass, as a netclass_patterns entry in the sibling .kicad_pro. The class must already exist (create_netclass). Reassigning moves the net's entry to the new class.",
+        "name": "assign_net_to_class"
+       },
+       {
+        "description": "Route a differential pair (two parallel traces with a specified gap).",
+        "name": "route_differential_pair"
+       }
+      ],
+      "tools_added": 15
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 10.5,
+     "body": {
+      "already_on_layer": false,
+      "flipped": "C310",
+      "kiid": "00000000-0000-0000-0000-000000000101",
+      "layer": "B.Cu",
+      "models": [
+       {
+        "filename": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0805_2012Metric.step",
+        "offset_mm": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "opacity": 1.0,
+        "rotation_degrees": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "scale": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        },
+        "visible": true
+       }
+      ],
+      "previous_layer": "F.Cu",
+      "source": "ipc",
+      "undo": "One KiCad undo step reverses the flip."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 7.7,
+     "body": {
+      "already_on_layer": false,
+      "flipped": "C311",
+      "kiid": "00000000-0000-0000-0000-000000000201",
+      "layer": "B.Cu",
+      "models": [
+       {
+        "filename": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0805_2012Metric.step",
+        "offset_mm": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "opacity": 1.0,
+        "rotation_degrees": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "scale": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        },
+        "visible": true
+       }
+      ],
+      "previous_layer": "F.Cu",
+      "source": "ipc",
+      "undo": "One KiCad undo step reverses the flip."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 13.4,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.25,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.0,
+           "y": 1.45
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "F.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "B.Cu"
+        },
+        "layers": [
+         "B.Cu",
+         "B.Mask",
+         "B.Paste"
+        ],
+        "net": "PVDD",
+        "number": "1",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.0,
+         "y": 1.45
+        },
+        "uuid": "dd274824-1b7e-4926-93ec-60e781002464",
+        "x": 99.05,
+        "y": 50.0
+       },
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.25,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.0,
+           "y": 1.45
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "F.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "B.Cu"
+        },
+        "layers": [
+         "B.Cu",
+         "B.Mask",
+         "B.Paste"
+        ],
+        "net": "GND",
+        "number": "2",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.0,
+         "y": 1.45
+        },
+        "uuid": "45597970-8d1b-4015-9571-65246bf8760f",
+        "x": 100.95,
+        "y": 50.0
+       }
+      ],
+      "reference": "C310",
+      "source": "ipc"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 1.9,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.243902,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.025,
+           "y": 1.4
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "B.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "F.Cu"
+        },
+        "layers": [
+         "F.Cu",
+         "F.Mask",
+         "F.Paste"
+        ],
+        "net": "PVDD",
+        "number": "1",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.025,
+         "y": 1.4
+        },
+        "uuid": "2b75cbde-8eff-484f-b26e-16ab4326df44",
+        "x": 109.0875,
+        "y": 50.0
+       },
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.243902,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.025,
+           "y": 1.4
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "B.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "F.Cu"
+        },
+        "layers": [
+         "F.Cu",
+         "F.Mask",
+         "F.Paste"
+        ],
+        "net": "GND",
+        "number": "2",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.025,
+         "y": 1.4
+        },
+        "uuid": "3c9f4855-c09c-4850-b49d-7de5176b4309",
+        "x": 110.9125,
+        "y": 50.0
+       }
+      ],
+      "reference": "U1",
+      "source": "ipc"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 4.2,
+     "body": {
+      "from": {
+       "x": 99.05,
+       "y": 50.0
+      },
+      "layer": "B.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "add_via",
+     "ok": true,
+     "ms": 52.3,
+     "body": {
+      "drill": 0.4,
+      "net": "PVDD",
+      "pad_size": 0.8,
+      "x": 100.0,
+      "y": 46.5
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 91.5,
+     "body": {
+      "from": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "layer": "F.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 109.0875,
+       "y": 50.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 9,
+   "response_bytes": 86351,
+   "oracle": {
+    "pass": true,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": true,
+    "b_side_at_pad": true,
+    "via_ok": true,
+    "saved_drc": {
+     "unconnected": 3,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 0,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {}
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    },
+    "live_pad_C310.1": [
+     99.05,
+     50.0
+    ],
+    "session_restart": false
+   },
+   "seconds": 5.3,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 1
+  },
+  {
+   "scenario": "D",
+   "subject": "upstream",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    }
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 3.0,
+     "body": {
+      "loaded": "pcb_components",
+      "tools": [
+       {
+        "description": "Place a footprint on the PCB. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "place_component"
+       },
+       {
+        "description": "Move a placed footprint to a new X/Y position. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "move_component"
+       },
+       {
+        "description": "Set the rotation angle of a placed footprint. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "rotate_component"
+       },
+       {
+        "description": "Set X/Y positions and rotations for multiple existing footprints atomically. Uses one live KiCAD IPC update and one undo step when reachable; otherwise safely edits a closed board file once with revision checks.",
+        "name": "set_component_placements"
+       },
+       {
+        "description": "Set a placed footprint to F.Cu or B.Cu. When the board is open in KiCad 10.0.6 or newer, this uses KiCad's own native FlipItems IPC command \u2014 the same transform the GUI's F key performs, including 3D-model offset/rotation \u2014 inside one KiCad undo step. Older or unsupported KiCad reachable over IPC returns an explicit unsupported_capability error rather than falling back to the file. Only when no live KiCad holds this board does it fall back to a guarded closed-board file edit, which flips supported geometry with revision checks and refuses any footprint whose 3D model would need a transform the file path cannot perform.",
+        "name": "flip_component"
+       },
+       {
+        "description": "Remove a footprint from the board via KiCAD IPC.",
+        "name": "delete_component"
+       },
+       {
+        "description": "Update the value or other properties of a placed footprint via KiCAD IPC.",
+        "name": "edit_component"
+       },
+       {
+        "description": "Repair the exact legacy corruption from Konnect issue #244: footprint drawing shapes rewritten as anonymous pads with empty layer sets. Resolves each affected footprint from its library, restores its pads and drawing shapes while preserving placement, identity and pad nets, and applies every requested repair in one KiCad undo commit. Defaults to a non-mutating dry run; apply requires the exact returned plan revision. Requires KiCAD running with the requested board open.",
+        "name": "repair_corrupted_footprints"
+       },
+       {
+        "description": "Find a footprint on the board by reference designator and return its position.",
+        "name": "find_component"
+       },
+       {
+        "description": "Plan or atomically apply KiCad's Update Footprints from Library operation to placed footprints on the live board. Defaults to a non-mutating dry run; apply requires its exact plan revision. Preserves placed-instance state and pad nets while refreshing supported library-owned content.",
+        "name": "update_footprints_from_library"
+       },
+       {
+        "description": "List the graphic items inside a footprint placed on the board \u2014 silkscreen, fabrication, and courtyard artwork \u2014 with the UUID needed to edit one. Points are footprint-local millimetres, as the .kicad_mod shows them. Each item reports 'editable', plus 'outlines' and 'holes' for polygons: 'points' covers the first outline only, so an item with more than one outline or any holes is reported but cannot be edited here. Requires KiCAD running with the board open.",
+        "name": "list_board_footprint_graphics"
+       },
+       {
+        "description": "Replace the vertices of a polygon inside a footprint placed on the board, selected by UUID. Points are footprint-local millimetres, as the .kicad_mod shows them. Use this to bring one placed instance in line with a library change without re-placing the part. Only a single-outline polygon with no holes can be replaced; anything else is refused by name rather than flattened. Requires KiCAD running with the board open.",
+        "name": "edit_board_footprint_graphic"
+       },
+       {
+        "description": "Return live board-space pad positions, effective rotations, physical geometry, drills, copper-layer shapes, layers and net assignments for a footprint. Reads the board open in KiCad when it is reachable and falls back to the file only when no live KiCad holds this board \u2014 IPC unreachable, or that board not open \u2014 'source' says which, so unsaved placements are visible without a save. A pad's 'net' is its net name, \"\" if the pad carries no net (unconnected), or \u2014 reading the file \u2014 null if the net node is present but unreadable; treat null as an error, not as an unconnected pad.",
+        "name": "get_component_pads"
+       },
+       {
+        "description": "Return the live board-space position, effective rotation, physical geometry, drill, layers and net of a specific pad number on a footprint.",
+        "name": "get_pad_position"
+       },
+       {
+        "description": "List all footprints on the board with their positions, layers, and values.",
+        "name": "get_component_list"
+       },
+       {
+        "description": "Place multiple copies of a footprint in a grid or line array via KiCAD IPC.",
+        "name": "place_component_array"
+       },
+       {
+        "description": "Align multiple footprints along a common X or Y axis via KiCAD IPC.",
+        "name": "align_components"
+       },
+       {
+        "description": "Duplicate an existing footprint at a new position via KiCAD IPC.",
+        "name": "duplicate_component"
+       },
+       {
+        "description": "Render the board with kicad-cli and return it as a base64 PNG. Note this is              kicad-cli's 3-D board render viewed from the top, not a layer plot -- there is              no layer selection. Use export_svg for layer-aware 2-D output.",
+        "name": "get_board_2d_view"
+       },
+       {
+        "description": "Inspect, append, replace, or remove one exact 3D-model entry on a placed footprint. Requires the requested board open in KiCad and uses one native undo transaction; it never rewrites an open board file. Inspect first, then pass its exact models_revision for every mutation. Results come from a fresh live readback.",
+        "name": "set_placed_footprint_models"
+       }
+      ],
+      "tools_added": 20
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.2,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       {
+        "description": "Idempotently add a net to the top-level net table of a pre-KiCad-10 board (S-expression insert, no KiCAD IPC required). An existing name returns its observed ID without writing. Fails on a KiCad 10 board, which has no net table \u2014 there, name the net on copper (route_trace, add_via, add_copper_pour) instead.",
+        "name": "add_net"
+       },
+       {
+        "description": "Route a trace segment between two points on a copper layer via KiCAD IPC.",
+        "name": "route_trace"
+       },
+       {
+        "description": "Route a direct trace between two pads of named components (L-bend routing) via KiCAD IPC.",
+        "name": "route_pad_to_pad"
+       },
+       {
+        "description": "Add a through-hole via at a given position and assign it to a net via KiCAD IPC.",
+        "name": "add_via"
+       },
+       {
+        "description": "Validate a Freerouting Specctra SES against its revision-bound Konnect manifest and the exact live KiCad board. Returns every track and via that would be created; never mutates or saves the board.",
+        "name": "plan_specctra_ses_import"
+       },
+       {
+        "description": "Apply a fully validated Freerouting SES to the exact live KiCad board as one undo transaction, without saving over the source. Creates a new candidate .kicad_pcb, proves IPC read-back counts, and runs KiCad DRC before committing.",
+        "name": "apply_specctra_ses"
+       },
+       {
+        "description": "Alias of pcb_board's add_zone, kept for compatibility: identical arguments, defaults and behaviour. Adds a copper fill zone polygon on a layer/net, trying KiCAD IPC first and falling back to an S-expression file insert (with a warning) only when no live KiCAD answers.",
+        "name": "add_copper_pour"
+       },
+       {
+        "description": "Delete a trace segment identified by its UUID via KiCAD IPC. Refuses UUIDs that are not observed trace segments on the requested board, then verifies the segment is absent before reporting success. Returns the observed preimage and postcondition.",
+        "name": "delete_trace"
+       },
+       {
+        "description": "List trace segments on the board, optionally filtered by net and/or layer. Each result includes the track's UUID, which delete_trace takes.",
+        "name": "query_traces"
+       },
+       {
+        "description": "Return all nets defined on the PCB via KiCAD IPC.",
+        "name": "get_nets_list"
+       },
+       {
+        "description": "Modify a trace segment by deleting and re-adding it with new parameters.",
+        "name": "modify_trace"
+       },
+       {
+        "description": "Create or update a netclass in the project's design rules. Writes net_settings in the sibling .kicad_pro (where KiCad keeps netclasses since v7); the board file is never touched. Requires the project file to exist. An update changes only the settings you name. To see what a class holds, call get_netclasses rather than this tool: naming a class that does not exist here creates it with the defaults, so a call meant as a look writes one instead \u2014 and its result is nearly indistinguishable from a read of an existing class. The class named 'Default' is special: it is written complete, because KiCad replaces its own default with it and backfills every other class from it. Calling this on an existing, incomplete 'Default' repairs it in place without touching values already set.",
+        "name": "create_netclass"
+       },
+       {
+        "description": "Read every netclass in the project's design rules, with its settings, its netclass_patterns and the board nets those patterns match. The answer is mixed-source and says so in 'sources': definitions and patterns always come from the sibling .kicad_pro, while the board nets come from the board KiCad holds open where it can and from the saved board file otherwise ('board_source' selects that); KiCad need not be running. Call before create_netclass to see what a class holds \u2014 an update changes only the values you name, and this is the only way to see the rest. A net can match several classes: KiCad takes each property from the highest-priority class that sets it (lower number = higher priority) and falls back to Default. Settings are reported resolved, with 'inherits' naming the ones a class takes from the Default rather than setting itself; 'missing_fields' on the Default names settings nothing can resolve. 'orphan_patterns' lists patterns naming a class that does not exist; 'unmatched_patterns' lists patterns whose class exists but which fit no net on the board read (null when its nets are unavailable).",
+        "name": "get_netclasses"
+       },
+       {
+        "description": "Assign a net to an existing netclass, as a netclass_patterns entry in the sibling .kicad_pro. The class must already exist (create_netclass). Reassigning moves the net's entry to the new class.",
+        "name": "assign_net_to_class"
+       },
+       {
+        "description": "Route a differential pair (two parallel traces with a specified gap).",
+        "name": "route_differential_pair"
+       }
+      ],
+      "tools_added": 15
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 11.4,
+     "body": {
+      "already_on_layer": false,
+      "flipped": "C310",
+      "kiid": "00000000-0000-0000-0000-000000000101",
+      "layer": "B.Cu",
+      "models": [
+       {
+        "filename": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0805_2012Metric.step",
+        "offset_mm": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "opacity": 1.0,
+        "rotation_degrees": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "scale": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        },
+        "visible": true
+       }
+      ],
+      "previous_layer": "F.Cu",
+      "source": "ipc",
+      "undo": "One KiCad undo step reverses the flip."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 8.3,
+     "body": {
+      "already_on_layer": false,
+      "flipped": "C311",
+      "kiid": "00000000-0000-0000-0000-000000000201",
+      "layer": "B.Cu",
+      "models": [
+       {
+        "filename": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0805_2012Metric.step",
+        "offset_mm": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "opacity": 1.0,
+        "rotation_degrees": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "scale": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        },
+        "visible": true
+       }
+      ],
+      "previous_layer": "F.Cu",
+      "source": "ipc",
+      "undo": "One KiCad undo step reverses the flip."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 14.3,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.25,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.0,
+           "y": 1.45
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "F.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "B.Cu"
+        },
+        "layers": [
+         "B.Cu",
+         "B.Mask",
+         "B.Paste"
+        ],
+        "net": "PVDD",
+        "number": "1",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.0,
+         "y": 1.45
+        },
+        "uuid": "dd274824-1b7e-4926-93ec-60e781002464",
+        "x": 99.05,
+        "y": 50.0
+       },
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.25,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.0,
+           "y": 1.45
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "F.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "B.Cu"
+        },
+        "layers": [
+         "B.Cu",
+         "B.Mask",
+         "B.Paste"
+        ],
+        "net": "GND",
+        "number": "2",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.0,
+         "y": 1.45
+        },
+        "uuid": "45597970-8d1b-4015-9571-65246bf8760f",
+        "x": 100.95,
+        "y": 50.0
+       }
+      ],
+      "reference": "C310",
+      "source": "ipc"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 1.9,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.243902,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.025,
+           "y": 1.4
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "B.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "F.Cu"
+        },
+        "layers": [
+         "F.Cu",
+         "F.Mask",
+         "F.Paste"
+        ],
+        "net": "PVDD",
+        "number": "1",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.025,
+         "y": 1.4
+        },
+        "uuid": "2b75cbde-8eff-484f-b26e-16ab4326df44",
+        "x": 109.0875,
+        "y": 50.0
+       },
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.243902,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.025,
+           "y": 1.4
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "B.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "F.Cu"
+        },
+        "layers": [
+         "F.Cu",
+         "F.Mask",
+         "F.Paste"
+        ],
+        "net": "GND",
+        "number": "2",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.025,
+         "y": 1.4
+        },
+        "uuid": "3c9f4855-c09c-4850-b49d-7de5176b4309",
+        "x": 110.9125,
+        "y": 50.0
+       }
+      ],
+      "reference": "U1",
+      "source": "ipc"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 3.6,
+     "body": {
+      "from": {
+       "x": 99.05,
+       "y": 50.0
+      },
+      "layer": "B.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "add_via",
+     "ok": true,
+     "ms": 29.6,
+     "body": {
+      "drill": 0.4,
+      "net": "PVDD",
+      "pad_size": 0.8,
+      "x": 100.0,
+      "y": 46.5
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 42.7,
+     "body": {
+      "from": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "layer": "F.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 109.0875,
+       "y": 50.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 9,
+   "response_bytes": 86351,
+   "oracle": {
+    "pass": true,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": true,
+    "b_side_at_pad": true,
+    "via_ok": true,
+    "saved_drc": {
+     "unconnected": 3,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 0,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {}
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    },
+    "live_pad_C310.1": [
+     99.05,
+     50.0
+    ],
+    "session_restart": false
+   },
+   "seconds": 5.2,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 2
+  },
+  {
+   "scenario": "D",
+   "subject": "upstream",
+   "fixture_sha256": "dd8d5606ac46e522a76f9806295b21298a32e2e0634a718de070e189219afc55",
+   "context": {
+    "before": {
+     "C310": {
+      "pos": [
+       100.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        50.0
+       ],
+       "2": [
+        100.95,
+        50.0
+       ]
+      }
+     },
+     "C311": {
+      "pos": [
+       100.0,
+       54.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        99.05,
+        54.0
+       ],
+       "2": [
+        100.95,
+        54.0
+       ]
+      }
+     },
+     "U1": {
+      "pos": [
+       110.0,
+       50.0
+      ],
+      "layer": "F.Cu",
+      "pads": {
+       "1": [
+        109.0875,
+        50.0
+       ],
+       "2": [
+        110.9125,
+        50.0
+       ]
+      }
+     }
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    }
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.9,
+     "body": {
+      "loaded": "pcb_components",
+      "tools": [
+       {
+        "description": "Place a footprint on the PCB. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "place_component"
+       },
+       {
+        "description": "Move a placed footprint to a new X/Y position. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "move_component"
+       },
+       {
+        "description": "Set the rotation angle of a placed footprint. Uses live KiCAD IPC when reachable; otherwise safely edits a closed board file with revision checks.",
+        "name": "rotate_component"
+       },
+       {
+        "description": "Set X/Y positions and rotations for multiple existing footprints atomically. Uses one live KiCAD IPC update and one undo step when reachable; otherwise safely edits a closed board file once with revision checks.",
+        "name": "set_component_placements"
+       },
+       {
+        "description": "Set a placed footprint to F.Cu or B.Cu. When the board is open in KiCad 10.0.6 or newer, this uses KiCad's own native FlipItems IPC command \u2014 the same transform the GUI's F key performs, including 3D-model offset/rotation \u2014 inside one KiCad undo step. Older or unsupported KiCad reachable over IPC returns an explicit unsupported_capability error rather than falling back to the file. Only when no live KiCad holds this board does it fall back to a guarded closed-board file edit, which flips supported geometry with revision checks and refuses any footprint whose 3D model would need a transform the file path cannot perform.",
+        "name": "flip_component"
+       },
+       {
+        "description": "Remove a footprint from the board via KiCAD IPC.",
+        "name": "delete_component"
+       },
+       {
+        "description": "Update the value or other properties of a placed footprint via KiCAD IPC.",
+        "name": "edit_component"
+       },
+       {
+        "description": "Repair the exact legacy corruption from Konnect issue #244: footprint drawing shapes rewritten as anonymous pads with empty layer sets. Resolves each affected footprint from its library, restores its pads and drawing shapes while preserving placement, identity and pad nets, and applies every requested repair in one KiCad undo commit. Defaults to a non-mutating dry run; apply requires the exact returned plan revision. Requires KiCAD running with the requested board open.",
+        "name": "repair_corrupted_footprints"
+       },
+       {
+        "description": "Find a footprint on the board by reference designator and return its position.",
+        "name": "find_component"
+       },
+       {
+        "description": "Plan or atomically apply KiCad's Update Footprints from Library operation to placed footprints on the live board. Defaults to a non-mutating dry run; apply requires its exact plan revision. Preserves placed-instance state and pad nets while refreshing supported library-owned content.",
+        "name": "update_footprints_from_library"
+       },
+       {
+        "description": "List the graphic items inside a footprint placed on the board \u2014 silkscreen, fabrication, and courtyard artwork \u2014 with the UUID needed to edit one. Points are footprint-local millimetres, as the .kicad_mod shows them. Each item reports 'editable', plus 'outlines' and 'holes' for polygons: 'points' covers the first outline only, so an item with more than one outline or any holes is reported but cannot be edited here. Requires KiCAD running with the board open.",
+        "name": "list_board_footprint_graphics"
+       },
+       {
+        "description": "Replace the vertices of a polygon inside a footprint placed on the board, selected by UUID. Points are footprint-local millimetres, as the .kicad_mod shows them. Use this to bring one placed instance in line with a library change without re-placing the part. Only a single-outline polygon with no holes can be replaced; anything else is refused by name rather than flattened. Requires KiCAD running with the board open.",
+        "name": "edit_board_footprint_graphic"
+       },
+       {
+        "description": "Return live board-space pad positions, effective rotations, physical geometry, drills, copper-layer shapes, layers and net assignments for a footprint. Reads the board open in KiCad when it is reachable and falls back to the file only when no live KiCad holds this board \u2014 IPC unreachable, or that board not open \u2014 'source' says which, so unsaved placements are visible without a save. A pad's 'net' is its net name, \"\" if the pad carries no net (unconnected), or \u2014 reading the file \u2014 null if the net node is present but unreadable; treat null as an error, not as an unconnected pad.",
+        "name": "get_component_pads"
+       },
+       {
+        "description": "Return the live board-space position, effective rotation, physical geometry, drill, layers and net of a specific pad number on a footprint.",
+        "name": "get_pad_position"
+       },
+       {
+        "description": "List all footprints on the board with their positions, layers, and values.",
+        "name": "get_component_list"
+       },
+       {
+        "description": "Place multiple copies of a footprint in a grid or line array via KiCAD IPC.",
+        "name": "place_component_array"
+       },
+       {
+        "description": "Align multiple footprints along a common X or Y axis via KiCAD IPC.",
+        "name": "align_components"
+       },
+       {
+        "description": "Duplicate an existing footprint at a new position via KiCAD IPC.",
+        "name": "duplicate_component"
+       },
+       {
+        "description": "Render the board with kicad-cli and return it as a base64 PNG. Note this is              kicad-cli's 3-D board render viewed from the top, not a layer plot -- there is              no layer selection. Use export_svg for layer-aware 2-D output.",
+        "name": "get_board_2d_view"
+       },
+       {
+        "description": "Inspect, append, replace, or remove one exact 3D-model entry on a placed footprint. Requires the requested board open in KiCad and uses one native undo transaction; it never rewrites an open board file. Inspect first, then pass its exact models_revision for every mutation. Results come from a fresh live readback.",
+        "name": "set_placed_footprint_models"
+       }
+      ],
+      "tools_added": 20
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.4,
+     "body": {
+      "loaded": "pcb_routing",
+      "tools": [
+       {
+        "description": "Idempotently add a net to the top-level net table of a pre-KiCad-10 board (S-expression insert, no KiCAD IPC required). An existing name returns its observed ID without writing. Fails on a KiCad 10 board, which has no net table \u2014 there, name the net on copper (route_trace, add_via, add_copper_pour) instead.",
+        "name": "add_net"
+       },
+       {
+        "description": "Route a trace segment between two points on a copper layer via KiCAD IPC.",
+        "name": "route_trace"
+       },
+       {
+        "description": "Route a direct trace between two pads of named components (L-bend routing) via KiCAD IPC.",
+        "name": "route_pad_to_pad"
+       },
+       {
+        "description": "Add a through-hole via at a given position and assign it to a net via KiCAD IPC.",
+        "name": "add_via"
+       },
+       {
+        "description": "Validate a Freerouting Specctra SES against its revision-bound Konnect manifest and the exact live KiCad board. Returns every track and via that would be created; never mutates or saves the board.",
+        "name": "plan_specctra_ses_import"
+       },
+       {
+        "description": "Apply a fully validated Freerouting SES to the exact live KiCad board as one undo transaction, without saving over the source. Creates a new candidate .kicad_pcb, proves IPC read-back counts, and runs KiCad DRC before committing.",
+        "name": "apply_specctra_ses"
+       },
+       {
+        "description": "Alias of pcb_board's add_zone, kept for compatibility: identical arguments, defaults and behaviour. Adds a copper fill zone polygon on a layer/net, trying KiCAD IPC first and falling back to an S-expression file insert (with a warning) only when no live KiCAD answers.",
+        "name": "add_copper_pour"
+       },
+       {
+        "description": "Delete a trace segment identified by its UUID via KiCAD IPC. Refuses UUIDs that are not observed trace segments on the requested board, then verifies the segment is absent before reporting success. Returns the observed preimage and postcondition.",
+        "name": "delete_trace"
+       },
+       {
+        "description": "List trace segments on the board, optionally filtered by net and/or layer. Each result includes the track's UUID, which delete_trace takes.",
+        "name": "query_traces"
+       },
+       {
+        "description": "Return all nets defined on the PCB via KiCAD IPC.",
+        "name": "get_nets_list"
+       },
+       {
+        "description": "Modify a trace segment by deleting and re-adding it with new parameters.",
+        "name": "modify_trace"
+       },
+       {
+        "description": "Create or update a netclass in the project's design rules. Writes net_settings in the sibling .kicad_pro (where KiCad keeps netclasses since v7); the board file is never touched. Requires the project file to exist. An update changes only the settings you name. To see what a class holds, call get_netclasses rather than this tool: naming a class that does not exist here creates it with the defaults, so a call meant as a look writes one instead \u2014 and its result is nearly indistinguishable from a read of an existing class. The class named 'Default' is special: it is written complete, because KiCad replaces its own default with it and backfills every other class from it. Calling this on an existing, incomplete 'Default' repairs it in place without touching values already set.",
+        "name": "create_netclass"
+       },
+       {
+        "description": "Read every netclass in the project's design rules, with its settings, its netclass_patterns and the board nets those patterns match. The answer is mixed-source and says so in 'sources': definitions and patterns always come from the sibling .kicad_pro, while the board nets come from the board KiCad holds open where it can and from the saved board file otherwise ('board_source' selects that); KiCad need not be running. Call before create_netclass to see what a class holds \u2014 an update changes only the values you name, and this is the only way to see the rest. A net can match several classes: KiCad takes each property from the highest-priority class that sets it (lower number = higher priority) and falls back to Default. Settings are reported resolved, with 'inherits' naming the ones a class takes from the Default rather than setting itself; 'missing_fields' on the Default names settings nothing can resolve. 'orphan_patterns' lists patterns naming a class that does not exist; 'unmatched_patterns' lists patterns whose class exists but which fit no net on the board read (null when its nets are unavailable).",
+        "name": "get_netclasses"
+       },
+       {
+        "description": "Assign a net to an existing netclass, as a netclass_patterns entry in the sibling .kicad_pro. The class must already exist (create_netclass). Reassigning moves the net's entry to the new class.",
+        "name": "assign_net_to_class"
+       },
+       {
+        "description": "Route a differential pair (two parallel traces with a specified gap).",
+        "name": "route_differential_pair"
+       }
+      ],
+      "tools_added": 15
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 11.1,
+     "body": {
+      "already_on_layer": false,
+      "flipped": "C310",
+      "kiid": "00000000-0000-0000-0000-000000000101",
+      "layer": "B.Cu",
+      "models": [
+       {
+        "filename": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0805_2012Metric.step",
+        "offset_mm": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "opacity": 1.0,
+        "rotation_degrees": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "scale": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        },
+        "visible": true
+       }
+      ],
+      "previous_layer": "F.Cu",
+      "source": "ipc",
+      "undo": "One KiCad undo step reverses the flip."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "flip_component",
+     "ok": true,
+     "ms": 7.7,
+     "body": {
+      "already_on_layer": false,
+      "flipped": "C311",
+      "kiid": "00000000-0000-0000-0000-000000000201",
+      "layer": "B.Cu",
+      "models": [
+       {
+        "filename": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0805_2012Metric.step",
+        "offset_mm": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "opacity": 1.0,
+        "rotation_degrees": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0
+        },
+        "scale": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        },
+        "visible": true
+       }
+      ],
+      "previous_layer": "F.Cu",
+      "source": "ipc",
+      "undo": "One KiCad undo step reverses the flip."
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 15.1,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.25,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.0,
+           "y": 1.45
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "F.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "B.Cu"
+        },
+        "layers": [
+         "B.Cu",
+         "B.Mask",
+         "B.Paste"
+        ],
+        "net": "PVDD",
+        "number": "1",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.0,
+         "y": 1.45
+        },
+        "uuid": "dd274824-1b7e-4926-93ec-60e781002464",
+        "x": 99.05,
+        "y": 50.0
+       },
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.25,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.0,
+           "y": 1.45
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "F.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "B.Cu"
+        },
+        "layers": [
+         "B.Cu",
+         "B.Mask",
+         "B.Paste"
+        ],
+        "net": "GND",
+        "number": "2",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.0,
+         "y": 1.45
+        },
+        "uuid": "45597970-8d1b-4015-9571-65246bf8760f",
+        "x": 100.95,
+        "y": 50.0
+       }
+      ],
+      "reference": "C310",
+      "source": "ipc"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "get_component_pads",
+     "ok": true,
+     "ms": 1.8,
+     "body": {
+      "pad_count": 2,
+      "pads": [
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.243902,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.025,
+           "y": 1.4
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "B.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "F.Cu"
+        },
+        "layers": [
+         "F.Cu",
+         "F.Mask",
+         "F.Paste"
+        ],
+        "net": "PVDD",
+        "number": "1",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.025,
+         "y": 1.4
+        },
+        "uuid": "2b75cbde-8eff-484f-b26e-16ab4326df44",
+        "x": 109.0875,
+        "y": 50.0
+       },
+       {
+        "copper_layers": [
+         {
+          "chamfer_ratio": 0.2,
+          "corner_rounding_ratio": 0.243902,
+          "layer": "F.Cu",
+          "offset": {
+           "x": 0.0,
+           "y": 0.0
+          },
+          "shape": "roundrect",
+          "size": {
+           "x": 1.025,
+           "y": 1.4
+          }
+         }
+        ],
+        "drill": {
+         "end_layer": "B.Cu",
+         "shape": "circle",
+         "size": {
+          "x": 0.0,
+          "y": 0.0
+         },
+         "start_layer": "F.Cu"
+        },
+        "layers": [
+         "F.Cu",
+         "F.Mask",
+         "F.Paste"
+        ],
+        "net": "GND",
+        "number": "2",
+        "pad_type": "smd",
+        "rotation_deg": 0.0,
+        "shape": "roundrect",
+        "size": {
+         "x": 1.025,
+         "y": 1.4
+        },
+        "uuid": "3c9f4855-c09c-4850-b49d-7de5176b4309",
+        "x": 110.9125,
+        "y": 50.0
+       }
+      ],
+      "reference": "U1",
+      "source": "ipc"
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 4.1,
+     "body": {
+      "from": {
+       "x": 99.05,
+       "y": 50.0
+      },
+      "layer": "B.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "add_via",
+     "ok": true,
+     "ms": 29.2,
+     "body": {
+      "drill": 0.4,
+      "net": "PVDD",
+      "pad_size": 0.8,
+      "x": 100.0,
+      "y": 46.5
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "route_trace",
+     "ok": true,
+     "ms": 34.3,
+     "body": {
+      "from": {
+       "x": 100.0,
+       "y": 46.5
+      },
+      "layer": "F.Cu",
+      "net": "PVDD",
+      "to": {
+       "x": 109.0875,
+       "y": 50.0
+      },
+      "width": 0.25
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 9,
+   "response_bytes": 86351,
+   "oracle": {
+    "pass": true,
+    "flips": {
+     "C310": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     },
+     "C311": {
+      "layer": "B.Cu",
+      "xy_kept": true,
+      "pads_mirrored": "top_bottom",
+      "saved_pad_layers": {
+       "1": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ],
+       "2": [
+        "B.Cu",
+        "B.Mask",
+        "B.Paste"
+       ]
+      },
+      "pad_copper_on_B": true
+     }
+    },
+    "copper_chain": true,
+    "b_side_at_pad": true,
+    "via_ok": true,
+    "saved_drc": {
+     "unconnected": 3,
+     "track_dangling": 0,
+     "via_dangling": 0,
+     "shorting_items": 0,
+     "clearance": 0,
+     "copper_edge_clearance": 0,
+     "all": {}
+    },
+    "server_readback": {
+     "C310.1": [
+      99.05,
+      50.0
+     ],
+     "U1.1": [
+      109.0875,
+      50.0
+     ]
+    },
+    "live_pad_C310.1": [
+     99.05,
+     50.0
+    ],
+    "session_restart": false
+   },
+   "seconds": 5.2,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 3
+  },
+  {
+   "scenario": "E",
+   "subject": "control:good",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [],
+   "mcp_tool_calls": 0,
+   "oracle": {
+    "pass": true,
+    "arbiter_separates": true,
+    "divergence_reported": true,
+    "restore_reported_clean": true,
+    "false_green": false,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 9.2,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false
+  },
+  {
+   "scenario": "E",
+   "subject": "control:bad",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 0
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [],
+   "mcp_tool_calls": 0,
+   "oracle": {
+    "pass": false,
+    "arbiter_separates": true,
+    "divergence_reported": false,
+    "restore_reported_clean": true,
+    "false_green": true,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 0
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 6.6,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": false,
+   "functional": false,
+   "false_success": false,
+   "gui_intervention": false
+  },
+  {
+   "scenario": "E",
+   "subject": "fork",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.5,
+     "body": {
+      "loaded": "verification",
+      "tools": [
+       "run_drc",
+       "set_design_rules",
+       "get_design_rules",
+       "check_kicad_ui",
+       "launch_kicad_ui",
+       "copy_routing_pattern",
+       "set_layer_constraints",
+       "check_clearance"
+      ],
+      "tools_added": 8
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1288.9,
+     "body": {
+      "by_category": {
+       "schematic_parity": 1,
+       "unconnected_items": 0,
+       "violations": 0
+      },
+      "errors": 0,
+      "filtered_count": 1,
+      "missing_categories": [],
+      "severity_filter": "all",
+      "shown": 1,
+      "total_violations": 1,
+      "truncated": false,
+      "violations": [
+       {
+        "category": "schematic_parity",
+        "description": "La valeur (R2) ne correspond pas \u00e0 la valeur du symbole (4.7k): Empreinte R2",
+        "items": [
+         {
+          "description": "Empreinte R2",
+          "pos": {
+           "x": 100.0,
+           "y": 55.0
+          },
+          "uuid": "00000000-0000-0000-0000-000000000201"
+         }
+        ],
+        "pos": {
+         "x": 100.0,
+         "y": 55.0
+        },
+        "severity": "warning"
+       }
+      ],
+      "warnings": 1
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1305.0,
+     "body": {
+      "by_category": {
+       "schematic_parity": 0,
+       "unconnected_items": 0,
+       "violations": 0
+      },
+      "errors": 0,
+      "filtered_count": 0,
+      "missing_categories": [],
+      "severity_filter": "all",
+      "shown": 0,
+      "total_violations": 0,
+      "truncated": false,
+      "violations": [],
+      "warnings": 0
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 3,
+   "response_bytes": 20042,
+   "oracle": {
+    "pass": true,
+    "arbiter_separates": true,
+    "divergence_reported": true,
+    "restore_reported_clean": true,
+    "false_green": false,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 9.0,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 1
+  },
+  {
+   "scenario": "E",
+   "subject": "fork",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.4,
+     "body": {
+      "loaded": "verification",
+      "tools": [
+       "run_drc",
+       "set_design_rules",
+       "get_design_rules",
+       "check_kicad_ui",
+       "launch_kicad_ui",
+       "copy_routing_pattern",
+       "set_layer_constraints",
+       "check_clearance"
+      ],
+      "tools_added": 8
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1304.1,
+     "body": {
+      "by_category": {
+       "schematic_parity": 1,
+       "unconnected_items": 0,
+       "violations": 0
+      },
+      "errors": 0,
+      "filtered_count": 1,
+      "missing_categories": [],
+      "severity_filter": "all",
+      "shown": 1,
+      "total_violations": 1,
+      "truncated": false,
+      "violations": [
+       {
+        "category": "schematic_parity",
+        "description": "La valeur (R2) ne correspond pas \u00e0 la valeur du symbole (4.7k): Empreinte R2",
+        "items": [
+         {
+          "description": "Empreinte R2",
+          "pos": {
+           "x": 100.0,
+           "y": 55.0
+          },
+          "uuid": "00000000-0000-0000-0000-000000000201"
+         }
+        ],
+        "pos": {
+         "x": 100.0,
+         "y": 55.0
+        },
+        "severity": "warning"
+       }
+      ],
+      "warnings": 1
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1320.1,
+     "body": {
+      "by_category": {
+       "schematic_parity": 0,
+       "unconnected_items": 0,
+       "violations": 0
+      },
+      "errors": 0,
+      "filtered_count": 0,
+      "missing_categories": [],
+      "severity_filter": "all",
+      "shown": 0,
+      "total_violations": 0,
+      "truncated": false,
+      "violations": [],
+      "warnings": 0
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 3,
+   "response_bytes": 20042,
+   "oracle": {
+    "pass": true,
+    "arbiter_separates": true,
+    "divergence_reported": true,
+    "restore_reported_clean": true,
+    "false_green": false,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 9.1,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 2
+  },
+  {
+   "scenario": "E",
+   "subject": "fork",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 1.3,
+     "body": {
+      "loaded": "verification",
+      "tools": [
+       "run_drc",
+       "set_design_rules",
+       "get_design_rules",
+       "check_kicad_ui",
+       "launch_kicad_ui",
+       "copy_routing_pattern",
+       "set_layer_constraints",
+       "check_clearance"
+      ],
+      "tools_added": 8
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1365.3,
+     "body": {
+      "by_category": {
+       "schematic_parity": 1,
+       "unconnected_items": 0,
+       "violations": 0
+      },
+      "errors": 0,
+      "filtered_count": 1,
+      "missing_categories": [],
+      "severity_filter": "all",
+      "shown": 1,
+      "total_violations": 1,
+      "truncated": false,
+      "violations": [
+       {
+        "category": "schematic_parity",
+        "description": "La valeur (R2) ne correspond pas \u00e0 la valeur du symbole (4.7k): Empreinte R2",
+        "items": [
+         {
+          "description": "Empreinte R2",
+          "pos": {
+           "x": 100.0,
+           "y": 55.0
+          },
+          "uuid": "00000000-0000-0000-0000-000000000201"
+         }
+        ],
+        "pos": {
+         "x": 100.0,
+         "y": 55.0
+        },
+        "severity": "warning"
+       }
+      ],
+      "warnings": 1
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1313.5,
+     "body": {
+      "by_category": {
+       "schematic_parity": 0,
+       "unconnected_items": 0,
+       "violations": 0
+      },
+      "errors": 0,
+      "filtered_count": 0,
+      "missing_categories": [],
+      "severity_filter": "all",
+      "shown": 0,
+      "total_violations": 0,
+      "truncated": false,
+      "violations": [],
+      "warnings": 0
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 3,
+   "response_bytes": 20042,
+   "oracle": {
+    "pass": true,
+    "arbiter_separates": true,
+    "divergence_reported": true,
+    "restore_reported_clean": true,
+    "false_green": false,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 9.2,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 3
+  },
+  {
+   "scenario": "E",
+   "subject": "upstream",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.2,
+     "body": {
+      "loaded": "verification",
+      "tools": [
+       {
+        "description": "Run the Design Rule Check on the PCB and return structured violation results, with separate error and warning counts in the summary. Prefer this over `get_drc_violations` (pcb_export toolset) \u2014 they run the same underlying kicad-cli check, but `run_drc` returns a cleaner breakdown. KiCad runs the complete configured DRC ruleset; kicad-cli has no per-test selector.",
+        "name": "run_drc"
+       },
+       {
+        "description": "Set board-level design rules (clearance, trace width, via size) in the sibling KiCAD project file.",
+        "name": "set_design_rules"
+       },
+       {
+        "description": "Return the current design rule constraints defined in the sibling KiCAD project file.",
+        "name": "get_design_rules"
+       },
+       {
+        "description": "Write the PCB editor Pre-defined Sizes list (track widths and via pad/drill pairs) into the sibling .kicad_pro. These populate the Track/Via dropdowns and W/Shift+W while routing; they are not DRC limits and do not change netclasses. A leading 0 mm track and 0/0 via is always kept as the 'use netclass' sentinel. Pass only the lists you want to replace. KiCad reads the change on next project open. The board file is not modified.",
+        "name": "set_predefined_sizes"
+       },
+       {
+        "description": "Return the PCB editor Pre-defined Sizes list from the sibling .kicad_pro: track_widths (mm) and via_dimensions (diameter/drill mm), including the 0 / 0,0 netclass sentinel KiCad keeps at the front of each list.",
+        "name": "get_predefined_sizes"
+       },
+       {
+        "description": "Check whether the KiCad GUI application is running and whether IPC responds within a bounded timeout. When IPC does not answer, ipc_failure.kind says why: not_configured, no_listener, access_denied (the operating system refused this account; likely a different account or a restrictive ACL, as with a sandboxed client), handshake_failed (the listener did not complete NNG's handshake, so it is probably not KiCad; this takes NNG's 10 s limit, so pass timeout_seconds above 10 to see it), transport_error, or request_failed (the request did not complete and may have reached the endpoint; an explicit KiCad status such as AS_NOT_READY proves receipt, a timeout or malformed reply does not). ipc_failure is null when no kind was established: the Ping succeeded with AS_OK, or this check's own timeout expired first (timed_out: true).",
+        "name": "check_kicad_ui"
+       },
+       {
+        "description": "Launch the KiCAD GUI application and optionally open a project file.",
+        "name": "launch_kicad_ui"
+       },
+       {
+        "description": "Copy a routing pattern (traces and vias) from one region of the board to another.",
+        "name": "copy_routing_pattern"
+       },
+       {
+        "description": "Set per-layer design constraints (e.g. min trace width, clearance) in the sibling .kicad_dru custom rules file.",
+        "name": "set_layer_constraints"
+       },
+       {
+        "description": "Measure spacing between two footprints on the requested board. `mode: anchor` (the compatibility default) returns straight-line placement-anchor distance. `mode: courtyard` returns edge-to-edge distance between transformed, authored courtyard bounding boxes for same-side footprints. It refuses missing or malformed courtyard geometry and does not substitute pads or anchors. Neither mode measures pad, trace or copper clearance; use `run_drc` for electrical clearance and `get_component_pads` for pad geometry. Reads the live KiCad board when open, otherwise the saved file, and reports the source.",
+        "name": "check_clearance"
+       }
+      ],
+      "tools_added": 10
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1332.8,
+     "body": {
+      "categories_not_reported": [],
+      "design_rule_violations": 0,
+      "errors": 0,
+      "filtered_count": 1,
+      "live_board_synced": false,
+      "schematic_parity": 1,
+      "schematic_parity_diagnostic": null,
+      "severity_filter": "all",
+      "shown": 1,
+      "source": "saved_file",
+      "total_violations": 1,
+      "truncated": false,
+      "unconnected_items": 0,
+      "violations": [
+       {
+        "description": "La valeur (R2) ne correspond pas \u00e0 la valeur du symbole (4.7k)",
+        "items": [
+         {
+          "description": "Empreinte R2",
+          "item_kind": "footprint",
+          "layer": "F.Cu",
+          "owner": {
+           "kind": "board"
+          },
+          "ownership_status": "resolved",
+          "pos": {
+           "x": 100.0,
+           "y": 55.0
+          },
+          "uuid": "00000000-0000-0000-0000-000000000201"
+         }
+        ],
+        "pos": {
+         "x": 100.0,
+         "y": 55.0
+        },
+        "rule": "footprint_symbol_mismatch",
+        "severity": "warning"
+       }
+      ],
+      "warnings": 1,
+      "zone_refill_source": null,
+      "zones_refilled": false
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1323.1,
+     "body": {
+      "categories_not_reported": [],
+      "design_rule_violations": 0,
+      "errors": 0,
+      "filtered_count": 0,
+      "live_board_synced": false,
+      "schematic_parity": 0,
+      "schematic_parity_diagnostic": null,
+      "severity_filter": "all",
+      "shown": 0,
+      "source": "saved_file",
+      "total_violations": 0,
+      "truncated": false,
+      "unconnected_items": 0,
+      "violations": [],
+      "warnings": 0,
+      "zone_refill_source": null,
+      "zones_refilled": false
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 3,
+   "response_bytes": 24358,
+   "oracle": {
+    "pass": true,
+    "arbiter_separates": true,
+    "divergence_reported": true,
+    "restore_reported_clean": true,
+    "false_green": false,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 9.2,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 1
+  },
+  {
+   "scenario": "E",
+   "subject": "upstream",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.0,
+     "body": {
+      "loaded": "verification",
+      "tools": [
+       {
+        "description": "Run the Design Rule Check on the PCB and return structured violation results, with separate error and warning counts in the summary. Prefer this over `get_drc_violations` (pcb_export toolset) \u2014 they run the same underlying kicad-cli check, but `run_drc` returns a cleaner breakdown. KiCad runs the complete configured DRC ruleset; kicad-cli has no per-test selector.",
+        "name": "run_drc"
+       },
+       {
+        "description": "Set board-level design rules (clearance, trace width, via size) in the sibling KiCAD project file.",
+        "name": "set_design_rules"
+       },
+       {
+        "description": "Return the current design rule constraints defined in the sibling KiCAD project file.",
+        "name": "get_design_rules"
+       },
+       {
+        "description": "Write the PCB editor Pre-defined Sizes list (track widths and via pad/drill pairs) into the sibling .kicad_pro. These populate the Track/Via dropdowns and W/Shift+W while routing; they are not DRC limits and do not change netclasses. A leading 0 mm track and 0/0 via is always kept as the 'use netclass' sentinel. Pass only the lists you want to replace. KiCad reads the change on next project open. The board file is not modified.",
+        "name": "set_predefined_sizes"
+       },
+       {
+        "description": "Return the PCB editor Pre-defined Sizes list from the sibling .kicad_pro: track_widths (mm) and via_dimensions (diameter/drill mm), including the 0 / 0,0 netclass sentinel KiCad keeps at the front of each list.",
+        "name": "get_predefined_sizes"
+       },
+       {
+        "description": "Check whether the KiCad GUI application is running and whether IPC responds within a bounded timeout. When IPC does not answer, ipc_failure.kind says why: not_configured, no_listener, access_denied (the operating system refused this account; likely a different account or a restrictive ACL, as with a sandboxed client), handshake_failed (the listener did not complete NNG's handshake, so it is probably not KiCad; this takes NNG's 10 s limit, so pass timeout_seconds above 10 to see it), transport_error, or request_failed (the request did not complete and may have reached the endpoint; an explicit KiCad status such as AS_NOT_READY proves receipt, a timeout or malformed reply does not). ipc_failure is null when no kind was established: the Ping succeeded with AS_OK, or this check's own timeout expired first (timed_out: true).",
+        "name": "check_kicad_ui"
+       },
+       {
+        "description": "Launch the KiCAD GUI application and optionally open a project file.",
+        "name": "launch_kicad_ui"
+       },
+       {
+        "description": "Copy a routing pattern (traces and vias) from one region of the board to another.",
+        "name": "copy_routing_pattern"
+       },
+       {
+        "description": "Set per-layer design constraints (e.g. min trace width, clearance) in the sibling .kicad_dru custom rules file.",
+        "name": "set_layer_constraints"
+       },
+       {
+        "description": "Measure spacing between two footprints on the requested board. `mode: anchor` (the compatibility default) returns straight-line placement-anchor distance. `mode: courtyard` returns edge-to-edge distance between transformed, authored courtyard bounding boxes for same-side footprints. It refuses missing or malformed courtyard geometry and does not substitute pads or anchors. Neither mode measures pad, trace or copper clearance; use `run_drc` for electrical clearance and `get_component_pads` for pad geometry. Reads the live KiCad board when open, otherwise the saved file, and reports the source.",
+        "name": "check_clearance"
+       }
+      ],
+      "tools_added": 10
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1346.2,
+     "body": {
+      "categories_not_reported": [],
+      "design_rule_violations": 0,
+      "errors": 0,
+      "filtered_count": 1,
+      "live_board_synced": false,
+      "schematic_parity": 1,
+      "schematic_parity_diagnostic": null,
+      "severity_filter": "all",
+      "shown": 1,
+      "source": "saved_file",
+      "total_violations": 1,
+      "truncated": false,
+      "unconnected_items": 0,
+      "violations": [
+       {
+        "description": "La valeur (R2) ne correspond pas \u00e0 la valeur du symbole (4.7k)",
+        "items": [
+         {
+          "description": "Empreinte R2",
+          "item_kind": "footprint",
+          "layer": "F.Cu",
+          "owner": {
+           "kind": "board"
+          },
+          "ownership_status": "resolved",
+          "pos": {
+           "x": 100.0,
+           "y": 55.0
+          },
+          "uuid": "00000000-0000-0000-0000-000000000201"
+         }
+        ],
+        "pos": {
+         "x": 100.0,
+         "y": 55.0
+        },
+        "rule": "footprint_symbol_mismatch",
+        "severity": "warning"
+       }
+      ],
+      "warnings": 1,
+      "zone_refill_source": null,
+      "zones_refilled": false
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1319.4,
+     "body": {
+      "categories_not_reported": [],
+      "design_rule_violations": 0,
+      "errors": 0,
+      "filtered_count": 0,
+      "live_board_synced": false,
+      "schematic_parity": 0,
+      "schematic_parity_diagnostic": null,
+      "severity_filter": "all",
+      "shown": 0,
+      "source": "saved_file",
+      "total_violations": 0,
+      "truncated": false,
+      "unconnected_items": 0,
+      "violations": [],
+      "warnings": 0,
+      "zone_refill_source": null,
+      "zones_refilled": false
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 3,
+   "response_bytes": 24358,
+   "oracle": {
+    "pass": true,
+    "arbiter_separates": true,
+    "divergence_reported": true,
+    "restore_reported_clean": true,
+    "false_green": false,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 9.1,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 2
+  },
+  {
+   "scenario": "E",
+   "subject": "upstream",
+   "fixture_sha256": "b705108346e08a8495f2af65304661d9cbcc2c805e99d683f5f9aae2620ed3f8",
+   "context": {
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "calls": [
+    {
+     "tool": "load_toolset",
+     "ok": true,
+     "ms": 2.2,
+     "body": {
+      "loaded": "verification",
+      "tools": [
+       {
+        "description": "Run the Design Rule Check on the PCB and return structured violation results, with separate error and warning counts in the summary. Prefer this over `get_drc_violations` (pcb_export toolset) \u2014 they run the same underlying kicad-cli check, but `run_drc` returns a cleaner breakdown. KiCad runs the complete configured DRC ruleset; kicad-cli has no per-test selector.",
+        "name": "run_drc"
+       },
+       {
+        "description": "Set board-level design rules (clearance, trace width, via size) in the sibling KiCAD project file.",
+        "name": "set_design_rules"
+       },
+       {
+        "description": "Return the current design rule constraints defined in the sibling KiCAD project file.",
+        "name": "get_design_rules"
+       },
+       {
+        "description": "Write the PCB editor Pre-defined Sizes list (track widths and via pad/drill pairs) into the sibling .kicad_pro. These populate the Track/Via dropdowns and W/Shift+W while routing; they are not DRC limits and do not change netclasses. A leading 0 mm track and 0/0 via is always kept as the 'use netclass' sentinel. Pass only the lists you want to replace. KiCad reads the change on next project open. The board file is not modified.",
+        "name": "set_predefined_sizes"
+       },
+       {
+        "description": "Return the PCB editor Pre-defined Sizes list from the sibling .kicad_pro: track_widths (mm) and via_dimensions (diameter/drill mm), including the 0 / 0,0 netclass sentinel KiCad keeps at the front of each list.",
+        "name": "get_predefined_sizes"
+       },
+       {
+        "description": "Check whether the KiCad GUI application is running and whether IPC responds within a bounded timeout. When IPC does not answer, ipc_failure.kind says why: not_configured, no_listener, access_denied (the operating system refused this account; likely a different account or a restrictive ACL, as with a sandboxed client), handshake_failed (the listener did not complete NNG's handshake, so it is probably not KiCad; this takes NNG's 10 s limit, so pass timeout_seconds above 10 to see it), transport_error, or request_failed (the request did not complete and may have reached the endpoint; an explicit KiCad status such as AS_NOT_READY proves receipt, a timeout or malformed reply does not). ipc_failure is null when no kind was established: the Ping succeeded with AS_OK, or this check's own timeout expired first (timed_out: true).",
+        "name": "check_kicad_ui"
+       },
+       {
+        "description": "Launch the KiCAD GUI application and optionally open a project file.",
+        "name": "launch_kicad_ui"
+       },
+       {
+        "description": "Copy a routing pattern (traces and vias) from one region of the board to another.",
+        "name": "copy_routing_pattern"
+       },
+       {
+        "description": "Set per-layer design constraints (e.g. min trace width, clearance) in the sibling .kicad_dru custom rules file.",
+        "name": "set_layer_constraints"
+       },
+       {
+        "description": "Measure spacing between two footprints on the requested board. `mode: anchor` (the compatibility default) returns straight-line placement-anchor distance. `mode: courtyard` returns edge-to-edge distance between transformed, authored courtyard bounding boxes for same-side footprints. It refuses missing or malformed courtyard geometry and does not substitute pads or anchors. Neither mode measures pad, trace or copper clearance; use `run_drc` for electrical clearance and `get_component_pads` for pad geometry. Reads the live KiCad board when open, otherwise the saved file, and reports the source.",
+        "name": "check_clearance"
+       }
+      ],
+      "tools_added": 10
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1335.9,
+     "body": {
+      "categories_not_reported": [],
+      "design_rule_violations": 0,
+      "errors": 0,
+      "filtered_count": 1,
+      "live_board_synced": false,
+      "schematic_parity": 1,
+      "schematic_parity_diagnostic": null,
+      "severity_filter": "all",
+      "shown": 1,
+      "source": "saved_file",
+      "total_violations": 1,
+      "truncated": false,
+      "unconnected_items": 0,
+      "violations": [
+       {
+        "description": "La valeur (R2) ne correspond pas \u00e0 la valeur du symbole (4.7k)",
+        "items": [
+         {
+          "description": "Empreinte R2",
+          "item_kind": "footprint",
+          "layer": "F.Cu",
+          "owner": {
+           "kind": "board"
+          },
+          "ownership_status": "resolved",
+          "pos": {
+           "x": 100.0,
+           "y": 55.0
+          },
+          "uuid": "00000000-0000-0000-0000-000000000201"
+         }
+        ],
+        "pos": {
+         "x": 100.0,
+         "y": 55.0
+        },
+        "rule": "footprint_symbol_mismatch",
+        "severity": "warning"
+       }
+      ],
+      "warnings": 1,
+      "zone_refill_source": null,
+      "zones_refilled": false
+     },
+     "rpc_error": null
+    },
+    {
+     "tool": "run_drc",
+     "ok": true,
+     "ms": 1306.6,
+     "body": {
+      "categories_not_reported": [],
+      "design_rule_violations": 0,
+      "errors": 0,
+      "filtered_count": 0,
+      "live_board_synced": false,
+      "schematic_parity": 0,
+      "schematic_parity_diagnostic": null,
+      "severity_filter": "all",
+      "shown": 0,
+      "source": "saved_file",
+      "total_violations": 0,
+      "truncated": false,
+      "unconnected_items": 0,
+      "violations": [],
+      "warnings": 0,
+      "zone_refill_source": null,
+      "zones_refilled": false
+     },
+     "rpc_error": null
+    }
+   ],
+   "mcp_tool_calls": 3,
+   "response_bytes": 24358,
+   "oracle": {
+    "pass": true,
+    "arbiter_separates": true,
+    "divergence_reported": true,
+    "restore_reported_clean": true,
+    "false_green": false,
+    "phases": [
+     {
+      "phase": "diverged",
+      "arbiter_parity": 1,
+      "reported_parity": 1
+     },
+     {
+      "phase": "restored",
+      "arbiter_parity": 0,
+      "reported_parity": 0
+     }
+    ]
+   },
+   "seconds": 9.2,
+   "capability_absent": false,
+   "refused": false,
+   "mcp_success": true,
+   "functional": true,
+   "false_success": false,
+   "gui_intervention": false,
+   "run": 3
+  }
+ ]
+}

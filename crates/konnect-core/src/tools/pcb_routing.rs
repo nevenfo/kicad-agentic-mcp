@@ -382,102 +382,94 @@ async fn handle_route_pad_to_pad(
     let layer = args["layer"].as_str().unwrap_or("F.Cu").to_string();
     let width = args["width"].as_f64().unwrap_or(0.25);
 
-    // Look up pad positions from the PCB S-expression file
-    let content = std::fs::read_to_string(&board_path)?;
-    let tree = konnect_sexp::parser::parse_sexp(&content)?;
-
-    let pos1 = find_pad_board_position(&tree, &ref1, &pad1)?;
-    let pos2 = find_pad_board_position(&tree, &ref2, &pad2)?;
-
-    // Route an L-bend: horizontal first, then vertical
-    let (x1, y1) = pos1;
-    let (x2, y2) = pos2;
-    let net_ipc = net_name.clone();
-    let layer_ipc = layer.clone();
-
-    if (x1 - x2).abs() < 0.01 || (y1 - y2).abs() < 0.01 {
-        // Already axis-aligned: single segment
-        ipc!(ctx, args, |c| c
-            .add_track(&net_ipc, &layer_ipc, width, x1, y1, x2, y2));
-    } else {
-        // L-bend: horizontal then vertical
-        let mid_x = x2;
-        let mid_y = y1;
-        let net_a = net_name.clone();
-        let net_b = net_name.clone();
-        let layer_a = layer.clone();
-        let layer_b = layer.clone();
-        ipc!(ctx, args, |c| {
-            c.add_tracks(&[
-                konnect_ipc::TrackSpec {
-                    net_name: net_a.clone(),
-                    layer: layer_a.clone(),
-                    width,
-                    x1,
-                    y1,
-                    x2: mid_x,
-                    y2: mid_y,
+    // Both pads come from the board open in KiCAD, the one the tracks are
+    // written to, inside one guarded closure. The saved file lags any unsaved
+    // move, and routing to it left a dangling track (upstream #700).
+    let (net_ipc, layer_ipc) = (net_name.clone(), layer.clone());
+    let ends = [(ref1.clone(), pad1.clone()), (ref2.clone(), pad2.clone())];
+    let routed = ipc!(ctx, args, |c| {
+        let [(ref1, pad1), (ref2, pad2)] = &ends;
+        let (x1, y1) = match get_live_pad(c, ref1, pad1)? {
+            Ok(at) => at,
+            Err(missing) => return Ok(Err(missing)),
+        };
+        let (x2, y2) = match get_live_pad(c, ref2, pad2)? {
+            Ok(at) => at,
+            Err(missing) => return Ok(Err(missing)),
+        };
+        let spec = |(ax, ay, bx, by): (f64, f64, f64, f64)| konnect_ipc::TrackSpec {
+            net_name: net_ipc.clone(),
+            layer: layer_ipc.clone(),
+            width,
+            x1: ax,
+            y1: ay,
+            x2: bx,
+            y2: by,
+        };
+        if (x1 - x2).abs() < 0.01 || (y1 - y2).abs() < 0.01 {
+            // Already axis-aligned: single segment
+            c.add_tracks(&[spec((x1, y1, x2, y2))])?;
+        } else {
+            // L-bend: horizontal then vertical
+            c.add_tracks(&[spec((x1, y1, x2, y1)), spec((x2, y1, x2, y2))])?;
+        }
+        Ok(Ok(((x1, y1), (x2, y2))))
+    });
+    let ((x1, y1), (x2, y2)) = match routed {
+        Ok(ends) => ends,
+        Err(missing) => {
+            return Ok(CallToolResult::error_kind(
+                crate::mcp::error::ToolErrorKind::NotFound {
+                    document: board_path.display().to_string(),
+                    item_kind: missing.item_kind.to_string(),
+                    key: missing.key,
+                    candidates: Vec::new(),
                 },
-                konnect_ipc::TrackSpec {
-                    net_name: net_b.clone(),
-                    layer: layer_b.clone(),
-                    width,
-                    x1: mid_x,
-                    y1: mid_y,
-                    x2,
-                    y2,
-                },
-            ])
-        });
-    }
+                missing.message,
+            ))
+        }
+    };
 
     Ok(CallToolResult::json(&json!({
         "routed": true,
         "net": net_name, "layer": layer, "width": width,
         "from": { "ref": ref1, "pad": pad1, "x": x1, "y": y1 },
-        "to":   { "ref": ref2, "pad": pad2, "x": x2, "y": y2 }
+        "to":   { "ref": ref2, "pad": pad2, "x": x2, "y": y2 },
+        "source": "ipc"
     })))
 }
 
-/// Look up a pad's board-space (x, y) position from the parsed PCB S-expression tree.
-fn find_pad_board_position(
-    tree: &konnect_sexp::parser::SexpNode,
+/// What the live board does not hold: a footprint or one of its pads.
+struct LiveItemMissing {
+    item_kind: &'static str,
+    key: String,
+    message: String,
+}
+
+/// A pad's board position on the live board, or what is missing from it. No
+/// file fallback: the saved file may disagree with the board the tracks are
+/// written to.
+fn get_live_pad(
+    c: &konnect_ipc::client::KiCadIpcClient,
     reference: &str,
-    pad_number: &str,
-) -> anyhow::Result<(f64, f64)> {
-    let fp_node = tree
-        .find_all("footprint")
-        .into_iter()
-        .find(|fp| {
-            fp.find_all("property").iter().any(|p| {
-                p.get(1).and_then(|n| n.as_str()) == Some("Reference")
-                    && p.get(2).and_then(|n| n.as_str()) == Some(reference)
-            })
-        })
-        .ok_or_else(|| anyhow::anyhow!("Footprint '{}' not found on board", reference))?;
-
-    let fp_at = fp_node.find("at");
-    let fp_x = fp_at.and_then(|a| a.get_f64(1)).unwrap_or(0.0);
-    let fp_y = fp_at.and_then(|a| a.get_f64(2)).unwrap_or(0.0);
-    let fp_rot = fp_at.and_then(|a| a.get_f64(3)).unwrap_or(0.0);
-
-    let pad = fp_node
-        .find_all("pad")
-        .into_iter()
-        .find(|p| p.get(1).and_then(|n| n.as_str()) == Some(pad_number))
-        .ok_or_else(|| anyhow::anyhow!("Pad '{}' not found on '{}'", pad_number, reference))?;
-
-    let pad_at = pad
-        .find("at")
-        .ok_or_else(|| anyhow::anyhow!("Pad has no (at) node"))?;
-    let local_x = pad_at.get_f64(1).unwrap_or(0.0);
-    let local_y = pad_at.get_f64(2).unwrap_or(0.0);
-
-    // Transform local pad coords to board space (rotation only).
-    // Uses the canonical KiCAD transform — see konnect_sexp::geometry.
-    Ok(konnect_sexp::geometry::transform_pad(
-        local_x, local_y, fp_x, fp_y, fp_rot,
-    ))
+    pad: &str,
+) -> anyhow::Result<Result<(f64, f64), LiveItemMissing>> {
+    let Some(pads) = c.get_footprint_pads(reference)? else {
+        return Ok(Err(LiveItemMissing {
+            item_kind: "footprint",
+            key: reference.to_string(),
+            message: format!("Footprint '{reference}' not found on the board open in KiCAD"),
+        }));
+    };
+    Ok(pads
+        .iter()
+        .find(|p| p.number == pad)
+        .map(|p| (p.x, p.y))
+        .ok_or_else(|| LiveItemMissing {
+            item_kind: "pad",
+            key: pad.to_string(),
+            message: format!("Pad '{pad}' not found on '{reference}' on the board open in KiCAD"),
+        }))
 }
 
 async fn handle_add_via(

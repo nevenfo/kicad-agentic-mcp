@@ -16,6 +16,15 @@ pub struct IpcFootprint {
     pub layer: String,
 }
 
+/// A placed pad as the open board holds it: number and absolute board
+/// position (mm).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IpcPadPosition {
+    pub number: String,
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct IpcPadDefinition {
     pub number: String,

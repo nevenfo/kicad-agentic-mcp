@@ -7144,9 +7144,9 @@ Z4.
 
 ### Tâches
 
-- [ ] Z5.1 B : `route_pad_to_pad` lit les pads du board live (IPC), repli
+- [x] Z5.1 B : `route_pad_to_pad` lit les pads du board live (IPC), repli
   fichier seulement si l'IPC est injoignable, comme upstream.
-- [ ] Z5.2 E : `run_drc` passe toujours `--schematic-parity` ; parité non
+- [x] Z5.2 E : `run_drc` passe toujours `--schematic-parity` ; parité non
   exécutée par KiCad (stderr « Failed to fetch schematic netlist… » ou pas de
   schéma racine) ⇒ `null` + diagnostic, jamais 0.
 - [x] Z5.3 D : message et commentaire de `flip_component` corrigés (KiCad
@@ -7156,6 +7156,12 @@ Z4.
 ### Validation
 
 Scénario concerné vert ×3 sur le fork ; tests unitaires et `gate.ps1` verts.
+
+`pcb_live_v2-after-z5-20261004.json` : B fork 3/3 fonctionnel (`source: ipc`),
+E fork 3/3 (1 puis 0), D inchangé (3/3, redémarrage éditeur), contrôles
+valides. `cargo fmt --check`, `clippy -D warnings`, `cargo test -p konnect-core
+-p konnect-ipc` (lib 677 passed) verts. `pad_positions_of` (konnect-ipc) et
+`apply_parity_evidence` (cli.rs) couverts par tests unitaires.
 
 ## Z6 — Rejeu, validation dépôt, documentation
 
