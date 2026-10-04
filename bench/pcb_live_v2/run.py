@@ -125,7 +125,7 @@ def b_prepare(s: ks.PcbnewSession) -> dict:
     return {"from": (p1.x, p1.y), "to": (p2.x, p2.y), "stale_to": (109.5, 50.0)}
 
 
-def b_act(srv: Server, board: Path) -> list[dict]:
+def b_act(srv: Server, board: Path, s: ks.PcbnewSession, ctx: dict) -> list[dict]:
     return [
         srv.call("load_toolset", {"name": "pcb_routing"}),
         srv.call("route_pad_to_pad", {"board": str(board), "net_name": "GND",
@@ -154,7 +154,7 @@ def b_judge(s: ks.PcbnewSession, ctx: dict, board: Path, work: Path) -> dict:
             "live_tracks": tracks}
 
 
-def b_control(s: ks.PcbnewSession, ctx: dict, kind: str) -> None:
+def b_control(s: ks.PcbnewSession, ctx: dict, kind: str, board: Path) -> None:
     (x1, y1) = ctx["from"]
     (x2, y2) = ctx["to"] if kind == "good" else ctx["stale_to"]
     s.add_track_live("GND", x1, y1, x2, y1)
@@ -162,9 +162,86 @@ def b_control(s: ks.PcbnewSession, ctx: dict, kind: str) -> None:
         s.add_track_live("GND", x2, y1, x2, y2)
 
 
+# ── scenario E — negative schematic-parity oracle ────────────────────────
+#
+# The board diverges from its schematic (R2's value, edited live and saved, the
+# way a GUI user would). Intention: "does the board match the schematic?",
+# asked twice — diverged, then restored. The referee is `kicad-cli pcb drc
+# --schematic-parity` run by the oracle side. A server passes only if it
+# reports a non-zero parity count while diverged and a *measured* zero once
+# restored. A zero that is not backed by a real parity run is the false green
+# the Hi-Fi stress test met; `null` is honest but not functional.
+
+
+def find_key(obj, key):
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            r = find_key(v, key)
+            if r is not None:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = find_key(v, key)
+            if r is not None:
+                return r
+    return None
+
+
+def reported_parity(body) -> int | None:
+    v = find_key(body, "schematic_parity") if isinstance(body, (dict, list)) else None
+    return len(v) if isinstance(v, list) else v if isinstance(v, int) else None
+
+
+def e_prepare(s: ks.PcbnewSession) -> dict:
+    return {"phases": []}
+
+
+def e_cycle(s: ks.PcbnewSession, ctx: dict, board: Path, ask) -> list[dict]:
+    calls = []
+    for phase, value in (("diverged", "4.7k"), ("restored", "10k")):
+        s.set_value_live("R2", value)
+        s.save()
+        arb = ks.drc(board, board.parent / f"arb-{phase}.json", parity=True)
+        c = ask()
+        calls.append(c)
+        ctx["phases"].append({"phase": phase, "arbiter_parity": arb["parity"],
+                              "reported_parity": reported_parity(c["body"])})
+    return calls
+
+
+def e_act(srv: Server, board: Path, s: ks.PcbnewSession, ctx: dict) -> list[dict]:
+    load = srv.call("load_toolset", {"name": "verification"})
+    return [load] + e_cycle(s, ctx, board, lambda: srv.call("run_drc", {"board": str(board), "severity": "all"}))
+
+
+def e_control(s: ks.PcbnewSession, ctx: dict, kind: str, board: Path) -> None:
+    """good: a reporter that echoes a real parity run; bad: one that always says 0."""
+    def ask():
+        if kind == "bad":
+            return {"tool": "control", "ok": True, "body": {"by_category": {"schematic_parity": 0}}}
+        r = ks.drc(board, board.parent / "ctl.json", parity=True)
+        return {"tool": "control", "ok": True, "body": {"by_category": {"schematic_parity": r["parity"]}}}
+    e_cycle(s, ctx, board, ask)
+
+
+def e_judge(s: ks.PcbnewSession, ctx: dict, board: Path, work: Path) -> dict:
+    ph = {p["phase"]: p for p in ctx["phases"]}
+    d, r = ph.get("diverged", {}), ph.get("restored", {})
+    arbiter_ok = (d.get("arbiter_parity") or 0) > 0 and r.get("arbiter_parity") == 0
+    caught = (d.get("reported_parity") or 0) > 0
+    cleared = r.get("reported_parity") == 0
+    return {"pass": arbiter_ok and caught and cleared, "arbiter_separates": arbiter_ok,
+            "divergence_reported": caught, "restore_reported_clean": cleared,
+            "false_green": d.get("reported_parity") == 0, "phases": ctx["phases"]}
+
+
 SCENARIOS = {
     "B": {"fixture": "live_saved.kicad_pcb", "prepare": b_prepare, "act": b_act,
           "judge": b_judge, "control": b_control},
+    "E": {"fixture": "divider", "prepare": e_prepare, "act": e_act,
+          "judge": e_judge, "control": e_control},
 }
 
 
@@ -197,11 +274,11 @@ def run_once(scn: str, subject: str, root: Path) -> dict:
             ctx = spec["prepare"](s)
             rec["context"] = ctx
             if subject.startswith("control:"):
-                spec["control"](s, ctx, subject.split(":")[1])
+                spec["control"](s, ctx, subject.split(":")[1], board)
                 rec["calls"], rec["mcp_tool_calls"] = [], 0
             else:
                 with Server(subject) as srv:
-                    rec["calls"] = spec["act"](srv, board)
+                    rec["calls"] = spec["act"](srv, board, s, ctx)
                     rec["mcp_tool_calls"] = srv.tool_calls
                     rec["response_bytes"] = srv.response_bytes
             rec["oracle"] = spec["judge"](s, ctx, board, work)

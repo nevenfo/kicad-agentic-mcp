@@ -7065,7 +7065,7 @@ Z1.
 
 ### Tâches
 
-- [ ] Z3.1 E — divergence schéma ↔ PCB injectée, parité réellement exécutée
+- [x] Z3.1 E — divergence schéma ↔ PCB injectée, parité réellement exécutée
   (`kicad-cli pcb drc --schematic-parity`), rouge puis vert après restauration.
 - [ ] Z3.2 A — schéma modifié puis sync PCB : placement, cuivre et board-only
   (`H1`/`H2`) conservés, delta appliqué.
@@ -7078,6 +7078,12 @@ Z1.
 
 Pour chaque scénario : contrôle bon vert, contrôle mauvais rouge, un run par
 implémentation exécuté sans erreur de harness.
+
+E (fixture `divider/`, générée par `fixtures/make_divider.py`, DRC 0, parité 0) :
+contrôles valides (reporter réel vert, reporter « toujours 0 » rouge) ; arbitre
+1 → 0. Fork : **faux vert** — `run_drc` n'appelle pas `--schematic-parity`,
+KiCad 10 écrit alors un tableau vide, le fork publie 0 (`tools/cli.rs`
+`run_drc`). Upstream : 1 puis 0, conforme.
 
 ## Z4 — Répétitions et matrice
 

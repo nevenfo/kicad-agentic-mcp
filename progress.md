@@ -8,11 +8,11 @@ attente : la revue du 2026-10-04 a priorité.
 
 ## Tâche actuelle
 
-Z3.1 — scénario E (parité schéma ↔ PCB négative).
+Z3.2 — scénario A (sync schéma → PCB).
 
 ## Dernière tâche validée
 
-**Z1 — premier vertical, scénario B (live ≠ saved).**
+**Z1 (scénario B) et Z3.1 (scénario E).**
 
 Validation :
 - Contrôles injectés par `kipy` : bon = vert, mauvais = rouge
@@ -20,7 +20,13 @@ Validation :
 - Fork : `route_pad_to_pad` répond `routed: true` mais trace vers la position
   **sauvegardée** de R2 → faux succès. Upstream `v0.13.0` : trace vers la
   position live (`source: ipc`), DRC propre.
+- E : contrôles valides ; fork **faux vert** (`run_drc` sans
+  `--schematic-parity` → 0 quand l'arbitre trouve 1) ; upstream 1 puis 0.
 - Un run par implémentation ; trois runs restent à faire (Z4).
+- Z2 fait côté recherche (à consigner dans le rapport) : #700 = défaut B, fermé
+  upstream par PR #719 avant v0.13.0 ; #779 (zone ⇒ tous nets « routés »)
+  **ouverte** ; #791 fermée par #805 (après v0.13.0) ; KiCad stable 10.0.6,
+  10.0.7 en RC2.
 
 ## Décisions actives
 
@@ -59,6 +65,7 @@ Aucun.
 
 ## NEXT ACTION
 
-Z3.1 — construire le scénario E : fixture projet (schéma + PCB) cohérente,
-divergence injectée, `kicad-cli pcb drc --schematic-parity` rouge, restauration
-verte, puis `run_drc` de chaque serveur comparé à cet arbitre.
+Z3.2 — scénario A : sur `fixtures/divider/`, modifier le schéma (ajout d'un
+symbole R3 + changement de valeur), demander à chaque serveur la sync schéma →
+PCB, juger par `kipy` (R1/R2 et H1/H2 aux mêmes positions, piste /VOUT
+intacte, R3 présent) puis parité `kicad-cli` = 0 ; contrôles bon/mauvais.

@@ -191,13 +191,21 @@ class PcbnewSession:
         t.net = nets[net]
         board.create_items(t)
 
+    def set_value_live(self, ref: str, value: str) -> None:
+        board = self.board_handle()
+        fp = self.footprint(ref)
+        fp.value_field.text.value = value
+        board.update_items(fp)
+
     def save(self) -> None:
         self.board_handle().save()
 
 
-def drc(board: Path, out: Path) -> dict:
+def drc(board: Path, out: Path, parity: bool = False, refill: bool = False) -> dict:
     """`kicad-cli pcb drc` on the saved file. The effect is the oracle, never the exit code."""
-    r = kicad_cli("pcb", "drc", "--format", "json", "--severity-all", "--output", str(out), str(board))
+    extra = (["--schematic-parity"] if parity else []) + (["--refill-zones"] if refill else [])
+    out.unlink(missing_ok=True)
+    r = kicad_cli("pcb", "drc", "--format", "json", "--severity-all", *extra, "--output", str(out), str(board))
     if not out.exists():
         raise RuntimeError(f"kicad-cli drc produced nothing: {r.stdout}{r.stderr}")
     data = json.loads(out.read_text(encoding="utf-8"))
