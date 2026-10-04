@@ -7046,7 +7046,7 @@ Aucune.
 
 ### Tâches
 
-- [ ] Z2.1 Faits sourcés consignés dans `docs/benchmark-pcb-live-v2.md`.
+- [x] Z2.1 Faits sourcés consignés dans `docs/benchmark-pcb-live-v2.md`.
 
 ### Validation
 
@@ -7115,8 +7115,8 @@ Z3.
 
 ### Tâches
 
-- [ ] Z4.1 Résultats bruts commités sous `bench/results/pcb_live_v2-*.json`.
-- [ ] Z4.2 `docs/benchmark-pcb-live-v2.md` : matrice (fork meilleur / upstream
+- [x] Z4.1 Résultats bruts commités sous `bench/results/pcb_live_v2-*.json`.
+- [x] Z4.2 `docs/benchmark-pcb-live-v2.md` : matrice (fork meilleur / upstream
   meilleur / équivalent / non concluant / défaut critique), faits,
   interprétations, incertitudes.
 
@@ -7124,6 +7124,12 @@ Z3.
 
 5 scénarios × 2 implémentations × 3 runs, contrôles valides, reproductibilité
 notée par cellule.
+
+`pcb_live_v2-baseline-20261004.json` : 40 runs, 0 erreur de harness, chaque
+cellule identique sur ses 3 runs. Fork : B et E faux succès 3/3, A et C absents,
+D fonctionnel 3/3 avec redémarrage éditeur. Upstream : A, B, D, E fonctionnels
+3/3 ; C refus à tort 3/3 (#779). Classification et décisions :
+`docs/benchmark-pcb-live-v2.md`.
 
 ## Z5 — Mises à jour justifiées
 
@@ -7134,13 +7140,18 @@ documentée là où upstream échoue.
 
 ### Dépendances
 
-Z4 (Z1 suffit pour le cas B déjà mesuré).
+Z4.
 
 ### Tâches
 
 - [ ] Z5.1 B : `route_pad_to_pad` lit les pads du board live (IPC), repli
   fichier seulement si l'IPC est injoignable, comme upstream.
-- [ ] Z5.2 Autres décisions issues de la matrice, une par cellule perdante.
+- [ ] Z5.2 E : `run_drc` passe toujours `--schematic-parity` ; parité non
+  exécutée par KiCad (stderr « Failed to fetch schematic netlist… » ou pas de
+  schéma racine) ⇒ `null` + diagnostic, jamais 0.
+- [x] Z5.3 D : message et commentaire de `flip_component` corrigés (KiCad
+  10.0.6 répond à `FlipItems` ; le fork ne le pilote pas). Pas de backport du
+  flip IPC : état final déjà correct, coût = un redémarrage éditeur.
 
 ### Validation
 
@@ -7155,7 +7166,7 @@ publiques sur les nouvelles preuves.
 
 ### Dépendances
 
-Z5.
+Z5, Z7.
 
 ### Tâches
 
@@ -7168,3 +7179,32 @@ Z5.
 ### Validation
 
 Rejeu sans faux succès fork sur les cellules corrigées ; gate vert ; CI verte.
+
+## Z7 — Synchronisation schéma → PCB (A, C)
+
+### Objectif
+
+Combler le seul manque fonctionnel mesuré du fork (A) en important
+`update_pcb_from_schematic` d'upstream v0.13.0, et corriger au passage #779 (C)
+pour que la présence d'une zone ne marque plus tous les nets comme routés.
+
+### Dépendances
+
+Z5 validée et rejouée sur B/D/E (binaire release reconstruit) avant d'ajouter
+une primitive lourde.
+
+### Tâches
+
+- [ ] Z7.1 Porter `tools/pcb_sync.rs` (≈2 080 lignes hors tests) et ses
+  dépendances IPC absentes du fork (`run_commit_recovering_in`,
+  `save_document_to_string_in`, `update_items_in`, `get_nets_in`, `IpcVector`,
+  `MockIpcServer` de test), sans rebase ni import hors de ce périmètre.
+- [ ] Z7.2 #779 : le net d'une zone est lisible
+  (`Zone.settings.copper_settings.net`) ; seul le cuivre d'un net le rend routé.
+- [ ] Z7.3 Classement dans la matrice de capacités : preuve live exigée
+  (`LiveReadback`), test `#[ignore]`d arbitré, sinon `UNPROVEN` assumé.
+
+### Validation
+
+Bench A et C : fork fonctionnel 3/3, 0 faux succès ; B/D/E inchangés ; gate
+vert.
