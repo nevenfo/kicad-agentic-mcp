@@ -7177,14 +7177,19 @@ Z5, Z7.
 ### Tâches
 
 - [x] Z6.1 Rejeu complet, résultats commités.
-- [ ] Z6.2 `pwsh gate.ps1` vert (fmt, clippy, tests, matrice).
+- [x] Z6.2 `pwsh gate.ps1` vert (fmt, clippy, tests, matrice).
 - [x] Z6.3 README / `docs/benchmark.md` : la comparaison v0.2.2 n'est plus
   présentée comme preuve de supériorité actuelle ; renvoi vers V2.
-- [ ] Z6.4 PR `ai/pcb-live-bench-v2` → `agentic/main`.
+- [x] Z6.4 PR `ai/pcb-live-bench-v2` → `agentic/main`.
 
 ### Validation
 
 Rejeu sans faux succès fork sur les cellules corrigées ; gate vert ; CI verte.
+
+Rejeu `pcb_live_v2-after-z7-20261004.json` sans faux succès. `gate.ps1` PASSED
+sur `0cae8bf` ; sur Z7, gate local interrompu par le harness (mémoire système)
+après fmt et clippy verts — preuve retenue : CI de la PR #22 verte sur tous les
+jobs (fmt, clippy, tests Windows/macOS/Ubuntu, PCM). Merge `bc3a815`.
 
 ## Z7 — Synchronisation schéma → PCB (A, C)
 
