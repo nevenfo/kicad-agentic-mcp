@@ -6977,3 +6977,170 @@ Portée par le projet Hi-Fi : boucle de découplage ≤ 7,71 mm, colonne
 `x` ∈ [276,15 ; 278,85] libre de cuivre `F.Cu`, DRC sans `clearance`,
 `shorting_items` ni `track_dangling`, parité 3, 124 empreintes et 119 blocs
 `(units`.
+
+# Phase Z — Benchmark PCB live V2 contre Konnect v0.13.0
+
+## Objectif
+
+Remplacer « le fork battait Konnect v0.2.2 en août » par une mesure : sur cinq
+workflows PCB live réels, KiCad arbitre, où le fork gagne, perd ou échoue face
+à Konnect **v0.13.0** (`6bbe3e4f`, 2026-10-01). Puis n'intégrer que les
+changements que cette mesure justifie, et rejouer.
+
+## Invariants de la phase
+
+- Architecture inchangée : planner → Plan IR → exécution déterministe → KiCad →
+  validation indépendante. La question rouverte est la provenance des
+  primitives KiCad, pas cette chaîne.
+- Comparaison **intention → état KiCad final**, jamais appel MCP → JSON. Un
+  `success` sans relecture KiCad conforme est un faux succès.
+- Arbitres indépendants des deux serveurs : `kipy` 0.8.0 (binding IPC officiel,
+  venv `../_bench-venv`) pour le live, `kicad-cli` 10.0.6 pour le saved.
+- Chaque oracle a deux contrôles injectés par le côté oracle : résultat correct
+  (doit passer) et défaut connu (doit échouer). Contrôles non séparés → scénario
+  invalide, non noté.
+- Baseline figée : KiCad 10.0.6, upstream tag `v0.13.0` (worktree
+  `../_upstream-v0.13.0`, build `../_upstream-target`). Jamais `main` en silence.
+- Aucun rebase global, aucune copie de la surface upstream, aucun framework de
+  benchmark générique, aucun autorouteur, aucune nouvelle couche.
+- Fixtures jetables, copiées par run ; jamais un projet de l'utilisateur.
+
+## Z1 — Environnement et premier vertical (B, live ≠ saved)
+
+### Objectif
+
+Prouver la chaîne complète sur un scénario : fixture, session pcbnew isolée,
+deux serveurs, oracle live + saved, contrôles.
+
+### Dépendances
+
+Aucune.
+
+### Tâches
+
+- [x] Z1.1 Builds release fork et upstream `v0.13.0`, SHA enregistrés par run.
+- [x] Z1.2 Harness `bench/pcb_live_v2/` : `kicad_session.py` (pcbnew + profil
+  dédié + relecture `kipy` + DRC `kicad-cli`), `run.py` (scénarios, contrôles,
+  métriques, JSON).
+- [x] Z1.3 Scénario B : R2 déplacé en live non sauvegardé, `route_pad_to_pad`
+  R1.2 → R2.1 ; oracle = cuivre live jusqu'au pad live, empreinte conservée,
+  DRC du fichier sauvé (1 non-connecté, 0 `track_dangling`).
+
+### Validation
+
+Contrôles B : bon = vert, mauvais (piste vers la position sauvegardée) = rouge
+(`track_dangling` 1, non-connectés 2). Premier run : fork **faux succès**
+(lit les pads dans le fichier sauvé, `pcb_routing.rs` `handle_route_pad_to_pad`),
+upstream correct (`source: ipc`).
+
+## Z2 — Vérification externe
+
+### Objectif
+
+Confirmer tag/commit upstream, statut des issues de classe #700/#779, version
+stable KiCad, corrections publiées depuis la revue du 2026-10-04.
+
+### Dépendances
+
+Aucune.
+
+### Tâches
+
+- [ ] Z2.1 Faits sourcés consignés dans `docs/benchmark-pcb-live-v2.md`.
+
+### Validation
+
+Chaque fait porte une URL primaire ; écart éventuel entre `v0.13.0` et `main`
+documenté sans changer la baseline.
+
+## Z3 — Scénarios A, C, D, E
+
+### Objectif
+
+Étendre le harness aux quatre autres familles, chacune avec oracle et contrôles.
+
+### Dépendances
+
+Z1.
+
+### Tâches
+
+- [ ] Z3.1 E — divergence schéma ↔ PCB injectée, parité réellement exécutée
+  (`kicad-cli pcb drc --schematic-parity`), rouge puis vert après restauration.
+- [ ] Z3.2 A — schéma modifié puis sync PCB : placement, cuivre et board-only
+  (`H1`/`H2`) conservés, delta appliqué.
+- [ ] Z3.3 C — zone GND + changement de net : un net non routé ne devient pas
+  « routé » du fait de la zone (classe #779).
+- [ ] Z3.4 D — flip `C310`/`C311` vers `B.Cu` + vias : couche, coordonnées,
+  connectivité, relecture KiCad, DRC.
+
+### Validation
+
+Pour chaque scénario : contrôle bon vert, contrôle mauvais rouge, un run par
+implémentation exécuté sans erreur de harness.
+
+## Z4 — Répétitions et matrice
+
+### Objectif
+
+Trois runs par scénario et par implémentation, matrice comparative.
+
+### Dépendances
+
+Z3.
+
+### Tâches
+
+- [ ] Z4.1 Résultats bruts commités sous `bench/results/pcb_live_v2-*.json`.
+- [ ] Z4.2 `docs/benchmark-pcb-live-v2.md` : matrice (fork meilleur / upstream
+  meilleur / équivalent / non concluant / défaut critique), faits,
+  interprétations, incertitudes.
+
+### Validation
+
+5 scénarios × 2 implémentations × 3 runs, contrôles valides, reproductibilité
+notée par cellule.
+
+## Z5 — Mises à jour justifiées
+
+### Objectif
+
+Backport minimal là où upstream gagne sans régression critique ; conservation
+documentée là où upstream échoue.
+
+### Dépendances
+
+Z4 (Z1 suffit pour le cas B déjà mesuré).
+
+### Tâches
+
+- [ ] Z5.1 B : `route_pad_to_pad` lit les pads du board live (IPC), repli
+  fichier seulement si l'IPC est injoignable, comme upstream.
+- [ ] Z5.2 Autres décisions issues de la matrice, une par cellule perdante.
+
+### Validation
+
+Scénario concerné vert ×3 sur le fork ; tests unitaires et `gate.ps1` verts.
+
+## Z6 — Rejeu, validation dépôt, documentation
+
+### Objectif
+
+Rejouer les cinq scénarios après modification et aligner les affirmations
+publiques sur les nouvelles preuves.
+
+### Dépendances
+
+Z5.
+
+### Tâches
+
+- [ ] Z6.1 Rejeu complet, résultats commités.
+- [ ] Z6.2 `pwsh gate.ps1` vert (fmt, clippy, tests, matrice).
+- [ ] Z6.3 README / `docs/benchmark.md` : la comparaison v0.2.2 n'est plus
+  présentée comme preuve de supériorité actuelle ; renvoi vers V2.
+- [ ] Z6.4 PR `ai/pcb-live-bench-v2` → `agentic/main`.
+
+### Validation
+
+Rejeu sans faux succès fork sur les cellules corrigées ; gate vert ; CI verte.
