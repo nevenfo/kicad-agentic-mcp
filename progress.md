@@ -8,22 +8,20 @@ attente : la revue du 2026-10-04 a priorité.
 
 ## Tâche actuelle
 
-Z5 — backports justifiés par la matrice : B (pads live) et E (parité
-réellement exécutée) délégués à un `code-worker` (non commités tant que non
-validés) ; Z5.3 (message flip D) fait dans `pcb_components.rs`, non commité.
+Z7 — port de `update_pcb_from_schematic` + correctif #779, délégué à un
+`code-worker` dans un worktree isolé (non commité). En parallèle : `pwsh
+gate.ps1` sur `0cae8bf` (log `../_gate-z5.log`).
 
 ## Dernière tâche validée
 
-**Z4 — matrice de base** `bench/results/pcb_live_v2-baseline-20261004.json`.
+**Z5 — backports B et E** (`0cae8bf`).
 
 Validation :
-- 40 runs, 0 erreur de harness, contrôles valides dans les 5 scénarios,
-  chaque cellule identique sur ses 3 runs.
-- Fork : B et E faux succès 3/3 ; A et C capacité absente ; D fonctionnel 3/3
-  mais redémarrage éditeur requis. Upstream v0.13.0 : A, B, D, E 3/3 ; C refus
-  à tort 3/3 (#779, cause : toute zone ⇒ tous nets « routés »,
-  `pcb_sync.rs` ~l.1600).
-- Rapport : `docs/benchmark-pcb-live-v2.md`.
+- `bench/results/pcb_live_v2-after-z5-20261004.json` : B fork 3/3, E fork 3/3,
+  D inchangé 3/3 (redémarrage éditeur), contrôles valides.
+- fmt, clippy `-D warnings`, `cargo test -p konnect-core -p konnect-ipc` verts.
+- Baseline : `pcb_live_v2-baseline-20261004.json` ; rapport
+  `docs/benchmark-pcb-live-v2.md` (matrice post-Z5 encore à y ajouter).
 
 ## Décisions actives
 
@@ -62,6 +60,7 @@ Aucun.
 
 ## NEXT ACTION
 
-Z5.1/Z5.2 — vérifier le retour du worker (diff, fmt, clippy, tests), puis
-`cargo build --release -p konnect`, rejouer B, D, E ×3 et committer si le fork
-y est fonctionnel sans faux succès.
+Z7.1 — au retour du worker : relire le diff du worktree, rejouer A et C ×3
+(fork + upstream) sur le binaire du worktree, puis intégrer dans
+`ai/pcb-live-bench-v2` si A et C sont fonctionnels sans faux succès et le gate
+vert.
