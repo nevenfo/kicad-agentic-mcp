@@ -36,16 +36,25 @@ use std::path::Path;
 /// table, then the conventional KiCad library directories — the lookup that
 /// `library::resolve_footprint_path` owns.
 fn resolve_footprint_source(lib_id: &str, board: &Path) -> anyhow::Result<String> {
+    let path = resolve_footprint_file(lib_id, board)?;
+    std::fs::read_to_string(&path)
+        .map_err(|error| anyhow::anyhow!("failed to read {}: {error}", path.display()))
+}
+
+/// The resolution half of [`resolve_footprint_source`], for a caller that
+/// reports "does not resolve" and "cannot be read" as different failures.
+pub(crate) fn resolve_footprint_file(
+    lib_id: &str,
+    board_path: &Path,
+) -> anyhow::Result<std::path::PathBuf> {
     let (nickname, entry) = lib_id.split_once(':').ok_or_else(|| {
         anyhow::anyhow!("footprint must use Library:Footprint syntax, got '{lib_id}'")
     })?;
     if nickname.is_empty() || entry.is_empty() {
         anyhow::bail!("footprint must use a non-empty Library:Footprint identifier");
     }
-    let path = super::library::resolve_footprint_path(lib_id, board.parent())
-        .map_err(|message| anyhow::anyhow!(message))?;
-    std::fs::read_to_string(&path)
-        .map_err(|error| anyhow::anyhow!("failed to read {}: {error}", path.display()))
+    super::library::resolve_footprint_path(lib_id, board_path.parent())
+        .map_err(|message| anyhow::anyhow!(message))
 }
 
 /// Structured rejection for any back-side (`B.*`) placement layer.
@@ -142,7 +151,9 @@ fn prepare_footprint_source(
     Ok(prepared)
 }
 
-fn extract_pad_definitions(source: &str) -> anyhow::Result<Vec<konnect_ipc::IpcPadDefinition>> {
+pub(crate) fn extract_pad_definitions(
+    source: &str,
+) -> anyhow::Result<Vec<konnect_ipc::IpcPadDefinition>> {
     let footprint = konnect_sexp::parse_sexp(source)?;
     footprint
         .find_all("pad")
@@ -308,7 +319,7 @@ fn text_at(node: &konnect_sexp::SexpNode, kind: &str) -> anyhow::Result<((f64, f
 /// Footprint-local Reference/Value text anchors from the library source, so
 /// placed parts keep the library's text layout (a synthesized offset put the
 /// Reference on the part's own silkscreen — silk_overlap in live DRC).
-fn extract_field_placement(source: &str) -> konnect_ipc::IpcFieldPlacement {
+pub(crate) fn extract_field_placement(source: &str) -> konnect_ipc::IpcFieldPlacement {
     let mut placement = konnect_ipc::IpcFieldPlacement::default();
     let Ok(footprint) = konnect_sexp::parse_sexp(source) else {
         return placement;
@@ -338,7 +349,7 @@ fn extract_field_placement(source: &str) -> konnect_ipc::IpcFieldPlacement {
     placement
 }
 
-fn extract_graphic_definitions(
+pub(crate) fn extract_graphic_definitions(
     source: &str,
 ) -> anyhow::Result<Vec<konnect_ipc::IpcGraphicDefinition>> {
     use konnect_ipc::IpcGraphicDefinition as Graphic;
@@ -2356,7 +2367,7 @@ async fn handle_place_array(
         let items = planned
             .iter()
             .map(|(reference, pads, x, y)| {
-                c.build_footprint_item(
+                konnect_ipc::KiCadIpcClient::build_footprint_item(
                     &footprint_id,
                     reference,
                     &value,

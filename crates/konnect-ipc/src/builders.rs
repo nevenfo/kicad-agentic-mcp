@@ -168,6 +168,19 @@ pub fn build_via(
     }
 }
 
+/// Whether a packed `Any` declares exactly the message `type_name`.
+pub fn any_is(item: &prost_types::Any, type_name: &str) -> bool {
+    any_type_name(item) == type_name
+}
+
+/// The fully-qualified message name a packed `Any` declares, without the
+/// `type.googleapis.com/` prefix. Compare for equality rather than testing the
+/// raw `type_url` with `ends_with`, which also accepts a differently-namespaced
+/// message whose qualified name happens to end the same way.
+pub fn any_type_name(item: &prost_types::Any) -> &str {
+    item.type_url.rsplit('/').next().unwrap_or("")
+}
+
 /// Pack a protobuf message into a prost_types::Any.
 pub fn pack_any<M: prost::Message>(msg: &M, type_name: &str) -> prost_types::Any {
     let mut buf = Vec::new();

@@ -136,7 +136,15 @@ Architecture, crate by crate, is in [DEV.md](DEV.md#the-agent-layer).
 
 ## Measured results
 
-**What was measured.** Seven scripted tasks (schematic authoring, hierarchical
+**Against current upstream, on live PCB work:** see
+[docs/benchmark-pcb-live-v2.md](docs/benchmark-pcb-live-v2.md) — five live PCB
+workflows (schematic → PCB sync, live ≠ saved, zone + net change, flip + via,
+schematic parity), the same intention given to this fork and to Konnect
+**v0.13.0**, judged by KiCad 10.0.6 alone. That document, not the table below,
+is the basis for any comparison with Konnect as it stands today.
+
+**What the table below measured** (token and call cost at the fork point, not
+live PCB correctness, and not today's upstream). Seven scripted tasks (schematic authoring, hierarchical
 sheets, a template, exports, inspection, and a recovery task where five wrong
 inputs must each fail loudly), each starting from an empty directory, five
 repeats. Run on 2026-08-24 on one machine — Windows 11, Ryzen 7 9800X3D, KiCad
@@ -201,7 +209,7 @@ autopilot.
 | Reference circuits | USB-C, LDO, buck converter, STM32, I2C and LED templates with verified values |
 | Bundled for the client | 6 skills and 2 agents carrying KiCad conventions |
 
-**Surface, as a technical fact rather than a headline:** 204 domain tools across
+**Surface, as a technical fact rather than a headline:** 205 domain tools across
 22 toolsets, plus 13 always-visible meta-tools — 217 served in total. The client
 does not see them all: startup exposes a **21-tool** starter kit, toolsets load on
 demand, and the gateway calls anything by name without listing it at all. Every

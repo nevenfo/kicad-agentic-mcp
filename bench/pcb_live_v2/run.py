@@ -574,7 +574,7 @@ def main() -> int:
     env = {"kicad": ks.kicad_version(), "os": platform.platform(),
            "fork_sha": git_sha(SOURCES["fork"]), "upstream_tag": UPSTREAM_TAG,
            "upstream_sha": git_sha(SOURCES["upstream"]),
-           "binaries": {k: ks.sha256(v) for k, v in IMPLS.items()},
+           "binaries": {k: ks.sha256(v) for k, v in IMPLS.items() if Path(v).exists()},
            "started": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     results = []
     for scn in args.scenario:

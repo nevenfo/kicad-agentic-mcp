@@ -1043,6 +1043,9 @@ pub static MANIFEST: &[Capability] = &[
     cap("run_erc", Domain::Erc, Adapter::Cli),
     cap("fix_connectivity", Domain::Nets, Adapter::Sexpr),
     cap("export_bom", Domain::Bom, Adapter::Cli),
+    // Registered in `sch_export` because it reads the saved schematic, but it
+    // writes the live board over one KiCad commit and never edits the file.
+    cap("update_pcb_from_schematic", Domain::Placement, Adapter::Ipc),
     // ── sch_hierarchy ───────────────────────────────────────────────────────
     cap("add_hierarchical_sheet", Domain::Hierarchy, Adapter::Sexpr),
     cap("edit_sheet", Domain::Hierarchy, Adapter::Sexpr),

@@ -22,6 +22,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 
 use super::cli;
+use super::pcb_sync::handle_update_pcb_from_schematic;
 use super::sch_analysis::build_net_graph;
 
 // ─── Tool definitions ─────────────────────────────────────────────────────────
@@ -180,6 +181,27 @@ pub fn tools() -> Vec<ToolDef> {
                 "required": ["schematic", "output"]
             }),
             |args, ctx| async move { handle_export_bom(args, ctx).await }
+        ),
+        tool!(
+            "update_pcb_from_schematic",
+            "Plan or atomically apply saved schematic hierarchy changes to the live KiCad PCB. \
+             Defaults to a non-mutating dry run; apply requires its exact plan revision. \
+             Preserves placement, routing, board-only footprints, and footprint artwork. \
+             A symbol with no footprint assigned is reported under `unassigned_footprints` \
+             and the sync proceeds for every other component. A library footprint that \
+             cannot be placed, or a connected pad its footprint does not have, makes the dry \
+             run a conflict whose diagnostics name the footprint and every part that needs it.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "schematic": { "type": "string", "description": "Saved root .kicad_sch path" },
+                    "board": { "type": "string", "description": "Matching .kicad_pcb path currently open in KiCad" },
+                    "dry_run": { "type": "boolean", "description": "Plan without changing the board", "default": true },
+                    "expected_plan_revision": { "type": "string", "description": "Required for apply; exact revision returned by the latest dry run" }
+                },
+                "required": ["schematic", "board"]
+            }),
+            |args, ctx| async move { handle_update_pcb_from_schematic(args, ctx).await }
         ),
     ]
 }

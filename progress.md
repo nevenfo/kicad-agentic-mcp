@@ -8,20 +8,20 @@ attente : la revue du 2026-10-04 a priorité.
 
 ## Tâche actuelle
 
-Z7 — port de `update_pcb_from_schematic` + correctif #779, délégué à un
-`code-worker` dans un worktree isolé (non commité). En parallèle : `pwsh
-gate.ps1` sur `0cae8bf` (log `../_gate-z5.log`).
+Z6.2 — gate local sur l'intégration Z7. Lancé, **arrêté par Claude Code faute
+de mémoire système** après fmt et clippy verts, pendant la compilation des
+tests. Ne pas le relancer sans accord de l'utilisateur.
 
 ## Dernière tâche validée
 
-**Z5 — backports B et E** (`0cae8bf`).
+**Z7 — sync schéma → PCB portée, #779 corrigé** ; **Z6.1/Z6.3** rejeu et docs.
 
 Validation :
-- `bench/results/pcb_live_v2-after-z5-20261004.json` : B fork 3/3, E fork 3/3,
-  D inchangé 3/3 (redémarrage éditeur), contrôles valides.
-- fmt, clippy `-D warnings`, `cargo test -p konnect-core -p konnect-ipc` verts.
-- Baseline : `pcb_live_v2-baseline-20261004.json` ; rapport
-  `docs/benchmark-pcb-live-v2.md` (matrice post-Z5 encore à y ajouter).
+- `bench/results/pcb_live_v2-after-z7-20261004.json` : fork A–E fonctionnels
+  3/3, 0 faux succès, contrôles valides ; upstream v0.13.0 C refus 3/3.
+- Suite complète verte dans le worktree du worker (74 binaires de test).
+- Gate `0cae8bf` (Z5) : `GATE PASSED`. Gate Z7 : incomplet (mémoire).
+- Rapport et README/benchmark.md alignés ; compteurs publics 205 outils.
 
 ## Décisions actives
 
@@ -40,7 +40,10 @@ Validation :
 
 ## Blocage actif
 
-Aucun.
+Gate Z7 non terminé : machine à court de mémoire (arrêt par le harness, pas
+un échec). Faits exclus : fmt et clippy verts sur le checkout intégré.
+Prochaine tentative : `pwsh gate.ps1` quand la mémoire le permet, ou la CI de
+la PR.
 
 ## Fichiers / zones utiles
 
@@ -60,7 +63,6 @@ Aucun.
 
 ## NEXT ACTION
 
-Z7.1 — au retour du worker : relire le diff du worktree, rejouer A et C ×3
-(fork + upstream) sur le binaire du worktree, puis intégrer dans
-`ai/pcb-live-bench-v2` si A et C sont fonctionnels sans faux succès et le gate
-vert.
+Z6.2 — obtenir un gate vert sur `ai/pcb-live-bench-v2` (CI de la PR, ou
+`pwsh gate.ps1` relancé avec l'accord de l'utilisateur), puis Z6.4 : merger la
+PR `ai/pcb-live-bench-v2` → `agentic/main`.

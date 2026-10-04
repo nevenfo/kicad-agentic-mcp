@@ -48,7 +48,7 @@ does not exercise, break the name.
 
 | | entries | supported | partial | unproven | not tested | gap | KiCAD has no API | coverage |
 |---|---|---|---|---|---|---|---|---|
-| KiCAD domains | 171 | 48 | 18 | 77 | 21 | 2 | 5 | 28.9 % |
+| KiCAD domains | 172 | 48 | 18 | 78 | 21 | 2 | 5 | 28.7 % |
 | server's own | 40 | 27 | 10 | 0 | 3 | 0 | 0 | 67.5 % |
 
 Coverage is `(supported + external) / (entries − entries KiCAD has no API for)`. An entry is `supported` only when the proof found for it is at least the proof its transport requires; both are named in the tables below, as `needs` and `proof`.
@@ -83,7 +83,7 @@ Criterion met: **yes** — ahead of the baseline requires being strictly ahead *
 | [`libraries`](#libraries) | 9 | 5 | 0 | 0 | 0 | 0 | 55.6 % |
 | [`footprints`](#footprints) | 8 | 5 | 0 | 0 | 0 | 0 | 62.5 % |
 | [`pcb`](#pcb) | 8 | 4 | 0 | 0 | 0 | 0 | 50.0 % |
-| [`placement`](#placement) | 12 | 1 | 0 | 8 | 1 | 0 | 8.3 % |
+| [`placement`](#placement) | 13 | 1 | 0 | 8 | 1 | 0 | 7.7 % |
 | [`routing`](#routing) | 10 | 1 | 0 | 5 | 0 | 2 | 12.5 % |
 | [`vias`](#vias) | 1 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
 | [`zones`](#zones) | 3 | 0 | 0 | 1 | 0 | 0 | 0.0 % |
@@ -117,7 +117,7 @@ Which backend actually runs a call, and whether it needs KiCAD open. `ipc` has n
 |---|---|---|
 | `sexpr` | 125 | no |
 | `cli` | 22 | no |
-| `ipc` | 22 | yes |
+| `ipc` | 23 | yes |
 | `ipc→sexpr` | 5 | no |
 | `internal` | 19 | no |
 | `external` | 8 | no |
@@ -327,6 +327,7 @@ Not covered by any tool:
 
 | tool | toolset | adapter | effect | write target | status | needs | proof | evidence | note |
 |---|---|---|---|---|---|---|---|---|---|
+| `update_pcb_from_schematic` | `sch_export` | `ipc` | `write` | design_document | UNPROVEN | live | test | `crates/konnect-core/src/tools/pcb_sync.rs` |  |
 | `place_component` | `pcb_components` | `ipc` | `write` | design_document | UNPROVEN | live | test | `crates/konnect-core/src/tools/pcb_components.rs` |  |
 | `move_component` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | live | gated | `crates/konnect/tests/live_kicad_tools.rs` |  |
 | `rotate_component` | `pcb_components` | `ipc` | `write` | design_document | NOT_TESTED | live | — | — |  |
@@ -574,7 +575,7 @@ Not covered by any tool:
 
 ## Not tested
 
-24 of 204 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
+24 of 205 registered tools have no proof that runs. `gated` means a test exists and is `#[ignore]`d — it needs a live KiCAD GUI, its IPC socket, or the installed libraries.
 
 | tool | domain | adapter | proof found |
 |---|---|---|---|

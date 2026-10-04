@@ -7176,9 +7176,9 @@ Z5, Z7.
 
 ### Tâches
 
-- [ ] Z6.1 Rejeu complet, résultats commités.
+- [x] Z6.1 Rejeu complet, résultats commités.
 - [ ] Z6.2 `pwsh gate.ps1` vert (fmt, clippy, tests, matrice).
-- [ ] Z6.3 README / `docs/benchmark.md` : la comparaison v0.2.2 n'est plus
+- [x] Z6.3 README / `docs/benchmark.md` : la comparaison v0.2.2 n'est plus
   présentée comme preuve de supériorité actuelle ; renvoi vers V2.
 - [ ] Z6.4 PR `ai/pcb-live-bench-v2` → `agentic/main`.
 
@@ -7201,16 +7201,25 @@ une primitive lourde.
 
 ### Tâches
 
-- [ ] Z7.1 Porter `tools/pcb_sync.rs` (≈2 080 lignes hors tests) et ses
+- [x] Z7.1 Porter `tools/pcb_sync.rs` (≈2 080 lignes hors tests) et ses
   dépendances IPC absentes du fork (`run_commit_recovering_in`,
   `save_document_to_string_in`, `update_items_in`, `get_nets_in`, `IpcVector`,
   `MockIpcServer` de test), sans rebase ni import hors de ce périmètre.
-- [ ] Z7.2 #779 : le net d'une zone est lisible
+- [x] Z7.2 #779 : le net d'une zone est lisible
   (`Zone.settings.copper_settings.net`) ; seul le cuivre d'un net le rend routé.
-- [ ] Z7.3 Classement dans la matrice de capacités : preuve live exigée
+- [x] Z7.3 Classement dans la matrice de capacités : preuve live exigée
   (`LiveReadback`), test `#[ignore]`d arbitré, sinon `UNPROVEN` assumé.
 
 ### Validation
 
 Bench A et C : fork fonctionnel 3/3, 0 faux succès ; B/D/E inchangés ; gate
 vert.
+
+Port par `code-worker` en worktree, intégré fichier à fichier (35 fichiers).
+`record_zone_nets` (`pcb_sync.rs`) lit `CopperZoneSettings.net` ; 5 tests #779.
+Worktree : fmt, clippy `--workspace -D warnings`, `cargo test --workspace` (74
+binaires ok, 55 tests `pcb_sync`). Matrice : `update_pcb_from_schematic`
+`UNPROVEN` (preuve `live` exigée, `test` actuelle). `pcb_live_v2-after-z7-
+20261004.json` : fork A, B, C, D, E fonctionnels 3/3, 0 faux succès ; upstream
+C refus 3/3. Écarts au port : pas de `run_commit_recovering_in` (commit global
+du fork), pas de verdict « incertain », deux tests upstream non portés.

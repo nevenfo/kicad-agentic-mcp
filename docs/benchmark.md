@@ -1,5 +1,11 @@
 # Benchmark
 
+> **Scope.** This document compares the fork with Konnect **v0.2.2** — the fork
+> point, August 2026 — on schematic tasks and context cost. It is not evidence
+> about today's upstream nor about live PCB work. For that, see
+> [benchmark-pcb-live-v2.md](benchmark-pcb-live-v2.md) (fork vs Konnect
+> v0.13.0, KiCad 10.0.6 as referee).
+
 Everything in this document is measured on this machine with the harness in
 `bench/`. Nothing here is estimated. Where a target was not reached, it says so.
 

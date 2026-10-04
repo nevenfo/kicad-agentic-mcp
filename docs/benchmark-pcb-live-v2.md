@@ -14,7 +14,7 @@ fixtures and their generators). Raw results: `bench/results/pcb_live_v2-*.json`.
 |---|---|
 | KiCad | 10.0.6 (latest stable on 2026-10-04; 10.0.7 is at RC2) |
 | OS | Windows 11 Pro 26200 |
-| fork | branch `ai/pcb-live-bench-v2`, binary built from v1.2.0 sources (`48465f1`); SHA-256 of each binary is in every result file |
+| fork | branch `ai/pcb-live-bench-v2`; baseline binary built from v1.2.0 sources (`48465f1`), later runs from the changes below; SHA-256 of each binary is in every result file |
 | upstream | `mixelpixx/Konnect` tag **v0.13.0**, commit `6bbe3e4f890ba1d37c0e5d5f38ccd03d90958c9e` (release 2026-10-02), built unmodified |
 | live oracle | `kicad-python` (`kipy`) 0.8.0 — KiCad's official IPC binding, shared with neither server |
 | saved oracle | `kicad-cli` 10.0.6 (`pcb drc`, `--schematic-parity`), plus the board file as KiCad wrote it |
@@ -98,9 +98,38 @@ capabilities outside these five workflows.
 * **D** — the false message is corrected. Driving KiCad's `FlipItems` needs a
   newer vendored proto; not done in this change, because the end state is
   already correct and the cost is one editor restart.
-* **A / C** — the sync is the fork's real gap. Its prerequisite named in phase X9
-  (a live suite to prove it) now exists: A and C are that suite. See `plan.md`
-  phase Z for the follow-up decision.
+* **A / C** — `update_pcb_from_schematic` ported from v0.13.0 (selective import,
+  no rebase): the prerequisite phase X9 named — a live suite to prove it — now
+  exists, A and C. While porting, upstream #779 is fixed in the fork: a copper
+  zone's net is readable (`Zone.settings.copper_settings.net`), so only that net
+  counts as routed; a zone whose net cannot be read keeps the fail-closed
+  fallback. Its capability-matrix row stays `UNPROVEN` — the proof rule wants a
+  live read-back test inside the Rust suite, and this Python benchmark does not
+  count toward it.
+* Everything else upstream adds was left out: these five workflows give no
+  measured reason to import it.
+
+## Results — after the changes
+
+`bench/results/pcb_live_v2-after-z5-20261004.json` (B, D, E after the two
+backports) and `bench/results/pcb_live_v2-after-z7-20261004.json` (all five,
+after the sync port; the fork binary's SHA-256 is in the file — it was built
+from the working tree on top of `48a19d6`). Controls separated on every
+scenario; every cell identical on its three runs.
+
+| | fork: functional | fork: false success | upstream v0.13.0: functional | notes |
+|---|---|---|---|---|
+| A | **3/3** | 0/3 | 3/3 | both place the new R3 outside the board outline, at (5.93, 0.5) |
+| B | **3/3** | 0/3 | 3/3 | |
+| C | **3/3** | 0/3 | 0/3 (refused) | fork better: #779 fixed |
+| D | 3/3 | 0/3 | 3/3 | fork still needs an editor restart for the flip |
+| E | **3/3** | 0/3 | 3/3 | |
+
+So, on these five live PCB workflows with KiCad as the referee: the fork now
+matches upstream v0.13.0 on A, B and E, is ahead on C, and behind on D's
+manual step. Before these changes it had two false successes (B, E) and two
+missing capabilities (A, C). Nothing measured here covers the rest of either
+surface.
 
 No general superiority is claimed in either direction: on these five workflows,
-at these versions, the table says where each wins, loses or fails.
+at these versions, the tables say where each wins, loses or fails.
